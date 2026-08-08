@@ -1,0 +1,14 @@
+# COM (Channel Operating Margin) Python tool — runtime dependencies.
+# Tested with Python 3.14.5 / numpy 2.4.6 / scipy 1.17.1 / openpyxl 3.1.5 / matplotlib 3.10.9.
+# Minimums are conservative; newer versions are fine.
+
+numpy>=1.23        # core numerics
+scipy>=1.9         # signal, interpolate, special, linalg, io
+openpyxl>=3.0      # read the .xlsx configuration spreadsheet
+matplotlib>=3.5    # figures (only needed when SAVE_FIGURES is enabled)
+
+# Study tooling in tools/ only — the COM engine itself does not need these.
+python-pptx>=1.0   # tools/build_pptx.py, builds the review deck from corpus_results/
+
+# The R reports under R/ additionally need, inside R:
+#   install.packages(c("plotly", "htmltools", "jsonlite"))

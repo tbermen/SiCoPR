@@ -1,0 +1,3 @@
+function missingParameter (parameterName)
+error( 'error:badParameterInformation', ...
+'The data for mandatory parameter %s is missing or incorrect' , parameterName);
