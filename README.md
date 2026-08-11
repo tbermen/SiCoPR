@@ -12,6 +12,11 @@ same `.xlsx` + `.s4p` inputs, and produces the same outputs.
 On top of the engine there is a study layer (`tools/`, `R/`) built to answer one question:
 **does pruning the equalizer search grid change COM?** Results in §5.
 
+> **New to this project?** Start with **[`COM_Python_Tutorial.docx`](COM_Python_Tutorial.docx)**
+> — a 40-page tutorial and reference covering installation, architecture, every feature,
+> the study layer, the R reports, a COM concepts primer, and a complete index of all 247
+> configuration keywords. This README is the quick version.
+
 ---
 
 ## 1. What ships in this repository — and what doesn't
