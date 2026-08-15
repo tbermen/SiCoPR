@@ -266,8 +266,17 @@ def get_TDR(S, OP, param, ZT, nport,
     # ---- Average impedance (OP.TDR or OP.PTDR path) ----
     if getattr(OP, 'TDR', False) or getattr(OP, 'PTDR', False):
         try:
-            tfstart_arr = np.where(TDR_results.t >= 3 * tr * 1e-9)[0]
+            # MATLAB (L7184-7187):
+            #   tfstart = find(t >= 3*tr*1e-9, 1);        % index into the FULL t
+            #   x = TDR_results.t(tfstart:end);           % applied to the WINDOWED arrays
+            # The index is derived from the full, delay-shifted time vector but used to
+            # slice t(tstart:tend), so the weighted average effectively begins tstart
+            # samples later than 3*tr. Searching the windowed vector instead (as Python
+            # did) starts at a different point and biases avgZport -> Z11est/Z22est by a
+            # constant ~1.4% independent of package case. Reproduce MATLAB exactly.
+            tfstart_arr = np.where(t >= 3 * tr * 1e-9)[0]
             tfstart = int(tfstart_arr[0]) if len(tfstart_arr) > 0 else 0
+            tfstart = min(tfstart, max(0, len(TDR_results.t) - 1))
             T_k = float(getattr(OP, 'T_k', 1e-9))
             x = TDR_results.t[tfstart:]
             y = TDR_results.tdr[tfstart:]
@@ -299,9 +308,24 @@ def get_TDR(S, OP, param, ZT, nport,
         ndfex = int(ndfex_arr[0]) if len(ndfex_arr) > 0 else len(t_ptdr)
         tk = ui * (N_bx + 1) + tfx + 3 * tr * 1e-9
 
-        # Build fctrx gain array
-        fctrx = np.zeros(len(PTDR.pulse))
-        for ii in range(ntx, ndfex):
+        # Build fctrx gain array.
+        # MATLAB (L7230-7243):
+        #   switch param.Grr
+        #     case 0: fctrx(1:length(PTDR.pulse_orig)) = (1+rho_x)*rho_x;
+        #     case 1: fctrx(1:length(PTDR.pulse_orig)) = 1;
+        #     case 2: fctrx(1:length(PTDR.pulse_orig)) = 1;
+        #   end
+        #   fctrx(1:ntx) = 0;              % only the LEAD-IN is zeroed
+        #   for ii = ntx:ndfex ...         % INCLUSIVE of ndfex
+        #
+        # fctrx is pre-filled across the WHOLE array, so beyond the DFE gate
+        # (ii > ndfex) it retains that fill value — it is NOT zero. Allocating
+        # np.zeros here discarded all reflection energy past the gate, which
+        # understates the reflection and overstates ERL (23.1 vs 16.2 dB).
+        fill = (1.0 + rho_x) * rho_x if Grr_mode == 0 else 1.0
+        fctrx = np.full(len(PTDR.pulse), fill, dtype=float)
+        fctrx[:ntx] = 0.0
+        for ii in range(ntx, min(ndfex + 1, len(fctrx))):
             x_ii = (t_ptdr[ii] - tfx - 3 * tr * 1e-9) / (ui + 1e-300)
             if N_bx > 0 and beta_x != 0:
                 Gloss_ii = 10.0 ** (beta_x * (t_ptdr[ii] - tk) / 20)

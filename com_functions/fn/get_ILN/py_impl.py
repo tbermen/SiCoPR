@@ -23,8 +23,24 @@ def get_ILN(sdd21, faxis_f2):
     ])
     LGw = abs_s * db_s  # weighted log response (RHS)
 
-    # Least-squares solve (MATLAB used normal equations with warning suppressed)
-    alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
+    # MATLAB: alpha = ((fmbg'*fmbg)^-1)*fmbg'*LGw, with
+    # warning('off','MATLAB:nearlySingularMatrix') immediately above it — i.e. it
+    # deliberately takes the raw normal-equations inverse of a matrix it knows is
+    # nearly singular, and keeps all four basis terms.
+    #
+    # This MUST NOT be replaced by np.linalg.lstsq. faxis is in Hz, so the f^2
+    # column reaches ~4.5e21 and cond(fmbg'fmbg) overflows to inf; lstsq then
+    # truncates small singular values and solves with an effective rank of 2 of 4,
+    # silently discarding half the fit basis. That produced fitted-IL errors of
+    # 3.6-14.4 dB against MATLAB and a correspondingly wrong FOM_ILD.
+    A = fmbg.T @ fmbg
+    rhs = fmbg.T @ LGw
+    try:
+        alpha = np.linalg.inv(A) @ rhs
+    except np.linalg.LinAlgError:          # exactly singular — MATLAB would warn and
+        alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)   # return Inf/NaN
+    if not np.all(np.isfinite(alpha)):
+        alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
     efit = (
         alpha[0]
         + alpha[1] * np.sqrt(faxis_f2)

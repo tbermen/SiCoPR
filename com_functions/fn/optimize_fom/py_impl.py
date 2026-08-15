@@ -294,9 +294,21 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                                 if skip_it:
                                     continue
 
-                            # Cursor amplitude
-                            cursor = float(sbr[THIS.cursor_i - 1])  # 0-based
-                            THIS.A_p = float(sbr[int(sbr_peak_i) - 1])
+                            # Cursor amplitude.
+                            # AUDIT FINDING B16-D20: cursor_sample_index and
+                            # OptFom_Find_Sample_Point return 0-BASED indices (the
+                            # convention get_PSDs, get_pdf and OptFom_Compute_DFE use),
+                            # so no -1 belongs here; MATLAB L8788-8801 reads
+                            # sbr(cursor_i) with no offset.
+                            #
+                            # History: removing the -1 was tried on 2026-08-13 while the
+                            # package die-network bug was still present and made COM
+                            # agreement WORSE, so it was reverted. Once the die LC
+                            # sections were fixed (make_full_pkg/read_s4p_files/s21_pkg
+                            # kept only 1 of 3 sections) the two errors were shown to have
+                            # been compensating, and D20 is now applied.
+                            cursor = float(sbr[THIS.cursor_i])
+                            THIS.A_p = float(sbr[int(sbr_peak_i)])
                             THIS.A_s = float(param.R_LM) * cursor / (int(param.levels) - 1)
 
                             if SETTINGS.delta_sbr is None:
@@ -304,11 +316,11 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             sbr = sbr.ravel()
 
                             # Far cursors and precursors (eq 93A-27)
-                            far_start = THIS.cursor_i - T_O + int(param.samples_per_ui) * (int(param.ndfe) + 1) - 1
+                            far_start = THIS.cursor_i - T_O + int(param.samples_per_ui) * (int(param.ndfe) + 1)
                             far_start = max(far_start, 0)
                             THIS.far_cursors = sbr[far_start::int(param.samples_per_ui)]
 
-                            pre_start = THIS.cursor_i - int(param.samples_per_ui) - 1
+                            pre_start = THIS.cursor_i - int(param.samples_per_ui)
                             if pre_start >= 0:
                                 pre_rev = sbr[pre_start::-int(param.samples_per_ui)]
                                 THIS.precursors = pre_rev[::-1]

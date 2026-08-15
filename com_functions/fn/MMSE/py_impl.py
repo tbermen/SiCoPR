@@ -87,7 +87,9 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=No
     w = wbl[:Nw_used]
     b = wbl[Nw_used:Nw_used + Nb]
     blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b))
-    if Nb > 0 and not np.allclose(b, blim):
+    # array_equal, not allclose: MATLAB guards these two branches with ~isequal,
+    # which is exact (see com_functions/fn/MMSE_FOM for the full note).
+    if Nb > 0 and not np.array_equal(b, blim):
         Rb = np.block([[R, -h0.reshape(-1, 1)], [h0.reshape(1, -1), np.array([[0.0]])]])
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
         wl_full = np.linalg.solve(Rb, rhs)
@@ -97,14 +99,16 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=No
     dw_int = int(dw)
     w_cursor = float(w[dw_int]) if dw_int < len(w) else 1.0
     wlim = np.minimum(wmax_arr * w_cursor, np.maximum(wmin_arr * w_cursor, w))
-    if not np.allclose(w, wlim):
+    # The b/blim refresh belongs INSIDE this branch (MATLAB L2683-2690): with no
+    # clipping, blim stays as clip(b) from the solve rather than clip(Hb @ w).
+    if not np.array_equal(w, wlim):
         h0w = float(h0 @ wlim)
         if h0w != 0:
             wlim = wlim / h0w
+        if Nb > 0:
+            b_upd = Hb @ wlim
+            blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
     w = wlim
-    if Nb > 0:
-        b_upd = Hb @ wlim
-        blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
     Hb_T_blim = Hb.T @ blim if Nb > 0 else np.zeros_like(h0)
     sigma_e = float(np.sqrt(np.maximum(0.0, sigma_X2 * (
         float(w @ R @ w) + 1.0 + float(np.dot(blim, blim))
@@ -223,13 +227,29 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
 
     if int(param.N_bg) != 0:
         Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-        C = Craw.copy()
-        n_end = min(Nw_out, int(param.N_bmax) + int(param.ffe_pre_tap_len) + 1)
+        # MATLAB:
+        #   C = Craw;
+        #   C(Nfix+1 : Nmax+param.ffe_pre_tap_len+1) = 0;
+        #   C(idx+param.RxFFE_cmx+1) = Craw(Nfix+(1:Nfloating_taps));
+        #
+        # Both MATLAB assignments AUTO-EXTEND C with zeros, so the returned filter
+        # spans the floating-tap positions (which reach far past the fixed taps —
+        # e.g. index 72 for a 23-element Craw). Craw holds the tap *count*
+        # (Nfix + Nfloating), not the tap *span*, so C must be grown explicitly
+        # here. Previously C was left at len(Craw) and every floating tap landing
+        # beyond it was silently discarded, truncating the equalizer and leaving
+        # sigma_e 2.5-4.5% low (FOM high by 0.2-0.4 dB, worse on lossier packages).
+        idx_arr = np.asarray(idx_out, dtype=int).ravel()
+        n_end = int(param.N_bmax) + int(param.ffe_pre_tap_len) + 1
+        span = max(len(Craw), n_end)
+        if idx_arr.size:
+            span = max(span, int(idx_arr.max()) + int(param.RxFFE_cmx) + 1)
+        C = np.zeros(span, dtype=float)
+        C[:len(Craw)] = Craw
         C[Nfix:n_end] = 0.0
-        for j, k in enumerate(idx_out):
-            c_col = k + int(param.RxFFE_cmx)
-            if c_col < len(C):
-                C[c_col] = Craw[Nfix + j] if Nfix + j < len(Craw) else 0.0
+        for j, k in enumerate(idx_arr):
+            c_col = int(k) + int(param.RxFFE_cmx)
+            C[c_col] = Craw[Nfix + j] if Nfix + j < len(Craw) else 0.0
     else:
         C = Craw
 

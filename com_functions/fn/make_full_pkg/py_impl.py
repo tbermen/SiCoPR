@@ -195,8 +195,17 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
         elif mele == 4:
             cd_val = float(Cd_Tx) if np.isscalar(Cd_Tx) else float(np.asarray(Cd_Tx).ravel()[0])
             lc_val = float(Lcomp_Tx) if np.isscalar(Lcomp_Tx) else float(np.asarray(Lcomp_Tx).ravel()[0])
-            Cpad = np.array([cd_val, 0.0, 0.0, 0.0])
-            Lcomp = np.array([lc_val, 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[L_comp_Tx 0 0 0]  (L8390-8391).
+            # Cd_Tx/L_comp_Tx are ROW VECTORS when C_d/L_comp are given as a
+            # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
+            # concatenation yields len(Cd_Tx)+3 entries — matching
+            # num_blocks = mele + extra_LC. Taking only Cd_Tx[0] dropped every
+            # die section after the first and produced a 4-entry array, losing
+            # the die LC delay (~15 ps here) and reshaping the pulse.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
@@ -231,8 +240,17 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
         elif mele == 4:
             cd_val = float(Cd_Rx) if np.isscalar(Cd_Rx) else float(np.asarray(Cd_Rx).ravel()[0])
             lc_val = float(Lcomp_Rx) if np.isscalar(Lcomp_Rx) else float(np.asarray(Lcomp_Rx).ravel()[0])
-            Cpad = np.array([cd_val, 0.0, 0.0, 0.0])
-            Lcomp = np.array([lc_val, 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[L_comp_Rx 0 0 0]  (L8390-8391).
+            # Cd_Rx/L_comp_Rx are ROW VECTORS when C_d/L_comp are given as a
+            # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
+            # concatenation yields len(Cd_Rx)+3 entries — matching
+            # num_blocks = mele + extra_LC. Taking only Cd_Rx[0] dropped every
+            # die section after the first and produced a 4-entry array, losing
+            # the die LC delay (~15 ps here) and reshaping the pulse.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             cb_val = float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])
             Cbump = np.array([cb_val, 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()

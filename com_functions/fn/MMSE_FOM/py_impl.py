@@ -83,7 +83,10 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=Non
 
     # Apply blim
     blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b))
-    if Nb > 0 and not np.allclose(b, blim):
+    # MATLAB guards with ~isequal(...), which is an exact comparison. np.allclose
+    # carries a 1e-5 relative tolerance and can take the opposite branch on taps
+    # that were clipped by a tiny amount.
+    if Nb > 0 and not np.array_equal(b, blim):
         Rb = np.block([[R, -h0.reshape(-1, 1)], [h0.reshape(1, -1), np.array([[0.0]])]])
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
         wl_full = np.linalg.solve(Rb, rhs)
@@ -98,15 +101,28 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=Non
     dw_int = int(dw)
     w_cursor = float(w[dw_int]) if dw_int < len(w) else 1.0
     wlim = np.minimum(wmax_arr * w_cursor, np.maximum(wmin_arr * w_cursor, w))
-    if not np.allclose(w, wlim):
+    # MATLAB:
+    #   if ~isequal(w, wlim)
+    #       wlim = wlim/(h0*wlim);
+    #       if Nb > 0
+    #           b = Hb*wlim; blim = min(bmax, max(bmin, b));
+    #       end
+    #   end
+    #   w = wlim; b = blim;
+    #
+    # The b/blim refresh is INSIDE the clipping branch. When no tap was clipped,
+    # MATLAB keeps blim = clip(b) from the MMSE solve above; recomputing it here
+    # as clip(Hb @ w) substitutes a different vector, and blim feeds sigma_e
+    # directly (the b'b and -2 w'Hb'b terms), biasing FOM.
+    if not np.array_equal(w, wlim):
         h0w = float(h0 @ wlim)
         if h0w != 0:
             wlim = wlim / h0w
+        if Nb > 0:
+            b_upd = Hb @ wlim
+            blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
 
     w = wlim
-    if Nb > 0:
-        b_upd = Hb @ wlim
-        blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
 
     # sigma_e
     Hb_T_blim = Hb.T @ blim if Nb > 0 else np.zeros_like(h0)

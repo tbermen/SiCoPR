@@ -192,6 +192,18 @@ def process_sxp(param, OP, chdata, SDDch,
                         pix = int(np.argmax(fir4del))
                         param.tfx[1] = 2 * tu[pix]
 
+                # MATLAB passes OP BY VALUE, so the TDR-only overrides below never
+                # escape process_sxp — 4p15p0 L9311 says so outright:
+                #   "Only for TDR not returned out of process_sxp function"
+                # Python passes by reference, so assigning to OP here leaked the TDR
+                # settings into every later stage. In particular the truncation
+                # threshold went 1e-3 (config default) -> 1e-5 for the rest of the
+                # run, which keeps far more impulse-response tail, lengthens the
+                # pulse response, inflates residual ISI and therefore sigma_e, and
+                # biased FOM LOW on 95.7% of the 208 reference cases.
+                # Rebinding to a shallow copy reproduces MATLAB's by-value scope:
+                # the rest of process_sxp sees the TDR values, the caller does not.
+                OP = SimpleNamespace(**vars(OP))
                 OP.impulse_response_truncation_threshold = 1e-5
                 Z_t = np.atleast_1d(param.Z_t)
                 n_zt = len(Z_t)

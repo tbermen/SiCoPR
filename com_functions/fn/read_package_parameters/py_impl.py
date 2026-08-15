@@ -59,9 +59,12 @@ def read_package_parameters(parameter, param_struct=None):
     param_struct.a_fext = xp('A_fe', np.array([0.0]))
     param_struct.a_next = xp('A_ne', np.array([0.0]))
 
-    # z_p_tx_cases: MATLAB transposes → shape (ncases, mele)
+    # z_p_tx_cases: MATLAB transposes → shape (ncases, mele).
+    # The spreadsheet stores rows = package segments, columns = cases; the engine
+    # indexes [case, :]. MATLAB applies .' to all four z_p keywords
+    # (com_ieee8023_4p15p0.m L10678/10689/10695/10701).
     raw = xp('z_p (TX)', np.array([[0.0, 0.0]]))
-    z_p_tx = np.atleast_2d(raw)
+    z_p_tx = np.atleast_2d(raw).T
     ncases, mele = z_p_tx.shape
     if mele == 2:
         param_struct.flex = 2
@@ -75,7 +78,7 @@ def read_package_parameters(parameter, param_struct=None):
 
     def _load_zp(key):
         raw2 = xp(key, np.zeros_like(z_p_tx))
-        arr = np.atleast_2d(raw2)
+        arr = np.atleast_2d(raw2).T          # same transpose as z_p (TX) above
         if arr.shape != (ncases, mele):
             raise ValueError('All TX, NEXT, FEXT, Rx cases must agree')
         return arr

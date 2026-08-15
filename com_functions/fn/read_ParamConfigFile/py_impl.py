@@ -258,7 +258,14 @@ def _read_pkg_params(block):
         r = xp(key, np.zeros_like(z_p_tx))
         if isinstance(r, str):
             r = _parse_matlab_matrix(r)
-        arr = np.atleast_2d(np.asarray(r, dtype=float))
+        # Transpose, exactly as z_p (TX) above and as MATLAB does for all four
+        # (com_ieee8023_4p15p0.m L10019/10035/10041/10047 each end in .').
+        # The spreadsheet stores rows = package segments, columns = cases; the
+        # engine indexes [case, :]. Omitting the transpose here fed the RX/NEXT/FEXT
+        # package a row of the matrix (segment across cases) instead of a case
+        # column, which for a square z_p matrix passes the shape check below
+        # silently while producing a grossly over-long package.
+        arr = np.atleast_2d(np.asarray(r, dtype=float)).T
         if arr.shape != (ncases, mele):
             raise ValueError('All TX, NEXT, FEXT, Rx cases must agree')
         return arr

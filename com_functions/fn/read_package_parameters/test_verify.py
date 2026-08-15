@@ -6,6 +6,16 @@
 # mele=1/2/4: sets param.flex accordingly.
 # mele=2: expands z_p_* to 4 columns with zeros.
 # mele other: raises ValueError.
+#
+# z_p ORIENTATION — the fixtures below are in SPREADSHEET orientation:
+#   rows = package segments, columns = package cases.
+# MATLAB transposes all four z_p keywords on read (L10678/10689/10695/10701 each
+# end in .'), so the stored array is (ncases, mele) and the engine indexes
+# [case, :]. A fixture written the other way round silently passes the shape
+# check whenever the matrix is square, which previously hid a real defect: the
+# RX/NEXT/FEXT package was built from a row of the matrix rather than a case
+# column, over-stating package length (e.g. 111 mm instead of 13.8 mm) and
+# adding roughly 15 dB of spurious loss.
 # ============================================================
 """
 import pytest
@@ -24,10 +34,11 @@ def _param_block_2col():
         'A_v': np.array([0.5, 0.5]),
         'A_fe': np.array([0.3, 0.3]),
         'A_ne': np.array([0.2, 0.2]),
-        'z_p (TX)': np.array([[5.0, 10.0]]),      # 1 case × 2 elements
-        'z_p (NEXT)': np.array([[3.0, 6.0]]),
-        'z_p (FEXT)': np.array([[4.0, 8.0]]),
-        'z_p (RX)': np.array([[2.0, 4.0]]),
+        # 2 segments (rows) x 1 case (col) -> stored (1 case, 2 elements)
+        'z_p (TX)': np.array([[5.0], [10.0]]),
+        'z_p (NEXT)': np.array([[3.0], [6.0]]),
+        'z_p (FEXT)': np.array([[4.0], [8.0]]),
+        'z_p (RX)': np.array([[2.0], [4.0]]),
         'package_tl_gamma0_a1_a2': np.array([0.0, 1.734e-3, 1.455e-4]),
         'package_tl_tau': np.array([6.141e-3]),
         'package_Z_c': np.array([[78.2, 78.2]]),
@@ -41,10 +52,11 @@ def _param_block_4col():
         'A_v': np.array([0.5, 0.5, 0.5, 0.5]),
         'A_fe': np.array([0.3, 0.3, 0.3, 0.3]),
         'A_ne': np.array([0.2, 0.2, 0.2, 0.2]),
-        'z_p (TX)': np.array([[5.0, 10.0, 15.0, 20.0]]),
-        'z_p (NEXT)': np.array([[3.0, 6.0, 9.0, 12.0]]),
-        'z_p (FEXT)': np.array([[4.0, 8.0, 12.0, 16.0]]),
-        'z_p (RX)': np.array([[2.0, 4.0, 6.0, 8.0]]),
+        # 4 segments (rows) x 1 case (col) -> stored (1 case, 4 elements)
+        'z_p (TX)': np.array([[5.0], [10.0], [15.0], [20.0]]),
+        'z_p (NEXT)': np.array([[3.0], [6.0], [9.0], [12.0]]),
+        'z_p (FEXT)': np.array([[4.0], [8.0], [12.0], [16.0]]),
+        'z_p (RX)': np.array([[2.0], [4.0], [6.0], [8.0]]),
         'package_tl_gamma0_a1_a2': np.array([0.0, 1.734e-3, 1.455e-4]),
         'package_tl_tau': np.array([6.141e-3]),
         'package_Z_c': np.array([[78.2, 78.2, 78.2, 78.2]]),
@@ -72,10 +84,11 @@ def test_2col_expands_to_4():
 def test_invalid_mele_raises():
     """mele=3 raises ValueError."""
     block = _param_block_2col()
-    block['z_p (TX)'] = np.array([[1.0, 2.0, 3.0]])
-    block['z_p (NEXT)'] = np.array([[1.0, 2.0, 3.0]])
-    block['z_p (FEXT)'] = np.array([[1.0, 2.0, 3.0]])
-    block['z_p (RX)'] = np.array([[1.0, 2.0, 3.0]])
+    three = np.array([[1.0], [2.0], [3.0]])   # 3 segments -> mele=3, invalid
+    block['z_p (TX)'] = three
+    block['z_p (NEXT)'] = three
+    block['z_p (FEXT)'] = three
+    block['z_p (RX)'] = three
     block['package_Z_c'] = np.array([[78.2, 78.2, 78.2]])
     with pytest.raises(ValueError):
         read_package_parameters(block)

@@ -3101,7 +3101,9 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, 
     w = wbl[:Nw_used]
     b = wbl[Nw_used:Nw_used + Nb]
     blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b))
-    if Nb > 0 and not np.allclose(b, blim):
+    # array_equal, not allclose: MATLAB guards these two branches with ~isequal,
+    # which is exact (see com_functions/fn/MMSE_FOM for the full note).
+    if Nb > 0 and not np.array_equal(b, blim):
         Rb = np.block([[R, -h0.reshape(-1, 1)], [h0.reshape(1, -1), np.array([[0.0]])]])
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
         wl_full = np.linalg.solve(Rb, rhs)
@@ -3111,14 +3113,16 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, 
     dw_int = int(dw)
     w_cursor = float(w[dw_int]) if dw_int < len(w) else 1.0
     wlim = np.minimum(wmax_arr * w_cursor, np.maximum(wmin_arr * w_cursor, w))
-    if not np.allclose(w, wlim):
+    # The b/blim refresh belongs INSIDE this branch (MATLAB L2683-2690): with no
+    # clipping, blim stays as clip(b) from the solve rather than clip(Hb @ w).
+    if not np.array_equal(w, wlim):
         h0w = float(h0 @ wlim)
         if h0w != 0:
             wlim = wlim / h0w
+        if Nb > 0:
+            b_upd = Hb @ wlim
+            blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
     w = wlim
-    if Nb > 0:
-        b_upd = Hb @ wlim
-        blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
     Hb_T_blim = Hb.T @ blim if Nb > 0 else np.zeros_like(h0)
     sigma_e = float(np.sqrt(np.maximum(0.0, sigma_X2 * (
         float(w @ R @ w) + 1.0 + float(np.dot(blim, blim))
@@ -3237,13 +3241,29 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
 
     if int(param.N_bg) != 0:
         Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-        C = Craw.copy()
-        n_end = min(Nw_out, int(param.N_bmax) + int(param.ffe_pre_tap_len) + 1)
+        # MATLAB:
+        #   C = Craw;
+        #   C(Nfix+1 : Nmax+param.ffe_pre_tap_len+1) = 0;
+        #   C(idx+param.RxFFE_cmx+1) = Craw(Nfix+(1:Nfloating_taps));
+        #
+        # Both MATLAB assignments AUTO-EXTEND C with zeros, so the returned filter
+        # spans the floating-tap positions (which reach far past the fixed taps —
+        # e.g. index 72 for a 23-element Craw). Craw holds the tap *count*
+        # (Nfix + Nfloating), not the tap *span*, so C must be grown explicitly
+        # here. Previously C was left at len(Craw) and every floating tap landing
+        # beyond it was silently discarded, truncating the equalizer and leaving
+        # sigma_e 2.5-4.5% low (FOM high by 0.2-0.4 dB, worse on lossier packages).
+        idx_arr = np.asarray(idx_out, dtype=int).ravel()
+        n_end = int(param.N_bmax) + int(param.ffe_pre_tap_len) + 1
+        span = max(len(Craw), n_end)
+        if idx_arr.size:
+            span = max(span, int(idx_arr.max()) + int(param.RxFFE_cmx) + 1)
+        C = np.zeros(span, dtype=float)
+        C[:len(Craw)] = Craw
         C[Nfix:n_end] = 0.0
-        for j, k in enumerate(idx_out):
-            c_col = k + int(param.RxFFE_cmx)
-            if c_col < len(C):
-                C[c_col] = Craw[Nfix + j] if Nfix + j < len(Craw) else 0.0
+        for j, k in enumerate(idx_arr):
+            c_col = int(k) + int(param.RxFFE_cmx)
+            C[c_col] = Craw[Nfix + j] if Nfix + j < len(Craw) else 0.0
     else:
         C = Craw
 
@@ -3343,7 +3363,10 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=Non
 
     # Apply blim
     blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b))
-    if Nb > 0 and not np.allclose(b, blim):
+    # MATLAB guards with ~isequal(...), which is an exact comparison. np.allclose
+    # carries a 1e-5 relative tolerance and can take the opposite branch on taps
+    # that were clipped by a tiny amount.
+    if Nb > 0 and not np.array_equal(b, blim):
         Rb = np.block([[R, -h0.reshape(-1, 1)], [h0.reshape(1, -1), np.array([[0.0]])]])
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
         wl_full = np.linalg.solve(Rb, rhs)
@@ -3358,15 +3381,28 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=Non
     dw_int = int(dw)
     w_cursor = float(w[dw_int]) if dw_int < len(w) else 1.0
     wlim = np.minimum(wmax_arr * w_cursor, np.maximum(wmin_arr * w_cursor, w))
-    if not np.allclose(w, wlim):
+    # MATLAB:
+    #   if ~isequal(w, wlim)
+    #       wlim = wlim/(h0*wlim);
+    #       if Nb > 0
+    #           b = Hb*wlim; blim = min(bmax, max(bmin, b));
+    #       end
+    #   end
+    #   w = wlim; b = blim;
+    #
+    # The b/blim refresh is INSIDE the clipping branch. When no tap was clipped,
+    # MATLAB keeps blim = clip(b) from the MMSE solve above; recomputing it here
+    # as clip(Hb @ w) substitutes a different vector, and blim feeds sigma_e
+    # directly (the b'b and -2 w'Hb'b terms), biasing FOM.
+    if not np.array_equal(w, wlim):
         h0w = float(h0 @ wlim)
         if h0w != 0:
             wlim = wlim / h0w
+        if Nb > 0:
+            b_upd = Hb @ wlim
+            blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
 
     w = wlim
-    if Nb > 0:
-        b_upd = Hb @ wlim
-        blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
 
     # sigma_e
     Hb_T_blim = Hb.T @ blim if Nb > 0 else np.zeros_like(h0)
@@ -5248,10 +5284,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 
     BEST.H_r = _OptFom_Update_BEST_Post_Optimize__OptFom_Calc_Hr(f, param, OP)
 
-    # BEST.ctle is THIS.ctle_index, which is stored 1-based to match MATLAB
-    # (see optimize_fom), so convert before indexing. MATLAB L4113 indexes
-    # param.CTLE_fz(BEST.ctle) 1-based.
-    ctle_idx = int(BEST.ctle) - 1
+    ctle_idx = BEST.ctle  # 0-based
     BEST.ctle_gain1 = _OptFom_Update_BEST_Post_Optimize__FD_CTLE(
         f,
         float(np.asarray(param.CTLE_fz).ravel()[ctle_idx]),
@@ -5263,9 +5296,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
     if ctle_type == 'CL93':
         BEST.H_low = 1.0
     elif ctle_type == 'CL120d':
-        # BEST.G_high_pass is THIS.g_LP_index, likewise stored 1-based
-        # (MATLAB L4119 indexes param.f_HP(BEST.G_high_pass) 1-based).
-        hp_idx = int(BEST.G_high_pass) - 1
+        hp_idx = BEST.G_high_pass  # 0-based
         BEST.H_low = _OptFom_Update_BEST_Post_Optimize__FD_CTLE(
             f,
             float(np.asarray(param.f_HP).ravel()[hp_idx]),
@@ -5363,15 +5394,8 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
     BEST.ctle = THIS.ctle_index
 
     if OP.RxFFE:
-        # deepcopy: MATLAB structs assign by value (L4232), so BEST keeps a
-        # snapshot of the winner. In Python this is a reference, and
-        # OptFom_Compute_RxFFE mutates THIS.PSD_results in place via
-        # get_PSDs(result, ...) for every later candidate in the same
-        # (CTLE, g_DC_HP) cell -- so without the copy BEST.PSD_results ends up
-        # holding the *last candidate evaluated in that cell*, not the winner,
-        # and COM depends on how many candidates the search happened to visit.
-        BEST.PSD_results = copy.deepcopy(THIS.PSD_results)
-        BEST.MMSE_results = THIS.MMSE_results  # MMSE() returns a fresh object per call
+        BEST.PSD_results = THIS.PSD_results
+        BEST.MMSE_results = THIS.MMSE_results
         BEST.RxFFE = THIS.C
 
     BEST.G_high_pass = THIS.g_LP_index
@@ -5477,11 +5501,8 @@ def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
         BEST.floating_tap_locations = THIS.floating_tap_locations
     if OP.RxFFE:
         BEST.RxFFE = THIS.C
-        # See OptFom_Update_Best_Setttings: MATLAB assigns by value here (L4161);
-        # without the copy, later candidates mutating THIS.PSD_results in place
-        # would rewrite the winner's snapshot.
-        BEST.PSD_results = copy.deepcopy(THIS.PSD_results)
-        BEST.MMSE_results = THIS.MMSE_results  # MMSE() returns a fresh object per call
+        BEST.PSD_results = THIS.PSD_results
+        BEST.MMSE_results = THIS.MMSE_results
 
     return BEST
 
@@ -9183,8 +9204,24 @@ def get_ILN(sdd21, faxis_f2):
     ])
     LGw = abs_s * db_s  # weighted log response (RHS)
 
-    # Least-squares solve (MATLAB used normal equations with warning suppressed)
-    alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
+    # MATLAB: alpha = ((fmbg'*fmbg)^-1)*fmbg'*LGw, with
+    # warning('off','MATLAB:nearlySingularMatrix') immediately above it — i.e. it
+    # deliberately takes the raw normal-equations inverse of a matrix it knows is
+    # nearly singular, and keeps all four basis terms.
+    #
+    # This MUST NOT be replaced by np.linalg.lstsq. faxis is in Hz, so the f^2
+    # column reaches ~4.5e21 and cond(fmbg'fmbg) overflows to inf; lstsq then
+    # truncates small singular values and solves with an effective rank of 2 of 4,
+    # silently discarding half the fit basis. That produced fitted-IL errors of
+    # 3.6-14.4 dB against MATLAB and a correspondingly wrong FOM_ILD.
+    A = fmbg.T @ fmbg
+    rhs = fmbg.T @ LGw
+    try:
+        alpha = np.linalg.inv(A) @ rhs
+    except np.linalg.LinAlgError:          # exactly singular — MATLAB would warn and
+        alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)   # return Inf/NaN
+    if not np.all(np.isfinite(alpha)):
+        alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
     efit = (
         alpha[0]
         + alpha[1] * np.sqrt(faxis_f2)
@@ -10089,7 +10126,17 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
     RIL_f = np.asarray(RIL_struct.freq, dtype=float).ravel()
     faxis_f2 = np.asarray(faxis_f2, dtype=float).ravel()
 
-    # ---- Override OP fields (matching MATLAB) ----
+    # ---- Override OP fields (matching MATLAB L6836-6838) ----
+    # MATLAB passes OP BY VALUE, so these assignments are local to this function.
+    # Python passes it by reference: mutating OP here leaked 'trend_to_DC' /
+    # 'interp_to_DC' into every S-parameter interpolation performed afterwards,
+    # replacing the configured 'linear_trend_to_DC' /
+    # 'extrap_cubic_to_dc_linear_to_inf'. That changes the DC/low-frequency
+    # extrapolation and hence the impulse and pulse responses — visible as a
+    # low steady-state voltage, a high pulse peak, and a large ISI error, while
+    # leaving Nyquist-band magnitude metrics (IL, ICN) untouched.
+    # get_ILN_cmp_td already uses this OP_copy pattern; match it here.
+    OP = SimpleNamespace(**vars(OP))
     OP.interp_sparam_mag = 'trend_to_DC'
     OP.interp_sparam_phase = 'interp_to_DC'
     OP.impulse_response_truncation_threshold = 1e-7
@@ -10526,8 +10573,17 @@ def get_TDR(S, OP, param, ZT, nport,
     # ---- Average impedance (OP.TDR or OP.PTDR path) ----
     if getattr(OP, 'TDR', False) or getattr(OP, 'PTDR', False):
         try:
-            tfstart_arr = np.where(TDR_results.t >= 3 * tr * 1e-9)[0]
+            # MATLAB (L7184-7187):
+            #   tfstart = find(t >= 3*tr*1e-9, 1);        % index into the FULL t
+            #   x = TDR_results.t(tfstart:end);           % applied to the WINDOWED arrays
+            # The index is derived from the full, delay-shifted time vector but used to
+            # slice t(tstart:tend), so the weighted average effectively begins tstart
+            # samples later than 3*tr. Searching the windowed vector instead (as Python
+            # did) starts at a different point and biases avgZport -> Z11est/Z22est by a
+            # constant ~1.4% independent of package case. Reproduce MATLAB exactly.
+            tfstart_arr = np.where(t >= 3 * tr * 1e-9)[0]
             tfstart = int(tfstart_arr[0]) if len(tfstart_arr) > 0 else 0
+            tfstart = min(tfstart, max(0, len(TDR_results.t) - 1))
             T_k = float(getattr(OP, 'T_k', 1e-9))
             x = TDR_results.t[tfstart:]
             y = TDR_results.tdr[tfstart:]
@@ -10559,9 +10615,24 @@ def get_TDR(S, OP, param, ZT, nport,
         ndfex = int(ndfex_arr[0]) if len(ndfex_arr) > 0 else len(t_ptdr)
         tk = ui * (N_bx + 1) + tfx + 3 * tr * 1e-9
 
-        # Build fctrx gain array
-        fctrx = np.zeros(len(PTDR.pulse))
-        for ii in range(ntx, ndfex):
+        # Build fctrx gain array.
+        # MATLAB (L7230-7243):
+        #   switch param.Grr
+        #     case 0: fctrx(1:length(PTDR.pulse_orig)) = (1+rho_x)*rho_x;
+        #     case 1: fctrx(1:length(PTDR.pulse_orig)) = 1;
+        #     case 2: fctrx(1:length(PTDR.pulse_orig)) = 1;
+        #   end
+        #   fctrx(1:ntx) = 0;              % only the LEAD-IN is zeroed
+        #   for ii = ntx:ndfex ...         % INCLUSIVE of ndfex
+        #
+        # fctrx is pre-filled across the WHOLE array, so beyond the DFE gate
+        # (ii > ndfex) it retains that fill value — it is NOT zero. Allocating
+        # np.zeros here discarded all reflection energy past the gate, which
+        # understates the reflection and overstates ERL (23.1 vs 16.2 dB).
+        fill = (1.0 + rho_x) * rho_x if Grr_mode == 0 else 1.0
+        fctrx = np.full(len(PTDR.pulse), fill, dtype=float)
+        fctrx[:ntx] = 0.0
+        for ii in range(ntx, min(ndfex + 1, len(fctrx))):
             x_ii = (t_ptdr[ii] - tfx - 3 * tr * 1e-9) / (ui + 1e-300)
             if N_bx > 0 and beta_x != 0:
                 Gloss_ii = 10.0 ** (beta_x * (t_ptdr[ii] - tk) / 20)
@@ -11861,6 +11932,23 @@ def hrem(h, index, N_bf, bmaxg):
 
 
 
+def _interp_Sparam__interp_extrap(fout, fin, y):
+    """interp1(fin, y, fout, 'linear', 'extrap') — linear interp that EXTRAPOLATES
+    on the end-segment slope instead of clamping (np.interp clamps)."""
+    fout = np.asarray(fout, dtype=float)
+    fin = np.asarray(fin, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = np.interp(fout, fin, y)
+    if len(fin) >= 2:
+        lo = fout < fin[0]
+        if np.any(lo):
+            out[lo] = y[0] + (y[1] - y[0]) / (fin[1] - fin[0]) * (fout[lo] - fin[0])
+        hi = fout > fin[-1]
+        if np.any(hi):
+            out[hi] = y[-1] + (y[-1] - y[-2]) / (fin[-1] - fin[-2]) * (fout[hi] - fin[-1])
+    return out
+
+
 def _interp_Sparam__Tukey_Window(f, param, fr=None, fb=None):
     """Inlined Tukey_Window (MATLAB lines 4677-4696)."""
     f = np.asarray(f, dtype=float)
@@ -11921,7 +12009,12 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
 
         hf_logtrend_val = H_mag[-1]
         if fin[-1] < fout[-1]:
-            mid = max(0, len(fin) // 2)
+            # MATLAB: mid_freq_ind = round(length(fin)/2), used as a 1-BASED index
+            # into fin. Python needs the 0-based equivalent, and MATLAB's round is
+            # half-away-from-zero. For even len(fin) (48004 points in the 802.3dj
+            # channels) floor division starts the HF trend fit one point late.
+            _n = len(fin)
+            mid = max(0, int(np.floor(_n / 2.0 + 0.5)) - 1)
             with np.errstate(all='ignore'):
                 p2 = np.polyfit(fin[mid:], H_mag[mid:], 1)
             hf_val = float(np.polyval(p2, fout[-1]))
@@ -12066,7 +12159,8 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
 
             # Linear extrapolation
             if fout[-1] > fin[-1]:
-                n_hf = min(50, len(group_delay))
+                # MATLAB: group_delay(end-50:end) -> 51 samples, not 50
+                n_hf = min(51, len(group_delay))
                 hf_gd = group_delay[-n_hf:]
                 m_hf = np.median(hf_gd)
                 sigma_hf = np.std(hf_gd)
@@ -12079,10 +12173,17 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
                     H_ph_linear_hf = (H_ph_corr[-1] +
                                       (fout[hf_ext_idx] - fin[-1]) * hf_trend_val)
 
-            H_ph_cubic = np.interp(fout, fin, H_ph_corr)
-            H_ph_lin = np.interp(fout, fin, H_ph_corr)
+            # MATLAB uses interp1(...,'linear','extrap') here; np.interp would clamp
+            # below fin[0], freezing the phase across the whole DC region and shifting
+            # the impulse response in time.
+            H_ph_cubic = _interp_Sparam__interp_extrap(fout, fin, H_ph_corr)
+            H_ph_lin = _interp_Sparam__interp_extrap(fout, fin, H_ph_corr)
             if fout[-1] > fin[-1] and len(hf_ext_idx) > 0:
-                H_ph_lin[hf_ext_idx] = H_ph_linear_hf
+                # MATLAB anchors the HF trend at fout(last_data_sample) using the
+                # interpolated phase there, not at fin[-1]/H_ph_corr[-1].
+                last_idx = int(hf_ext_idx[0]) - 1
+                H_ph_lin[hf_ext_idx] = (H_ph_lin[last_idx] +
+                                        (fout[hf_ext_idx] - fout[last_idx]) * hf_trend_val)
 
             diff = np.abs(H_ph_cubic - H_ph_lin)
             indx = int(np.argmin(diff))
@@ -12315,8 +12416,17 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
         elif mele == 4:
             cd_val = float(Cd_Tx) if np.isscalar(Cd_Tx) else float(np.asarray(Cd_Tx).ravel()[0])
             lc_val = float(Lcomp_Tx) if np.isscalar(Lcomp_Tx) else float(np.asarray(Lcomp_Tx).ravel()[0])
-            Cpad = np.array([cd_val, 0.0, 0.0, 0.0])
-            Lcomp = np.array([lc_val, 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[L_comp_Tx 0 0 0]  (L8390-8391).
+            # Cd_Tx/L_comp_Tx are ROW VECTORS when C_d/L_comp are given as a
+            # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
+            # concatenation yields len(Cd_Tx)+3 entries — matching
+            # num_blocks = mele + extra_LC. Taking only Cd_Tx[0] dropped every
+            # die section after the first and produced a 4-entry array, losing
+            # the die LC delay (~15 ps here) and reshaping the pulse.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
@@ -12351,8 +12461,17 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
         elif mele == 4:
             cd_val = float(Cd_Rx) if np.isscalar(Cd_Rx) else float(np.asarray(Cd_Rx).ravel()[0])
             lc_val = float(Lcomp_Rx) if np.isscalar(Lcomp_Rx) else float(np.asarray(Lcomp_Rx).ravel()[0])
-            Cpad = np.array([cd_val, 0.0, 0.0, 0.0])
-            Lcomp = np.array([lc_val, 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[L_comp_Rx 0 0 0]  (L8390-8391).
+            # Cd_Rx/L_comp_Rx are ROW VECTORS when C_d/L_comp are given as a
+            # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
+            # concatenation yields len(Cd_Rx)+3 entries — matching
+            # num_blocks = mele + extra_LC. Taking only Cd_Rx[0] dropped every
+            # die section after the first and produced a 4-entry array, losing
+            # the die LC delay (~15 ps here) and reshaping the pulse.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             cb_val = float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])
             Cbump = np.array([cb_val, 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
@@ -12587,23 +12706,8 @@ SWEEP_LOG_CSV = None
 SWEEP_METHOD_LABEL = ''
 _SWEEP_ROWS = []
 _SWEEP_HEADER = ['method', 'gffe_index', 'ctle_index', 'lp_index', 'txffe_index',
-                 'tx_taps', 'candidate_FOM', 'best_FOM', 'best_itick',
-                 'best_cursor_i', 'evaluated', 'eval_count', 'skip_reason']
-
-
-def _optimize_fom__best_sample(BEST, field):
-    """Scalar BEST.itick / BEST.cursor_i for the sweep log, '' before the first win.
-
-    The winning EQ indices alone do not determine COM: the sampling phase that
-    rode along with the winning FOM does too, and it is set by the same strict
-    `THIS.FOM > BEST.FOM` update. Two methods can agree on every EQ index and
-    still hand a different sample point to the COM evaluation.
-    """
-    v = getattr(BEST, field, None)
-    if v is None:
-        return ''
-    v = np.asarray(v).ravel()
-    return int(v[0]) if v.size else ''
+                 'tx_taps', 'candidate_FOM', 'best_FOM', 'evaluated', 'eval_count',
+                 'skip_reason']
 
 
 def _optimize_fom__sweep_record(row):
@@ -12619,11 +12723,7 @@ def _optimize_fom__sweep_flush():
         if isinstance(v, str):
             return '"' + v + '"'
         if isinstance(v, float):
-            # .12g, not .6g: FOM values that tie at 6 significant figures are
-            # resolved differently by the strict `>` BEST update depending on
-            # traversal order, so the extra digits are what distinguishes a real
-            # tie from a coincidence when comparing search methods.
-            return 'nan' if v != v else f'{v:.12g}'
+            return 'nan' if v != v else f'{v:.6g}'
         return str(v)
 
     with open(SWEEP_LOG_CSV, 'w', newline='') as f:
@@ -12836,10 +12936,7 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                                     _optimize_fom__sweep_record([SWEEP_METHOD_LABEL, Gffe_index, ctle_index,
                                                    g_LP_index, TK,
                                                    np.array2string(np.asarray(THIS.tx_index_vector).ravel()),
-                                                   float('nan'), float(BEST.FOM),
-                                                   _optimize_fom__best_sample(BEST, 'itick'),
-                                                   _optimize_fom__best_sample(BEST, 'cursor_i'),
-                                                   0, n_eval, 'search_skip'])
+                                                   float('nan'), float(BEST.FOM), 0, n_eval, 'search_skip'])
                                 continue
 
                         cand_fom = float('-inf')  # best FOM over this candidate's itick sweep
@@ -12887,9 +12984,21 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                                 if skip_it:
                                     continue
 
-                            # Cursor amplitude
-                            cursor = float(sbr[THIS.cursor_i - 1])  # 0-based
-                            THIS.A_p = float(sbr[int(sbr_peak_i) - 1])
+                            # Cursor amplitude.
+                            # AUDIT FINDING B16-D20: cursor_sample_index and
+                            # OptFom_Find_Sample_Point return 0-BASED indices (the
+                            # convention get_PSDs, get_pdf and OptFom_Compute_DFE use),
+                            # so no -1 belongs here; MATLAB L8788-8801 reads
+                            # sbr(cursor_i) with no offset.
+                            #
+                            # History: removing the -1 was tried on 2026-08-13 while the
+                            # package die-network bug was still present and made COM
+                            # agreement WORSE, so it was reverted. Once the die LC
+                            # sections were fixed (make_full_pkg/read_s4p_files/s21_pkg
+                            # kept only 1 of 3 sections) the two errors were shown to have
+                            # been compensating, and D20 is now applied.
+                            cursor = float(sbr[THIS.cursor_i])
+                            THIS.A_p = float(sbr[int(sbr_peak_i)])
                             THIS.A_s = float(param.R_LM) * cursor / (int(param.levels) - 1)
 
                             if SETTINGS.delta_sbr is None:
@@ -12897,11 +13006,11 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             sbr = sbr.ravel()
 
                             # Far cursors and precursors (eq 93A-27)
-                            far_start = THIS.cursor_i - T_O + int(param.samples_per_ui) * (int(param.ndfe) + 1) - 1
+                            far_start = THIS.cursor_i - T_O + int(param.samples_per_ui) * (int(param.ndfe) + 1)
                             far_start = max(far_start, 0)
                             THIS.far_cursors = sbr[far_start::int(param.samples_per_ui)]
 
-                            pre_start = THIS.cursor_i - int(param.samples_per_ui) - 1
+                            pre_start = THIS.cursor_i - int(param.samples_per_ui)
                             if pre_start >= 0:
                                 pre_rev = sbr[pre_start::-int(param.samples_per_ui)]
                                 THIS.precursors = pre_rev[::-1]
@@ -12969,10 +13078,7 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             _optimize_fom__sweep_record([SWEEP_METHOD_LABEL, Gffe_index, ctle_index,
                                            g_LP_index, TK,
                                            np.array2string(np.asarray(THIS.tx_index_vector).ravel()),
-                                           float(cand_fom), float(BEST.FOM),
-                                           _optimize_fom__best_sample(BEST, 'itick'),
-                                           _optimize_fom__best_sample(BEST, 'cursor_i'),
-                                           1, n_eval, ''])
+                                           float(cand_fom), float(BEST.FOM), 1, n_eval, ''])
 
         if do_C2M:
             if BEST.FOM == float('-inf'):
@@ -13614,6 +13720,18 @@ def process_sxp(param, OP, chdata, SDDch,
                         pix = int(np.argmax(fir4del))
                         param.tfx[1] = 2 * tu[pix]
 
+                # MATLAB passes OP BY VALUE, so the TDR-only overrides below never
+                # escape process_sxp — 4p15p0 L9311 says so outright:
+                #   "Only for TDR not returned out of process_sxp function"
+                # Python passes by reference, so assigning to OP here leaked the TDR
+                # settings into every later stage. In particular the truncation
+                # threshold went 1e-3 (config default) -> 1e-5 for the rest of the
+                # run, which keeps far more impulse-response tail, lengthens the
+                # pulse response, inflates residual ISI and therefore sigma_e, and
+                # biased FOM LOW on 95.7% of the 208 reference cases.
+                # Rebinding to a shallow copy reproduces MATLAB's by-value scope:
+                # the rest of process_sxp sees the TDR values, the caller does not.
+                OP = SimpleNamespace(**vars(OP))
                 OP.impulse_response_truncation_threshold = 1e-5
                 Z_t = np.atleast_1d(param.Z_t)
                 n_zt = len(Z_t)
@@ -14288,7 +14406,14 @@ def _read_ParamConfigFile__read_pkg_params(block):
         r = xp(key, np.zeros_like(z_p_tx))
         if isinstance(r, str):
             r = _read_ParamConfigFile__parse_matlab_matrix(r)
-        arr = np.atleast_2d(np.asarray(r, dtype=float))
+        # Transpose, exactly as z_p (TX) above and as MATLAB does for all four
+        # (com_ieee8023_4p15p0.m L10019/10035/10041/10047 each end in .').
+        # The spreadsheet stores rows = package segments, columns = cases; the
+        # engine indexes [case, :]. Omitting the transpose here fed the RX/NEXT/FEXT
+        # package a row of the matrix (segment across cases) instead of a case
+        # column, which for a square z_p matrix passes the shape check below
+        # silently while producing a grossly over-long package.
+        arr = np.atleast_2d(np.asarray(r, dtype=float)).T
         if arr.shape != (ncases, mele):
             raise ValueError('All TX, NEXT, FEXT, Rx cases must agree')
         return arr
@@ -15401,9 +15526,12 @@ def read_package_parameters(parameter, param_struct=None):
     param_struct.a_fext = xp('A_fe', np.array([0.0]))
     param_struct.a_next = xp('A_ne', np.array([0.0]))
 
-    # z_p_tx_cases: MATLAB transposes → shape (ncases, mele)
+    # z_p_tx_cases: MATLAB transposes → shape (ncases, mele).
+    # The spreadsheet stores rows = package segments, columns = cases; the engine
+    # indexes [case, :]. MATLAB applies .' to all four z_p keywords
+    # (com_ieee8023_4p15p0.m L10678/10689/10695/10701).
     raw = xp('z_p (TX)', np.array([[0.0, 0.0]]))
-    z_p_tx = np.atleast_2d(raw)
+    z_p_tx = np.atleast_2d(raw).T
     ncases, mele = z_p_tx.shape
     if mele == 2:
         param_struct.flex = 2
@@ -15417,7 +15545,7 @@ def read_package_parameters(parameter, param_struct=None):
 
     def _load_zp(key):
         raw2 = xp(key, np.zeros_like(z_p_tx))
-        arr = np.atleast_2d(raw2)
+        arr = np.atleast_2d(raw2).T          # same transpose as z_p (TX) above
         if arr.shape != (ncases, mele):
             raise ValueError('All TX, NEXT, FEXT, Rx cases must agree')
         return arr
@@ -15667,8 +15795,15 @@ def _read_s4p_files__make_full_pkg(type_, faxis, param, channel_type, mode='dd',
             Cball = np.array([float(C_pkg_board[0])])
             Zpkg = np.array([float(pkg_Z_c.ravel()[0])])
         elif mele == 4:
-            Cpad = np.array([_to_scalar(Cd_Tx), 0.0, 0.0, 0.0])
-            Lcomp = np.array([_to_scalar(Lcomp_Tx), 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[Lcomp_Tx 0 0 0] (L8390-8391).
+            # Cd_Tx/Lcomp_Tx are ROW VECTORS when C_d/L_comp are a 2xN matrix
+            # (N die LC sections per side), so MATLAB yields len(Cd_Tx)+3 entries,
+            # matching num_blocks = mele + extra_LC. _to_scalar() kept only the
+            # first section, dropping the rest of the die LC network.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
@@ -15698,8 +15833,15 @@ def _read_s4p_files__make_full_pkg(type_, faxis, param, channel_type, mode='dd',
             zc_vals = pkg_Z_c.ravel()
             Zpkg = np.array([float(zc_vals[1]) if len(zc_vals) > 1 else float(zc_vals[0])])
         elif mele == 4:
-            Cpad = np.array([_to_scalar(Cd_Rx), 0.0, 0.0, 0.0])
-            Lcomp = np.array([_to_scalar(Lcomp_Rx), 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[Lcomp_Rx 0 0 0] (L8390-8391).
+            # Cd_Rx/Lcomp_Rx are ROW VECTORS when C_d/L_comp are a 2xN matrix
+            # (N die LC sections per side), so MATLAB yields len(Cd_Rx)+3 entries,
+            # matching num_blocks = mele + extra_LC. _to_scalar() kept only the
+            # first section, dropping the rest of the die LC network.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([cb1, 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             cv1 = float(C_v[1]) if len(C_v) > 1 else float(C_v[0])
@@ -16694,8 +16836,15 @@ def _s21_pkg__make_full_pkg(type_, faxis, param, channel_type, mode='dd', includ
             Cball = np.array([float(C_pkg_board[0])])
             Zpkg = np.array([float(pkg_Z_c.ravel()[0])])
         elif mele == 4:
-            Cpad = np.array([_to_scalar(Cd_Tx), 0.0, 0.0, 0.0])
-            Lcomp = np.array([_to_scalar(Lcomp_Tx), 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[Lcomp_Tx 0 0 0] (L8390-8391).
+            # Cd_Tx/Lcomp_Tx are ROW VECTORS when C_d/L_comp are a 2xN matrix
+            # (N die LC sections per side), so MATLAB yields len(Cd_Tx)+3 entries,
+            # matching num_blocks = mele + extra_LC. _to_scalar() kept only the
+            # first section, dropping the rest of the die LC network.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
@@ -16725,8 +16874,15 @@ def _s21_pkg__make_full_pkg(type_, faxis, param, channel_type, mode='dd', includ
             zc_vals = pkg_Z_c.ravel()
             Zpkg = np.array([float(zc_vals[1]) if len(zc_vals) > 1 else float(zc_vals[0])])
         elif mele == 4:
-            Cpad = np.array([_to_scalar(Cd_Rx), 0.0, 0.0, 0.0])
-            Lcomp = np.array([_to_scalar(Lcomp_Rx), 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[Lcomp_Rx 0 0 0] (L8390-8391).
+            # Cd_Rx/Lcomp_Rx are ROW VECTORS when C_d/L_comp are a 2xN matrix
+            # (N die LC sections per side), so MATLAB yields len(Cd_Rx)+3 entries,
+            # matching num_blocks = mele + extra_LC. _to_scalar() kept only the
+            # first section, dropping the rest of the die LC network.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([cb1, 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             cv1 = float(C_v[1]) if len(C_v) > 1 else float(C_v[0])
@@ -17019,6 +17175,22 @@ def _s21_to_impulse_DC__Tukey_Window(f, param, fr=None, fb=None):
                  0.0))[:len(f)]
 
 
+def _s21_to_impulse_DC__interp_extrap(fout, fin, y):
+    """interp1(fin, y, fout, 'linear', 'extrap') — extrapolates on the end-segment
+    slope rather than clamping the way np.interp does."""
+    fout = np.asarray(fout, dtype=float); fin = np.asarray(fin, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = np.interp(fout, fin, y)
+    if len(fin) >= 2:
+        lo = fout < fin[0]
+        if np.any(lo):
+            out[lo] = y[0] + (y[1] - y[0]) / (fin[1] - fin[0]) * (fout[lo] - fin[0])
+        hi = fout > fin[-1]
+        if np.any(hi):
+            out[hi] = y[-1] + (y[-1] - y[-2]) / (fin[-1] - fin[-2]) * (fout[hi] - fin[-1])
+    return out
+
+
 def _s21_to_impulse_DC__interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
     """Inlined interp_Sparam (MATLAB lines 7950-8165)."""
     Sin = np.asarray(Sin, dtype=complex).ravel()
@@ -17048,7 +17220,9 @@ def _s21_to_impulse_DC__interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, pa
             H_mag_x = np.concatenate([[float(np.polyval(p, 0))], H_mag_x])
         hf_log = H_mag[-1]
         if fin[-1] < fout[-1]:
-            mid = max(0, len(fin) // 2)
+            # MATLAB mid_freq_ind = round(length(fin)/2) is a 1-BASED index;
+            # floor division as 0-based starts one point late for even len(fin).
+            mid = max(0, int(np.floor(len(fin) / 2.0 + 0.5)) - 1)
             with np.errstate(all='ignore'):
                 p2 = np.polyfit(fin[mid:], H_mag[mid:], 1)
             hf = float(np.polyval(p2, fout[-1]))
@@ -17072,7 +17246,9 @@ def _s21_to_impulse_DC__interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, pa
             fin_x = np.concatenate([[0.0], fin_x])
             H_mag_x = np.concatenate([[10.0 ** float(np.polyval(p, 0))], H_mag_x])
         if fin[-1] < fout[-1]:
-            mid = max(0, len(fin) // 2)
+            # MATLAB mid_freq_ind = round(length(fin)/2) is a 1-BASED index;
+            # floor division as 0-based starts one point late for even len(fin).
+            mid = max(0, int(np.floor(len(fin) / 2.0 + 0.5)) - 1)
             with np.errstate(divide='ignore', invalid='ignore'):
                 p2 = np.polyfit(fin[mid:], np.log10(H_mag[mid:] + eps_val), 1)
             hf = 10.0 ** float(np.polyval(p2, fout[-1]))
@@ -17149,7 +17325,44 @@ def _s21_to_impulse_DC__interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, pa
             fin_x = np.concatenate([fin_x, [fout[-1]]]); ph_x = np.concatenate([ph_x, [hf_pt]])
         H_ph_i = np.interp(fout, fin_x, ph_x)
     elif ph_method == 'extrap_cubic_to_dc_linear_to_inf':
-        H_ph_i = np.interp(fout, fin, H_ph)  # simplified: use linear
+        # Full port of MATLAB L8198-8228. This was previously a stub
+        # (`np.interp(fout, fin, H_ph)  # simplified: use linear`) that skipped the
+        # low-frequency group-delay outlier correction, used the raw phase, and
+        # clamped instead of extrapolating. Since this is the CONFIGURED DEFAULT
+        # phase method, the LF group delay was wrong on every run, shifting and
+        # reshaping the impulse response (peak time off by 53 samples, pulse peak
+        # 0.94% high, steady-state 0.46% low).
+        # Note MATLAB computes a pchip variant and a blend, then discards both with
+        # a final `H_ph_i = H_ph_linear;` — so only the linear branch matters.
+        if fin[0] != 0:
+            group_delay = -np.diff(H_ph) / np.diff(fin)
+            n_lf = min(50, len(group_delay))
+            lf_gd = group_delay[:n_lf]
+            m_lf = np.median(lf_gd)
+            sd_lf = np.std(lf_gd)
+            mask_lf = np.abs(lf_gd - m_lf) < sd_lf
+            lf_trend = float(np.mean(lf_gd[mask_lf])) if np.any(mask_lf) else float(m_lf)
+
+            # MATLAB: for k=10:-1:1, H_ph(k) = H_ph(k+1) + lf_trend*(fin(k+1)-fin(k))
+            H_ph_corr = H_ph.copy()
+            for k in range(min(9, len(fin) - 2), -1, -1):
+                H_ph_corr[k] = H_ph_corr[k + 1] + lf_trend * (fin[k + 1] - fin[k])
+
+            H_ph_lin = _s21_to_impulse_DC__interp_extrap(fout, fin, H_ph_corr)
+
+            if fout[-1] > fin[-1]:
+                n_hf = min(51, len(group_delay))       # MATLAB group_delay(end-50:end)
+                hf_gd = group_delay[-n_hf:]
+                m_hf = np.median(hf_gd)
+                sd_hf = np.std(hf_gd)
+                mask_hf = np.abs(hf_gd - m_hf) < sd_hf
+                hf_trend = -float(np.mean(hf_gd[mask_hf])) if np.any(mask_hf) else -float(m_hf)
+                hf_ext = np.where(fout > fin[-1])[0]
+                if len(hf_ext) > 0:
+                    last_idx = int(hf_ext[0]) - 1
+                    H_ph_lin[hf_ext] = (H_ph_lin[last_idx] +
+                                        (fout[hf_ext] - fout[last_idx]) * hf_trend)
+            H_ph_i = H_ph_lin
     else:
         raise ValueError(f'interp_Sparam: invalid opt_interp_Sparam_phase = {ph_method!r}')
 

@@ -27,6 +27,22 @@ def _Tukey_Window(f, param, fr=None, fb=None):
                  0.0))[:len(f)]
 
 
+def _interp_extrap(fout, fin, y):
+    """interp1(fin, y, fout, 'linear', 'extrap') — extrapolates on the end-segment
+    slope rather than clamping the way np.interp does."""
+    fout = np.asarray(fout, dtype=float); fin = np.asarray(fin, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = np.interp(fout, fin, y)
+    if len(fin) >= 2:
+        lo = fout < fin[0]
+        if np.any(lo):
+            out[lo] = y[0] + (y[1] - y[0]) / (fin[1] - fin[0]) * (fout[lo] - fin[0])
+        hi = fout > fin[-1]
+        if np.any(hi):
+            out[hi] = y[-1] + (y[-1] - y[-2]) / (fin[-1] - fin[-2]) * (fout[hi] - fin[-1])
+    return out
+
+
 def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
     """Inlined interp_Sparam (MATLAB lines 7950-8165)."""
     Sin = np.asarray(Sin, dtype=complex).ravel()
@@ -56,7 +72,9 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             H_mag_x = np.concatenate([[float(np.polyval(p, 0))], H_mag_x])
         hf_log = H_mag[-1]
         if fin[-1] < fout[-1]:
-            mid = max(0, len(fin) // 2)
+            # MATLAB mid_freq_ind = round(length(fin)/2) is a 1-BASED index;
+            # floor division as 0-based starts one point late for even len(fin).
+            mid = max(0, int(np.floor(len(fin) / 2.0 + 0.5)) - 1)
             with np.errstate(all='ignore'):
                 p2 = np.polyfit(fin[mid:], H_mag[mid:], 1)
             hf = float(np.polyval(p2, fout[-1]))
@@ -80,7 +98,9 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             fin_x = np.concatenate([[0.0], fin_x])
             H_mag_x = np.concatenate([[10.0 ** float(np.polyval(p, 0))], H_mag_x])
         if fin[-1] < fout[-1]:
-            mid = max(0, len(fin) // 2)
+            # MATLAB mid_freq_ind = round(length(fin)/2) is a 1-BASED index;
+            # floor division as 0-based starts one point late for even len(fin).
+            mid = max(0, int(np.floor(len(fin) / 2.0 + 0.5)) - 1)
             with np.errstate(divide='ignore', invalid='ignore'):
                 p2 = np.polyfit(fin[mid:], np.log10(H_mag[mid:] + eps_val), 1)
             hf = 10.0 ** float(np.polyval(p2, fout[-1]))
@@ -157,7 +177,44 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             fin_x = np.concatenate([fin_x, [fout[-1]]]); ph_x = np.concatenate([ph_x, [hf_pt]])
         H_ph_i = np.interp(fout, fin_x, ph_x)
     elif ph_method == 'extrap_cubic_to_dc_linear_to_inf':
-        H_ph_i = np.interp(fout, fin, H_ph)  # simplified: use linear
+        # Full port of MATLAB L8198-8228. This was previously a stub
+        # (`np.interp(fout, fin, H_ph)  # simplified: use linear`) that skipped the
+        # low-frequency group-delay outlier correction, used the raw phase, and
+        # clamped instead of extrapolating. Since this is the CONFIGURED DEFAULT
+        # phase method, the LF group delay was wrong on every run, shifting and
+        # reshaping the impulse response (peak time off by 53 samples, pulse peak
+        # 0.94% high, steady-state 0.46% low).
+        # Note MATLAB computes a pchip variant and a blend, then discards both with
+        # a final `H_ph_i = H_ph_linear;` — so only the linear branch matters.
+        if fin[0] != 0:
+            group_delay = -np.diff(H_ph) / np.diff(fin)
+            n_lf = min(50, len(group_delay))
+            lf_gd = group_delay[:n_lf]
+            m_lf = np.median(lf_gd)
+            sd_lf = np.std(lf_gd)
+            mask_lf = np.abs(lf_gd - m_lf) < sd_lf
+            lf_trend = float(np.mean(lf_gd[mask_lf])) if np.any(mask_lf) else float(m_lf)
+
+            # MATLAB: for k=10:-1:1, H_ph(k) = H_ph(k+1) + lf_trend*(fin(k+1)-fin(k))
+            H_ph_corr = H_ph.copy()
+            for k in range(min(9, len(fin) - 2), -1, -1):
+                H_ph_corr[k] = H_ph_corr[k + 1] + lf_trend * (fin[k + 1] - fin[k])
+
+            H_ph_lin = _interp_extrap(fout, fin, H_ph_corr)
+
+            if fout[-1] > fin[-1]:
+                n_hf = min(51, len(group_delay))       # MATLAB group_delay(end-50:end)
+                hf_gd = group_delay[-n_hf:]
+                m_hf = np.median(hf_gd)
+                sd_hf = np.std(hf_gd)
+                mask_hf = np.abs(hf_gd - m_hf) < sd_hf
+                hf_trend = -float(np.mean(hf_gd[mask_hf])) if np.any(mask_hf) else -float(m_hf)
+                hf_ext = np.where(fout > fin[-1])[0]
+                if len(hf_ext) > 0:
+                    last_idx = int(hf_ext[0]) - 1
+                    H_ph_lin[hf_ext] = (H_ph_lin[last_idx] +
+                                        (fout[hf_ext] - fout[last_idx]) * hf_trend)
+            H_ph_i = H_ph_lin
     else:
         raise ValueError(f'interp_Sparam: invalid opt_interp_Sparam_phase = {ph_method!r}')
 

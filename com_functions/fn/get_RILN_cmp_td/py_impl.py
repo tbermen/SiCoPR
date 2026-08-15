@@ -121,7 +121,17 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
     RIL_f = np.asarray(RIL_struct.freq, dtype=float).ravel()
     faxis_f2 = np.asarray(faxis_f2, dtype=float).ravel()
 
-    # ---- Override OP fields (matching MATLAB) ----
+    # ---- Override OP fields (matching MATLAB L6836-6838) ----
+    # MATLAB passes OP BY VALUE, so these assignments are local to this function.
+    # Python passes it by reference: mutating OP here leaked 'trend_to_DC' /
+    # 'interp_to_DC' into every S-parameter interpolation performed afterwards,
+    # replacing the configured 'linear_trend_to_DC' /
+    # 'extrap_cubic_to_dc_linear_to_inf'. That changes the DC/low-frequency
+    # extrapolation and hence the impulse and pulse responses — visible as a
+    # low steady-state voltage, a high pulse peak, and a large ISI error, while
+    # leaving Nyquist-band magnitude metrics (IL, ICN) untouched.
+    # get_ILN_cmp_td already uses this OP_copy pattern; match it here.
+    OP = SimpleNamespace(**vars(OP))
     OP.interp_sparam_mag = 'trend_to_DC'
     OP.interp_sparam_phase = 'interp_to_DC'
     OP.impulse_response_truncation_threshold = 1e-7

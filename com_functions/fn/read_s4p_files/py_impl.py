@@ -217,8 +217,15 @@ def _make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             Cball = np.array([float(C_pkg_board[0])])
             Zpkg = np.array([float(pkg_Z_c.ravel()[0])])
         elif mele == 4:
-            Cpad = np.array([_to_scalar(Cd_Tx), 0.0, 0.0, 0.0])
-            Lcomp = np.array([_to_scalar(Lcomp_Tx), 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[Lcomp_Tx 0 0 0] (L8390-8391).
+            # Cd_Tx/Lcomp_Tx are ROW VECTORS when C_d/L_comp are a 2xN matrix
+            # (N die LC sections per side), so MATLAB yields len(Cd_Tx)+3 entries,
+            # matching num_blocks = mele + extra_LC. _to_scalar() kept only the
+            # first section, dropping the rest of the die LC network.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
@@ -248,8 +255,15 @@ def _make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             zc_vals = pkg_Z_c.ravel()
             Zpkg = np.array([float(zc_vals[1]) if len(zc_vals) > 1 else float(zc_vals[0])])
         elif mele == 4:
-            Cpad = np.array([_to_scalar(Cd_Rx), 0.0, 0.0, 0.0])
-            Lcomp = np.array([_to_scalar(Lcomp_Rx), 0.0, 0.0, 0.0])
+            # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[Lcomp_Rx 0 0 0] (L8390-8391).
+            # Cd_Rx/Lcomp_Rx are ROW VECTORS when C_d/L_comp are a 2xN matrix
+            # (N die LC sections per side), so MATLAB yields len(Cd_Rx)+3 entries,
+            # matching num_blocks = mele + extra_LC. _to_scalar() kept only the
+            # first section, dropping the rest of the die LC network.
+            Cpad = np.concatenate([np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel(),
+                                   np.zeros(3)])
+            Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
+                                    np.zeros(3)])
             Cbump = np.array([cb1, 0.0, 0.0, 0.0])
             C_v = np.asarray(param.C_v, dtype=float).ravel()
             cv1 = float(C_v[1]) if len(C_v) > 1 else float(C_v[0])

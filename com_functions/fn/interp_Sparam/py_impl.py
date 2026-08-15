@@ -28,6 +28,23 @@
 import numpy as np
 
 
+def _interp_extrap(fout, fin, y):
+    """interp1(fin, y, fout, 'linear', 'extrap') — linear interp that EXTRAPOLATES
+    on the end-segment slope instead of clamping (np.interp clamps)."""
+    fout = np.asarray(fout, dtype=float)
+    fin = np.asarray(fin, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = np.interp(fout, fin, y)
+    if len(fin) >= 2:
+        lo = fout < fin[0]
+        if np.any(lo):
+            out[lo] = y[0] + (y[1] - y[0]) / (fin[1] - fin[0]) * (fout[lo] - fin[0])
+        hi = fout > fin[-1]
+        if np.any(hi):
+            out[hi] = y[-1] + (y[-1] - y[-2]) / (fin[-1] - fin[-2]) * (fout[hi] - fin[-1])
+    return out
+
+
 def _Tukey_Window(f, param, fr=None, fb=None):
     """Inlined Tukey_Window (MATLAB lines 4677-4696)."""
     f = np.asarray(f, dtype=float)
@@ -88,7 +105,12 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
 
         hf_logtrend_val = H_mag[-1]
         if fin[-1] < fout[-1]:
-            mid = max(0, len(fin) // 2)
+            # MATLAB: mid_freq_ind = round(length(fin)/2), used as a 1-BASED index
+            # into fin. Python needs the 0-based equivalent, and MATLAB's round is
+            # half-away-from-zero. For even len(fin) (48004 points in the 802.3dj
+            # channels) floor division starts the HF trend fit one point late.
+            _n = len(fin)
+            mid = max(0, int(np.floor(_n / 2.0 + 0.5)) - 1)
             with np.errstate(all='ignore'):
                 p2 = np.polyfit(fin[mid:], H_mag[mid:], 1)
             hf_val = float(np.polyval(p2, fout[-1]))
@@ -233,7 +255,8 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
 
             # Linear extrapolation
             if fout[-1] > fin[-1]:
-                n_hf = min(50, len(group_delay))
+                # MATLAB: group_delay(end-50:end) -> 51 samples, not 50
+                n_hf = min(51, len(group_delay))
                 hf_gd = group_delay[-n_hf:]
                 m_hf = np.median(hf_gd)
                 sigma_hf = np.std(hf_gd)
@@ -246,10 +269,17 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
                     H_ph_linear_hf = (H_ph_corr[-1] +
                                       (fout[hf_ext_idx] - fin[-1]) * hf_trend_val)
 
-            H_ph_cubic = np.interp(fout, fin, H_ph_corr)
-            H_ph_lin = np.interp(fout, fin, H_ph_corr)
+            # MATLAB uses interp1(...,'linear','extrap') here; np.interp would clamp
+            # below fin[0], freezing the phase across the whole DC region and shifting
+            # the impulse response in time.
+            H_ph_cubic = _interp_extrap(fout, fin, H_ph_corr)
+            H_ph_lin = _interp_extrap(fout, fin, H_ph_corr)
             if fout[-1] > fin[-1] and len(hf_ext_idx) > 0:
-                H_ph_lin[hf_ext_idx] = H_ph_linear_hf
+                # MATLAB anchors the HF trend at fout(last_data_sample) using the
+                # interpolated phase there, not at fin[-1]/H_ph_corr[-1].
+                last_idx = int(hf_ext_idx[0]) - 1
+                H_ph_lin[hf_ext_idx] = (H_ph_lin[last_idx] +
+                                        (fout[hf_ext_idx] - fout[last_idx]) * hf_trend_val)
 
             diff = np.abs(H_ph_cubic - H_ph_lin)
             indx = int(np.argmin(diff))

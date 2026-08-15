@@ -76,3 +76,39 @@ def test_no_taps_returns_scalar_grid():
     txffe_matrix, cur, sweep_idx, full_tx, cursor_vec = OptFom_Build_TXFFE(_param_no_taps())
     assert cur == 1
     assert len(sweep_idx) == 0
+
+
+# ---------------------------------------------------------------------------
+# Tx FFE vector length / cursor placement.
+#
+# MATLAB (com_ieee8023_4p15p0.m L2789-2816) drops leading all-zero fixed taps
+# and decrements `cur` to match, but the `auto_count_trigger` latch means that
+# once ANY tap is non-trivial every later tap is retained INCLUDING its zeros —
+# so a real FFE keeps a weight per tap, e.g. [0 1 0] with the cursor at 2.
+#
+# Pinned because the shipped dj configs declare c(-4)..c(-1)=0 and c(1)=0, which
+# collapses to the scalar [1.0]; that is MATLAB's own behaviour (its no-crosstalk
+# reference reports TXLE_taps = 1) and must not be "fixed" into a padded vector.
+def test_all_zero_fixed_taps_collapse_to_cursor_only():
+    """Shipped dj config: 4 pre + 1 post, all single-valued 0 -> [1.0], cur=1."""
+    param = SimpleNamespace(
+        tx_ffe_cm1_values=0, tx_ffe_cm2_values=0,
+        tx_ffe_cm3_values=0, tx_ffe_cm4_values=0,
+        tx_ffe_cp1_values=0)
+    m, cur, _, _, _ = OptFom_Build_TXFFE(param)
+    assert m.shape == (1, 1)
+    assert m[0, 0] == 1.0
+    assert cur == 1
+
+
+def test_zero_taps_are_retained_once_a_tap_is_non_trivial():
+    """A swept pre-tap latches auto_count_trigger: zeros after it are KEPT."""
+    param = SimpleNamespace(
+        tx_ffe_cm1_values=[0, -0.05], tx_ffe_cm2_values=0,
+        tx_ffe_cp1_values=0)
+    m, cur, _, _, _ = OptFom_Build_TXFFE(param)
+    assert m.shape == (2, 3)          # [pre1, cursor, post1] - the zero post tap kept
+    assert cur == 2                   # cursor sits at index 2 (1-based)
+    np.testing.assert_allclose(m[0], [0.0, 1.0, 0.0])
+    # cursor weight is 1 - sum|other taps|
+    np.testing.assert_allclose(m[1], [-0.05, 0.95, 0.0])
