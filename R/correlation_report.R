@@ -140,35 +140,39 @@ p3d <- ggplot(cmp, aes(abs(dfom) * 1000, abs(dcom) * 1000, colour = com_exact)) 
 ggsave(file.path(dout, "fig_fom_vs_com.png"), p3d, width = W, height = H, dpi = DPI)
 
 # ---- 4. stage-by-stage agreement --------------------------------------------
+# Reported as (a) the share of output columns that match MATLAB bit-for-bit and
+# (b) how many significant digits the WORST column in that stage agrees to.
+# Both are directly readable; an earlier version plotted raw relative error on a
+# log axis, which needs decoding before it means anything.
 st <- read.csv(file.path(din, "stages.csv"), stringsAsFactors = FALSE) %>%
   group_by(stage) %>%
-  summarise(typical = median(median_rel_err),
-            worst   = median(worst_rel_err),
-            pct_exact = 100 * sum(n_exact) / sum(n_cols), .groups = "drop") %>%
-  mutate(typical = pmax(typical, 1e-16), worst = pmax(worst, 1e-16),
-         stage = reorder(stage, dplyr::desc(stage)))
+  summarise(pct_exact = 100 * sum(n_exact) / sum(n_cols),
+            worst = median(worst_rel_err),
+            ncols = round(mean(n_cols)), .groups = "drop") %>%
+  mutate(digits = ifelse(worst <= 0, 15, pmin(15, -log10(worst))),
+         stage = reorder(stage, dplyr::desc(stage)),
+         band = ifelse(pct_exact >= 99, "all or nearly all columns exact",
+                       ifelse(pct_exact >= 75, "most columns exact",
+                              "residual concentrated here")))
 
-# lollipop, not geom_col: bars on a log axis are drawn from y=1 and read as if
-# every stage reached 1e0.
-p4 <- ggplot(st, aes(y = stage)) +
-  geom_segment(aes(x = typical, xend = worst, yend = stage),
-               colour = "grey75", linewidth = 2.4, lineend = "round") +
-  geom_point(aes(x = typical, colour = "typical column"), size = 4.2) +
-  geom_point(aes(x = worst, colour = "worst column"), size = 4.2) +
-  geom_vline(xintercept = 1e-9, linetype = "dashed", colour = "grey40") +
-  geom_text(aes(x = worst, label = sprintf("  %.0f%% of columns exact", pct_exact)),
-            hjust = 0, size = 3.3, colour = "grey25", nudge_x = 0.35) +
-  annotate("text", x = 1e-9, y = 0.62, label = "machine-exact  ", hjust = 1,
-           size = 3.3, colour = "grey30") +
-  scale_colour_manual(values = c("typical column" = "#2c7fb8",
-                                 "worst column" = "#d95f02"), name = NULL) +
-  scale_x_log10(labels = trans_format("log10", math_format(10^.x)),
-                breaks = 10^seq(-16, 0, 2),
-                limits = c(1e-16, 3e3)) +
+p4 <- ggplot(st, aes(y = stage, x = pct_exact, fill = band)) +
+  geom_col(width = .62) +
+  geom_text(aes(label = sprintf("  %.0f%%   (worst column agrees to %.0f digits)",
+                                pct_exact, digits)),
+            hjust = 0, size = 3.5, colour = "grey20") +
+  scale_fill_manual(values = c("all or nearly all columns exact" = "#1b9e77",
+                               "most columns exact" = "#2c7fb8",
+                               "residual concentrated here" = "#d95f02"),
+                    name = NULL) +
+  scale_x_continuous(limits = c(0, 190), breaks = c(0, 25, 50, 75, 100),
+                     labels = function(x) paste0(x, "%")) +
   labs(title = "Agreement by pipeline stage",
-       subtitle = paste("median across 208 cases; stages 1-4 are machine-exact,",
-                        "the residual enters at equalization"),
-       x = "relative error vs MATLAB", y = NULL) +
+       subtitle = paste("Share of reported output columns matching MATLAB",
+                        "bit-for-bit, across all 208 cases.",
+                        "
+\"Digits\" = matching significant figures in the",
+                        "worst column of that stage (15 = identical)."),
+       x = "output columns matching MATLAB exactly", y = NULL) +
   theme_com
 ggsave(file.path(dout, "fig_stage_agreement.png"), p4, width = W, height = H, dpi = DPI)
 
