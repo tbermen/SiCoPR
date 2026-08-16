@@ -198,18 +198,27 @@ sp <- file.path(din, "search.csv")
 if (file.exists(sp)) {
   s <- read.csv(sp, stringsAsFactors = FALSE)
   if (nrow(s) > 0) {
-    s$label <- sub("_thru.*|_THRU.*", "", s$channel)
-    long <- s %>%
-      select(label, family, dcom_adaptive_vs_full, speedup) %>%
-      mutate(label = reorder(label, dcom_adaptive_vs_full))
-    p6 <- ggplot(long, aes(label, dcom_adaptive_vs_full, fill = family)) +
-      geom_hline(yintercept = 0, colour = "grey55") +
-      geom_col(width = .6) +
-      coord_flip() +
-      labs(title = "Adaptive local search vs full grid (same engine)",
-           subtitle = sprintf("%d channels, Test_1 with crosstalk; median speedup %.1f×",
-                              nrow(s), median(s$speedup, na.rm = TRUE)),
-           x = NULL, y = "COM(adaptive) − COM(full grid)  (dB)") +
+    s$label <- substr(sub("_thru.*|_THRU.*", "", s$channel), 1, 34)
+    n_fom <- sum(abs(s$dfom_adaptive_vs_full) < 1e-9)
+    n_com <- sum(abs(s$dcom_adaptive_vs_full) < 1e-9)
+    n_tick <- sum(s$itick_adaptive == s$itick_fullgrid)
+
+    # Every delta is exactly zero, so plotting deltas gives invisible bars.
+    # The informative axis is what full grid COSTS to reach the same answer.
+    s$label <- reorder(s$label, s$speedup)
+    p6 <- ggplot(s, aes(label, speedup, fill = family)) +
+      geom_col(width = .62) +
+      geom_text(aes(label = sprintf("%.0f x", speedup)), hjust = -0.15, size = 3.5) +
+      coord_flip(clip = "off") +
+      expand_limits(y = max(s$speedup) * 1.15) +
+      labs(title = "Adaptive local search vs exhaustive full grid - same engine",
+           subtitle = sprintf(paste("FOM identical %d/%d, COM identical %d/%d,",
+                                    "sampling phase identical %d/%d.",
+                                    "
+Adaptive costs NOTHING in accuracy;",
+                                    "bars show the runtime penalty for full grid."),
+                              n_fom, nrow(s), n_com, nrow(s), n_tick, nrow(s)),
+           x = NULL, y = "full-grid runtime / adaptive runtime", fill = NULL) +
       theme_com
     ggsave(file.path(dout, "fig_search.png"), p6, width = W, height = H, dpi = DPI)
     cat(sprintf("fig_search.png written (%d channels)\n", nrow(s)))

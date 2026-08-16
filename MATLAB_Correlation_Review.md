@@ -194,23 +194,30 @@ just *below* 3 dB because Python's COM was biased low.
 
 ## 5. Adaptive local search vs full grid
 
-A full-grid baseline (`Local Search = 0`, everything else identical) was run on the
-hardest channels — the DAC and BPK assemblies where the divergences live.
+A full-grid baseline (`Local Search = 0`, everything else identical) was run on nine
+channels covering all four families, chosen to include every case where COM Python and
+MATLAB pick a different sampling phase — the hardest cases available.
 
-**Adaptive local search is bit-identical to exhaustive full grid on both FOM and COM,
-at a median 74× runtime saving.**
+**Adaptive local search is bit-identical to exhaustive full grid on FOM, COM *and*
+sampling phase — 9 of 9 — at a median 113× runtime saving.**
 
-| case | FOM adaptive | FOM full grid | ΔFOM | COM adaptive | COM full grid | ΔCOM | penalty |
-|---|---|---|---|---|---|---|---|
-| wXtalk_T1_R07 | 12.4216 | 12.4216 | **0.0000** | 3.2765 | 3.2765 | **0.0000** | 24× |
-| wXtalk_T1_R15 | 12.5198 | 12.5198 | **0.0000** | 3.4858 | 3.4858 | **0.0000** | 124× |
-| wXtalk_T1_R16 | 11.6050 | 11.6050 | **0.0000** | 2.3063 | 2.3063 | **0.0000** | 133× |
-| wXtalk_T1_R17 | 15.2940 | 15.2940 | **0.0000** | 6.0263 | 6.0263 | **0.0000** | 17× |
+| case | channel | FOM adaptive | FOM full grid | ΔFOM | COM adaptive | COM full grid | ΔCOM | itick | penalty |
+|---|---|---|---|---|---|---|---|---|---|
+| T1_R01 | OSFP 22 dB | 12.0943 | 12.0943 | **0.0000** | 2.8856 | 2.8856 | **0.0000** | −6/−6 | 170× |
+| T1_R05 | DAC X 0.5 m | 14.1699 | 14.1699 | **0.0000** | 5.0410 | 5.0410 | **0.0000** | −12/−12 | 26× |
+| T1_R07 | DAC X 1.0 m | 12.4255 | 12.4255 | **0.0000** | 3.2692 | 3.2692 | **0.0000** | −7/−7 | 22× |
+| T1_R08 | DAC X 1.5 m | 11.8564 | 11.8564 | **0.0000** | 2.7006 | 2.7006 | **0.0000** | −5/−5 | 167× |
+| T1_R10 | DAC Y 1.0 m | 13.7627 | 13.7627 | **0.0000** | 4.6105 | 4.6105 | **0.0000** | −16/−16 | 104× |
+| T1_R15 | DAC Z 1.0 m | 12.5230 | 12.5230 | **0.0000** | 3.4966 | 3.4966 | **0.0000** | −2/−2 | 113× |
+| T1_R16 | DAC Z 1.5 m | 11.6070 | 11.6070 | **0.0000** | 2.3159 | 2.3159 | **0.0000** | 5/5 | 133× |
+| T1_R17 | BPK twinax | 15.3059 | 15.3059 | **0.0000** | 6.0491 | 6.0491 | **0.0000** | −21/−21 | 15× |
+| T1_R24 | li_dj CR C | 13.9110 | 13.9110 | **0.0000** | 5.1469 | 5.1469 | **0.0000** | −9/−9 | 236× |
 
-*(Pre-fix figures; the post-fix confirmation run is in progress and will be appended.)*
+Sanity check `FOM(full grid) ≥ FOM(adaptive)` passes 9/9 — full grid searches a superset
+of the adaptive candidates, so any violation would indicate broken search wiring.
 
-Sanity check `FOM(full grid) ≥ FOM(adaptive)` passes 4/4 — full grid searches a superset,
-so a violation would indicate broken search wiring.
+Runtime penalty ranges 15×–236×; the spread tracks how much of the equalizer grid the
+adaptive search is able to prune on that channel.
 
 **This also exonerates adaptive pruning for the §4.1 divergences.** On R16 the exhaustive
 full grid independently arrives at Python's `itick = 5` where MATLAB reported 0. The
