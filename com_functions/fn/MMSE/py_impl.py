@@ -75,7 +75,15 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=No
     h0 = H[d, :]
     ib = np.eye(Nb)
     zb = np.zeros(Nb)
-    A = np.block([[R, -Hb.T], [-Hb, ib]])
+    # np.block carries heavy per-call Python overhead and MMSE_FOM is invoked
+    # ~130k times per case by the floating-tap bank search. Assembling into a
+    # preallocated array is ~3x faster and bit-identical.
+    _n = R.shape[0]
+    A = np.empty((_n + Nb, _n + Nb), dtype=float)
+    A[:_n, :_n] = R
+    A[:_n, _n:] = -Hb.T
+    A[_n:, :_n] = -Hb
+    A[_n:, _n:] = ib
     C = np.concatenate([h0, zb])
     Ct = C.reshape(-1, 1)
     Z = np.linalg.solve(A, Ct)
@@ -90,7 +98,12 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=No
     # array_equal, not allclose: MATLAB guards these two branches with ~isequal,
     # which is exact (see com_functions/fn/MMSE_FOM for the full note).
     if Nb > 0 and not np.array_equal(b, blim):
-        Rb = np.block([[R, -h0.reshape(-1, 1)], [h0.reshape(1, -1), np.array([[0.0]])]])
+        _m = R.shape[0]
+        Rb = np.empty((_m + 1, _m + 1), dtype=float)
+        Rb[:_m, :_m] = R
+        Rb[:_m, _m] = -h0
+        Rb[_m, :_m] = h0
+        Rb[_m, _m] = 0.0
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
         wl_full = np.linalg.solve(Rb, rhs)
         w = wl_full[:Nw_used]
