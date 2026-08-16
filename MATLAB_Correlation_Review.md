@@ -229,6 +229,49 @@ representative subset.
 
 ---
 
+## 5b. Runtime
+
+MATLAB reports `rtmin` per case, so a direct comparison is possible. The absolute
+numbers are confounded — the MATLAB times are from Hansel's machine — so each engine is
+also compared **against itself**, which removes the hardware dependence entirely.
+
+| | MATLAB | COM Python (before) | COM Python (after) |
+|---|---|---|---|
+| total, 208 cases | 14.40 h | 16.10 h | **3.15 h** |
+| vs MATLAB | — | 1.12× slower | **4.58× faster** |
+| cases faster than MATLAB | — | 84 / 208 | **112 / 208** |
+| slowest single case | 13.3 min | 37.5 min | **2.2 min** |
+
+Wall clock for the full 208-case sweep is **0.6 h** at `--jobs 5` (was 3.4 h).
+
+**Every correlation statistic is unchanged** — FOM bit-exact 198/208, COM bit-exact
+135/208, `itick` 200/208, max \|ΔCOM\| 0.175602 dB, rms 0.018592 dB. `COM_dB`, `VEO_mV`
+and `VEC_dB` are bit-identical case by case.
+
+Three changes, each measured and verified before being kept:
+
+1. **Size-gated FFT convolution.** PDF convolution sizes are extremely skewed: 2.2 % of
+   calls carry 85 % of the arithmetic while ~77 000 calls have a kernel of ≤ 16 bins and
+   carry 3.4 %. Direct convolution wins for tiny kernels and loses badly for long ones
+   (2.7× slower at 600, 19× at 9000, >1000× at 20 000+), so the kernel dispatches on
+   size rather than switching wholesale. `conv_fct` exists in **18 copies**; all 17 that
+   convolve PDFs share the same kernel.
+2. **Memoised ADC-clip PDF.** It depends only on the equalizer setting and the sampling
+   *phase*, and the 49-tick sweep visits only 32 distinct phases — 34.8 % of builds were
+   exact repeats. Keyed on input bytes, so hits are bit-identical by construction.
+3. **Hoisted Gram matrix.** `MMSE_FOM` recomputed `H.T @ H` (~2.2 MFLOP) on each of its
+   ~130 000 calls per case, though H is fixed and only the column selection changes.
+   Computing it once and gathering is 107× faster on that operation.
+
+Only (1) perturbs the arithmetic, at ~1e-15 relative — it moves FOM in the 14th
+significant digit and leaves every reported COM value untouched.
+
+One further easy saving is available but not taken: `SAVE_FIGURES = 1` in the Test_3 and
+Test_4 configs writes 10 PNGs per case. That is a config choice MATLAB honours too, so
+it is left alone, but it is pure overhead in batch correlation runs.
+
+---
+
 ## 6. Requests
 
 1. **Which Tx FFE tap set produced the with-crosstalk reference?** The two reference
