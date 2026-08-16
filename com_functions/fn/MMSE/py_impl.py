@@ -43,7 +43,8 @@ def _findbankloc(hisi, N_tail_start, N_bmax, N_bf, bmaxg_val, bmaxg, N_bg):
     return np.sort(np.array(chosen, dtype=int)) + 1  # 1-based like MATLAB
 
 
-def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=None):
+def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
+              idx=None, HH_full=None):
     """Inlined MMSE_FOM for MMSE function."""
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -62,17 +63,32 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=No
     Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
     H = np.asarray(H, dtype=float)
     Rnn = np.asarray(Rnn, dtype=float)
+    d = int(d)
+
+    # H is FIXED across the floating-tap bank search - only the column selection
+    # changes - yet H.T @ H was recomputed on every call. H is (num_ui+Nw-1, Nw),
+    # e.g. 4182x87, so that is ~2.2 MFLOP each time and MMSE_FOM is invoked ~130k
+    # times per case. Because (H[:, c].T @ H[:, c]) == (H.T @ H)[ix_(c, c)], the
+    # caller can compute the full Gram matrix once and this becomes a small gather.
+    # Only the rows the solve actually needs (h0 and Hb) are taken from H itself.
+    if HH_full is None:
+        HH_full = H.T @ H
     if len(idx) > 0:
         float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        H = H[:, col_sel]
-        Rnn = Rnn[np.ix_(col_sel, col_sel)]
+        sel = np.ix_(col_sel, col_sel)
+        HH = HH_full[sel]
+        Rnn = Rnn[sel]
+        Hb = H[d + 1:d + Nb + 1, :][:, col_sel]
+        h0 = H[d, col_sel]
+        Nw_cols = len(col_sel)
+    else:
+        HH = HH_full
+        Hb = H[d + 1:d + Nb + 1, :]
+        h0 = H[d, :]
+        Nw_cols = H.shape[1]
 
-    d = int(d)
-    HH = H.T @ H
     R = HH + Rnn / sigma_X2
-    Hb = H[d + 1:d + Nb + 1, :]
-    h0 = H[d, :]
     ib = np.eye(Nb)
     zb = np.zeros(Nb)
     # np.block carries heavy per-call Python overhead and MMSE_FOM is invoked
@@ -89,7 +105,7 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=No
     Z = np.linalg.solve(A, Ct)
     S_inv = float(np.dot(C, Z.ravel()))
     wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
-    Nw_used = H.shape[1]
+    Nw_used = Nw_cols
     if len(idx) > 0:
         Nw = Nw_used
     w = wbl[:Nw_used]
@@ -219,6 +235,9 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
     else:
         H = toeplitz(hc1, hr1)
     Rnn = toeplitz(Rn[:Nw], Rn[:Nw])
+    # Gram matrix of the (large, fixed) H, computed once and reused by every
+    # MMSE_FOM evaluation below - see the note in _MMSE_FOM.
+    HH_full = H.T @ H
 
     if int(param.N_bg) != 0:
         ctl = str(getattr(OP, 'RXFFE_FLOAT_CTL', 'isi')).lower()
@@ -230,11 +249,13 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
         else:
             idx = FOM_rxffe_floating_taps(
                 param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE_FOM)
+                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE_FOM,
+                HH_full=HH_full)
             idx = np.sort(idx)
 
     sigma_e, FOM, w, idx_out, Nw_out, blim = _MMSE_FOM(
-        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx)
+        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
+        HH_full=HH_full)
 
     Craw = w / (w[dw] if abs(w[dw]) > 1e-12 else 1.0)
 

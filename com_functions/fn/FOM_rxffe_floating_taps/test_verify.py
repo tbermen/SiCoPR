@@ -22,7 +22,8 @@ def test_greedy_picks_highest_isi_banks():
     RxFFE_cpx = 1
     isi = np.array([0.02, 0.40, 0.35, 0.03, 0.05, 0.30, 0.28, 0.02])
 
-    def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx):
+    def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
+                 **_kw):   # **_kw: tolerate the optional HH_full fast path
         covered = set(int(i) - RxFFE_cpx - 1 for i in np.atleast_1d(idx))
         resid = sum(isi[j] ** 2 for j in range(len(isi)) if j not in covered)
         return (0.0, -resid, None, idx, 0, None)
@@ -40,7 +41,8 @@ def test_idx_convention_and_no_overlap():
     RxFFE_cpx = 2
     isi = np.array([0.5, 0.1, 0.05, 0.4, 0.05, 0.05, 0.3, 0.02])
 
-    def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx):
+    def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
+                 **_kw):   # **_kw: tolerate the optional HH_full fast path
         covered = set(int(i) - RxFFE_cpx - 1 for i in np.atleast_1d(idx))
         return (0.0, -sum(isi[j] ** 2 for j in range(len(isi)) if j not in covered), None, idx, 0, None)
 

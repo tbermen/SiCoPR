@@ -23,6 +23,7 @@
 # ============================================================
 
 import numpy as np
+from scipy.signal import fftconvolve
 import copy
 from types import SimpleNamespace
 
@@ -30,6 +31,24 @@ from types import SimpleNamespace
 # ---------------------------------------------------------------------------
 # Callee stubs
 # ---------------------------------------------------------------------------
+
+
+# PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
+# ~1% of the calls (both operands long), while most calls have a kernel of a few
+# bins. Direct convolution wins for tiny kernels and loses badly for long ones
+# (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
+# size. The FFT path agrees with the direct path to ~1e-15 relative.
+_CONV_FFT_MIN = 128
+
+
+def _conv1d(a, b):
+    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if min(a.size, b.size) >= _CONV_FFT_MIN:
+        return fftconvolve(a, b)
+    return np.convolve(a, b)
+
 
 def _get_center_of_UI(samp_UI):
     """Returns 0-based center index (Python convention)."""
@@ -63,7 +82,7 @@ def _normal_dist(sigma, n_sigma, delta_y):
 
 def _conv_fct(pdf_a, pdf_b):
     """Stub: convolve two PDFs (same x axis assumption)."""
-    y_c = np.convolve(pdf_a.y, pdf_b.y)
+    y_c = _conv1d(pdf_a.y, pdf_b.y)
     dx = float(getattr(pdf_a, 'BinSize', 1e-3))
     x_c = np.arange(len(y_c)) * dx + float(pdf_a.x[0]) + float(pdf_b.x[0])
     total = y_c.sum()

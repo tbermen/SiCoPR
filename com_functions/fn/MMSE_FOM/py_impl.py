@@ -23,7 +23,8 @@ import numpy as np
 from scipy.linalg import toeplitz
 
 
-def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=None):
+def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
+             idx=None, HH_full=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
@@ -46,22 +47,33 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=Non
 
     Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
 
-    # Subset H and Rnn for floating taps
+    # Subset H and Rnn for floating taps.
+    # H is FIXED across the floating-tap bank search - only the column selection
+    # changes - so H.T @ H need not be recomputed per call. H is (num_ui+Nw-1, Nw),
+    # e.g. 4182x87 (~2.2 MFLOP) and this is invoked ~130k times per case. Since
+    # (H[:, c].T @ H[:, c]) == (H.T @ H)[ix_(c, c)], the caller passes the full
+    # Gram matrix once and the selection becomes a small gather.
     H = np.asarray(H, dtype=float)
     Rnn = np.asarray(Rnn, dtype=float)
+    d = int(d)
+    if HH_full is None:
+        HH_full = H.T @ H
     if len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        H = H[:, col_sel]
-        Rnn = Rnn[np.ix_(col_sel, col_sel)]
+        sel = np.ix_(col_sel, col_sel)
+        HH = HH_full[sel]
+        Rnn = Rnn[sel]
+        Hb = H[d + 1:d + Nb + 1, :][:, col_sel]
+        h0 = H[d, col_sel]
+        Nw_cols = len(col_sel)
+    else:
+        HH = HH_full
+        Hb = H[d + 1:d + Nb + 1, :]
+        h0 = H[d, :]
+        Nw_cols = H.shape[1]
 
-    d = int(d)
-    HH = H.T @ H
     R = HH + Rnn / sigma_X2
-
-    # Hb and h0 (MATLAB d+2:d+Nb+1 1-based → Python d+1:d+Nb+1 0-based)
-    Hb = H[d + 1:d + Nb + 1, :]   # shape (Nb, Nw_used)
-    h0 = H[d, :]                    # shape (Nw_used,)
 
     ib = np.eye(Nb)
     zb = np.zeros(Nb)
@@ -82,7 +94,7 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx=Non
     S_inv = float(np.dot(C, Z.ravel()))
     wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
 
-    Nw_used = H.shape[1]
+    Nw_used = Nw_cols
     if len(idx) > 0:
         Nw = Nw_used  # re-adjust Nw to number of used taps
 

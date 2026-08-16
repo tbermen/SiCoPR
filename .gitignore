@@ -70,3 +70,6 @@ Test_cases_from_Hansel_2026_08_12.txt
 #   `python tools/matlab_compare.py --validate --run`
 # ---------------------------------------------------------------------------
 matlab_compare_results/
+
+benchmarks/
+report_data/compare_prefix_opt.csv

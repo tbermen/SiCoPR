@@ -25,7 +25,9 @@ import re
 import math
 from math import factorial, ceil, floor, log, log2, log10, exp, sqrt, pi
 import copy
+import collections as _collections
 import datetime
+import hashlib as _hashlib
 import warnings
 from types import SimpleNamespace
 
@@ -61,10 +63,12 @@ def _ensure_array(v):
 
 # Aliases so individual py_impl.py files can use bare names stripped of their imports
 lfilter           = sp_signal.lfilter
+fftconvolve       = sp_signal.fftconvolve
 PchipInterpolator = sp_interp.PchipInterpolator
 toeplitz          = sp_linalg.toeplitz
 erfcinv           = sp_special.erfcinv
 erfc              = sp_special.erfc
+
 
 
 # ---------------------------------------------------------------------------

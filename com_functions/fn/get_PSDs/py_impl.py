@@ -15,14 +15,35 @@
 # Output: result SimpleNamespace with S_rn, S_xn, S_tn, S_jn, S_qn, S_n, etc.
 # ============================================================
 
+import collections as _collections
+import hashlib as _hashlib
+
 import numpy as np
-from scipy.signal import lfilter
+from scipy.signal import lfilter, fftconvolve
 from types import SimpleNamespace
 
 
 # ---------------------------------------------------------------------------
 # Callee stubs (minimal)
 # ---------------------------------------------------------------------------
+
+
+# PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
+# ~1% of the calls (both operands long), while most calls have a kernel of a few
+# bins. Direct convolution wins for tiny kernels and loses badly for long ones
+# (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
+# size. The FFT path agrees with the direct path to ~1e-15 relative.
+_CONV_FFT_MIN = 128
+
+
+def _conv1d(a, b):
+    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    if min(a.size, b.size) >= _CONV_FFT_MIN:
+        return fftconvolve(a, b)
+    return np.convolve(a, b)
+
 
 def _S_RN(fvec, G_DC, G_DC2, param):
     """Stub for S_RN — returns flat receiver noise PSD (V^2/GHz)."""
@@ -129,7 +150,7 @@ def _conv_fct(p1, p2):
         raise ValueError('bin size must be equal')
     p = SimpleNamespace(**vars(p1))
     p.Min = int(round(p1.Min + p2.Min))
-    p.y = np.convolve(np.asarray(p1.y, dtype=float), np.asarray(p2.y, dtype=float))
+    p.y = _conv1d(p1.y, p2.y)
     pMax = p.Min + len(p.y) - 1
     p.x = np.arange(p.Min, pMax + 1) * p.BinSize
     return p
@@ -146,7 +167,34 @@ def _normal_dist(sigma, nsigma, binsize):
     return p
 
 
+# The ADC-clip signal PDF depends only on the sampled pulse response, which is a
+# pure function of the equalizer setting and the sampling PHASE (cursor_i % M).
+# The itick sweep visits 49 ticks but only M=32 distinct phases, so ~35% of these
+# builds are exact repeats. Each build costs ~120 convolutions over a 4096-point
+# vector, so memoising them is worthwhile. Keyed on the input bytes, so a hit is
+# bit-identical by construction; small LRU because repeats are temporally local
+# (within one equalizer setting's tick sweep).
+_PDF_CACHE = _collections.OrderedDict()
+_PDF_CACHE_MAX = 64
+
+
 def _get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
+    _arr = np.ascontiguousarray(np.asarray(input_vector, dtype=float))
+    _key = (_hashlib.blake2b(_arr.tobytes(), digest_size=16).digest(),
+            int(L), float(BinSize), int(FAST_NOISE_CONV))
+    _hit = _PDF_CACHE.get(_key)
+    if _hit is not None:
+        _PDF_CACHE.move_to_end(_key)
+        return SimpleNamespace(**vars(_hit))     # copy: callers rebind fields
+    _res = _get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize,
+                                                 FAST_NOISE_CONV)
+    _PDF_CACHE[_key] = _res
+    if len(_PDF_CACHE) > _PDF_CACHE_MAX:
+        _PDF_CACHE.popitem(last=False)
+    return SimpleNamespace(**vars(_res))
+
+
+def _get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     input_vector = np.asarray(input_vector, dtype=float).ravel()
     if np.max(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
