@@ -23,6 +23,11 @@ import numpy as np
 from scipy.linalg import toeplitz
 
 
+
+# Nb is fixed for a run; these are rebuilt ~130k times per case otherwise.
+_EYE_CACHE = {}
+_ZERO_CACHE = {}
+
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
              idx=None, HH_full=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
@@ -61,11 +66,12 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     if len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        sel = np.ix_(col_sel, col_sel)
-        HH = HH_full[sel]
-        Rnn = Rnn[sel]
-        Hb = H[d + 1:d + Nb + 1, :][:, col_sel]
-        h0 = H[d, col_sel]
+        # .take twice beats np.ix_ by ~2.2x for these shapes and is bit-identical;
+        # this runs ~130k times per case so the difference is visible.
+        HH = HH_full.take(col_sel, 0).take(col_sel, 1)
+        Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
+        Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+        h0 = H[d].take(col_sel)
         Nw_cols = len(col_sel)
     else:
         HH = HH_full
@@ -75,8 +81,12 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
 
     R = HH + Rnn / sigma_X2
 
-    ib = np.eye(Nb)
-    zb = np.zeros(Nb)
+    ib = _EYE_CACHE.get(Nb)
+    if ib is None:
+        ib = _EYE_CACHE[Nb] = np.eye(Nb)
+    zb = _ZERO_CACHE.get(Nb)
+    if zb is None:
+        zb = _ZERO_CACHE[Nb] = np.zeros(Nb)
 
     # Block matrix solve (speedup path)
     # Preallocated assembly rather than np.block: this is a hot path

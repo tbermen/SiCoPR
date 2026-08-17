@@ -3144,6 +3144,11 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
 
 
 
+
+# Nb is fixed for a run; these are rebuilt ~130k times per case otherwise.
+_EYE_CACHE = {}
+_ZERO_CACHE = {}
+
 def _MMSE__findbankloc(hisi, N_tail_start, N_bmax, N_bf, bmaxg_val, bmaxg, N_bg):
     """Simplified findbankloc: select N_bg*N_bf tap positions with highest power."""
     hisi = np.asarray(hisi, dtype=float).ravel()
@@ -3198,11 +3203,12 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     if len(idx) > 0:
         float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        sel = np.ix_(col_sel, col_sel)
-        HH = HH_full[sel]
-        Rnn = Rnn[sel]
-        Hb = H[d + 1:d + Nb + 1, :][:, col_sel]
-        h0 = H[d, col_sel]
+        # .take twice beats np.ix_ by ~2.2x for these shapes and is bit-identical;
+        # this runs ~130k times per case so the difference is visible.
+        HH = HH_full.take(col_sel, 0).take(col_sel, 1)
+        Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
+        Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+        h0 = H[d].take(col_sel)
         Nw_cols = len(col_sel)
     else:
         HH = HH_full
@@ -3211,8 +3217,12 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         Nw_cols = H.shape[1]
 
     R = HH + Rnn / sigma_X2
-    ib = np.eye(Nb)
-    zb = np.zeros(Nb)
+    ib = _EYE_CACHE.get(Nb)
+    if ib is None:
+        ib = _EYE_CACHE[Nb] = np.eye(Nb)
+    zb = _ZERO_CACHE.get(Nb)
+    if zb is None:
+        zb = _ZERO_CACHE[Nb] = np.zeros(Nb)
     # np.block carries heavy per-call Python overhead and MMSE_FOM is invoked
     # ~130k times per case by the floating-tap bank search. Assembling into a
     # preallocated array is ~3x faster and bit-identical.
@@ -3445,6 +3455,11 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
 
 
 
+
+# Nb is fixed for a run; these are rebuilt ~130k times per case otherwise.
+_EYE_CACHE = {}
+_ZERO_CACHE = {}
+
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
              idx=None, HH_full=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
@@ -3483,11 +3498,12 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     if len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        sel = np.ix_(col_sel, col_sel)
-        HH = HH_full[sel]
-        Rnn = Rnn[sel]
-        Hb = H[d + 1:d + Nb + 1, :][:, col_sel]
-        h0 = H[d, col_sel]
+        # .take twice beats np.ix_ by ~2.2x for these shapes and is bit-identical;
+        # this runs ~130k times per case so the difference is visible.
+        HH = HH_full.take(col_sel, 0).take(col_sel, 1)
+        Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
+        Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+        h0 = H[d].take(col_sel)
         Nw_cols = len(col_sel)
     else:
         HH = HH_full
@@ -3497,8 +3513,12 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
 
     R = HH + Rnn / sigma_X2
 
-    ib = np.eye(Nb)
-    zb = np.zeros(Nb)
+    ib = _EYE_CACHE.get(Nb)
+    if ib is None:
+        ib = _EYE_CACHE[Nb] = np.eye(Nb)
+    zb = _ZERO_CACHE.get(Nb)
+    if zb is None:
+        zb = _ZERO_CACHE[Nb] = np.zeros(Nb)
 
     # Block matrix solve (speedup path)
     # Preallocated assembly rather than np.block: this is a hot path
