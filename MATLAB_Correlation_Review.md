@@ -233,22 +233,26 @@ representative subset.
 
 MATLAB reports `rtmin` per case, so a direct comparison is possible. The absolute
 numbers are confounded — the MATLAB times are from Hansel's machine — so each engine is
-also compared **against itself**, which removes the hardware dependence entirely.
+also compared **against itself**, which removes the hardware dependence.
 
 | | MATLAB | COM Python (before) | COM Python (after) |
 |---|---|---|---|
-| total, 208 cases | 14.40 h | 16.10 h | **3.15 h** |
-| vs MATLAB | — | 1.12× slower | **4.58× faster** |
-| cases faster than MATLAB | — | 84 / 208 | **112 / 208** |
-| slowest single case | 13.3 min | 37.5 min | **2.2 min** |
+| total, 208 cases | 14.40 h | 16.10 h | **3.57 h** |
+| vs MATLAB | — | 1.12× slower | **4.03× faster** |
+| cases faster than MATLAB | — | 84 / 208 | **104 / 208** |
+| slowest single case | 13.3 min | 37.5 min | **2.5 min** |
+| wall clock, `--jobs 5` | — | 3.4 h | **0.6 h** |
 
-Wall clock for the full 208-case sweep is **0.6 h** at `--jobs 5` (was 3.4 h).
+**≈ 4.5× on CPU time, ≈ 5× on wall clock.** Repeat runs of the same build landed at
+3.15 h and 3.57 h, so treat these as ±13 % — the machine has meaningful run-to-run
+variance and the speed-up should be read as "roughly 4.5–5×", not a precise figure.
 
 **Every correlation statistic is unchanged** — FOM bit-exact 198/208, COM bit-exact
-135/208, `itick` 200/208, max \|ΔCOM\| 0.175602 dB, rms 0.018592 dB. `COM_dB`, `VEO_mV`
-and `VEC_dB` are bit-identical case by case.
+135/208, `itick` 200/208, max \|ΔCOM\| 0.175602 dB, rms 0.018592 dB, 2 pass/fail
+disagreements. `COM_dB`, `VEO_mV` and `VEC_dB` are bit-identical case by case, verified
+by re-running the full corpus after each change rather than trusting a sample.
 
-Three changes, each measured and verified before being kept:
+Four changes, each measured before being kept:
 
 1. **Size-gated FFT convolution.** PDF convolution sizes are extremely skewed: 2.2 % of
    calls carry 85 % of the arithmetic while ~77 000 calls have a kernel of ≤ 16 bins and
@@ -256,17 +260,33 @@ Three changes, each measured and verified before being kept:
    (2.7× slower at 600, 19× at 9000, >1000× at 20 000+), so the kernel dispatches on
    size rather than switching wholesale. `conv_fct` exists in **18 copies**; all 17 that
    convolve PDFs share the same kernel.
-2. **Memoised ADC-clip PDF.** It depends only on the equalizer setting and the sampling
+2. **Hoisted Gram matrix.** `MMSE_FOM` recomputed `H.T @ H` (~2.2 MFLOP, H is ~4182×87)
+   on each of its ~130 000 calls per case, though H is fixed and only the column
+   selection changes. Computing it once and gathering is **107×** faster on that
+   operation.
+3. **Memoised ADC-clip PDF.** It depends only on the equalizer setting and the sampling
    *phase*, and the 49-tick sweep visits only 32 distinct phases — 34.8 % of builds were
    exact repeats. Keyed on input bytes, so hits are bit-identical by construction.
-3. **Hoisted Gram matrix.** `MMSE_FOM` recomputed `H.T @ H` (~2.2 MFLOP) on each of its
-   ~130 000 calls per case, though H is fixed and only the column selection changes.
-   Computing it once and gathering is 107× faster on that operation.
+4. **Assembly micro-optimisations.** `np.block` → preallocated array (3.2×), `np.ix_` →
+   `.take().take()` (2.2×), and `np.eye`/`np.zeros` cached. All bit-identical.
 
 Only (1) perturbs the arithmetic, at ~1e-15 relative — it moves FOM in the 14th
 significant digit and leaves every reported COM value untouched.
 
-One further easy saving is available but not taken: `SAVE_FIGURES = 1` in the Test_3 and
+### Parallelism: memory binds before CPU
+
+Each case holds ~379 MB, and this machine has 16 logical CPUs but ~3 GB free.
+
+| | CPU | free RAM | throughput | wall clock |
+|---|---|---|---|---|
+| `--jobs 5` | 38 % | ~1.2 GB | 4.00 cases/min | **0.6 h** |
+| `--jobs 7` | 61 % | 0.4 GB | 4.67 cases/min | 0.7 h |
+
+`--jobs 7` raises throughput but inflates per-case time by 1.20 × through contention and
+gives **no wall-clock gain**, while leaving only 0.4 GB free. **`--jobs 5` is the right
+setting on this machine** — CPU headroom is not the limit, memory is.
+
+One further saving is available but not taken: `SAVE_FIGURES = 1` in the Test_3 and
 Test_4 configs writes 10 PNGs per case. That is a config choice MATLAB honours too, so
 it is left alone, but it is pure overhead in batch correlation runs.
 
