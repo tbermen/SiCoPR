@@ -27,7 +27,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 
@@ -36,7 +36,7 @@ alpha, main, L, sigma = 0.3, 0.1, 4, 0.02
 ml_arg = (1 - 2 * alpha) * main / (L - 1) * sigma          # MATLAB 2311 (left-assoc)
 py_arg = (1 - 2 * alpha) * main / ((L - 1) * sigma)         # com.py form
 # EXPECTED FAIL: com.py form != MATLAB form -> documents B15-D19.
-check("mlse_gaussian_qfunc_arg_matches_matlab",
+xcheck("mlse_gaussian_qfunc_arg_matches_matlab",
       abs(ml_arg - py_arg) <= 1e-15,
       "DIVERGENT (B15-D19, low, diagnostic-only): MATLAB arg=%.6e "
       "((1-2a)*main*sigma/(L-1)) vs com.py arg=%.6e ((1-2a)*main/((L-1)*sigma)); "

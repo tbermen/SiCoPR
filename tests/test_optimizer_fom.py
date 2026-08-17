@@ -41,7 +41,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 TOL = 1e-12  # element-wise identity tolerance for the FD filter cross-path check
@@ -203,7 +203,7 @@ check("optfom_post_t_grid",
 # Python banker's round=2 -> 22.
 _peak, _spui = 5, 4
 py_ttt = round(int(_peak) * 2 / int(_spui)) + 20
-check("optfom_triple_transit_uses_matlab_half_away",
+xcheck("optfom_triple_transit_uses_matlab_half_away",
       py_ttt == 23,
       "DIVERGENT (B11-D15, low): triple_transit_time=%d; MATLAB round(2.5)=3 -> 23, "
       "Python banker's round(2.5)=2 -> 22. Site com.py 12689. Only bites exact "

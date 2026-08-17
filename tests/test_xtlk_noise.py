@@ -27,7 +27,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 TOL = 1e-12
@@ -73,7 +73,7 @@ py_a, ref_a, idx_a = run_case(faxis, 20e9)
 check("xtlk_index_f2_has_bin_above_fb", idx_a == 22,
       "expected MATLAB 1-based index_f2 == 22 (first bin >20GHz at 0-based 21)")
 # EXPECTED FAIL: com.py omits the first bin above fb -> differs from MATLAB ref.
-check("xtlk_MDFEXT_ICN_matches_matlab_upper_bound",
+xcheck("xtlk_MDFEXT_ICN_matches_matlab_upper_bound",
       abs(py_a - ref_a) <= TOL,
       "DIVERGENT (B13-D18, low-med): com.py FEXT sigma=%.9e but MATLAB-correct "
       "(inclusive upper bound, index_f2=22) =%.9e. com.py index_f2=argmax(f>fb) "
@@ -99,7 +99,7 @@ faxis_b = np.arange(0.0, 20e9 + 1e9, 1e9)   # 0..20 GHz
 py_b, ref_b, idx_b = run_case(faxis_b, 25e9)   # fb above grid -> no f>fb
 check("xtlk_index_f2_empty_case_uses_all_bins", idx_b == len(faxis_b),
       "empty case reference should use all %d bins" % len(faxis_b))
-check("xtlk_MDFEXT_ICN_empty_case_matches_matlab",
+xcheck("xtlk_MDFEXT_ICN_empty_case_matches_matlab",
       abs(py_b - ref_b) <= TOL,
       "DIVERGENT (B13-D18, low-med): empty-case com.py FEXT sigma=%.9e but "
       "MATLAB (all bins) =%.9e. com.py uses len(f)-1, omitting the last bin "

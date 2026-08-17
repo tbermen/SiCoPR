@@ -33,7 +33,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 
@@ -71,7 +71,7 @@ check("python_round_is_bankers_reference",
 # Choose 2*nsigma*sigma/binsize = 2.5 exactly: nsigma=1, sigma=1.25, binsize=1.
 nd = com.normal_dist(1.25, 1, 1.0)
 # MATLAB: Min = -round(2.5) = -3 (half away). Python: -round(2.5) = -2 (banker's).
-check("normal_dist_Min_uses_matlab_half_away",
+xcheck("normal_dist_Min_uses_matlab_half_away",
       nd.Min == -3,
       "DIVERGENT (B10-D14, low): normal_dist Min=%d; MATLAB round(2.5)=3 gives "
       "-3 but Python banker's round(2.5)=2 gives -2. Bare round at a PDF-axis "

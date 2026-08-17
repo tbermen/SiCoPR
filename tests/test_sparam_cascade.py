@@ -33,7 +33,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 
@@ -166,7 +166,7 @@ check("s_for_c4_reorder_is_nontrivial",
       rel_err(reordered, blockdiag) > 1e-3,
       "snp2smp([1 3 2 4]) unexpectedly equals the block-diagonal")
 # EXPECTED FAIL: com.py returns the block-diagonal, skipping the reorder.
-check("s_for_c4_applies_port_reorder",
+xcheck("s_for_c4_applies_port_reorder",
       rel_err(S4, reordered) <= 1e-12,
       "DIVERGENT (unused fn): py 17167 returns the block-diagonal and skips the "
       "snp2smp([1 3 2 4]) reorder that ML 11301 applies; the reorder moves the "

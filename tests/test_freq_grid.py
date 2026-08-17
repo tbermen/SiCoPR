@@ -29,7 +29,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 
@@ -235,7 +235,7 @@ check("interp_Sparam_phase_extrap_matches_matlab",
       "DIVERGENT: py 11855 np.interp clamps phase beyond fin[-1] (flat) vs ML "
       "8185 interp1 'extrap' (linear ramp); max gap %.3f rad at 30 GHz" % ph_gap)
 # Positive confirmation that Python IS holding it flat (not some other value).
-check("interp_Sparam_phase_extrap_is_flat",
+xcheck("interp_Sparam_phase_extrap_is_flat",
       abs(ph_py[-1] - ph_py[band_in][-1]) <= 1e-6,
       "extrapolated phase is not the clamped endpoint value")
 

@@ -1,12 +1,10 @@
 """
 Stage 4: Intermediate variable comparison against MATLAB reference.
 
-Requires:
-    tests/fixtures/ieee8023ck_reference.xlsx
-    tests/fixtures/ieee8023ck_compliant_host_channel.s4p
-
-All tests are skipped if these files are absent (see conftest.py).
-When fixture files ARE present, all tests must pass before Stage 5.
+Requires ieee8023ck_reference.xlsx + ieee8023ck_compliant_host_channel.s4p in
+tests/fixtures/ (or wherever COM_TEST_FIXTURES points). Those files are not
+redistributable and are not committed, so these tests skip by default -- see
+tests/fixtures/README.md for how to supply them.
 
 Reference values are approximate targets for the 802.3ck standard
 compliant host channel at 53.125 GBaud, PAM-4.
@@ -15,12 +13,15 @@ import pytest
 import numpy as np
 import os
 
-REFERENCE_CONFIG = os.path.join(os.path.dirname(__file__), 'fixtures', 'ieee8023ck_reference.xlsx')
-REFERENCE_S4P    = os.path.join(os.path.dirname(__file__), 'fixtures', 'ieee8023ck_compliant_host_channel.s4p')
+FIXTURE_DIR = os.environ.get(
+    'COM_TEST_FIXTURES', os.path.join(os.path.dirname(__file__), 'fixtures'))
+REFERENCE_CONFIG = os.path.join(FIXTURE_DIR, 'ieee8023ck_reference.xlsx')
+REFERENCE_S4P    = os.path.join(FIXTURE_DIR, 'ieee8023ck_compliant_host_channel.s4p')
 
 pytestmark = pytest.mark.skipif(
     not (os.path.exists(REFERENCE_CONFIG) and os.path.exists(REFERENCE_S4P)),
-    reason='Reference fixture files not present — skipping checkpoint tests'
+    reason='802.3ck reference fixtures absent; set COM_TEST_FIXTURES to enable '
+           '(see tests/fixtures/README.md)'
 )
 
 

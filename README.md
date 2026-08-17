@@ -168,24 +168,64 @@ python assemble_com.py                                        # regenerate com.p
 python -m pytest com_functions/fn -q                          # full suite
 ```
 
+Before committing, run the whole harness — pre-flight audit, assembly, interface
+checks, unit tests, and every cross-check script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tests/run_all.ps1
+```
+
+`tests/` holds **two kinds of file**, and the difference matters:
+
+| | how to run |
+|---|---|
+| `test_smoke.py`, `test_checkpoints.py`, `test_end_to_end.py` | pytest modules |
+| every other `test_*.py` | standalone scripts — `python tests/test_x.py` |
+
+Do **not** run `pytest tests` over the whole directory. The audit scripts call
+`sys.exit()` at import, which aborts collection: pytest reports `no tests ran`
+**and still exits 0**, so nothing runs and nothing complains. `run_all.ps1`
+dispatches each kind correctly.
+
+Those scripts record two outcomes. `check()` is behaviour that must match MATLAB;
+`xcheck()` is a reviewed, accepted divergence, which reports `XFAIL` while it
+persists and **fails the run if it starts passing** — so a divergence that gets
+fixed cannot leave a stale entry behind in the ledger.
+
 ## 7. Verification status & caveats
 
 Every major feature is implemented and unit-tested against `matlab/com_ieee8023_4p15p0.m`
 plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating RxFFE
 taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
 processing (ICN/ILD), ERL/TDR, and TD-ILN/RILN. The `com_functions/fn` suite is green
-(**874 passed, 0 failed**), and the bundled 802.3ck C2M channel runs end-to-end.
+(**876 passed, 0 failed**), and the bundled 802.3ck C2M channel runs end-to-end.
+
+**Numeric parity with MATLAB has been established end to end.** 208 reference cases from
+Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
+
+| | result |
+|---|---|
+| FOM bit-exact | 198 / 208 |
+| COM bit-exact | 135 / 208 |
+| sampling phase (`itick`) exact | 200 / 208 |
+| max \|ΔCOM\| | 0.176 dB |
+| rms ΔCOM | 0.019 dB |
+| pass/fail disagreements | 2 (both within 0.02 dB of the 3 dB threshold) |
+
+Eight engine defects were found and fixed in the process. Reproduce with
+`python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
+[`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
 
 Honest caveats for anyone relying on the numbers:
 
-- **Numeric parity with MATLAB has not been cross-checked end to end.** Verification is by
-  line-by-line translation, per-function unit tests, internal consistency, and physical
-  behaviour. No MATLAB reference run has been compared against any COM value produced here.
-  A single golden run — same config, COM to full precision — would close this, and is the
-  most valuable outstanding item.
-- **Results produced before August 2026 are not comparable to current output.** Port fixes
-  applied then changed COM on RxFFE configurations by roughly 0.02 dB. Regenerate rather
-  than compare against archived numbers.
+- **Eight sampling-phase divergences remain unexplained.** On those cases Python cannot
+  reach MATLAB's FOM at MATLAB's tick under any equalizer setting, yet the peak values
+  agree — consistent with an anchor-origin offset. Open question with Hansel.
+- **A residual ~0.002 dB mean bias remains in the COM PDF path** (max 0.035 dB). It is
+  what produces the 2 knife-edge pass/fail disagreements.
+- **Results produced before August 2026 are not comparable to current output.** The eight
+  engine fixes changed COM materially — the largest single correction removed a systematic
+  FOM bias affecting 95.7% of cases. Regenerate rather than compare against archived numbers.
 - Only the C2M **TxFFE/CTLE/DFE** path is exercised end-to-end; the other features are
   implemented and unit-tested but not covered by a bundled end-to-end config. See
   [`docs/MISSING_FEATURES_PLAN.md`](docs/MISSING_FEATURES_PLAN.md) §D.

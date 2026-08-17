@@ -4,6 +4,14 @@ Driven by `FIX_PROMPT_com_conversion_v2.md`. Fixes edit
 `com_functions/fn/<name>/py_impl.py` (never `com.py`, which is a generated build
 artifact reassembled by `assemble_com.py`). One finding per gate.
 
+> **CLOSED 2026-08-17.** This gated fix pass was overtaken by the 208-case MATLAB
+> correlation, which fixed eight engine defects in one commit (`b2b2621`) — see
+> [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md). The
+> "Next: F6 get_pdf_full" item below was never worked in this format. The stale
+> guard flagged at the end of the batch-2 note (`get_TDR_s2p_RL_is_the_wrong_formula`)
+> has since been removed, and the divergence ledger now uses `xcheck` so a
+> resolved divergence fails the run instead of lingering.
+
 ## Status: GATE BATCH-2 ASSEMBLED_VERIFIED (com.py reassembled + integration-tested)
 
 Batch 2 = B01-D2 (get_PSDs ADC 'slow' clip) + B06-D9 (get_TDR s2p RL) -

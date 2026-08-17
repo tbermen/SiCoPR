@@ -73,3 +73,20 @@ matlab_compare_results/
 
 benchmarks/
 report_data/compare_prefix_opt.csv
+
+# ---------------------------------------------------------------------------
+# Redundant channel archives — every member of these four zips is ALSO tracked,
+# already extracted, in the sibling directory next to each one. Tracking both
+# put 71 MB of duplicate payload in every checkout.
+#
+# NOT ignored, because they are the only copy of their contents in the repo:
+#   2_Intel/akinwale_3dj_01_2310.zip   (extraction is gitignored, see above)
+#   0_Intel/akinwale_3dj_02_2311.zip   (only 12 of 24 members tracked elsewhere)
+#
+# Note this does not shrink an existing clone: the blobs remain in history, and
+# only a history rewrite would remove them.
+# ---------------------------------------------------------------------------
+tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/1_Arista/weaver_3dj_02_2311.zip
+tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/3_Intel_Molex/lim_3dj_07_2309.zip
+tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/4_Intel_TEConnectivity/lim_3dj_04_230629.zip
+tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/5_Intel_Amphenol/lim_3dj_03_230629.zip

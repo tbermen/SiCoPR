@@ -291,32 +291,25 @@ for bmax_val in np.linspace(0.02 * b_max_mag, 0.98 * b_max_mag, 60):
             _found = (bmax_val, np.asarray(py_s[5]), np.asarray(rf_s[5]), py_s[1], rf_s[1])
             break
 
-# The DFE-clip-only path must be reachable AND discriminating for the divergence
-# to be real; if the sweep finds nothing, D17 is analysis-only (not reproduced).
-check("mmse_fom_D17_scenario_found",
-      _found is not None,
-      "no discriminating DFE-clip-only bound found in sweep; D17 not reproduced")
-
+# B12-D17 was FIXED in b2b2621: the `b = Hb*wlim; blim = clip(b)` refresh now
+# runs only inside the `if ~isequal(w, wlim)` branch, matching MATLAB 2683-2692.
+# The sweep above is therefore a REGRESSION GUARD, not a bug demonstration: it
+# hunts across 60 DFE bounds for any clip-only case where com.py and the
+# MATLAB-faithful reference disagree. Finding one means D17 has come back.
+#
+# This check previously asserted `_found is not None` -- it was written while
+# D17 was live and kept failing after the fix, which is what the audit caught.
+_detail = ""
 if _found is not None:
     bmax_val, py_blim, ref_blim, py_fom, ref_fom = _found
-    # blim (returned DFE taps) must match MATLAB. It does NOT -> documents B12-D17.
-    check("mmse_fom_D17_blim_matches_matlab",
-          np.max(np.abs(py_blim - ref_blim)) <= TOL,
-          "DIVERGENT (B12-D17, medium): DFE-clip-only case (bmax=%.4g) -> Python "
-          "blim=%s but MATLAB blim=%s. com.py 3367-3369/3119-3121 recomputes "
-          "blim=clip(Hb*w) unconditionally; MATLAB 2685-2688 keeps clip(original "
-          "DFE). Shifts FOM: py=%.4f vs ML=%.4f."
-          % (bmax_val, py_blim, ref_blim, py_fom, ref_fom))
-    # Positive confirmation that Python produces clip(Hb*w_resolved) (mechanism).
-    p = SimpleNamespace(RxFFE_cmx=1, RxFFE_cpx=1, N_bmax=2, N_bf=1, N_bg=0,
-                        bmax=np.array([bmax_val, bmax_val]),
-                        bmin=np.array([-bmax_val, -bmax_val]), R_LM=1.0, levels=4)
-    py_s = com.MMSE_FOM(p, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
-                        p.bmin, p.bmax, sigma_X2, None)
-    exp_py = np.minimum(p.bmax, np.maximum(p.bmin, H_test[d + 1:d + Nb + 1, :] @ py_s[2]))
-    check("mmse_fom_D17_python_uses_Hb_times_w",
-          np.max(np.abs(np.asarray(py_s[5]) - exp_py)) <= TOL,
-          "Python blim is not clip(Hb*w_resolved) as diagnosed: %s vs %s"
-          % (np.asarray(py_s[5]), exp_py))
+    _detail = ("bmax=%.4g -> Python blim=%s but MATLAB blim=%s; FOM py=%.4f vs "
+               "ML=%.4f. Check that the blim refresh in MMSE_FOM/MMSE is still "
+               "inside the `w != wlim` branch."
+               % (bmax_val, py_blim, ref_blim, py_fom, ref_fom))
+
+check("mmse_fom_D17_dfe_clip_matches_matlab",
+      _found is None,
+      "REGRESSION (B12-D17): com.py diverges from MATLAB on a DFE-clip-only "
+      "case. " + _detail)
 
 finish()

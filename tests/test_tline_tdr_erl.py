@@ -27,7 +27,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 
@@ -181,17 +181,16 @@ res_s2p = com.get_TDR(S, OP_tdr, param_tdr, ZT, 0,
 
 rho = (2 * ZT - S.Impedance) / (2 * ZT + S.Impedance)
 RL_matlab = (S11 - rho) / (1 - rho * S11)                 # ML: interim cancels
-interim = np.sqrt(1 - abs(rho) ** 2) * (1 - rho) / abs(1 - rho)
-RL_python_expected = interim / (S11 - rho) / (1 - rho * S11) * interim  # py 10304
 
+# B06-D9 (get_TDR s2p RL used '/' where MATLAB 7080 uses '\' left division) was
+# FIXED in b2b2621. A second check used to sit here asserting com.py still
+# produced the WRONG formula, interim^2/((s11-rho)*(1-rho*s11)); it inverted the
+# moment the bug was fixed and had been failing ever since. Removed -- the check
+# below is the one that carries meaning.
 check("get_TDR_s2p_RL_matches_matlab",
       rel_err(res_s2p.RL, RL_matlab) <= 1e-9,
-      "DIVERGENT: py 10304 uses '/' but ML 7080 uses '\\' (left division). "
-      "ML RL=(s11-rho)/(1-rho*s11); py computes interim^2/((s11-rho)*(1-rho*s11)). "
+      "py s2p RL diverges from ML 7080 RL=(s11-rho)/(1-rho*s11). "
       "max|RL_py|=%.3g (reflection>1 is non-physical)" % np.max(np.abs(res_s2p.RL)))
-check("get_TDR_s2p_RL_is_the_wrong_formula",
-      rel_err(res_s2p.RL, RL_python_expected) <= 1e-9,
-      "com.py s2p RL does not match the diagnosed '/'-instead-of-'\\' formula")
 
 # ===========================================================================
 # 5. get_TDR s4p end-to-end: matched line -> avgZport ~ 2*ZT (physics)
@@ -244,7 +243,7 @@ check("TDR_ERL_Z11est_copied",
       oa.Z11est == 101.0 and oa.Z22est == 99.0,
       "Z11est/Z22est not copied from TDR structs")
 # EXPECTED FAIL: ML str2csv({chdata(1).base}) uses ONLY the first base; py joins all.
-check("TDR_ERL_file_names_first_base_only",
+xcheck("TDR_ERL_file_names_first_base_only",
       oa.file_names == '"thru"',
       "DIVERGENT (cosmetic, ERL_ONLY): py 6721-6722 joins ALL channel bases "
       "(%s) but ML 4592 str2csv({chdata(1).base}) uses only the first base" % oa.file_names)

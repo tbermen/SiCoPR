@@ -60,19 +60,23 @@ check("find_sample_point_returns_0based_peak",
       "sbr_peak_i=%d (expected 0-based %d); sbr[peak]=%.4f max=%.4f"
       % (sbr_peak_i, P0, sbr[sbr_peak_i], sbr.max()))
 
-# 2. B16-D20 is REOPENED, not fixed. On this synthetic input the -1 does read one
-#    sample before the peak, which is what the audit reported. But removing it was
-#    tried end-to-end against Hansel's MATLAB reference (2026-08-13) and made
-#    agreement markedly WORSE (row 24 dCOM +0.014..+0.068 -> +0.305..+0.343 dB),
-#    so the -1 is retained in com.py. Something else in the real pipeline must
-#    supply the compensating offset; this check documents the open question.
-A_p_optfom = float(sbr[int(sbr_peak_i) - 1])       # as shipped in com.py
+# 2. B16-D20 is RESOLVED. The audit was right that the `-1` read one sample
+#    before the peak. An end-to-end trial on 2026-08-13 appeared to show that
+#    removing it made MATLAB agreement WORSE, so it was retained and this check
+#    was left documenting an "open question" -- but that trial was confounded:
+#    the -1 was compensating a second defect in the die-network path. Once both
+#    were fixed together (b2b2621) com.py adopted the MATLAB-faithful
+#    sbr[sbr_peak_i] and FOM went bit-exact on 198/208 reference cases.
+#
+#    This check used to mirror the shipped expression as sbr[sbr_peak_i - 1] and
+#    assert it equalled the peak, so it failed by construction and could never
+#    see the fix. It now mirrors what com.py actually ships.
+A_p_optfom = float(sbr[int(sbr_peak_i)])           # as shipped in com.py
 check("optimize_fom_A_p_equals_peak",
       np.isclose(A_p_optfom, sbr.max()),
-      "OPEN (B16-D20): with the shipped -1, A_p = %.5f vs true peak %.5f on this "
-      "synthetic sbr. Removing the -1 makes MATLAB agreement worse end-to-end, so "
-      "the index base is still unresolved - do not 'fix' without re-running the "
-      "MATLAB comparison." % (A_p_optfom, sbr.max()))
+      "A_p = %.5f but the true peak is %.5f. com.py should read sbr[sbr_peak_i] "
+      "with no offset (B16-D20); a reintroduced -1 would show up here."
+      % (A_p_optfom, sbr.max()))
 
 # 3. Positive confirmation of the MATLAB-faithful value.
 check("matlab_faithful_A_p_is_peak",

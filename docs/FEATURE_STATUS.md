@@ -1,6 +1,11 @@
 # COM Python Port — Feature & Verification Status
 
-> **Status as of 2026-07-01. Reference: `com_ieee8023_4p15p0.m` + Hansel D'silva's
+> **Status as of 2026-07-01 — feature inventory only; the verification claims below
+> are superseded by [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md)
+> (2026-08-17). Unit-test count is now 876, and end-to-end parity is established
+> against 208 MATLAB reference cases rather than the single bundled config.**
+>
+> **Reference: `com_ieee8023_4p15p0.m` + Hansel D'silva's
 > `com_ieee8023_4p15p0_adaptive_local_search.m` branch.**
 > Source-of-truth = `assemble_com.py` + `com_functions/fn/*/py_impl.py` (edit py_impl,
 > run its `test_verify.py`, re-run `assemble_com.py`).

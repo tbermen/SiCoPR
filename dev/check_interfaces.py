@@ -59,7 +59,12 @@ critical_pairs = [
     ('Bessel_Thomson_Filter',           3,  1,  '(param, f, flag)'),
     ('Butterworth_Filter',              3,  1,  '(param, f, flag)'),
     ('FD_CTLE',                         5,  1,  '(f, fz, fp1, fp2, gdc)'),
-    ('read_Nport_touchstone',           3,  2,  '(filename, port_order, ref_Z)'),
+    # ML 9544 declares [sch, schFreqAxis, port_order] -- 3 returns. Callers take
+    # what they need: read_p2_s2params (ML 10442) drops port_order, while
+    # read_p4_s4params (ML 10557) keeps it, and the port_order return is what
+    # carries auto-detected ordering into the s4p path. The expectation here
+    # said 2, so this check failed from the moment the third return was added.
+    ('read_Nport_touchstone',           3,  3,  '(filename, port_order, ref_Z)'),
     ('parameter_size_adjustment',       2,  1,  '(param, OP)'),
     ('process_sxp',                     4,  2,  '(param, OP, chdata, chdata_xt)'),
     ('COM_FD_to_TD',                    3,  1,  '(chdata, param, OP)'),

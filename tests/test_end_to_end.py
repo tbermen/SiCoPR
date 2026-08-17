@@ -1,12 +1,14 @@
 """
 Stage 5: End-to-end COM result comparison.
 
-Requires:
-    tests/fixtures/ieee8023ck_reference.xlsx
-    tests/fixtures/ieee8023ck_compliant_host_channel.s4p
+Requires ieee8023ck_reference.xlsx + ieee8023ck_compliant_host_channel.s4p in
+tests/fixtures/ (or wherever COM_TEST_FIXTURES points); skipped if absent.
+See tests/fixtures/README.md.
 
-EXPECTED_COM_DB must be set to the value MATLAB produces for the exact reference input.
-The test is skipped if fixture files are absent.
+NOTE ON SCOPE: this is a single-channel smoke check, not the project's numeric
+parity evidence. End-to-end agreement with MATLAB is established by the 208-case
+correlation in `tools/matlab_compare.py` (FOM bit-exact on 198/208), written up
+in MATLAB_Correlation_Review.md. Prefer that harness for parity questions.
 
 802.3ck standard: compliant host channel COM must be ≥ 3.0 dB.
 """
@@ -17,18 +19,22 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-REFERENCE_CONFIG = os.path.join(os.path.dirname(__file__), 'fixtures', 'ieee8023ck_reference.xlsx')
-REFERENCE_S4P    = os.path.join(os.path.dirname(__file__), 'fixtures', 'ieee8023ck_compliant_host_channel.s4p')
+FIXTURE_DIR = os.environ.get(
+    'COM_TEST_FIXTURES', os.path.join(os.path.dirname(__file__), 'fixtures'))
+REFERENCE_CONFIG = os.path.join(FIXTURE_DIR, 'ieee8023ck_reference.xlsx')
+REFERENCE_S4P    = os.path.join(FIXTURE_DIR, 'ieee8023ck_compliant_host_channel.s4p')
 
-# Set to the value MATLAB produces for this exact reference channel+config.
-# Until a MATLAB run is available, this is set to the standard minimum pass threshold.
-# Replace with the actual MATLAB output once known.
-EXPECTED_COM_DB  = None   # Set to float once MATLAB reference value is known
+# MATLAB's COM for this exact channel+config. Still unset because no MATLAB run
+# exists for THIS 802.3ck pair -- all 208 correlated cases use the 802.3dj
+# channels instead. Set it if you obtain one; do not populate it from com.py's
+# own output, which would make the check circular.
+EXPECTED_COM_DB  = None
 COM_TOLERANCE_DB = 0.5    # ±0.5 dB
 
 pytestmark = pytest.mark.skipif(
     not (os.path.exists(REFERENCE_CONFIG) and os.path.exists(REFERENCE_S4P)),
-    reason='Reference fixture files not present — skipping end-to-end test'
+    reason='802.3ck reference fixtures absent; set COM_TEST_FIXTURES to enable '
+           '(see tests/fixtures/README.md)'
 )
 
 

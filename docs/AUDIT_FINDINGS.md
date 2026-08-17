@@ -1,5 +1,22 @@
 # AUDIT FINDINGS, com.py vs com_ieee8023_4p15p0.m
 
+> **SUPERSEDED IN PART (2026-08-17).** This document records the static
+> code-reading audit. It has since been overtaken by the 208-case MATLAB
+> correlation — see [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md),
+> which is authoritative where the two disagree.
+>
+> What changed: eight engine defects were fixed (commit `b2b2621`), including
+> **B16-D20, which this document rated "medium" and which a later end-to-end
+> trial wrongly appeared to refute** — it was compensating a second defect in the
+> die-network path, and both had to be fixed together. B12-D17 and B06-D9 are
+> also fixed. The largest defect of all is **not in this ledger**: a
+> by-reference `OP` leak in `process_sxp` that biased FOM low on 95.7% of cases,
+> which line-by-line reading never caught.
+>
+> Treat the EQUIVALENT verdicts below as evidence, not proof. Twelve divergences
+> remain open and accepted; they are marked `xcheck` in `tests/` and print as
+> `XFAIL`.
+
 Status: AUDIT COVERAGE COMPLETE (batches B01-B21), waiting at the final gate.
 All 157 MATLAB functions + 2 cross-cutting scans are now classified: 0
 NOT_YET_AUDITED. B01-B12 covered the risk-ordered work queue (section 3, groups

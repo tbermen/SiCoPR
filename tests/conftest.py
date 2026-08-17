@@ -10,8 +10,14 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-REFERENCE_CONFIG = os.path.join(os.path.dirname(__file__), 'fixtures', 'ieee8023ck_reference.xlsx')
-REFERENCE_S4P    = os.path.join(os.path.dirname(__file__), 'fixtures', 'ieee8023ck_compliant_host_channel.s4p')
+# The 802.3ck reference pair is not redistributable, so it is not committed and
+# these fixtures skip by default. Point COM_TEST_FIXTURES at a directory holding
+# both files to run them. See tests/fixtures/README.md.
+FIXTURE_DIR = os.environ.get(
+    'COM_TEST_FIXTURES', os.path.join(os.path.dirname(__file__), 'fixtures'))
+
+REFERENCE_CONFIG = os.path.join(FIXTURE_DIR, 'ieee8023ck_reference.xlsx')
+REFERENCE_S4P    = os.path.join(FIXTURE_DIR, 'ieee8023ck_compliant_host_channel.s4p')
 
 _FIXTURES_PRESENT = os.path.exists(REFERENCE_CONFIG) and os.path.exists(REFERENCE_S4P)
 

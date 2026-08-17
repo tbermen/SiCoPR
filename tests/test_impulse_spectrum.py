@@ -30,7 +30,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, xcheck, finish  # noqa: E402
 import com  # noqa: E402
 
 
@@ -223,7 +223,7 @@ check("s21_default_path_unaffected_by_apm",
 # ===========================================================================
 # EXPECTED FAIL: at a half-integer ratio, py builtin round() rounds to even
 # (200) where MATLAB round() rounds half-away (201), changing the grid length.
-check("s21_grid_round_half_away_from_zero",
+xcheck("s21_grid_round_half_away_from_zero",
       round(200.5) == 201,
       "DIVERGENT: py 17009 uses builtin round (banker's) -> round(200.5)=%d; "
       "MATLAB round is half-away -> 201, changing fout length for half-integer "
