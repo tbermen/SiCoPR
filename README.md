@@ -21,19 +21,19 @@ On top of the engine there is a study layer (`tools/`, `R/`) built to answer one
 
 ## 1. What ships in this repository — and what doesn't
 
-**Code, docs and results ship. Channel data does not.**
+**Code, docs and the IEEE public-area channels ship. Vendor and bulk data do not.**
 
 | Present | Not present (excluded in `.gitignore`) |
 |---|---|
-| the engine, tests, tooling, R reports | all `.s4p` Touchstone files |
-| `docs/`, `dev/`, `matlab/` references | `akinwale_3dj_01_2310/` (210 MB, public IEEE 802.3dj data) |
-| `sweep_results/`, `corpus_results/` outputs | vendor-marked channel + config files |
-| the 802.3ck config spreadsheet | `results/` (1.1 GB of generated figures/exports) |
+| the engine, tests, tooling, R reports | vendor-marked `.s4p` channels + config sheets |
+| **96 `.s4p` files** under `tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/` | `akinwale_3dj_01_2310/` (210 MB, public IEEE 802.3dj data) |
+| reference COM spreadsheets + MATLAB result workbooks (`tests/1_`, `tests/2_`) | `results/` (1.1 GB of generated figures/exports) |
+| `docs/`, `dev/`, `matlab/` references, study outputs | `matlab_compare_results/` (regenerable per-case JSON) |
 
-**Consequence: a fresh clone cannot run anything until you supply channel data.** Every
-command below assumes you have dropped in the relevant `.s4p` files. The corpus commands in
-§5 additionally assume `akinwale_3dj_01_2310/` is restored from the IEEE 802.3dj
-contribution `akinwale_3dj_elec_01_2310`.
+**A fresh clone can run the bundled IEEE channels immediately.** Two things need data you
+supply: the canonical example in §3 uses a vendor-marked channel, and the corpus/correlation
+commands in §5 assume `akinwale_3dj_01_2310/` is restored from the IEEE 802.3dj contribution
+`akinwale_3dj_elec_01_2310`.
 
 To ship the channel data with the repo instead, delete the `akinwale_3dj_01_2310/` line from
 `.gitignore`. Review the "vendor / third-party inputs" section of that file before removing
@@ -68,8 +68,8 @@ FEXT, `--next` for NEXT, each accepting multiple files.
 
 ```
 --- Case 1 ---
-  COM_dB                         = 3.5664
-  VEO_mV                         = 11.5800
+  COM_dB                         = 3.4694
+  VEO_mV                         = 11.5200
   Result                         = PASS  (threshold 3.0 dB)
 ```
 
@@ -81,7 +81,7 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | Path | What it is |
 |---|---|
 | `com.py` | **the engine** — assembled, runnable. *Do not edit by hand* |
-| `com_functions/fn/<name>/py_impl.py` | per-function source (the editable code), 159 functions |
+| `com_functions/fn/<name>/py_impl.py` | per-function source (the editable code), 157 functions |
 | `com_functions/fn/<name>/test_verify.py` | per-function unit tests |
 | `assemble_com.py` | concatenates the `py_impl.py` files into `com.py` |
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `com.py`, so they live beside it |

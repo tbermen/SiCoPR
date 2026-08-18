@@ -13,9 +13,9 @@
 ## TL;DR
 **Feature-complete for the standard FD-based COM flow, and past the stub stage.** Every
 MATLAB 4p15p0 function has a Python implementation (157 registry functions; `LFSR` is
-inlined inside `PRBS13Q`). **864 unit tests pass (0 fail)**; an end-to-end run on the
-bundled 802.3ck C2M config **reproduces the documented COM to 4 decimals** (Case 1 =
-3.5664 dB, Case 2 = 3.0184 dB). The items that were "true stubs" or "unwired dispatch" in
+inlined inside `PRBS13Q`). **876 unit tests pass (0 fail)**; the bundled 802.3ck C2M
+config runs end to end. (It produced Case 1 = 3.5664 dB, Case 2 = 3.0184 dB when this
+was written; the August 2026 engine fixes moved those to 3.4694 and 2.9331 dB.) The items that were "true stubs" or "unwired dispatch" in
 the previous revision of this doc (RxFFE, floating taps, causality, Rx quantization,
 TD-ILN, COM pie plot) are **now implemented and wired** — see §A/§B.
 
