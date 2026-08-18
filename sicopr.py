@@ -9937,6 +9937,21 @@ _PDF_CACHE = _collections.OrderedDict()
 _PDF_CACHE_MAX = 64
 
 
+def _get_PSDs__detach(pdf):
+    """Hand out a PDF that shares nothing mutable with the cached entry.
+
+    Copying the namespace alone is not enough: the arrays inside would still be
+    shared, so a caller doing `pdf.y *= k` (rather than `pdf.y = pdf.y * k`)
+    would corrupt the cache and silently poison every later hit. Copying the
+    arrays costs far less than recomputing the PDF, so the speed-up stands.
+    """
+    out = SimpleNamespace(**vars(pdf))
+    for _k, _v in vars(out).items():
+        if isinstance(_v, np.ndarray):
+            setattr(out, _k, _v.copy())
+    return out
+
+
 def _get_PSDs__get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     _arr = np.ascontiguousarray(np.asarray(input_vector, dtype=float))
     _key = (_hashlib.blake2b(_arr.tobytes(), digest_size=16).digest(),
@@ -9944,13 +9959,13 @@ def _get_PSDs__get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_
     _hit = _PDF_CACHE.get(_key)
     if _hit is not None:
         _PDF_CACHE.move_to_end(_key)
-        return SimpleNamespace(**vars(_hit))     # copy: callers rebind fields
+        return _get_PSDs__detach(_hit)
     _res = _get_PSDs__get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize,
                                                  FAST_NOISE_CONV)
     _PDF_CACHE[_key] = _res
     if len(_PDF_CACHE) > _PDF_CACHE_MAX:
         _PDF_CACHE.popitem(last=False)
-    return SimpleNamespace(**vars(_res))
+    return _get_PSDs__detach(_res)
 
 
 def _get_PSDs__get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FAST_NOISE_CONV=0):

@@ -68,3 +68,58 @@ def test_column_input_handled():
     ILN_row, _ = get_ILN(sdd21_row, faxis)
     ILN_col, _ = get_ILN(sdd21_col, faxis)
     np.testing.assert_allclose(ILN_row, ILN_col)
+
+
+# ---------------------------------------------------------------------------
+# Adversarial conditioning fixture (added 2026-08-18).
+#
+# Engine defect #2 of the 208-case MATLAB correlation: faxis is in Hz, so the
+# f^2 column of the fit basis reaches ~4.5e21 and cond(fmbg'fmbg) overflows.
+# np.linalg.lstsq then silently truncates small singular values, solving at an
+# EFFECTIVE RANK OF 2 OF 4 and discarding half the basis -- fitted-IL errors of
+# 3.6-14.4 dB with no warning. MATLAB deliberately takes the raw
+# normal-equations inverse of the same ill-conditioned matrix and keeps all
+# four terms.
+#
+# test_polynomial_il_small_iln above builds an exactly-representable target but
+# only asserts the identity ILN == db - efit, which holds by construction for
+# ANY efit. It therefore passes at rank 2. These tests assert the fit actually
+# recovers the target, which requires all four basis terms to survive.
+# ---------------------------------------------------------------------------
+def _exact_basis_target(n=64, fmax=50e9):
+    """db(s) built from all four basis terms, so an exact fit gives ILN == 0."""
+    faxis = np.linspace(1e9, fmax, n)
+    a = (2.0, -3.0e-5, 1.5e-11, -4.0e-23)
+    db = (a[0] + a[1] * np.sqrt(faxis) + a[2] * faxis + a[3] * faxis ** 2)
+    return faxis, 10 ** (db / 20), db
+
+
+def test_fit_recovers_all_four_basis_terms():
+    """ILN must be ~0 when the target IS the basis -- rank 4, not rank 2."""
+    faxis, sdd21, db = _exact_basis_target()
+    ILN, efit = get_ILN(sdd21, faxis)
+    assert np.max(np.abs(ILN)) < 1e-6, (
+        'residual %.4g dB: the fit did not reproduce an exactly-representable '
+        'target, so basis terms were dropped (defect #2 was rank 2 of 4)'
+        % np.max(np.abs(ILN)))
+    np.testing.assert_allclose(efit, db, atol=1e-6)
+
+
+def test_rank_truncating_solver_would_fail_this_fixture():
+    """The fixture must discriminate: lstsq on the same system must be worse.
+
+    Without this, test_fit_recovers_all_four_basis_terms could be passing for
+    the wrong reason (e.g. a well-conditioned fixture where every solver
+    agrees). This pins that the ill-conditioning is real and that the choice of
+    solver is what matters.
+    """
+    faxis, sdd21, db = _exact_basis_target()
+    w = np.ones_like(faxis)
+    fmbg = np.column_stack([w, np.sqrt(faxis), faxis, faxis ** 2])
+    LGw = 20 * np.log10(np.abs(sdd21))
+    alpha_ls, _, rank, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
+    efit_ls = (alpha_ls[0] + alpha_ls[1] * np.sqrt(faxis)
+               + alpha_ls[2] * faxis + alpha_ls[3] * faxis ** 2)
+    assert rank < 4 or np.max(np.abs(LGw - efit_ls)) > 1e-6, (
+        'lstsq solved this system at full rank %d with a good fit, so the '
+        'fixture is too well conditioned to catch defect #2' % rank)

@@ -107,3 +107,69 @@ def test_appends_to_existing():
     p = read_package_parameters(_param_block_2col(), existing)
     assert p.flex == 2
     assert p.other_field == 42
+
+
+# ---------------------------------------------------------------------------
+# Adversarial orientation fixtures (added 2026-08-18).
+#
+# The tests above check flex, column count, and the invalid-mele raise, but
+# none of them checks WHERE THE VALUES LAND. Engine defect #1 of the 208-case
+# MATLAB correlation was exactly that: MATLAB transposes all four z_p keywords
+# (L10678/10689/10695/10701 each end in .') while Python transposed only TX, so
+# the RX package was built from a matrix ROW instead of a case COLUMN -- 111 mm
+# of package instead of 13.8 mm, roughly 15 dB of spurious loss. Every test
+# above still passed.
+#
+# The fixture is deliberately NON-SQUARE (2 segments x 3 cases) and gives every
+# keyword distinct values, so a dropped or extra transpose changes both the
+# shape and the contents. A square fixture cannot catch this.
+# ---------------------------------------------------------------------------
+def _param_block_3cases():
+    """2 segments (rows) x 3 package cases (cols), spreadsheet orientation."""
+    return {
+        'C_p': np.array([0.1, 0.1]),
+        'R_d': np.array([50.0, 50.0]),
+        'A_v': np.array([0.5, 0.5]),
+        'A_fe': np.array([0.3, 0.3]),
+        'A_ne': np.array([0.2, 0.2]),
+        'z_p (TX)':   np.array([[5.0, 6.0, 7.0], [10.0, 11.0, 12.0]]),
+        'z_p (NEXT)': np.array([[3.0, 3.1, 3.2], [6.0, 6.1, 6.2]]),
+        'z_p (FEXT)': np.array([[4.0, 4.1, 4.2], [8.0, 8.1, 8.2]]),
+        'z_p (RX)':   np.array([[2.0, 2.1, 2.2], [4.0, 4.1, 4.2]]),
+        'package_Z_c': np.array([[78.2, 78.2]]),
+    }
+
+
+@pytest.mark.parametrize('attr,expected', [
+    ('z_p_tx_cases',   [[5.0, 10.0], [6.0, 11.0], [7.0, 12.0]]),
+    ('z_p_next_cases', [[3.0, 6.0], [3.1, 6.1], [3.2, 6.2]]),
+    ('z_p_fext_cases', [[4.0, 8.0], [4.1, 8.1], [4.2, 8.2]]),
+    ('z_p_rx_cases',   [[2.0, 4.0], [2.1, 4.1], [2.2, 4.2]]),
+])
+def test_all_four_z_p_keywords_are_transposed(attr, expected):
+    """Each z_p keyword must be stored (ncases, mele), i.e. row = one case.
+
+    Dropping the transpose on any one of these reintroduces engine defect #1.
+    """
+    p = read_package_parameters(_param_block_3cases())
+    got = np.asarray(getattr(p, attr))
+    assert got.shape == (3, 4), (
+        '%s should be (ncases=3, 4) after transpose and 2->4 expansion, got %s '
+        '-- a missing transpose gives (2, 4)' % (attr, got.shape))
+    np.testing.assert_allclose(got[:, :2], np.array(expected))
+    np.testing.assert_allclose(got[:, 2:], 0.0)
+
+
+def test_z_p_case_rows_are_independent():
+    """Row i must carry case i only -- catches a transpose that happens to fit.
+
+    With 2 segments and 3 cases the matrix is non-square, so an un-transposed
+    read cannot produce three distinct rows at all.
+    """
+    p = read_package_parameters(_param_block_3cases())
+    tx = np.asarray(p.z_p_tx_cases)
+    assert len({tuple(r) for r in tx}) == 3, (
+        'the three package cases collapsed to %d distinct rows'
+        % len({tuple(r) for r in tx}))
+    # Case 0 must not contain case 1's or case 2's segment lengths.
+    assert 6.0 not in tx[0] and 7.0 not in tx[0]
