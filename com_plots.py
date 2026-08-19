@@ -70,23 +70,50 @@ def _save(fig, outdir, name):
     _match_created_to_modified(path)
 
 
+def _band_ylim(ax, fG, curves, fmax, pad=6.0, floor_db=-90.0):
+    """Scale y to the data actually on screen.
+
+    Matplotlib autoscales over every plotted point, including the 60-100 GHz
+    tail that the x-limit hides, so a deep out-of-band null stretches the axis
+    to -175 dB and flattens the part being looked at.
+    """
+    band = (fG > 0) & (fG <= fmax)
+    vals = np.concatenate([np.asarray(c)[band] for c in curves]) if band.any() else None
+    if vals is None or not vals.size:
+        return
+    vals = vals[np.isfinite(vals)]
+    if not vals.size:
+        return
+    ax.set_ylim(max(float(vals.min()) - pad, floor_db), float(vals.max()) + pad)
+
+
 # ── individual figures (each guarded by the caller) ──────────────────────────
 def _fig_sparams(outdir, chdata, param):
     ch = chdata[0]
     fG = np.asarray(ch.faxis, dtype=float).ravel() / 1e9
     fb = float(param.fb)
     fig, ax = plt.subplots(figsize=(9, 5))
-    ax.plot(fG, _db(ch.sdd21_raw), label="IL raw")
-    ax.plot(fG, _db(ch.sdd21), label="IL cascaded (+pkg/brd)")
+    # Log frequency: the interesting structure (low-frequency loss slope, the
+    # roll-off knee) is compressed into the first decade on a linear axis.
+    pos = fG > 0                       # f = 0 cannot be shown on a log axis
+    ax.plot(fG[pos], _db(ch.sdd21_raw)[pos], label="IL raw")
+    ax.plot(fG[pos], _db(ch.sdd21)[pos], label="IL cascaded (+pkg/brd)")
     ax.axvline(fb/2/1e9, ls=":", color="grey")
-    ax.set_xlim(0, min(fG[-1], 60)); ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("|SDD21| [dB]")
+    ax.set_xscale("log")
+    ax.set_xlim(max(fG[pos][0], 1e-2), min(fG[-1], 60))
+    _band_ylim(ax, fG, [_db(ch.sdd21_raw), _db(ch.sdd21)], min(fG[-1], 60))
+    ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("|SDD21| [dB]")
     ax.set_title("Insertion loss: raw vs cascaded"); ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
     _save(fig, outdir, "02_insertion_loss.png")
     fig, ax = plt.subplots(figsize=(9, 5))
     for arr, lab in [(ch.sdd11_raw, "RL11 raw"), (ch.sdd11, "RL11 cas"),
                      (ch.sdd22_raw, "RL22 raw"), (ch.sdd22, "RL22 cas")]:
-        ax.plot(fG, _db(arr), label=lab)
-    ax.set_xlim(0, min(fG[-1], 60)); ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("[dB]")
+        ax.plot(fG[pos], _db(arr)[pos], label=lab)
+    ax.set_xscale("log")
+    ax.set_xlim(max(fG[pos][0], 1e-2), min(fG[-1], 60))
+    _band_ylim(ax, fG, [_db(ch.sdd11_raw), _db(ch.sdd11),
+                        _db(ch.sdd22_raw), _db(ch.sdd22)], min(fG[-1], 60))
+    ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("[dB]")
     ax.set_title("Return loss: raw vs cascaded"); ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
     _save(fig, outdir, "02_return_loss.png")
 
@@ -102,7 +129,14 @@ def _fig_filters(outdir, chdata, param, OP):
     ax.plot(fG, _db(H_r), lw=2, label="MAIN path H_r (no H_t)")
     ax.plot(fG, _db(H_r * H_t), lw=2, label="DISPLAY path H_r*H_t")
     ax.plot(fG, _db(H_t), ls="--", label="H_t (Gaussian)")
-    ax.set_xlim(0, 60); ax.set_ylim(-40, 3); ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("[dB]")
+    ax.set_xscale("log")
+    _fpos = fG[fG > 0]
+    ax.set_xlim(max(_fpos[0], 1e-2) if _fpos.size else 1e-2, 60)
+    # These filters are flat to ~20 GHz and then roll off, so a fixed -40..3 dB
+    # window leaves most of the axis empty once x is logarithmic.
+    _band_ylim(ax, fG, [_db(H_r), _db(H_r * H_t), _db(H_t)], 60, pad=2.0,
+               floor_db=-40.0)
+    ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("[dB]")
     ax.set_title("FD response chain: main vs display (H_t is display-only)")
     ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
     _save(fig, outdir, "03_filters_main_vs_display.png")
@@ -119,11 +153,15 @@ def _fig_pulse(outdir, chdata, param):
     ax.grid(True, ls=":", alpha=0.5)
     _save(fig, outdir, "04_sbr_full.png")
     fig, ax = plt.subplots(figsize=(9, 4.5))
-    tui = (t - t[ipk]) / ui; m = (tui >= -10) & (tui <= 10)
+    # Same window as 06_eq_vs_uneq_sbr so the two charts can be read together;
+    # the post-cursor tail the DFE works on runs well past +10 UI.
+    _T0, _T1 = -5, 20
+    tui = (t - t[ipk]) / ui; m = (tui >= _T0) & (tui <= _T1)
     ax.plot(tui[m], PR[m] * 1000, ".-", ms=3)
-    for k in range(-10, 11): ax.axvline(k, ls=":", color="grey", lw=0.5)
-    ax.axvline(0, color="red"); ax.set_xlabel("time [UI from peak]"); ax.set_ylabel("SBR [mV]")
-    ax.set_title("SBR zoom (+/-10 UI)"); ax.grid(True, axis="y", ls=":", alpha=0.5)
+    for k in range(_T0, _T1 + 1): ax.axvline(k, ls=":", color="grey", lw=0.5)
+    ax.axvline(0, color="red"); ax.set_xlim(_T0, _T1)
+    ax.set_xlabel("time [UI from peak]"); ax.set_ylabel("SBR [mV]")
+    ax.set_title("SBR zoom (-5 to +20 UI)"); ax.grid(True, axis="y", ls=":", alpha=0.5)
     _save(fig, outdir, "04_sbr_zoom.png")
 
 
@@ -135,7 +173,7 @@ def _fig_equalizer(outdir, chdata, fom_result, param):
     fig, ax = plt.subplots(figsize=(9, 4.6))
     ax.plot((np.arange(len(uneq)) - iup)/M, uneq*1000, label=f"uneq (cursor {uneq[iup]*1000:.1f} mV)", lw=1)
     ax.plot((np.arange(len(sbr)) - t_s)/M, sbr*1000, label=f"equalized (cursor {sbr[t_s]*1000:.1f} mV)", lw=1.3)
-    ax.set_xlim(-6, 20); ax.axvline(0, color="red", lw=0.7)
+    ax.set_xlim(-5, 20); ax.axvline(0, color="red", lw=0.7)
     ax.set_xlabel("time [UI from cursor]"); ax.set_ylabel("SBR [mV] (absolute)")
     ax.set_title("Equalized vs unequalized SBR (absolute, Tx-referred)")
     ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
@@ -258,7 +296,13 @@ def _fig_contribution_pie(outdir, Noise_Struct, PDF, COM_SNR_Struct, param):
     A_s = float(COM_SNR_Struct.A_s)
     if maxn_tot <= 0:
         return
-    COM = 20.0 * np.log10(A_s / maxn_tot)
+    # 20*log10(A_s/maxn_tot) is COM as the PDF path alone sees it, i.e.
+    # COM_orig -- it predates any MLSE adjustment. The reported figure is
+    # COM_SNR_Struct.COM (COM_orig + delta_COM), so split THAT: the slice
+    # fractions are ratios and do not change, but the total the reader is
+    # shown now matches the COM on the summary line.
+    COM_pdf = 20.0 * np.log10(A_s / maxn_tot)
+    COM = float(getattr(COM_SNR_Struct, "COM", COM_pdf))
     s2 = float(np.dot(maxn, maxn))
     com_per = COM * (maxn ** 2 / s2) if s2 > 0 else np.zeros(3)
     tot = float(np.sum(com_per))
@@ -270,7 +314,10 @@ def _fig_contribution_pie(outdir, Noise_Struct, PDF, COM_SNR_Struct, param):
     fig, ax = plt.subplots(figsize=(6.5, 6))
     ax.pie(com_per[keep], startangle=90, counterclock=False,
            labels=[f"{labels[i]}\n{pct[i]:.1f}%" for i in range(3) if keep[i]])
-    ax.set_title(f"COM contribution breakdown  (COM={COM:.2f} dB)")
+    _ttl = f"COM contribution breakdown  (COM={COM:.2f} dB)"
+    if abs(COM - COM_pdf) > 5e-3:
+        _ttl += f"\nsplit of the reported COM; pre-MLSE COM_orig = {COM_pdf:.2f} dB"
+    ax.set_title(_ttl)
     _save(fig, outdir, "09_contribution_pie.png")
 
 

@@ -333,10 +333,21 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         # --- voltage bathtub: sweep the threshold at the centre phase ---------
         # One curve per eye, each spanning its own eye and therefore centred on
         # that eye's level rather than on a single +/-A_s pair.
+        # The axis must run well BEYOND the outer thresholds, not just span the
+        # eye edges: each outer eye's bathtub keeps rising past its own level,
+        # and an axis that stops at the outermost threshold clips those two
+        # curves mid-slope. Extend by a full eye spacing on each side so every
+        # curve reaches its ~0.5 shoulders.
         v_lo = min(float(A_ni_top[n + 1][half_UI]) for n in range(n_eyes))
         v_hi = max(float(A_ni_bot[n][half_UI]) for n in range(n_eyes))
-        span = max(v_hi - v_lo, 1e-6)
-        v_axis = np.linspace(v_lo - 0.15 * span, v_hi + 0.15 * span, 401)
+        vth_min, vth_max = float(np.min(vth_eyes)), float(np.max(vth_eyes))
+        if n_eyes > 1:
+            pad = (vth_max - vth_min) / (n_eyes - 1)      # one eye spacing
+        else:
+            pad = max(v_hi - v_lo, 1e-6)
+        lo = min(v_lo, vth_min - pad)
+        hi = max(v_hi, vth_max + pad)
+        v_axis = np.linspace(lo, hi, 601)
         ber_v = np.full((n_eyes, v_axis.size), np.nan)
         for n in range(n_eyes):
             up, lo = n + 1, n
