@@ -385,6 +385,31 @@ plot_eye <- function(dat) {
 # -- Plot 5b: timing bathtub (BER density vs sample phase) --------------------
 # The bathtub is a distinct chart from the eye diagram: BER along the horizontal
 # scan at each eye centre, on a log axis.
+# -- Plot 5c: voltage bathtub (BER vs decision threshold, centre phase) -------
+# One curve per eye, each centred on its own PAM level. Distinct from the timing
+# bathtub: this sweeps the DECISION THRESHOLD at the optimum phase, where the
+# timing bathtub sweeps PHASE at each eye's fixed threshold.
+plot_voltage_bathtub <- function(dat) {
+  eye <- tryCatch(g0(dat, "eye"), error = function(e) NULL)
+  vb <- tryCatch(as.matrix(gf(eye, "vbt_ber")), error = function(e) NULL)
+  vax <- tryCatch(as.numeric(gf(eye, "vbt_threshold_V")), error = function(e) NULL)
+  if (is.null(vb) || length(vb) == 0 || is.null(vax) || length(vax) == 0)
+    return(.eye_absent_note(dat, "Voltage bathtub"))
+  if (nrow(vb) != length(vax) && ncol(vb) == length(vax)) vb <- t(vb)
+  nm <- if (ncol(vb) == 3) c("lower", "central", "upper") else
+    paste0("eye", seq_len(ncol(vb)))
+  p <- plot_ly(height = 700)
+  for (i in seq_len(ncol(vb)))
+    p <- add_lines(p, x = vax * 1000, y = pmax(vb[, i], 1e-20),
+                   name = paste(nm[i], "eye"),
+                   hovertemplate = "threshold = %{x:.3f} mV<br>BER = %{y:.2e}<extra></extra>")
+  layout(p, title = "Voltage bathtub (BER vs decision threshold, at the centre phase)",
+         xaxis = list(title = "Decision threshold [mV]"),
+         yaxis = list(title = "BER", type = "log", dtick = 1,
+                      exponentformat = "power", showexponent = "all"),
+         legend = list(x = 1.02), hovermode = "closest")
+}
+
 plot_bathtub <- function(dat) {
   eye <- tryCatch(g0(dat, "eye"), error = function(e) NULL)
   ber <- tryCatch(as.matrix(gf(eye, "ber_eyes")), error = function(e) NULL)
@@ -570,6 +595,7 @@ build_dashboard <- function(matfile, out_html = NULL) {
     tags$div(style="height:800px;", plot_pulse(dat)),
     tags$div(style="height:1200px;", plot_eye(dat)),
     tags$div(style="height:800px;", plot_bathtub(dat)),
+    tags$div(style="height:800px;", plot_voltage_bathtub(dat)),
     tags$div(style="height:800px;", plot_eq_contribution(dat)),
     results_section,
     cfgmeta_section

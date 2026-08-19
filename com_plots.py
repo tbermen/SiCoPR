@@ -175,19 +175,47 @@ def _fig_bathtubs(outdir, chdata, PDF, COM_SNR_Struct, param):
     specBER = float(param.specBER)
     A_s = float(COM_SNR_Struct.A_s)
     px = np.asarray(PDF.x, dtype=float).ravel(); py = np.asarray(PDF.y, dtype=float).ravel()
-    # voltage bathtub: +/-A_s signal cursors conv combined PDF -> walls
-    vbt_l = np.abs(0.5 - np.cumsum(0.5 * py))
-    vbt_r = np.flip(0.5 - np.cumsum(np.flip(0.5 * py)))
-    fig, ax = plt.subplots(figsize=(9.5, 5))
-    ax.semilogy((px - A_s)*1000, np.maximum(vbt_l, 1e-20), "b", label="left wall (-A_s + noise)")
-    ax.semilogy((px + A_s)*1000, np.maximum(vbt_r, 1e-20), "r", label="right wall (+A_s + noise)")
-    ax.axhline(specBER, ls="--", color="k", label=f"DER ({specBER:.0e})")
-    ax.plot([-A_s*1000, A_s*1000], [0.5, 0.5], "ok", ms=5)
-    ax.set_ylim(1e-15, 1); ax.set_xlim(-2.2*A_s*1000, 2.2*A_s*1000)
-    ax.set_xlabel("decision threshold [mV]"); ax.set_ylabel("BER")
-    ax.set_title(f"VOLTAGE bathtub  (COM={float(COM_SNR_Struct.COM):.2f} dB)")
-    ax.grid(True, which="both", ls=":", alpha=0.5); ax.legend(fontsize=8)
-    _save(fig, outdir, "08_voltage_bathtub.png")
+    _tb = getattr(chdata[0], "timing_bathtub", None)
+    _vb = _tb.get("vbt_ber") if isinstance(_tb, dict) else None
+    if _vb is not None:
+        # One curve per eye, each swept over the decision threshold at the
+        # centre phase, so a PAM-4 link shows three bathtubs sitting at their
+        # own eye levels. The previous version drew two walls built from
+        # +/-A_s and the single combined PDF -- an NRZ picture that puts every
+        # eye at the same place and cannot show the outer eyes at all.
+        vax = np.asarray(_tb["vbt_threshold_V"], dtype=float).ravel() * 1000.0
+        vb = np.asarray(_vb, dtype=float)
+        vth = np.asarray(_tb.get("eye_threshold_V", []), dtype=float).ravel() * 1000.0
+        n_eyes = vb.shape[0]
+        labels = ["lower", "central", "upper"] if n_eyes == 3 else \
+                 [f"eye{i + 1}" for i in range(n_eyes)]
+        fig, ax = plt.subplots(figsize=(9.5, 5))
+        for i in range(n_eyes):
+            ln, = ax.semilogy(vax, np.maximum(vb[i], 1e-20), lw=1.4,
+                              label=f"{labels[i]} eye")
+            if i < vth.size:
+                ax.axvline(vth[i], color=ln.get_color(), ls=":", lw=0.9)
+        ax.axhline(specBER, ls="--", color="k", label=f"DER ({specBER:.0e})")
+        ax.set_ylim(1e-15, 1)
+        ax.set_xlabel("decision threshold [mV]"); ax.set_ylabel("BER")
+        ax.set_title(f"VOLTAGE bathtub  (COM={float(COM_SNR_Struct.COM):.2f} dB)")
+        ax.grid(True, which="both", ls=":", alpha=0.5); ax.legend(fontsize=8)
+        _save(fig, outdir, "08_voltage_bathtub.png")
+    else:
+        # No per-level data (COM_eye_width did not run). Fall back to the
+        # single-PDF view rather than emitting nothing.
+        vbt_l = np.abs(0.5 - np.cumsum(0.5 * py))
+        vbt_r = np.flip(0.5 - np.cumsum(np.flip(0.5 * py)))
+        fig, ax = plt.subplots(figsize=(9.5, 5))
+        ax.semilogy((px - A_s)*1000, np.maximum(vbt_l, 1e-20), "b", label="left wall (-A_s + noise)")
+        ax.semilogy((px + A_s)*1000, np.maximum(vbt_r, 1e-20), "r", label="right wall (+A_s + noise)")
+        ax.axhline(specBER, ls="--", color="k", label=f"DER ({specBER:.0e})")
+        ax.plot([-A_s*1000, A_s*1000], [0.5, 0.5], "ok", ms=5)
+        ax.set_ylim(1e-15, 1); ax.set_xlim(-2.2*A_s*1000, 2.2*A_s*1000)
+        ax.set_xlabel("decision threshold [mV]"); ax.set_ylabel("BER")
+        ax.set_title(f"VOLTAGE bathtub, combined PDF  (COM={float(COM_SNR_Struct.COM):.2f} dB)")
+        ax.grid(True, which="both", ls=":", alpha=0.5); ax.legend(fontsize=8)
+        _save(fig, outdir, "08_voltage_bathtub.png")
     # timing bathtub + eye contour (attached to chdata[0] by COM_eye_width)
     tb = getattr(chdata[0], "timing_bathtub", None)
     if tb is not None:

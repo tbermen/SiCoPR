@@ -262,6 +262,12 @@ def export_case_mat(OP, param, chdata, fom_result, Noise_Struct, PDF, CDF,
             eye["ber_eyes"] = np.asarray(tb["ber_eyes"])
         if "eye_contour" in tb:
             eye["eye_contour"] = np.asarray(tb["eye_contour"])
+        # Voltage-bathtub sweep: one BER curve per eye over decision threshold,
+        # taken at the centre phase. Distinct from the timing bathtub, which
+        # sweeps phase at each eye's own fixed threshold.
+        for _k in ("eye_threshold_V", "vbt_threshold_V", "vbt_ber"):
+            if _k in tb:
+                eye[_k] = np.asarray(tb[_k])
         _add(d, "eye", eye)
     ec = getattr(COM_SNR_Struct, "eye_contour", None)
     if ec is not None and len(np.asarray(ec, dtype=object).ravel()) > 0:

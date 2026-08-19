@@ -203,3 +203,75 @@ def test_out_vt_vb_set_when_T_O_nonzero():
         f"out_VT should be scalar, got {type(out_VT)}"
     assert isinstance(out_VB, (int, float, np.floating)), \
         f"out_VB should be scalar, got {type(out_VB)}"
+
+
+# ---------------------------------------------------------------------------
+# Bathtub BER composition (added 2026-08-19).
+#
+# pdf_to_cdf returns THREE curves and picking the wrong one fails silently:
+#     yB = cumsum(pdf)     = P(V <= v)   bottom-eye tail
+#     yT = reverse cumsum  = P(V >= v)   top-eye tail
+#     y  = min(yB, yT)     -- necessarily ~0.5 mid-distribution
+#
+# The timing/voltage bathtubs must use yB for the UPPER level (it errs by
+# falling below the threshold) and yT for the LOWER level (it errs by rising
+# above it). An earlier version used `y` and `1 - y`, which pinned every
+# bathtub at BER ~ 0.5 no matter how open the eye was -- a link with COM
+# 5.6 dB plotted as if it were closed.
+#
+# Two Gaussian levels with a threshold midway between them have a known answer,
+# so this checks the composition against theory rather than against itself.
+# ---------------------------------------------------------------------------
+def _gauss_pdf(centre, sigma, x, binsize):
+    y = np.exp(-0.5 * ((x - centre) / sigma) ** 2)
+    return SimpleNamespace(x=x, y=y / y.sum(), BinSize=binsize,
+                           Min=int(x[0] / binsize))
+
+
+def test_bathtub_ber_matches_gaussian_theory():
+    """0.5*(yB_up + yT_lo) at the midpoint must equal the Q-function BER."""
+    import math
+    from com_functions.fn.pdf_to_cdf.py_impl import pdf_to_cdf
+
+    mu, sigma, bs = 0.030, 0.004, 1e-5
+    x = np.arange(-0.12, 0.12 + bs, bs)
+    cdf_up = pdf_to_cdf(_gauss_pdf(+mu, sigma, x, bs))
+    cdf_lo = pdf_to_cdf(_gauss_pdf(-mu, sigma, x, bs))
+
+    ber = 0.5 * (np.interp(0.0, cdf_up.x, cdf_up.yB)
+                 + np.interp(0.0, cdf_lo.x, cdf_lo.yT))
+    analytic = 0.5 * math.erfc(mu / (sigma * math.sqrt(2)))
+    assert 0.9 < ber / analytic < 1.1, (
+        'bathtub BER %.4e vs analytic %.4e' % (ber, analytic))
+
+
+def test_bathtub_must_not_use_the_min_curve():
+    """The discarded formulation must be demonstrably wrong, or the test above
+    could pass for the wrong reason."""
+    from com_functions.fn.pdf_to_cdf.py_impl import pdf_to_cdf
+
+    mu, sigma, bs = 0.030, 0.004, 1e-5
+    x = np.arange(-0.12, 0.12 + bs, bs)
+    cdf_up = pdf_to_cdf(_gauss_pdf(+mu, sigma, x, bs))
+    cdf_lo = pdf_to_cdf(_gauss_pdf(-mu, sigma, x, bs))
+
+    wrong = 0.5 * (np.interp(0.0, cdf_up.x, cdf_up.y)
+                   + (1.0 - np.interp(0.0, cdf_lo.x, cdf_lo.y)))
+    assert wrong > 0.4, (
+        'the y/1-y formulation no longer collapses to ~0.5 (got %.3e); if '
+        'pdf_to_cdf changed, revisit the bathtub composition' % wrong)
+
+
+def test_pdf_to_cdf_tail_semantics():
+    """yB rises with v, yT falls with v, and y is their minimum."""
+    from com_functions.fn.pdf_to_cdf.py_impl import pdf_to_cdf
+
+    bs = 1e-4
+    x = np.arange(-0.05, 0.05 + bs, bs)
+    c = pdf_to_cdf(_gauss_pdf(0.0, 0.01, x, bs))
+    assert np.all(np.diff(c.yB) >= -1e-15), 'yB must be non-decreasing'
+    assert np.all(np.diff(c.yT) <= 1e-15), 'yT must be non-increasing'
+    np.testing.assert_allclose(c.y, np.minimum(c.yB, c.yT))
+    assert abs(c.y.max() - 0.5) < 0.02, (
+        'min(yB, yT) should peak near 0.5 -- this is exactly why it cannot be '
+        'used as a BER')

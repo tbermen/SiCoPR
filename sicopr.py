@@ -1850,25 +1850,65 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
     # Stored on chdata[0] as a side-channel so the return signature (and MATLAB
     # fidelity) is unchanged; consumed by com_plots when OP.SAVE_FIGURES.
     if not pdf_range_flag:
+        # pdf_to_cdf returns THREE curves and picking the wrong one silently
+        # produces a flat 0.5:
+        #     yB = cumsum(pdf)        = P(V <= v)   (bottom-eye tail)
+        #     yT = reverse cumsum     = P(V >= v)   (top-eye tail)
+        #     y  = min(yB, yT)        -- necessarily ~0.5 mid-distribution
+        # A threshold crossing is an error only in one direction per level: the
+        # UPPER level errs by falling below the threshold (yB), the LOWER level
+        # by rising above it (yT). An earlier version of this block used `y` and
+        # `1 - y`, which reads the minimum of two half-probabilities and pinned
+        # every bathtub at BER ~ 0.5 regardless of how open the eye was.
+        def _tail(cdf_obj, which):
+            """P(V<=v) for 'B' or P(V>=v) for 'T', with a safe fallback."""
+            arr = getattr(cdf_obj, 'yB' if which == 'B' else 'yT', None)
+            if arr is None:                      # minimal stub without yB/yT
+                y = np.asarray(cdf_obj.y, dtype=float)
+                arr = np.cumsum(y) if which == 'B' else np.flip(np.cumsum(np.flip(y)))
+            return np.asarray(arr, dtype=float).ravel()
+
+        def _eye_ber(up, lo, j, vth):
+            """Symbol-error probability at threshold vth for the eye up/lo."""
+            cuj, clj = combined_cdf[up][j], combined_cdf[lo][j]
+            if cuj is None or clj is None:
+                return np.nan
+            ber_up = float(np.interp(vth, np.asarray(cuj.x, dtype=float),
+                                     _tail(cuj, 'B')))
+            ber_lo = float(np.interp(vth, np.asarray(clj.x, dtype=float),
+                                     _tail(clj, 'T')))
+            return 0.5 * (ber_up + ber_lo)
+
         phase_UI = (np.arange(samp_UI) - half_UI) / float(samp_UI)
+
+        # --- timing bathtub: sweep sample phase at each eye's own threshold ---
         ber_eyes = np.full((n_eyes, samp_UI), np.nan)
+        vth_eyes = np.zeros(n_eyes)
         for n in range(n_eyes):
             up, lo = n + 1, n
-            vref = 0.5 * (A_ni_bot[lo][half_UI] + A_ni_top[up][half_UI])
+            vth = 0.5 * (A_ni_bot[lo][half_UI] + A_ni_top[up][half_UI])
+            vth_eyes[n] = vth
             for j in range(samp_UI):
-                cuj, clj = combined_cdf[up][j], combined_cdf[lo][j]
-                if cuj is None or clj is None:
-                    continue
-                # combined_cdf entries are CDFs (.y = P(V<=v)). The upper level
-                # errors by falling below vref -> P(V_up<=vref)=cdf; the lower
-                # level errors by rising above vref -> P(V_lo>=vref)=1-cdf.
-                cu_y = np.asarray(cuj.y, dtype=float)
-                cl_y = np.asarray(clj.y, dtype=float)
-                ber_up = float(np.interp(vref, cuj.x, cu_y))
-                ber_lo = float(np.interp(vref, clj.x, 1.0 - cl_y))
-                ber_eyes[n, j] = 0.5 * (ber_up + ber_lo)
+                ber_eyes[n, j] = _eye_ber(up, lo, j, vth)
+
+        # --- voltage bathtub: sweep the threshold at the centre phase ---------
+        # One curve per eye, each spanning its own eye and therefore centred on
+        # that eye's level rather than on a single +/-A_s pair.
+        v_lo = min(float(A_ni_top[n + 1][half_UI]) for n in range(n_eyes))
+        v_hi = max(float(A_ni_bot[n][half_UI]) for n in range(n_eyes))
+        span = max(v_hi - v_lo, 1e-6)
+        v_axis = np.linspace(v_lo - 0.15 * span, v_hi + 0.15 * span, 401)
+        ber_v = np.full((n_eyes, v_axis.size), np.nan)
+        for n in range(n_eyes):
+            up, lo = n + 1, n
+            for k, vth in enumerate(v_axis):
+                ber_v[n, k] = _eye_ber(up, lo, half_UI, float(vth))
+
         chdata[0].timing_bathtub = {"phase_UI": phase_UI, "ber_eyes": ber_eyes,
-                                    "eye_contour": eye_contour}
+                                    "eye_contour": eye_contour,
+                                    "eye_threshold_V": vth_eyes,
+                                    "vbt_threshold_V": v_axis,
+                                    "vbt_ber": ber_v}
 
     # ---- Windowed VEC (out_VT, out_VB) when T_O != 0 ----
     out_VT = []
