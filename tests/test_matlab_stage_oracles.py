@@ -12,7 +12,15 @@ tests/2_Results_COM_Matlab/ carry ~260 columns of genuine MATLAB output per
 case, and many are the output of one identifiable stage.
 
 tools/extract_matlab_oracles.py distils those into
-tests/oracles/matlab_stage_oracles.json (37 KB, committed). This file checks it.
+tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 MATLAB
+quantities each across 7 stages, ~300 KB, committed. This file checks it.
+
+Three quantities are deliberately sparse and are NOT a extraction fault:
+  TXLE_taps  104/208  a tap VECTOR, stored as text in one of the two workbooks
+                      (the same two workbooks disagree on the Tx FFE tap set
+                      while naming the same config_file -- an open question)
+  sgm_rjit   160/208  blank where the case carries no random-jitter term
+  sgm_xt     203/208  blank where the case has no crosstalk contribution
 
 Three layers, cheapest first:
 
@@ -31,6 +39,7 @@ Three layers, cheapest first:
 Run: python tests/test_matlab_stage_oracles.py
      COM_ORACLE_LIVE=1 python tests/test_matlab_stage_oracles.py
 """
+import collections as _collections
 import csv
 import io
 import json
@@ -63,9 +72,33 @@ with io.open(ORACLE, encoding='utf-8') as _f:
 CASES = ORA['cases']
 CMAP = ORA['column_map']
 
-check("oracle_has_cases",
-      len(CASES) >= 10,
-      "only %d oracle cases; too few to be representative" % len(CASES))
+check("oracle_covers_the_whole_reference_set",
+      len(CASES) >= 208,
+      "only %d oracle cases; the reference corpus has 208 and the oracle is "
+      "meant to mirror it. Regenerate with "
+      "`python tools/extract_matlab_oracles.py`" % len(CASES))
+
+_unresolved = [c['sheet'] + ':' + str(c['row'])
+               for c in CASES if not c['case_id']]
+check("every_oracle_case_maps_to_a_known_case_id",
+      not _unresolved,
+      "%d oracle case(s) could not be tied back to report_data/compare.csv: "
+      "%s -- an unmapped case cannot be provenance-checked or run live"
+      % (len(_unresolved), _unresolved[:5]))
+
+_by_cond = _collections.Counter(c['cond'] for c in CASES)
+check("oracle_balanced_across_crosstalk_conditions",
+      set(_by_cond) == {'wXtalk', 'woXtalk'} and min(_by_cond.values()) >= 100,
+      "crosstalk coverage is %s -- crosstalk-only defects (the 8 sampling-"
+      "phase divergences are all wXtalk) need both sides represented"
+      % dict(_by_cond))
+
+_by_test = _collections.Counter(c['test'] for c in CASES)
+check("oracle_covers_all_four_package_cases",
+      len(_by_test) >= 4 and min(_by_test.values()) >= 40,
+      "package-case coverage is %s -- the FOM discrepancy tracked the package, "
+      "so a gap here hides exactly the class of defect that was hardest to "
+      "find" % dict(_by_test))
 
 _stages = {v['stage'] for v in CMAP.values()}
 check("oracle_spans_the_pipeline",
