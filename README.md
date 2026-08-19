@@ -60,11 +60,18 @@ install.packages(c("plotly", "htmltools", "jsonlite", "R.matlab"))
 ## 3. Run
 
 ```powershell
-python com.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...] [--export-mat]
+python com.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...]
+              [--export-mat] [--matlab-version {4p15p0,4p16p0}] [--eye-under-mlse]
 ```
 
 The **THRU** (victim) channel is required. Crosstalk aggressors are optional: `--fext` for
 FEXT, `--next` for NEXT, each accepting multiple files.
+
+| flag | what it does |
+|---|---|
+| `--export-mat` | per-case engineering `.mat` snapshot for the R dashboard (§10) |
+| `--matlab-version` | which MATLAB release to emulate — **default `4p15p0`** (§8) |
+| `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. MATLAB gates the eye on `MLSE == 0`, but MLSE is applied afterwards, so the pre-MLSE eye is well defined. Diagnostic only: no reported value changes. |
 
 ```
 --- Case 1 ---
@@ -85,10 +92,10 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | `com_functions/fn/<name>/test_verify.py` | per-function unit tests |
 | `assemble_com.py` | concatenates the `py_impl.py` files into `com.py` |
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `com.py`, so they live beside it |
-| `tools/` | the study layer (§5): sweep, probe, corpus, deck builder |
+| `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
 | `R/` | interactive HTML reports |
-| `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, adaptive-local-search branch) |
-| `docs/` | audit findings, fix summary, feature plan |
+| `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
+| `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | historical development prompts, state ledgers, one-shot scripts — kept for provenance, not needed to run anything |
 | `tests/` | standalone cross-check scripts (run directly, not via pytest) |
 | `sweep_results/`, `corpus_results/` | study outputs, each with a `RESULTS.md` / `STATE.md` |
@@ -192,13 +199,38 @@ Those scripts record two outcomes. `check()` is behaviour that must match MATLAB
 persists and **fails the run if it starts passing** — so a divergence that gets
 fixed cannot leave a stale entry behind in the ledger.
 
+Current state: **886** per-function tests, and **359 checks across 19 audit scripts**
+with 16 accepted divergences.
+
+### Cross-cutting guards
+
+Four of those scripts exist because the per-function tests structurally cannot catch the
+defect classes that actually got through. Each was built from a real failure and verified
+by re-introducing it:
+
+| script | guards against | why |
+|---|---|---|
+| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the eight engine defects** were this. Caught a new instance during the 4p16p0 port. |
+| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **178 copies of 70 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
+| `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the hoisted Gram matrix, FFT/direct convolution agreement, shared buffers. Found a live cache-aliasing defect. |
+| `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks — the only tests in the repo that assert against MATLAB rather than against Python. |
+
+### Tooling for a new MATLAB release
+
+```powershell
+python tools/matlab_version_diff.py OLD.m NEW.m   # -> which py_impl files to re-check
+python tools/matlab_version_diff.py --self-check  # validates the differ itself
+python tools/bench_com.py --against <ref>         # speed change + full-precision fingerprint
+python tools/compare_matlab_versions.py           # diff two version sweeps, field by field
+```
+
 ## 7. Verification status & caveats
 
 Every major feature is implemented and unit-tested against `matlab/com_ieee8023_4p15p0.m`
 plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating RxFFE
 taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
 processing (ICN/ILD), ERL/TDR, and TD-ILN/RILN. The `com_functions/fn` suite is green
-(**876 passed, 0 failed**), and the bundled 802.3ck C2M channel runs end-to-end.
+(**886 passed, 0 failed**), and the bundled 802.3ck C2M channel runs end-to-end.
 
 **Numeric parity with MATLAB has been established end to end.** 208 reference cases from
 Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
@@ -215,6 +247,10 @@ Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
 Eight engine defects were found and fixed in the process. Reproduce with
 `python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
 [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
+
+That result is against **4p15p0**, which is why it stays the default emulation target — see
+§8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical
+on all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
 
 Honest caveats for anyone relying on the numbers:
 
@@ -235,10 +271,49 @@ Honest caveats for anyone relying on the numbers:
   reported results.
 - GUI file pickers are not ported — file lists are always passed on the command line.
 
-The conversion audit (147 EQUIVALENT / 11 DIVERGENT functions, findings D1–D20) is written up
+The conversion audit (146 EQUIVALENT / 11 DIVERGENT functions, findings D1–D20) is written up
 in [`docs/AUDIT_FINDINGS.md`](docs/AUDIT_FINDINGS.md), with the ledger in `dev/state/`.
 
-## 8. r4p15p0 deltas + adaptive local search
+## 8. MATLAB version support
+
+The port emulates **`4p15p0` by default**, and that default is deliberate: the 208-case
+reference workbooks were produced by 4p15p0, so it is the version the correlation result
+above is evidence for. `4p16p0` behaviour is opt-in.
+
+```powershell
+python com.py <config.xlsx> <thru.s4p> --matlab-version 4p16p0     # per run
+python tools/matlab_compare.py --run --jobs 5 --matlab-version 4p16p0   # whole corpus
+```
+
+`com.COM_MATLAB_VERSION = '4p16p0'` does the same from Python, and a `COM Version` keyword
+in the config wins over both.
+
+**4p16p0 is a small delta**: 146 of 152 function bodies are unchanged, 6 changed, 3 added,
+0 removed. The three additions are `OptFom_Adaptive_Local_Search`, `compute_hard_cap` and
+`append_csv_row` — Hansel D'silva's adaptive local search, **now adopted into the released
+mainline** rather than living in a branch.
+
+Every change has been measured; full detail in
+[`docs/MATLAB_4p16p0_CHANGES.md`](docs/MATLAB_4p16p0_CHANGES.md) and
+[`docs/MATLAB_4p16p0_IMPACT.md`](docs/MATLAB_4p16p0_IMPACT.md).
+
+| change | measured effect |
+|---|---|
+| pulse/step now scaled by channel amplitude `A` | `peak_uneq_pulse_mV`, `steady_state_voltage_mV` × A on all 208 cases. **COM, FOM, VEO, VEC, itick, ERL untouched** |
+| `Clip Method` default `Fast` → `Slow` | **COM +0.007 dB, FOM +0.22 dB** — but only for configs that omit the keyword. All 208 reference configs set it. |
+| `min_radius` 1 → 2 in adaptive search | bit-identical answer, **4.3× the candidate evaluations, 2.5× the runtime** |
+| four new step responses | additive fields |
+| common-mode / TDR degenerate guards | never fired on any input tested |
+| `OptFom_Create_Output`, `get_PSDs` edits | numerically neutral |
+
+Reproduce the comparison with:
+
+```powershell
+python tools/matlab_version_diff.py matlab/com_ieee8023_4p15p0.m matlab/com_ieee8023_4p16p0.m
+python tools/compare_matlab_versions.py       # after running both sweeps
+```
+
+## 9. r4p15p0 deltas + adaptive local search
 
 On top of the `4p14p0` base, incorporated from `4p15p0` and Hansel D'silva's
 adaptive-local-search branch:
@@ -260,7 +335,7 @@ adaptive-local-search branch:
   (`param.PKG`) accessed by dict subscript instead of attribute, and a 2-row `Port Order`
   matrix now routing to auto-detection.
 
-## 9. Input files
+## 10. Input files
 
 **Configuration spreadsheet (`.xlsx`)** — IEEE 802.3 COM spreadsheet format, active sheet
 `COM_Settings` (parameter / value columns). Key parameters: signalling rate (`f_b`),
@@ -272,7 +347,7 @@ reference spreadsheet.
 `[1, 3, 2, 4]`; override with `snpPortsOrder` in the config. Aggressor files use the same
 format (differential `Sdd21` becomes the coupling response).
 
-## 10. Engineering `.mat` export (optional)
+## 11. Engineering `.mat` export (optional)
 
 `--export-mat` writes a per-case MATLAB v5 snapshot alongside the standard outputs. It is an
 **additive debug export** — it changes no COM result, report, or figure.

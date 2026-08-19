@@ -2,7 +2,7 @@
 
 > **Status as of 2026-07-01 — feature inventory only; the verification claims below
 > are superseded by [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md)
-> (2026-08-17). Unit-test count is now 876, and end-to-end parity is established
+> (2026-08-19). Unit-test count is now 886, and end-to-end parity is established
 > against 208 MATLAB reference cases rather than the single bundled config.**
 >
 > **Reference: `com_ieee8023_4p15p0.m` + Hansel D'silva's
@@ -13,7 +13,7 @@
 ## TL;DR
 **Feature-complete for the standard FD-based COM flow, and past the stub stage.** Every
 MATLAB 4p15p0 function has a Python implementation (157 registry functions; `LFSR` is
-inlined inside `PRBS13Q`). **876 unit tests pass (0 fail)**; the bundled 802.3ck C2M
+inlined inside `PRBS13Q`). **886 unit tests pass (0 fail)**; the bundled 802.3ck C2M
 config runs end to end. (It produced Case 1 = 3.5664 dB, Case 2 = 3.0184 dB when this
 was written; the August 2026 engine fixes moved those to 3.4694 and 2.9331 dB.) The items that were "true stubs" or "unwired dispatch" in
 the previous revision of this doc (RxFFE, floating taps, causality, Rx quantization,

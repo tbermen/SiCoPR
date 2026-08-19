@@ -292,6 +292,42 @@ it is left alone, but it is pure overhead in batch correlation runs.
 
 ---
 
+## 5c. MATLAB 4p16p0
+
+4p16p0 was published on 2026-08-18 and is supported behind a version switch; **4p15p0
+remains the default**, since the reference workbooks this correlation rests on are 4p15p0
+output.
+
+The delta is small: **146 of 152 function bodies unchanged, 6 changed, 3 added, 0 removed**.
+The three additions are `OptFom_Adaptive_Local_Search`, `compute_hard_cap` and
+`append_csv_row` — **adaptive local search has been adopted into the released mainline**
+rather than remaining a branch.
+
+The same 208 cases were run in both modes. **210 of 213 output columns are identical on
+every case**, and no COM, FOM, VEO, VEC, `itick` or ERL value moves.
+
+| change | measured effect |
+|---|---|
+| pulse/step now scaled by channel amplitude `A` | `peak_uneq_pulse_mV`, `steady_state_voltage_mV` × A on all 208. 4p15p0 scaled the impulse response but not the pulse built from it; the new values are the corrected ones. COM untouched. |
+| `Clip Method` default `Fast` → `Slow` | **COM +0.007 dB, FOM +0.22 dB**, but only for configs that omit the keyword — all 208 reference configs set it |
+| `min_radius` 1 → 2 in adaptive search | bit-identical answer, **4.3× the candidate evaluations, 2.5× the runtime** |
+
+The last two could not be exercised by the corpus (every case sweeps one TXFFE candidate,
+and every config names `Clip Method`), so they were measured separately on a config with a
+1584-point Tx FFE grid.
+
+**Two points for you on this.** First, the mainline sets `min_radius = 2` where your branch
+forced 1; on that channel the mainline default evaluates 4.3× the candidates for a
+bit-identical answer, so we would be interested in what motivated 2 — it may help on channel
+classes not represented here. Second, a 4p16p0 run of these same 208 cases is what would let
+us move the default; with adaptive search now mainline it is a more useful comparison than
+when it was a branch.
+
+Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_IMPACT.md`
+(measured effect).
+
+---
+
 ## 6. Requests
 
 1. **Do the two reference workbooks record Tx FFE at different granularity?**
