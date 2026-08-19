@@ -364,6 +364,17 @@ Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_I
    numerical disagreement. The workbook currently exposes only `itick`, so the frame
    origin is unobservable from the outputs.
 
+   **This column now unblocks a second item as well.** A separate investigation into
+   stage-6 noise agreement (`docs/STAGE6_NOISE_AGREEMENT.md`) arrives at the same
+   unknown from the other direction. `sigma_TX` and `sigma_rj` are built by decimating
+   the pulse at `cursor_i % samples_per_ui`, while `sigma_N` is analytic and uses no
+   cursor — and only the cursor-derived terms disagree. Their error is ~1e-12 at
+   `itick = −8` and grows with distance from it, and `itick` separates the exact cases
+   from the rest with 1.0% overlap. That is the signature of two engines agreeing at one
+   sampling anchor and drifting either side of it. With `cursor_i` in hand the check is
+   one line: `sigma_TX` should agree exactly wherever the two cursors differ by a
+   multiple of `samples_per_ui`.
+
 ---
 
 ## Appendix A — deliverables
