@@ -29,8 +29,19 @@ import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-FUNC_RE = re.compile(r'^\s*function\s+(?:\[(?P<outs>[^\]]*)\]|(?P<out>[\w.]+))?'
-                     r'\s*=?\s*(?P<name>\w+)\s*\((?P<args>[^)]*)\)')
+# Two shapes, tried in order. They must NOT be merged into one pattern with an
+# optional output group: on a no-output declaration like
+#     function append_csv_row(file_path, header_cells, row_cells)
+# the optional group grabs "append_csv_ro" and backtracking leaves the name as
+# "w". That silently invents a function AND misplaces the boundary of the real
+# one, corrupting the body ranges either side of it.
+FUNC_RE_OUT = re.compile(r'^\s*function\s+(?:\[[^\]]*\]|[\w.]+)\s*=\s*'
+                         r'(?P<name>\w+)\s*\((?P<args>[^)]*)\)')
+FUNC_RE_VOID = re.compile(r'^\s*function\s+(?P<name>\w+)\s*\((?P<args>[^)]*)\)')
+
+
+def _match_function(line):
+    return FUNC_RE_OUT.match(line) or FUNC_RE_VOID.match(line)
 # "MATLAB lines: 2580-2692" / "MATLAB line 4592" / "ML 7976"
 CITE_RE = re.compile(r'(?:MATLAB|ML)\s*(?:source\s*)?lines?\s*[:#]?\s*'
                      r'(\d{3,5})\s*(?:[-–]\s*(\d{3,5}))?', re.I)
@@ -41,7 +52,7 @@ def parse_functions(path):
     lines = io.open(path, encoding='utf-8', errors='replace').read().splitlines()
     marks = []
     for i, line in enumerate(lines):
-        m = FUNC_RE.match(line)
+        m = _match_function(line)
         if m:
             marks.append((i, m.group('name'), line.strip()))
     out = {}
