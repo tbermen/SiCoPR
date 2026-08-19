@@ -145,16 +145,38 @@ including all 208 reference cases — are unaffected.
 
 ## Recommendation
 
-Nothing here argues against adopting 4p16p0. Two reported columns get more
-correct, no COM/FOM/VEO/VEC/itick/ERL value moves, and the corpus runs clean.
+All six changes are now measured. Summary of what adopting 4p16p0 does:
 
-But keep 4p15p0 as the default until the two unexercised changes are measured —
-particularly `min_radius`, which alters the search itself rather than a reported
-number, and which this corpus structurally cannot test.
+| change | effect |
+|---|---|
+| `A` scaling of pulse/step | `peak_uneq_pulse_mV` and `steady_state_voltage_mV` x A (0.385 here). COM untouched. The new values are the correct ones. |
+| `Clip Method` default Fast → Slow | **COM +0.007 dB, FOM +0.22 dB** on configs that omit the keyword; nothing on configs that set it. ~20% slower. |
+| `min_radius` 1 → 2 | same answer, **4.3x the candidate evaluations, 2.5x the runtime** |
+| new step responses | additive fields only |
+| CM / TDR degenerate guards | never fired on any input tested |
+| `OptFom_Create_Output`, `get_PSDs` | numerically neutral |
 
-The correlation evidence continues to rest on 4p15p0, where the reference
-workbooks came from. When 4p16p0 reference results become available, the same
-harness compares against them by pointing `--matlab-version` at the new sweep.
+Nothing here blocks adoption. Two reported columns become correct, and the
+`Clip Method` shift is toward the more exact computation.
+
+**Keep 4p15p0 as the default anyway**, for one reason that has not changed: the
+208-case reference workbooks are 4p15p0 output, and they are what the
+correlation result (FOM bit-exact 198/208) rests on. Switching the default
+without matching reference data would leave the port's main evidence pointing at
+a version it no longer emulates.
+
+Two things to raise with Hansel:
+
+1. **`min_radius = 2` looks like a regression in the mainline.** His branch
+   forced 1. On CAKR the mainline default evaluates 4.3x the candidates for a
+   bit-identical answer. Worth asking what motivated 2, since it may help on
+   channel classes not represented here.
+2. **A 4p16p0 run of the same 208 cases** would let the default move. With
+   adaptive search now mainline he has more reason to want the comparison than
+   when this was a branch.
+
+When that reference data arrives, the same harness handles it:
+`--matlab-version 4p16p0` on both the sweep and the report.
 
 ---
 
