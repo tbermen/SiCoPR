@@ -101,7 +101,11 @@ def _fig_sparams(outdir, chdata, param):
     ax.set_xscale("log")
     # Full sweep: capping at 60 GHz hid 4000 of 10001 points on this config.
     ax.set_xlim(fG[pos][0], fG[-1])
-    _band_ylim(ax, fG, [_db(ch.sdd21_raw), _db(ch.sdd21)], fG[-1])
+    # Floor y at -80 dB. The cascaded response keeps falling to about -179 dB
+    # above ~55 GHz; letting the axis follow it squeezes the in-band curve into
+    # the top fifth of the plot. The roll-off is still visible running off the
+    # bottom, and the frequency axis still shows every point.
+    _band_ylim(ax, fG, [_db(ch.sdd21_raw), _db(ch.sdd21)], fG[-1], floor_db=-80.0)
     ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("|SDD21| [dB]")
     ax.set_title("Insertion loss: raw vs cascaded"); ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
     _save(fig, outdir, "02_insertion_loss.png")
