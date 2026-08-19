@@ -343,9 +343,12 @@ plot_pulse <- function(dat) {
   der <- tryCatch(as.numeric(gf(rf, "DER_MLSE")), error = function(e) NA)
   why <- if (length(der) > 0 && !is.na(der[1]))
     paste0("MLSE is enabled for this run (DER_MLSE = ", sprintf("%.3g", der[1]),
-           "). COM_eye_width is gated on OP.MLSE == 0 in both MATLAB and ",
-           "COM Python, so no eye contour is computed. Set MLSE = 0 (with EW = 1) ",
-           "to produce it.")
+           "). MATLAB gates COM_eye_width on OP.MLSE == 0 (4p15p0 L620) and this ",
+           "port follows it, so neither tool emits an eye by default. That is a ",
+           "reporting choice, not a limitation: MLSE is applied afterwards ",
+           "(L667), so the pre-MLSE (DFE-only) eye is well defined. To plot it, ",
+           "re-run with  com.EYE_PLOT_UNDER_MLSE = True  -- diagnostic only, it ",
+           "changes no reported COM, VEC, VEO or EW value.")
   else
     paste0("No eye data in this .mat. COM_eye_width runs only when ",
            "RX_CALIBRATION = 0, EW = 1 and MLSE = 0.")

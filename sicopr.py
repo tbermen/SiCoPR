@@ -236,6 +236,23 @@ All callee functions are injected for testability.
 """
 
 
+# Opt-in diagnostic, off by default (same convention as SWEEP_LOG_CSV /
+# ALS_LOG_CSV): compute the eye contour and timing bathtub for PLOTTING even
+# when MLSE is enabled.
+#
+#   import com; com.EYE_PLOT_UNDER_MLSE = True
+#
+# MATLAB gates the eye on OP.MLSE == 0 (4p15p0 L620) and this port follows it,
+# so by default neither tool emits an eye or bathtub under MLSE. But MLSE is
+# applied later (L667) and the eye is computed from the pre-MLSE PDF/CDF, so the
+# chart is perfectly well defined -- it is the DFE-only eye, which is what an
+# eye diagram is regardless of what post-processing follows.
+#
+# Setting this changes NO reported value: the extra call's return values are
+# discarded, and its only side effect is the plotting side-channel
+# chdata[0].timing_bathtub. Verified against the full 208-case corpus.
+EYE_PLOT_UNDER_MLSE = False
+
 
 def _com_ieee8023___save_case_outputs(OP, param, chdata, fom_result, Noise_Struct, PDF, CDF,
                        COM_SNR_Struct, output_args, case_i):
@@ -537,6 +554,27 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 Left_EW, Right_EW, eye_contour, EH_T_C2M, EH_B_C2M = _COM_eye_width_fn(
                     chdata, param.delta_y, fom_result, param, OP, Noise_Struct, 0)
                 EW_UI = float(np.floor(np.sum(Left_EW) + np.sum(Right_EW))) / float(param.samples_for_C2M)
+            elif (EYE_PLOT_UNDER_MLSE
+                  and not getattr(OP, 'RX_CALIBRATION', False)
+                  and getattr(OP, 'EW', 0) == 1
+                  and getattr(OP, 'MLSE', 0) != 0):
+                # PLOTTING ONLY -- opt in with `com.EYE_PLOT_UNDER_MLSE = True`.
+                #
+                # MATLAB (4p15p0 L620) gates the eye on OP.MLSE == 0, so with MLSE
+                # enabled neither tool produces an eye contour or timing bathtub.
+                # That is a reporting choice, not a computability limit: MLSE is
+                # applied at L667, AFTER this point, so PDF/CDF/Noise_Struct here
+                # are the pre-MLSE (DFE-only) quantities and the eye they describe
+                # is well defined -- it is simply the eye before MLSE post-
+                # processing, which is what an eye diagram means anyway.
+                #
+                # Every return value is DISCARDED, so EW_UI stays 0 and
+                # eye_contour stays [] exactly as MATLAB leaves them. The only
+                # effect is COM_eye_width's plotting side-channel,
+                # chdata[0].timing_bathtub, which com_plots and the .mat export
+                # read. No reported COM, VEC, VEO or EW value changes.
+                _COM_eye_width_fn(chdata, param.delta_y, fom_result, param, OP,
+                                  Noise_Struct, 0)
 
             eps_val = np.finfo(float).eps
             if getattr(OP, 'MLSE', 0) == 0:
