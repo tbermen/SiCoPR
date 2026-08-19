@@ -70,12 +70,11 @@ def _save(fig, outdir, name):
     _match_created_to_modified(path)
 
 
-def _band_ylim(ax, fG, curves, fmax, pad=6.0, floor_db=-90.0):
+def _band_ylim(ax, fG, curves, fmax, pad=6.0, floor_db=-200.0):
     """Scale y to the data actually on screen.
 
-    Matplotlib autoscales over every plotted point, including the 60-100 GHz
-    tail that the x-limit hides, so a deep out-of-band null stretches the axis
-    to -175 dB and flattens the part being looked at.
+    Kept because _db() maps an exact zero to -6000 dB; floor_db guards against
+    that without clipping real data (the deepest genuine point here is -179 dB).
     """
     band = (fG > 0) & (fG <= fmax)
     vals = np.concatenate([np.asarray(c)[band] for c in curves]) if band.any() else None
@@ -100,8 +99,9 @@ def _fig_sparams(outdir, chdata, param):
     ax.plot(fG[pos], _db(ch.sdd21)[pos], label="IL cascaded (+pkg/brd)")
     ax.axvline(fb/2/1e9, ls=":", color="grey")
     ax.set_xscale("log")
-    ax.set_xlim(max(fG[pos][0], 1e-2), min(fG[-1], 60))
-    _band_ylim(ax, fG, [_db(ch.sdd21_raw), _db(ch.sdd21)], min(fG[-1], 60))
+    # Full sweep: capping at 60 GHz hid 4000 of 10001 points on this config.
+    ax.set_xlim(fG[pos][0], fG[-1])
+    _band_ylim(ax, fG, [_db(ch.sdd21_raw), _db(ch.sdd21)], fG[-1])
     ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("|SDD21| [dB]")
     ax.set_title("Insertion loss: raw vs cascaded"); ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
     _save(fig, outdir, "02_insertion_loss.png")
@@ -110,9 +110,9 @@ def _fig_sparams(outdir, chdata, param):
                      (ch.sdd22_raw, "RL22 raw"), (ch.sdd22, "RL22 cas")]:
         ax.plot(fG[pos], _db(arr)[pos], label=lab)
     ax.set_xscale("log")
-    ax.set_xlim(max(fG[pos][0], 1e-2), min(fG[-1], 60))
+    ax.set_xlim(fG[pos][0], fG[-1])
     _band_ylim(ax, fG, [_db(ch.sdd11_raw), _db(ch.sdd11),
-                        _db(ch.sdd22_raw), _db(ch.sdd22)], min(fG[-1], 60))
+                        _db(ch.sdd22_raw), _db(ch.sdd22)], fG[-1])
     ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("[dB]")
     ax.set_title("Return loss: raw vs cascaded"); ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
     _save(fig, outdir, "02_return_loss.png")
@@ -131,11 +131,8 @@ def _fig_filters(outdir, chdata, param, OP):
     ax.plot(fG, _db(H_t), ls="--", label="H_t (Gaussian)")
     ax.set_xscale("log")
     _fpos = fG[fG > 0]
-    ax.set_xlim(max(_fpos[0], 1e-2) if _fpos.size else 1e-2, 60)
-    # These filters are flat to ~20 GHz and then roll off, so a fixed -40..3 dB
-    # window leaves most of the axis empty once x is logarithmic.
-    _band_ylim(ax, fG, [_db(H_r), _db(H_r * H_t), _db(H_t)], 60, pad=2.0,
-               floor_db=-40.0)
+    ax.set_xlim(_fpos[0] if _fpos.size else 1e-2, fG[-1])
+    _band_ylim(ax, fG, [_db(H_r), _db(H_r * H_t), _db(H_t)], fG[-1], pad=2.0)
     ax.set_xlabel("frequency [GHz]"); ax.set_ylabel("[dB]")
     ax.set_title("FD response chain: main vs display (H_t is display-only)")
     ax.grid(True, ls=":", alpha=0.5); ax.legend(fontsize=8)
