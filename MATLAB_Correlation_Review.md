@@ -294,28 +294,39 @@ it is left alone, but it is pure overhead in batch correlation runs.
 
 ## 6. Requests
 
-1. **Which Tx FFE tap set produced the with-crosstalk reference?** The two reference
-   workbooks disagree: `wXtalk` reports `TXLE_taps = [0 0 1 0]` (four taps, cursor
-   third) and `Pre2Pmax = 0`, while `woXtalk` reports `TXLE_taps = 1` and an empty
-   `Pre2Pmax` — **with the same `config_file` recorded in both**.
+1. **Do the two reference workbooks record Tx FFE at different granularity?**
+   The with-crosstalk workbook carries four columns, `TXLE_taps_1..4`, holding the full
+   tap vector: `[0 0 1 0]` on 94 of its 104 cases and **genuinely non-trivial on the
+   other 10** (`[0, −0.02, 0.98, 0]`, `[0, −0.04, 0.96, 0]`, `[0, −0.06, 0.94, 0]`,
+   `[0, −0.1, 0.9, 0]`). The without-crosstalk workbook carries a single `TXLE_taps`
+   column, equal to `1` in all 104 cases — with the same `config_file` recorded in both.
 
-   The shipped config declares `c(-4)…c(-1) = 0` and `c(1) = 0`. Tracing MATLAB's own
-   `OptFom_Build_TXFFE` (L2789–2816) with that input, every all-zero fixed tap is
-   dropped and `txffe` collapses to the scalar `[1.0]` — which is what the `woXtalk`
-   reference and COM Python both report. COM Python is a faithful port of that logic
-   (verified line by line, pinned by unit tests): as soon as any tap is non-trivial the
-   `auto_count_trigger` latch retains the whole vector *including its zeros*.
+   Our reading is that these are the same answer written two ways, the single column
+   being the cursor of an otherwise-zero `[0 0 1 0]`. That is consistent with MATLAB's
+   own `OptFom_Build_TXFFE` (L2789–2816): with the shipped config (`c(-4)…c(-1) = 0`,
+   `c(1) = 0`) every all-zero fixed tap is dropped and `txffe` collapses to the scalar
+   `[1.0]`, while as soon as any tap is non-trivial the `auto_count_trigger` latch
+   retains the whole vector including its zeros. COM Python is a faithful port of that
+   logic, verified line by line and pinned by unit tests.
 
-   Numerically inert — no Tx equalization is applied in any of the 208 cases — but worth
-   confirming nothing else differed between the two runs.
+   Confirming that reading closes the question. If the single column means something
+   else, the Tx FFE side of the without-crosstalk comparison needs re-reading.
 
-2. **`cursor_i` (or absolute `t_s`) reported alongside `itick`.** This settles §4.1
-   immediately: if `cursor_i − SBR_peak ≠ itick` on those eight cases, the reporting
-   inconsistency is confirmed. The workbook currently exposes only `itick`, so the frame
-   origin is unobservable.
+2. **`cursor_i` (or absolute `t_s`) reported alongside `itick`.**
 
-*(The earlier request for `H` and `Rnn` is withdrawn — the residual it was meant to
-diagnose is resolved.)*
+   *Context (§4.1):* on 8 of the 208 cases the two engines select a different sampling
+   phase — the position within the UI at which the eye is evaluated. `itick` is chosen
+   by maximising FOM across a 49-phase sweep, so a different tick changes the reported
+   FOM, DFE taps and COM. Everything upstream agrees to 12+ significant figures on those
+   same cases, and COM Python cannot reach MATLAB's reported FOM at MATLAB's reported
+   tick under **any** equalizer setting, while the two peak FOM values agree to
+   0.06–0.09 dB. That pattern fits a frame-origin offset rather than a different search
+   outcome.
+
+   One extra column settles it: if `cursor_i − SBR_peak ≠ itick` on those eight cases,
+   the offset is confirmed and the divergence is a reporting convention rather than a
+   numerical disagreement. The workbook currently exposes only `itick`, so the frame
+   origin is unobservable from the outputs.
 
 ---
 

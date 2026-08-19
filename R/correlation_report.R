@@ -110,11 +110,12 @@ p3c <- ggplot(cmp, aes(dfom)) +
            size = 3.5, colour = "#d95f02",
            label = sprintf("mean %+.4f dB  ", mean(cmp$dfom))) +
   labs(title = "FOM difference distribution",
-       subtitle = sprintf(paste("COM Python's FOM is lower in %d of %d cases —",
-                                "a systematic bias, not scatter.",
-                                "Adaptive search shrinks its radius on a",
-                                "0.002 dB improvement threshold."),
-                          nlow, nrow(cmp)),
+       subtitle = sprintf(paste0("%d of %d cases are bit-exact; the rest scatter ",
+                                 "both ways, mean %+.4f dB.
+",
+                                 "The pre-fix one-sided bias (Python low in 199 ",
+                                 "of 208) is gone."),
+                          sum(abs(cmp$dfom) < 1e-9), nrow(cmp), mean(cmp$dfom)),
        x = "FOM Python − FOM MATLAB (dB)", y = "cases") +
   theme_com
 ggsave(file.path(dout, "fig_fom_hist.png"), p3c, width = W, height = H, dpi = DPI)
@@ -147,9 +148,11 @@ ggsave(file.path(dout, "fig_fom_vs_com.png"), p3d, width = W, height = H, dpi = 
 st <- read.csv(file.path(din, "stages.csv"), stringsAsFactors = FALSE) %>%
   group_by(stage) %>%
   summarise(pct_exact = 100 * sum(n_exact) / sum(n_cols),
-            worst = median(worst_rel_err),
+            typical = median(worst_rel_err),
+            cases_diff = sum(n_exact < n_cols),
+            ncases = dplyr::n(),
             ncols = round(mean(n_cols)), .groups = "drop") %>%
-  mutate(digits = ifelse(worst <= 0, 15, pmin(15, -log10(worst))),
+  mutate(digits = ifelse(typical <= 0, 15, pmin(15, -log10(typical))),
          stage = reorder(stage, dplyr::desc(stage)),
          band = ifelse(pct_exact >= 99, "all or nearly all columns exact",
                        ifelse(pct_exact >= 75, "most columns exact",
@@ -157,22 +160,28 @@ st <- read.csv(file.path(din, "stages.csv"), stringsAsFactors = FALSE) %>%
 
 p4 <- ggplot(st, aes(y = stage, x = pct_exact, fill = band)) +
   geom_col(width = .62) +
-  geom_text(aes(label = sprintf("  %.0f%%   (worst column agrees to %.0f digits)",
-                                pct_exact, digits)),
+  geom_text(aes(label = sprintf("  %.0f%%   (median case %s; %d of %d cases differ)",
+                                pct_exact,
+                                ifelse(digits >= 15, "identical",
+                                       sprintf("agrees to %.0f digits", digits)),
+                                cases_diff, ncases)),
             hjust = 0, size = 3.5, colour = "grey20") +
   scale_fill_manual(values = c("all or nearly all columns exact" = "#1b9e77",
                                "most columns exact" = "#2c7fb8",
                                "residual concentrated here" = "#d95f02"),
                     name = NULL) +
-  scale_x_continuous(limits = c(0, 190), breaks = c(0, 25, 50, 75, 100),
+  scale_x_continuous(limits = c(0, 235), breaks = c(0, 25, 50, 75, 100),
                      labels = function(x) paste0(x, "%")) +
   labs(title = "Agreement by pipeline stage",
-       subtitle = paste("Share of reported output columns matching MATLAB",
-                        "bit-for-bit, across all 208 cases.",
-                        "
-\"Digits\" = matching significant figures in the",
-                        "worst column of that stage (15 = identical)."),
-       x = "output columns matching MATLAB exactly", y = NULL) +
+       subtitle = paste0("Bar: share of output columns agreeing with MATLAB to ",
+                         "better than 1e-9 relative (~9+ significant figures).
+",
+                         "In brackets: the MEDIAN case for that stage, and how ",
+                         "many of the 208 cases have any column outside 1e-9.
+",
+                         "Sampling is one integer column (itick), so its median ",
+                         "case is identical while 8 cases differ outright."),
+       x = "output columns agreeing to better than 1e-9 relative", y = NULL) +
   theme_com
 ggsave(file.path(dout, "fig_stage_agreement.png"), p4, width = W, height = H, dpi = DPI)
 
@@ -192,7 +201,9 @@ p5 <- ggplot(dv, aes(reorder(grp, rate), rate)) +
   facet_wrap(~panel, scales = "free_y") +
   expand_limits(y = max(dv$rate) * 1.18) +
   labs(title = "Sampling-phase divergence rate",
-       subtitle = "9 of 208 cases select a different itick; concentrated in low-loss DAC assemblies with crosstalk",
+       subtitle = sprintf(paste("%d of %d cases select a different itick;",
+                                "concentrated in low-loss DAC assemblies with crosstalk"),
+                          sum(cmp$tick_match == 0), nrow(cmp)),
        x = NULL, y = "cases with differing itick (%)") +
   theme_com
 ggsave(file.path(dout, "fig_divergence.png"), p5, width = W, height = H, dpi = DPI)
