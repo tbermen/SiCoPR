@@ -82,6 +82,67 @@ evaluate:
 
 ---
 
+## The two changes the corpus could not reach — measured on CAKR
+
+The CAKR config (`config_com_dj_200G_CAKR_178_PKGA_..._TXLEOn_mod_v1.xlsx`)
+sweeps **1584 TXFFE candidates** and **does not set `Clip Method`**, so it
+exercises both changes the 208-case corpus structurally could not. Three arms,
+same channel and aggressors, chosen so each comparison moves one thing:
+
+| arm | version | Clip Method | min_radius |
+|---|---|---|---|
+| A | 4p15p0 | Fast (default) | 1 |
+| B | 4p16p0 | Slow (default) | 2 (mainline rule) |
+| C | 4p16p0 | Slow (default) | 1 (`Overwrite Minimum Radius = 1`) |
+
+### min_radius 1 → 2 — B vs C, nothing else differs
+
+**Identical answer, 4.3x the work.**
+
+| | C (min_radius 1) | B (min_radius 2) | |
+|---|---|---|---|
+| COM_dB | 5.602443154 | 5.602443154 | same |
+| FOM | 14.828351473 | 14.828351473 | same |
+| VEO_mV, VEC_dB, itick, CTLE, g_DC_HP, ERL | | | all same |
+| candidates evaluated | 70 | **300** | **x4.29** |
+| wall clock | 4.9 min | **12.0 min** | **x2.48** |
+
+Every reported value is bit-identical; the larger radius floor simply stops the
+search pruning. On this channel the mainline default costs 4.3x the candidate
+evaluations and 2.5x the runtime and buys nothing.
+
+That is worth passing back to Hansel: his branch forced `min_radius = 1`, and
+this is evidence for that choice over the mainline's 2 — at least on a channel
+of this class. It does not prove 2 is never useful, only that it is pure
+overhead here.
+
+### Clip Method Fast → Slow — A vs C, min_radius held at 1
+
+**This one does move COM.**
+
+| | A (Fast) | C (Slow) | delta |
+|---|---|---|---|
+| COM_dB | 5.595759755 | 5.602443154 | **+0.00668** |
+| FOM | 14.613204542 | 14.828351473 | **+0.21515** |
+| VEO_mV | 7.367591437 | 7.377174260 | +0.00958 |
+| VEC_dB | 6.467293099 | 6.459910277 | −0.00738 |
+| itick, CTLE_DC_gain_dB, g_DC_HP, ERL | | | all same |
+| candidates evaluated | 70 | 70 | same |
+| wall clock | 4.0 min | 4.9 min | x1.21 |
+
+The equalizer solution is unchanged — same tick, same CTLE, same high-pass, same
+number of candidates evaluated — so this is not a different search outcome. It
+is the ADC-clip PDF being computed the exact way instead of the approximate one.
+The other 4p16p0 edits in this arm cannot account for it: the `A` scaling was
+shown COM-neutral across all 208 cases, and the new guards never fire here.
+
+`Slow` is the more exact path, so 4p16p0 is making the accurate method the
+default. The cost is about 20% runtime on this case.
+
+**Consequence for any config that omits `Clip Method`: adopting 4p16p0 shifts
+COM by roughly +0.007 dB and FOM by +0.22 dB.** Configs that name the keyword —
+including all 208 reference cases — are unaffected.
+
 ## Recommendation
 
 Nothing here argues against adopting 4p16p0. Two reported columns get more
