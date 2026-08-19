@@ -331,11 +331,39 @@ plot_pulse <- function(dat) {
          yaxis = list(title = "Amplitude"))
 }
 
+# -- why the eye / bathtub panels can be legitimately empty --------------------
+# COM_eye_width is what produces the eye contour AND the timing bathtub, and both
+# MATLAB (com_ieee8023_4p15p0.m L620) and this port gate it identically:
+#     OP.RX_CALIBRATION == 0 && OP.EW == 1 && OP.MLSE == 0
+# So a run with MLSE enabled has no eye data in EITHER tool -- it is a
+# configuration consequence, not a missing export. Say so rather than showing an
+# unexplained blank panel.
+.eye_absent_note <- function(dat, what) {
+  rf <- tryCatch(g0(dat, "results_full"), error = function(e) NULL)
+  der <- tryCatch(as.numeric(gf(rf, "DER_MLSE")), error = function(e) NA)
+  why <- if (length(der) > 0 && !is.na(der[1]))
+    paste0("MLSE is enabled for this run (DER_MLSE = ", sprintf("%.3g", der[1]),
+           "). COM_eye_width is gated on OP.MLSE == 0 in both MATLAB and ",
+           "COM Python, so no eye contour is computed. Set MLSE = 0 (with EW = 1) ",
+           "to produce it.")
+  else
+    paste0("No eye data in this .mat. COM_eye_width runs only when ",
+           "RX_CALIBRATION = 0, EW = 1 and MLSE = 0.")
+  plot_ly(height = 420) |>
+    layout(title = paste0(what, " - not available for this run"),
+           xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
+           annotations = list(list(text = why, showarrow = FALSE,
+                                   x = 0.5, y = 0.5, xref = "paper", yref = "paper",
+                                   align = "center",
+                                   font = list(size = 13, color = "#444"))))
+}
+
 # -- Plot 5: eye diagram (statistical BER contour at DER) ---------------------
 plot_eye <- function(dat) {
-  eye <- g0(dat, "eye")
+  eye <- tryCatch(g0(dat, "eye"), error = function(e) NULL)
+  ec <- tryCatch(as.matrix(gf(eye, "eye_contour")), error = function(e) NULL)
+  if (is.null(ec) || length(ec) == 0) return(.eye_absent_note(dat, "Eye diagram"))
   phase <- as.numeric(gf(eye, "phase_UI"))
-  ec <- as.matrix(gf(eye, "eye_contour"))
   p <- plot_ly(height = 1100)
   ncol_pairs <- ncol(ec) %/% 2
   for (i in seq_len(ncol_pairs)) {
@@ -355,12 +383,11 @@ plot_eye <- function(dat) {
 # The bathtub is a distinct chart from the eye diagram: BER along the horizontal
 # scan at each eye centre, on a log axis.
 plot_bathtub <- function(dat) {
-  eye <- g0(dat, "eye")
-  phase <- as.numeric(gf(eye, "phase_UI"))
+  eye <- tryCatch(g0(dat, "eye"), error = function(e) NULL)
   ber <- tryCatch(as.matrix(gf(eye, "ber_eyes")), error = function(e) NULL)
   if (is.null(ber) || length(ber) == 0)
-    return(plot_ly(height = 700) |>
-             layout(title = "Timing bathtub (no ber_eyes in .mat)"))
+    return(.eye_absent_note(dat, "Timing bathtub"))
+  phase <- as.numeric(gf(eye, "phase_UI"))
   if (nrow(ber) != length(phase) && ncol(ber) == length(phase)) ber <- t(ber)
   p <- plot_ly(height = 700)
   for (i in seq_len(ncol(ber))) {
@@ -441,7 +468,38 @@ build_dashboard <- function(matfile, out_html = NULL) {
                       as.numeric(gf(cpar, "fp1_Hz")) / 1e9,
                       as.numeric(gf(cpar, "fp2_Hz")) / 1e9)
   dfe_txt <- paste(sprintf("%.4f", as.numeric(g0(dat, "dfe_taps"))), collapse = ", ")
+
+  # results_full carries the engine's own reported outputs -- the same fields the
+  # MATLAB reference workbooks record. Read them for the summary rows below.
+  rfull <- tryCatch(g0(dat, "results_full"), error = function(e) NULL)
+  rnum <- function(name) {
+    x <- tryCatch(as.numeric(gf(rfull, name)), error = function(e) NA)
+    if (length(x) == 0) NA else x[1]
+  }
+
+  # Tx FFE: state how many candidates the search evaluated alongside the winning
+  # taps. Without that, an all-zero result reads as "initial values were exported"
+  # when it is in fact the no-equalisation corner winning a full sweep.
+  n_txffe <- tryCatch(as.numeric(gf(gf(g0(dat, "run_summary"), "sweep"), "n_TXFFE")),
+                      error = function(e) NA)
   ffe_txt <- paste(sprintf("%.4f", as.numeric(g0(dat, "ffe_taps"))), collapse = ", ")
+  if (!is.na(n_txffe) && n_txffe > 1)
+    ffe_txt <- sprintf("%s   (winner of %d Tx FFE candidates)", ffe_txt, round(n_txffe))
+
+  # RxFFE: 87 taps is too many for a header row, so summarise and point at the
+  # full vector, which is in the collapsible results table.
+  rxffe <- tryCatch(as.numeric(g0(dat, "rxffe_taps")), error = function(e) numeric(0))
+  rxffe_txt <- if (length(rxffe) == 0) "not used" else
+    sprintf("%d taps, cursor %.4f at index %d, peak |tap| %.4f, gain %s",
+            length(rxffe), rxffe[which.max(abs(rxffe))], which.max(abs(rxffe)),
+            max(abs(rxffe)),
+            if (is.na(rnum("RxFFEgain"))) "n/a" else sprintf("%.4g", rnum("RxFFEgain")))
+
+  # MLSE: reported via its error contribution. A finite DER_MLSE means the MLSE
+  # path ran; it also means COM_eye_width was skipped (see the eye/bathtub note).
+  der_mlse <- rnum("DER_MLSE")
+  mlse_txt <- if (is.na(der_mlse)) "not enabled" else
+    sprintf("enabled - DER_MLSE = %.4g", der_mlse)
 
   case_idx <- tryCatch(as.integer(gf(g0(dat, "meta"), "case_index")), error = function(e) NA)
   if (length(case_idx) == 0 || is.na(case_idx)) case_idx <- 1L
@@ -465,15 +523,25 @@ build_dashboard <- function(matfile, out_html = NULL) {
     tags$table(
       style = "border-collapse: collapse;",
       tags$tr(tags$td(tags$b("COM")),    tags$td(sprintf("%.4f dB", num("COM_dB")))),
-      tags$tr(tags$td(tags$b("FOM (Gaussian-noise COM approx)")),
-              tags$td(sprintf("%.4f dB  (sigma_total = %.3f mV)",
-                              num("FOM_gauss_dB"), num("sigma_total_mV")))),
+      tags$tr(tags$td(tags$b("FOM (objective the EQ search maximises)")),
+              tags$td(sprintf("%.4f dB", rnum("FOM")))),
       tags$tr(tags$td(tags$b("VEO")),    tags$td(sprintf("%.3f mV", num("VEO_mV")))),
       tags$tr(tags$td(tags$b("VEC")),    tags$td(sprintf("%.3f dB", num("VEC_dB")))),
       tags$tr(tags$td(tags$b("A_s")),    tags$td(sprintf("%.3f mV", num("A_s_mV")))),
+      tags$tr(tags$td(tags$b("Baud rate")),
+              tags$td(sprintf("%.6g GBd  (Nyquist %.6g GHz)",
+                              rnum("baud_rate_GHz"), rnum("f_Nyquist_GHz")))),
+      tags$tr(tags$td(tags$b("IL die-to-die at Fnq")),
+              tags$td(sprintf("%.3f dB", rnum("IL_db_die_to_die_at_Fnq")))),
+      tags$tr(tags$td(tags$b("ICN")),
+              tags$td(sprintf("%.4f mV  (MDNEXT %.4f, MDFEXT %.4f)",
+                              rnum("ICN_mV"), rnum("MDNEXT_ICN_92_46_mV"),
+                              rnum("MDFEXT_ICN_92_47_mV")))),
       tags$tr(tags$td(tags$b("CTLE")),   tags$td(ctle_txt)),
       tags$tr(tags$td(tags$b("Tx FFE")), tags$td(ffe_txt)),
+      tags$tr(tags$td(tags$b("Rx FFE")), tags$td(rxffe_txt)),
       tags$tr(tags$td(tags$b("DFE")),    tags$td(dfe_txt)),
+      tags$tr(tags$td(tags$b("MLSE")),   tags$td(mlse_txt)),
       tags$tr(tags$td(tags$b("EQ sweep")), tags$td(sweep_desc)),
       tags$tr(tags$td(tags$b("Cases run")), tags$td(sprintf("%s", if (is.na(n_cases)) "n/a" else n_cases))),
       tags$tr(tags$td(tags$b("Run time (this case)")), tags$td(fmt_dur(elapsed)))
@@ -497,7 +565,7 @@ build_dashboard <- function(matfile, out_html = NULL) {
     tags$div(style="height:800px;", plot_ctle_bank(dat)),
     tags$div(style="height:800px;", plot_impulse(dat)),
     tags$div(style="height:800px;", plot_pulse(dat)),
-    # tags$div(style="height:1200px;", plot_eye(dat)),
+    tags$div(style="height:1200px;", plot_eye(dat)),
     tags$div(style="height:800px;", plot_bathtub(dat)),
     tags$div(style="height:800px;", plot_eq_contribution(dat)),
     results_section,
