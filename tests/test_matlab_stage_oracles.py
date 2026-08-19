@@ -12,15 +12,26 @@ tests/2_Results_COM_Matlab/ carry ~260 columns of genuine MATLAB output per
 case, and many are the output of one identifiable stage.
 
 tools/extract_matlab_oracles.py distils those into
-tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 MATLAB
-quantities each across 7 stages, ~300 KB, committed. This file checks it.
+tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 scalar
+quantities plus 14 VECTOR families, ~800 KB, committed. This file checks it.
 
-Three quantities are deliberately sparse and are NOT a extraction fault:
-  TXLE_taps  104/208  a tap VECTOR, stored as text in one of the two workbooks
-                      (the same two workbooks disagree on the Tx FFE tap set
-                      while naming the same config_file -- an open question)
-  sgm_rjit   160/208  blank where the case carries no random-jitter term
-  sgm_xt     203/208  blank where the case has no crosstalk contribution
+The vectors matter more than the scalars: a tap set is wrong in ways a gain is
+not. RxFFE is 87 taps, TXLE_taps up to 4, floating_tap_locations 8, and the
+package families (Pkg_len_*, pkg_Z_c, C_diepad, L_comp) are MATLAB's record of
+the package it actually built -- Pkg_len_RX alone would have caught engine
+defect #1, where only the TX z_p was transposed so the RX package came from a
+matrix row (111 mm instead of 13.8 mm).
+
+Two workbook quirks worth knowing, both handled:
+  - C_diepad, L_comp and C_bump are stored as TEXT ('4e-14'), so a plain
+    isinstance(v, (int, float)) test drops those families silently.
+  - The wXtalk workbook writes TXLE_taps_1..4 (the full vector, e.g.
+    [0, -0.02, 0.98, 0]); the woXtalk one writes a single TXLE_taps column,
+    which is 1 in all 104 cases. Same answer at different granularity, not a
+    disagreement about which taps were used.
+
+Two scalars are legitimately sparse: sgm_rjit 160/208 and sgm_xt 203/208, blank
+where the case has no such term.
 
 Three layers, cheapest first:
 
@@ -72,6 +83,11 @@ with io.open(ORACLE, encoding='utf-8') as _f:
 CASES = ORA['cases']
 CMAP = ORA['column_map']
 
+with io.open(REGISTRY, encoding='utf-8-sig') as _f:
+    _REG_PRE = {x['name'] if isinstance(x, dict) else x
+                for x in json.load(_f)['functions']}
+_REG = _REG_PRE
+
 check("oracle_covers_the_whole_reference_set",
       len(CASES) >= 208,
       "only %d oracle cases; the reference corpus has 208 and the oracle is "
@@ -100,15 +116,81 @@ check("oracle_covers_all_four_package_cases",
       "so a gap here hides exactly the class of defect that was hardest to "
       "find" % dict(_by_test))
 
-_stages = {v['stage'] for v in CMAP.values()}
+VMAP = ORA.get('vector_map', {})
+VEC_STAGES = {v['stage'] for v in VMAP.values()}
+
+check("oracle_has_vector_families",
+      len(VMAP) >= 14,
+      "only %d vector families; the tap sets and package vectors are the "
+      "quantities a scalar cannot anchor. Regenerate with "
+      "`python tools/extract_matlab_oracles.py`" % len(VMAP))
+
+_missing_vec = sorted({v['function'] for v in VMAP.values()} - _REG_PRE)
+check("oracle_vector_functions_all_exist",
+      not _missing_vec,
+      "vector families attributed to functions not in the registry: %s"
+      % _missing_vec)
+
+# Every family must be present in every case, at a consistent length.
+_EXPECTED_LEN = {
+    'RxFFE': 87, 'floating_tap_locations': 8, 'pkg_Z_c': 8,
+    'CTLE_zero_poles': 3, 'C_diepad': 6, 'L_comp': 6,
+    'Pkg_len_TX': 4, 'Pkg_len_RX': 4, 'Pkg_len_NEXT': 4, 'Pkg_len_FEXT': 4,
+    'C_bump': 2, 'C_v': 2, 'R_diepad': 2,
+}
+_len_bad, _absent, _holed = [], [], []
+for c in CASES:
+    vecs = c.get('vectors', {})
+    for fam, want in _EXPECTED_LEN.items():
+        if fam not in vecs:
+            _absent.append('%s/%s' % (c['case_id'], fam))
+        elif len(vecs[fam]) != want:
+            _len_bad.append('%s/%s len %d != %d'
+                            % (c['case_id'], fam, len(vecs[fam]), want))
+    for fam, vec in vecs.items():
+        if any(v is None for v in vec):
+            _holed.append('%s/%s' % (c['case_id'], fam))
+
+check("vector_families_present_in_every_case",
+      not _absent,
+      "%d missing family/case combinations, e.g. %s -- a family that silently "
+      "disappears (C_diepad and L_comp are stored as TEXT and are dropped by a "
+      "naive numeric check) leaves that stage unanchored"
+      % (len(_absent), _absent[:5]))
+
+check("vector_lengths_are_as_expected",
+      not _len_bad,
+      "%d vectors have an unexpected length, e.g. %s -- a shortened tap vector "
+      "is exactly engine defect #3, where the RxFFE floating-tap array was "
+      "sized by tap COUNT (23) instead of SPAN (87)"
+      % (len(_len_bad), _len_bad[:5]))
+
+check("vectors_have_no_interior_holes",
+      not _holed,
+      "%d vectors contain an interior blank, e.g. %s -- a hole means the "
+      "family was read misaligned, and every tap after it is shifted"
+      % (len(_holed), _holed[:5]))
+
+# The two workbooks record Tx FFE at different granularity. Pin it, so a future
+# MATLAB export that changes the convention is reported rather than silently
+# reinterpreted.
+_tx_by_cond = _collections.defaultdict(set)
+for c in CASES:
+    v = c.get('vectors', {}).get('TXLE_taps')
+    if v:
+        _tx_by_cond[c['cond']].add(len(v))
+check("txffe_granularity_matches_the_known_workbook_convention",
+      _tx_by_cond.get('wXtalk') == {4} and _tx_by_cond.get('woXtalk') == {1},
+      "Tx FFE tap-vector lengths are %s; expected wXtalk={4} (TXLE_taps_1..4) "
+      "and woXtalk={1} (a single TXLE_taps column). If this changed, the two "
+      "workbooks no longer record the same quantity the same way and the tap "
+      "oracle needs re-reading." % {k: sorted(v) for k, v in _tx_by_cond.items()})
+
+_stages = {v['stage'] for v in CMAP.values()} | VEC_STAGES
 check("oracle_spans_the_pipeline",
       len(_stages) >= 6,
       "oracle covers only %d stages (%s) -- a stage with no MATLAB anchor is a "
       "stage where a regression is invisible" % (len(_stages), sorted(_stages)))
-
-with io.open(REGISTRY, encoding='utf-8-sig') as _f:
-    _REG = {x['name'] if isinstance(x, dict) else x
-            for x in json.load(_f)['functions']}
 
 _unknown = sorted({v['function'] for v in CMAP.values()} - _REG)
 check("oracle_functions_all_exist",
