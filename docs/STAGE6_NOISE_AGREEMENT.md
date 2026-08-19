@@ -89,26 +89,75 @@ So the suspect is the construction of `htn`/`h_J` or the FFT normalisation, not
 the integral and not the equalizer. Code reading has not localised it further:
 the index conversions are right, and the error is too large for rounding.
 
-## 5. What would actually move the number
+## 5. Localised: the sampling anchor used to decimate the pulse
 
-**This investigation did not raise it.** Two honest routes:
+Continuing with MATLAB's own reported values as the diagnostic:
 
-1. **Get MATLAB's PSD intermediates for two or three cases** — `S_tn`,
-   `S_rj_jn`, `S_G`, and ideally the `htn` and `h_J` vectors that feed them. The
-   workbooks expose only the final RMS scalars, so the discrepancy is currently
-   unobservable at the point it is created. This is a much smaller request than
-   the per-function dump considered earlier: three arrays on two cases would
-   localise it immediately, in the same way that ranking output columns by
-   relative error localised the original eight defects.
+**(a) Both sides are internally consistent.** The PSDs add, so
+`sigma_G^2 = sigma_TX^2 + sigma_rj^2 + sigma_N^2 + sigma_in^2`. That identity holds
+to 1e-16 on *both* sides (MATLAB median residual −1.2e-16, Python 0.0). Neither
+engine has an inconsistent term.
 
-2. **Report the stage at a stated engineering tolerance as well as at 1e-9.**
-   Stage 6 is 67% within 1e-4 and 92% within 1e-2. Showing both is more
-   informative than one number — but note that this changes what is being
-   measured, so it should be presented as an added row, never as a replacement
-   that makes the chart look better. The 1e-9 figure is the honest one for
-   "bit-exact agreement" and should stay.
+**(b) `sigma_G` is a consequence, not a cause.** Decomposing its error by each
+term's share of `G^2` (TX 23.5%, rjit 3.8%, N 72.7%) predicts the observed
+`dG/G` with correlation **0.9998**. Fix TX and rjit and `sigma_G` follows.
 
-Route 1 is the real fix. Route 2 only changes how the same fact is displayed.
+**(c) `sigma_N` is exact where it matters.** Its Python/MATLAB ratio is
+1.000000000 at both the 5th and 95th percentile. `S_rn` is built from an
+**analytic** PSD. `S_tn` and `S_rj_jn` are FFTs of a **pulse decimated at the
+symbol rate**. Only the pulse-derived ones disagree.
+
+**(d) The discriminator is `itick`.** Ranking every MATLAB column by how well it
+separates the 10 exact cases from the other 198, `itick` wins with **1.0%
+overlap** — all ten have `itick = −8`. The exact set is *identical* for
+`sgm_TX`, `sgm_rjit` and `sgm_G`, confirming one shared cause.
+
+**(e) The error is a function of distance from that tick:**
+
+| itick | n | median rel err |
+|---|---|---|
+| −8 | 12 | **1.4e-12** |
+| −7 / −9 | 16 | 9e-5 / 1.5e-4 |
+| −10 / −6 | 8 | 3.6e-4 / 2.8e-4 |
+| −15 | 18 | 1.3e-3 |
+| −22 | 13 | 9.4e-4 |
+
+Essentially exact at one tick, growing with distance from it. A *constant* phase
+offset would give a roughly constant error; this pattern says the two engines
+agree at one sampling anchor and drift apart as the sample point moves away.
+
+**(f) Which lands on `cursor_i`.** `get_PSDs` aligns the transmit-noise pulse
+with `phase_0 = cursor_i % M` and builds `h_J` from cursor-adjacent samples;
+`S_rn` uses neither. Python and MATLAB call `get_PSDs` with the same argument
+(`THIS.cursor_i`) at the same points, and the 1-based/0-based conversions are
+correct — verified by probe: for `woXtalk_T1_R14` Python's `phase_0` is 7 and
+MATLAB's start index is also 7. Ruled out along the way: the pad-vs-truncate
+branch (both pad, `num_ui_RXFF_noise = 4096`) and a phase-zero special case (the
+exact case has phase 7, not 0).
+
+So the remaining candidate is that **Python's `cursor_i` and MATLAB's refer to
+slightly different frame origins**, coinciding at `itick = −8`. `h_J` is a finite
+difference of adjacent cursor samples, which is why `sgm_rjit` scatters ±2%
+where `sgm_TX` scatters ±0.2% — a difference operator amplifies exactly this
+kind of offset.
+
+### This is the same missing datum as the itick divergences
+
+§4.1 of the correlation review reaches the same place from the other direction:
+Python cannot match MATLAB's FOM at MATLAB's reported tick under any equalizer
+setting, while the peak values agree — consistent with an anchor-origin offset.
+Two independent investigations now converge on one unknown.
+
+**The request to Hansel for `cursor_i` (or absolute `t_s`) alongside `itick` now
+resolves two open items, not one.** It is a single extra column.
+
+### Testable prediction, for when that data arrives
+
+If Python's and MATLAB's `cursor_i` differ by `d` samples on a case, then
+`phase_0` differs by `d mod 32`, and `sgm_TX` should agree exactly wherever
+`d ≡ 0 (mod 32)`. On the ten `itick = −8` cases `d` should be 0 or a multiple of
+32; everywhere else it should not be. That is a one-line check once the column
+exists, and it either confirms the mechanism or kills it outright.
 
 ## 6. Note for the reader
 
