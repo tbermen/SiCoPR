@@ -322,9 +322,14 @@ def _local_search_dispatch_calls(nonzero_method):
     stubs = _make_stubs(best_cursor=10)
     calls = {'adaptive': 0, 'legacy': 0}
 
-    def adaptive(LSV, BEST, THIS, FOM_history, iter_count, num_txffe_runs):
+    def adaptive(LSV, BEST, THIS, FOM_history, iter_count, num_txffe_runs,
+                 Overwrite_Min_Radius=None, matlab_version='4p15p0'):
         calls['adaptive'] += 1
         assert iter_count >= 1
+        # 4p16p0 added these two; optimize_fom must forward them so the mainline
+        # min_radius rule and the config override can take effect.
+        calls['saw_version'] = matlab_version
+        calls['saw_min_radius'] = Overwrite_Min_Radius
         return False  # don't skip
 
     def legacy(LSV, BEST, THIS, txffe_sweep_indices):

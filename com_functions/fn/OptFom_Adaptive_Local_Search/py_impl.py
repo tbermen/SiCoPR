@@ -72,17 +72,48 @@ def _append_csv_row(file_path, header_cells, row_cells):
 
 
 def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
-                                 iter_count, num_txffe_runs):
-    """Adaptive local-search skip predicate (MATLAB lines 2739-2992).
+                                 iter_count, num_txffe_runs,
+                                 Overwrite_Min_Radius=None,
+                                 matlab_version='4p15p0'):
+    """Adaptive local-search skip predicate.
+
+    4p15p0 baseline: Hansel's branch file, com_ieee8023_4p15p0_adaptive_local_search.m
+    4p16p0: mainline, L2759-2922 -- the method was adopted upstream.
+
+    The mainline signature puts Overwrite_Min_Radius second:
+        OptFom_Adaptive_Local_Search(LocalSearch_Value, Overwrite_Min_Radius,
+                                     BEST, THIS, FOM_history, iter_count,
+                                     num_txffe_runs)
+    Here it is a trailing keyword instead, so existing 4p15p0 callers and tests
+    are unaffected by argument order.
 
     Returns skip_it (bool): True -> skip evaluating this candidate.
     """
+    _v416 = str(matlab_version) == '4p16p0'
+
     # ---- Tuned knobs (PATCHED values from Hansel's branch) ----
     min_improvement_threshold = 0.002
     adaptation_window = 2
     radius_shrink_factor = 0.60
     deterministic_shrink_rate = 0.15
-    min_radius = 1  # Hansel forces min_radius = 1 (2 tends to slow down)
+    if _v416:
+        # ML 4p16p0 L2782-2786: 1 only when there is a single TXFFE candidate,
+        # otherwise 2. The branch overrode this to 1 unconditionally, which is
+        # what the 4p15p0 path keeps. With a real TXFFE grid the mainline floor
+        # is therefore TWICE the branch's, so the pruning radius differs in the
+        # ordinary multi-candidate case.
+        min_radius = 1 if int(num_txffe_runs) == 1 else 2
+        # ML L2788-2792: a positive config value overrides the rule; empty
+        # leaves it alone.
+        if Overwrite_Min_Radius is not None:
+            try:
+                _omr = float(np.asarray(Overwrite_Min_Radius).ravel()[0])
+            except (TypeError, ValueError, IndexError):
+                _omr = None
+            if _omr is not None and _omr > 0:
+                min_radius = _omr
+    else:
+        min_radius = 1  # Hansel's branch forces 1 (2 tends to slow down)
     edge_weight = 1.0
     lp_weight = 0.25
     vga_weight = 0.5
@@ -93,6 +124,11 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     st = _ALS_STATE
 
     # ---- Persistent memory (re-init at the start of each search) ----
+    # 4p16p0 L2794-2796 drops the `initialized` persistent and keys the reset on
+    # iter_count == 1 alone. Left as-is because optimize_fom increments
+    # iter_count from 0 before the first call, so the first call of every search
+    # always has iter_count == 1 -- the two forms cannot diverge here, and a
+    # version branch would add a path with no behavioural difference to test.
     if (not st['initialized']) or iter_count == 1:
         st['adaptive_radius'] = max(min_radius, _mround(LocalSearch_Value))
         st['no_improve_count'] = 0
@@ -127,8 +163,22 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     ctle_index = THIS.ctle_index
     lp_curr = THIS.g_LP_index
     lp_best = BEST.G_high_pass
-    vga_curr = getattr(THIS, 'vga_index', 1)
-    vga_best = getattr(BEST, 'vga_index', 1)
+    if _v416:
+        # ML 4p16p0 L2825-2827 writes THIS.vga_index = 1 and BEST.vga_index = 1
+        # and then reads them back, replacing the branch's isfield fallbacks.
+        # The net effect is that both are 1 regardless of what the caller set.
+        #
+        # Deliberately NOT writing to THIS/BEST here. MATLAB passes structs by
+        # value, so those two assignments are local and the caller never sees
+        # them; in Python they would escape and silently pin the caller's
+        # vga_index. That is the defect class behind five of the eight engine
+        # bugs, and tests/test_reference_leaks.py flags it -- it caught this
+        # exact code on the first run.
+        vga_curr = 1
+        vga_best = 1
+    else:
+        vga_curr = getattr(THIS, 'vga_index', 1)
+        vga_best = getattr(BEST, 'vga_index', 1)
 
     def _finish(skip_it, reason, raw_L1_TX=float('nan'), L1_w=float('nan'),
                 L2_w=float('nan'), hard_cap=float('nan')):

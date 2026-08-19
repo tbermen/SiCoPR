@@ -235,9 +235,16 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             # NonZeroLSMethod: 1 -> Hansel adaptive search, else legacy
                             if (getattr(param, 'NonZeroLSMethod', 0) == 1
                                     and _OptFom_Adaptive_Local_Search_fn is not None):
+                                # 4p16p0 L9017 passes Overwrite_Min_Radius as the
+                                # second positional argument; here it is a keyword
+                                # so the 4p15p0 call shape is unchanged.
                                 skip_it = _OptFom_Adaptive_Local_Search_fn(
                                     param.LOCAL_SEARCH, BEST, THIS, FOM_history,
-                                    iter_count, num_txffe_runs)
+                                    iter_count, num_txffe_runs,
+                                    Overwrite_Min_Radius=getattr(
+                                        param, 'Overwrite_Min_Radius', None),
+                                    matlab_version=getattr(
+                                        param, 'matlab_version', '4p15p0'))
                             else:
                                 skip_it = _OptFom_Local_Search_fn(
                                     param.LOCAL_SEARCH, BEST, THIS, txffe_sweep_indices)

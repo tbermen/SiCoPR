@@ -97,6 +97,10 @@ def COM_FD_to_TD(chdata, param, OP,
     bw_fn = _Butterworth_Filter_fn if _Butterworth_Filter_fn is not None else _Butterworth_Filter
     cm_fn = _get_cm_noise_fn if _get_cm_noise_fn is not None else _get_cm_noise
 
+    # MATLAB release being emulated; set by read_ParamConfigFile. Defaults to the
+    # 4p15p0 baseline when absent so a hand-built param still behaves as before.
+    _v416 = str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+
     M = int(param.samples_per_ui)
 
     # ---- Sinc helper (MATLAB sinc = sin(pi*x)/(pi*x)) ----
@@ -122,19 +126,35 @@ def COM_FD_to_TD(chdata, param, OP,
             s21_fn(ch.sdd21, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response = lfilter(np.ones(M), 1, ch.uneq_imp_response)
+        if _v416:
+            # ML 4p16p0 L1236. cumsum of the pulse response decimated at the
+            # symbol rate: MATLAB (1:samples_per_ui:end) is 1-based and starts
+            # at the first sample, so the Python slice is [::M], not [M-1::M].
+            ch.uneq_step_response = np.cumsum(ch.uneq_pulse_response[::M])
 
         ch.uneq_imp_response_raw, ch.t_raw, ch.causality_correction_dB, ch.truncation_dB = \
             s21_fn(ch.sdd21_raw, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response_raw = lfilter(np.ones(M), 1, ch.uneq_imp_response_raw)
+        if _v416:
+            ch.uneq_step_response_raw = np.cumsum(ch.uneq_pulse_response_raw[::M])
 
         ch.uneq_imp_response_raw_filtered, ch.t_raw_fltr, ch.causality_correction_dB, ch.truncation_dB = \
             s21_fn(ch.sdd21_raw * H_filters, ch.faxis, param.sample_dt, OP, param)
+        if _v416:
+            # ML 4p16p0 L1249-1250. Both fields are new: 4p15p0 computed the
+            # filtered raw IMPULSE response but never a pulse or step from it.
+            ch.uneq_pulse_response_raw_filtered = \
+                lfilter(np.ones(M), 1, ch.uneq_imp_response_raw_filtered)
+            ch.uneq_step_response_raw_filtered = \
+                np.cumsum(ch.uneq_pulse_response_raw_filtered[::M])
 
         ch.uneq_imp_response_orig, ch.t_orig, ch.causality_correction_dB, ch.truncation_dB = \
             s21_fn(ch.sdd21_orig, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response_orig = lfilter(np.ones(M), 1, ch.uneq_imp_response_orig)
+        if _v416:
+            ch.uneq_step_response_orig = np.cumsum(ch.uneq_pulse_response_orig[::M])
         # Note: MATLAB recomputes this after the next filtered version
         ch.uneq_pulse_response_orig_filtered = lfilter(np.ones(M), 1, ch.uneq_pulse_response_orig)
 
@@ -142,6 +162,12 @@ def COM_FD_to_TD(chdata, param, OP,
             s21_fn(ch.sdd21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response_orig_filtered = lfilter(np.ones(M), 1, ch.uneq_imp_response_orig_filtered)
+        if _v416:
+            # ML 4p16p0 L1265 -- after the SECOND assignment of
+            # uneq_pulse_response_orig_filtered, so it uses the filtered-impulse
+            # version, not the double-filtered one computed above.
+            ch.uneq_step_response_orig_filtered = \
+                np.cumsum(ch.uneq_pulse_response_orig_filtered[::M])
 
         # ---- Amplitude scaling ----
         USE_channel_amplitude = True
@@ -151,17 +177,48 @@ def COM_FD_to_TD(chdata, param, OP,
             USE_channel_amplitude = False
         if USE_channel_amplitude:
             ch.uneq_imp_response = ch.uneq_imp_response * ch.A
+            if _v416:
+                # ML 4p16p0 L1277-1278. In 4p15p0 only the IMPULSE response was
+                # scaled; the pulse response was built earlier from the unscaled
+                # impulse and never corrected, so the two were inconsistent by a
+                # factor of A. This is the one change in 4p16p0 that moves
+                # already-reported numbers (peak_uneq_pulse_mV,
+                # steady_state_voltage_mV), which is why it is version-gated.
+                ch.uneq_pulse_response = ch.uneq_pulse_response * ch.A
+                ch.uneq_step_response = ch.uneq_step_response * ch.A
 
         # ---- CD/DC common-mode impulse responses ----
-        ch.uneq_CD_imp_response_filtered, ch.t_CD_fltr, ch.causality_correction_CD_dB, ch.truncation__CD_dB = \
-            s21_fn(ch.scd21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
+        # 4p16p0 L1280/L1295 guard both conversions: "some test fixtures have
+        # almost zero CM and will cause TD conversion to fail". 4p15p0 called
+        # them unconditionally.
+        if (not _v416) or float(np.mean(np.abs(ch.scd21_orig))) > 1e-6:
+            (ch.uneq_CD_imp_response_filtered, ch.t_CD_fltr,
+             ch.causality_correction_CD_dB, _trunc_cd) = \
+                s21_fn(ch.scd21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
+            ch.uneq_pulse_CD_response_filtered = \
+                lfilter(np.ones(M), 1, ch.uneq_CD_imp_response_filtered)
+        else:
+            ch.t_CD_fltr = ch.t_raw
+            ch.uneq_pulse_CD_response_filtered = np.zeros(len(ch.t_raw))
+            _trunc_cd = 0.0
+        # 4p16p0 L1284 fixed the field-name typo truncation__CD_dB ->
+        # truncation_CD_dB. Both names are set so neither spelling breaks a
+        # reader, whichever version is selected.
+        ch.truncation_CD_dB = _trunc_cd
+        ch.truncation__CD_dB = _trunc_cd
 
-        ch.uneq_pulse_CD_response_filtered = lfilter(np.ones(M), 1, ch.uneq_CD_imp_response_filtered)
-
-        ch.uneq_DC_imp_response_filtered, ch.t_DC_fltr, ch.causality_correction_DC_dB, ch.truncation__DC_dB = \
-            s21_fn(ch.sdc21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
-
-        ch.uneq_pulse_DC_response_filtered = lfilter(np.ones(M), 1, ch.uneq_DC_imp_response_filtered)
+        if (not _v416) or float(np.mean(np.abs(ch.sdc21_orig))) > 1e-6:
+            (ch.uneq_DC_imp_response_filtered, ch.t_DC_fltr,
+             ch.causality_correction_DC_dB, _trunc_dc) = \
+                s21_fn(ch.sdc21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
+            ch.uneq_pulse_DC_response_filtered = \
+                lfilter(np.ones(M), 1, ch.uneq_DC_imp_response_filtered)
+        else:
+            ch.t_DC_fltr = ch.t_raw
+            ch.uneq_pulse_DC_response_filtered = np.zeros(len(ch.t_raw))
+            _trunc_dc = 0.0
+        ch.truncation_DC_dB = _trunc_dc
+        ch.truncation__DC_dB = _trunc_dc
 
         # ---- Frequency band indices ----
         fax = ch.faxis

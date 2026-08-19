@@ -239,6 +239,31 @@ def get_TDR(S, OP, param, ZT, nport,
     RLf = RLf * TDR_results.Rx_filter
     TDR_results.tx_filter = H_t
 
+    # 4p16p0 L7460-7474: bail out on a channel with essentially no reflection.
+    # "some test fixtures have almost zero CM and will cause TD conversion to
+    # fail" -- 4p15p0 ran the conversion regardless. Returns a degenerate result
+    # with ERL = inf (infinitely good return loss) and ERLRMS = -300 dB.
+    if (str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+            and float(np.mean(np.abs(RL))) < 1e-6):
+        dt = float(param.sample_dt)
+        M = int(param.samples_per_ui)
+        TDR_results.delay = 0
+        TDR_results.tdr = np.ones(1000)
+        # MATLAB 0:dt:999*dt is inclusive of both ends -> exactly 1000 samples.
+        TDR_results.t = np.arange(1000) * dt
+        TDR_results.x = 0
+        TDR_results.y = 0
+        TDR_results.avgZport = 0
+        TDR_results.RL = np.zeros(1000)
+        TDR_results.ptdr_RL = np.zeros(1000)
+        # 0:dt*M:999*dt -- step dt*M, last value <= 999*dt, so floor(999/M)+1
+        # samples (32 when M = 32), NOT 1000.
+        TDR_results.WC_ptdr_samples_t = np.arange(0, 999 * dt + 1e-18, dt * M)
+        TDR_results.WC_ptdr_samples = np.zeros(len(TDR_results.WC_ptdr_samples_t))
+        TDR_results.ERL = np.inf
+        TDR_results.ERLRMS = -300
+        return TDR_results
+
     # ---- Impulse response ----
     IR, t, causality_dB, truncation_dB = s21_fn(RLf, f, param.sample_dt, OP, param)
 

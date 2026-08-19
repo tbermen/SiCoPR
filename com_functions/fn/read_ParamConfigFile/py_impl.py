@@ -31,6 +31,12 @@ from types import SimpleNamespace
 
 _SENTINEL = object()
 
+# Which MATLAB release to emulate. '4p15p0' is the baseline and the default:
+# the 208-case reference corpus and the whole correlation result are 4p15p0.
+# Set to '4p16p0' to enable the newer behaviour (see docs/MATLAB_4p16p0_CHANGES.md).
+# A config's 'COM Version' keyword, if present, wins over this default.
+COM_MATLAB_VERSION = '4p15p0'
+
 
 # ---------------------------------------------------------------------------
 # File loading helpers
@@ -479,7 +485,30 @@ def read_ParamConfigFile(paramFile, OP):
     param.DER_CDR = _xls_param(parameter, 'DER_CDR', True, 1e-2)
     param.N_qb = _xls_param(parameter, 'N_qb', True, 0)
     param.P_qc = _xls_param(parameter, 'P_qc', True, 2 * param.specBER)
-    param.clip_method = _xls_param(parameter, 'Clip Method', False, 'Fast')
+    # ---- MATLAB version switch --------------------------------------------
+    # 4p15p0 is the baseline: it is what the 208-case reference corpus in
+    # tests/2_Results_COM_Matlab/ was produced with, and what the correlation
+    # (FOM bit-exact 198/208) is evidence for. 4p16p0 behaviour is opt-in so
+    # that evidence is not silently invalidated.
+    #
+    #   python com.py ... --matlab-version 4p16p0
+    #   import com; com.COM_MATLAB_VERSION = '4p16p0'
+    #   or the config keyword 'COM Version'
+    #
+    # Read before anything that branches on it -- the Clip Method default is
+    # the first such consumer, immediately below.
+    param.matlab_version = str(_xls_param(parameter, 'COM Version', False,
+                                          COM_MATLAB_VERSION)).strip()
+    if param.matlab_version not in ('4p15p0', '4p16p0'):
+        raise ValueError("unknown COM Version %r (expected '4p15p0' or "
+                         "'4p16p0')" % param.matlab_version)
+    _v416 = param.matlab_version == '4p16p0'
+
+    # 4p16p0 L10262 flipped this default from 'Fast' to 'Slow'. Configs that
+    # name the keyword are unaffected either way; configs that omit it change
+    # behaviour, which is why it follows the version.
+    param.clip_method = _xls_param(parameter, 'Clip Method', False,
+                                   'Slow' if _v416 else 'Fast')
     param.P_peak = _xls_param(parameter, 'P_peak', True, param.specBER)
     param.pass_threshold = _xls_param(parameter, 'COM Pass threshold', False, 0)
     param.add_rx_noise = _xls_param(parameter, 'add_rx_noise', True, param.pass_threshold)
@@ -630,8 +659,13 @@ def read_ParamConfigFile(paramFile, OP):
     elif param.Gx == 1:
         param.Grr = 2
 
-    # Hansel adaptive-local-search branch: 0 = legacy local search, 1 = adaptive
+    # Hansel adaptive-local-search branch: 0 = legacy local search, 1 = adaptive.
+    # Mainline in 4p16p0 (L10390); previously only in his branch file.
     param.NonZeroLSMethod = _xls_param(parameter, 'Non-zero Local Search Method', True, 0)
+    # 4p16p0 L10391. Empty means "use the built-in min_radius rule"; a positive
+    # value overrides it. Read in both modes -- an unused parameter is harmless,
+    # and reading it keeps the config surface identical across versions.
+    param.Overwrite_Min_Radius = _xls_param(parameter, 'Overwrite Minimum Radius', True, None)
     param.LOCAL_SEARCH = _xls_param(parameter, 'Local Search', True, 0)
     param.Tukey_Window = _xls_param(parameter, 'Tukey_Window', True, 0)
     param.zero_pad_tukey_window_in_fb = _xls_param(parameter, 'zero_pad_tukey_window_in_fb', True, 0)

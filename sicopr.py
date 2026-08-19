@@ -1446,6 +1446,10 @@ def COM_FD_to_TD(chdata, param, OP,
     bw_fn = _Butterworth_Filter_fn if _Butterworth_Filter_fn is not None else _COM_FD_to_TD__Butterworth_Filter
     cm_fn = _get_cm_noise_fn if _get_cm_noise_fn is not None else _COM_FD_to_TD__get_cm_noise
 
+    # MATLAB release being emulated; set by read_ParamConfigFile. Defaults to the
+    # 4p15p0 baseline when absent so a hand-built param still behaves as before.
+    _v416 = str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+
     M = int(param.samples_per_ui)
 
     # ---- Sinc helper (MATLAB sinc = sin(pi*x)/(pi*x)) ----
@@ -1471,19 +1475,35 @@ def COM_FD_to_TD(chdata, param, OP,
             s21_fn(ch.sdd21, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response = lfilter(np.ones(M), 1, ch.uneq_imp_response)
+        if _v416:
+            # ML 4p16p0 L1236. cumsum of the pulse response decimated at the
+            # symbol rate: MATLAB (1:samples_per_ui:end) is 1-based and starts
+            # at the first sample, so the Python slice is [::M], not [M-1::M].
+            ch.uneq_step_response = np.cumsum(ch.uneq_pulse_response[::M])
 
         ch.uneq_imp_response_raw, ch.t_raw, ch.causality_correction_dB, ch.truncation_dB = \
             s21_fn(ch.sdd21_raw, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response_raw = lfilter(np.ones(M), 1, ch.uneq_imp_response_raw)
+        if _v416:
+            ch.uneq_step_response_raw = np.cumsum(ch.uneq_pulse_response_raw[::M])
 
         ch.uneq_imp_response_raw_filtered, ch.t_raw_fltr, ch.causality_correction_dB, ch.truncation_dB = \
             s21_fn(ch.sdd21_raw * H_filters, ch.faxis, param.sample_dt, OP, param)
+        if _v416:
+            # ML 4p16p0 L1249-1250. Both fields are new: 4p15p0 computed the
+            # filtered raw IMPULSE response but never a pulse or step from it.
+            ch.uneq_pulse_response_raw_filtered = \
+                lfilter(np.ones(M), 1, ch.uneq_imp_response_raw_filtered)
+            ch.uneq_step_response_raw_filtered = \
+                np.cumsum(ch.uneq_pulse_response_raw_filtered[::M])
 
         ch.uneq_imp_response_orig, ch.t_orig, ch.causality_correction_dB, ch.truncation_dB = \
             s21_fn(ch.sdd21_orig, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response_orig = lfilter(np.ones(M), 1, ch.uneq_imp_response_orig)
+        if _v416:
+            ch.uneq_step_response_orig = np.cumsum(ch.uneq_pulse_response_orig[::M])
         # Note: MATLAB recomputes this after the next filtered version
         ch.uneq_pulse_response_orig_filtered = lfilter(np.ones(M), 1, ch.uneq_pulse_response_orig)
 
@@ -1491,6 +1511,12 @@ def COM_FD_to_TD(chdata, param, OP,
             s21_fn(ch.sdd21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
 
         ch.uneq_pulse_response_orig_filtered = lfilter(np.ones(M), 1, ch.uneq_imp_response_orig_filtered)
+        if _v416:
+            # ML 4p16p0 L1265 -- after the SECOND assignment of
+            # uneq_pulse_response_orig_filtered, so it uses the filtered-impulse
+            # version, not the double-filtered one computed above.
+            ch.uneq_step_response_orig_filtered = \
+                np.cumsum(ch.uneq_pulse_response_orig_filtered[::M])
 
         # ---- Amplitude scaling ----
         USE_channel_amplitude = True
@@ -1500,17 +1526,48 @@ def COM_FD_to_TD(chdata, param, OP,
             USE_channel_amplitude = False
         if USE_channel_amplitude:
             ch.uneq_imp_response = ch.uneq_imp_response * ch.A
+            if _v416:
+                # ML 4p16p0 L1277-1278. In 4p15p0 only the IMPULSE response was
+                # scaled; the pulse response was built earlier from the unscaled
+                # impulse and never corrected, so the two were inconsistent by a
+                # factor of A. This is the one change in 4p16p0 that moves
+                # already-reported numbers (peak_uneq_pulse_mV,
+                # steady_state_voltage_mV), which is why it is version-gated.
+                ch.uneq_pulse_response = ch.uneq_pulse_response * ch.A
+                ch.uneq_step_response = ch.uneq_step_response * ch.A
 
         # ---- CD/DC common-mode impulse responses ----
-        ch.uneq_CD_imp_response_filtered, ch.t_CD_fltr, ch.causality_correction_CD_dB, ch.truncation__CD_dB = \
-            s21_fn(ch.scd21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
+        # 4p16p0 L1280/L1295 guard both conversions: "some test fixtures have
+        # almost zero CM and will cause TD conversion to fail". 4p15p0 called
+        # them unconditionally.
+        if (not _v416) or float(np.mean(np.abs(ch.scd21_orig))) > 1e-6:
+            (ch.uneq_CD_imp_response_filtered, ch.t_CD_fltr,
+             ch.causality_correction_CD_dB, _trunc_cd) = \
+                s21_fn(ch.scd21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
+            ch.uneq_pulse_CD_response_filtered = \
+                lfilter(np.ones(M), 1, ch.uneq_CD_imp_response_filtered)
+        else:
+            ch.t_CD_fltr = ch.t_raw
+            ch.uneq_pulse_CD_response_filtered = np.zeros(len(ch.t_raw))
+            _trunc_cd = 0.0
+        # 4p16p0 L1284 fixed the field-name typo truncation__CD_dB ->
+        # truncation_CD_dB. Both names are set so neither spelling breaks a
+        # reader, whichever version is selected.
+        ch.truncation_CD_dB = _trunc_cd
+        ch.truncation__CD_dB = _trunc_cd
 
-        ch.uneq_pulse_CD_response_filtered = lfilter(np.ones(M), 1, ch.uneq_CD_imp_response_filtered)
-
-        ch.uneq_DC_imp_response_filtered, ch.t_DC_fltr, ch.causality_correction_DC_dB, ch.truncation__DC_dB = \
-            s21_fn(ch.sdc21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
-
-        ch.uneq_pulse_DC_response_filtered = lfilter(np.ones(M), 1, ch.uneq_DC_imp_response_filtered)
+        if (not _v416) or float(np.mean(np.abs(ch.sdc21_orig))) > 1e-6:
+            (ch.uneq_DC_imp_response_filtered, ch.t_DC_fltr,
+             ch.causality_correction_DC_dB, _trunc_dc) = \
+                s21_fn(ch.sdc21_orig * H_filters, ch.faxis, param.sample_dt, OP, param)
+            ch.uneq_pulse_DC_response_filtered = \
+                lfilter(np.ones(M), 1, ch.uneq_DC_imp_response_filtered)
+        else:
+            ch.t_DC_fltr = ch.t_raw
+            ch.uneq_pulse_DC_response_filtered = np.zeros(len(ch.t_raw))
+            _trunc_dc = 0.0
+        ch.truncation_DC_dB = _trunc_dc
+        ch.truncation__DC_dB = _trunc_dc
 
         # ---- Frequency band indices ----
         fax = ch.faxis
@@ -3921,17 +3978,48 @@ def _OptFom_Adaptive_Local_Search__append_csv_row(file_path, header_cells, row_c
 
 
 def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
-                                 iter_count, num_txffe_runs):
-    """Adaptive local-search skip predicate (MATLAB lines 2739-2992).
+                                 iter_count, num_txffe_runs,
+                                 Overwrite_Min_Radius=None,
+                                 matlab_version='4p15p0'):
+    """Adaptive local-search skip predicate.
+
+    4p15p0 baseline: Hansel's branch file, com_ieee8023_4p15p0_adaptive_local_search.m
+    4p16p0: mainline, L2759-2922 -- the method was adopted upstream.
+
+    The mainline signature puts Overwrite_Min_Radius second:
+        OptFom_Adaptive_Local_Search(LocalSearch_Value, Overwrite_Min_Radius,
+                                     BEST, THIS, FOM_history, iter_count,
+                                     num_txffe_runs)
+    Here it is a trailing keyword instead, so existing 4p15p0 callers and tests
+    are unaffected by argument order.
 
     Returns skip_it (bool): True -> skip evaluating this candidate.
     """
+    _v416 = str(matlab_version) == '4p16p0'
+
     # ---- Tuned knobs (PATCHED values from Hansel's branch) ----
     min_improvement_threshold = 0.002
     adaptation_window = 2
     radius_shrink_factor = 0.60
     deterministic_shrink_rate = 0.15
-    min_radius = 1  # Hansel forces min_radius = 1 (2 tends to slow down)
+    if _v416:
+        # ML 4p16p0 L2782-2786: 1 only when there is a single TXFFE candidate,
+        # otherwise 2. The branch overrode this to 1 unconditionally, which is
+        # what the 4p15p0 path keeps. With a real TXFFE grid the mainline floor
+        # is therefore TWICE the branch's, so the pruning radius differs in the
+        # ordinary multi-candidate case.
+        min_radius = 1 if int(num_txffe_runs) == 1 else 2
+        # ML L2788-2792: a positive config value overrides the rule; empty
+        # leaves it alone.
+        if Overwrite_Min_Radius is not None:
+            try:
+                _omr = float(np.asarray(Overwrite_Min_Radius).ravel()[0])
+            except (TypeError, ValueError, IndexError):
+                _omr = None
+            if _omr is not None and _omr > 0:
+                min_radius = _omr
+    else:
+        min_radius = 1  # Hansel's branch forces 1 (2 tends to slow down)
     edge_weight = 1.0
     lp_weight = 0.25
     vga_weight = 0.5
@@ -3942,6 +4030,11 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     st = _ALS_STATE
 
     # ---- Persistent memory (re-init at the start of each search) ----
+    # 4p16p0 L2794-2796 drops the `initialized` persistent and keys the reset on
+    # iter_count == 1 alone. Left as-is because optimize_fom increments
+    # iter_count from 0 before the first call, so the first call of every search
+    # always has iter_count == 1 -- the two forms cannot diverge here, and a
+    # version branch would add a path with no behavioural difference to test.
     if (not st['initialized']) or iter_count == 1:
         st['adaptive_radius'] = max(min_radius, _OptFom_Adaptive_Local_Search__mround(LocalSearch_Value))
         st['no_improve_count'] = 0
@@ -3976,8 +4069,22 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     ctle_index = THIS.ctle_index
     lp_curr = THIS.g_LP_index
     lp_best = BEST.G_high_pass
-    vga_curr = getattr(THIS, 'vga_index', 1)
-    vga_best = getattr(BEST, 'vga_index', 1)
+    if _v416:
+        # ML 4p16p0 L2825-2827 writes THIS.vga_index = 1 and BEST.vga_index = 1
+        # and then reads them back, replacing the branch's isfield fallbacks.
+        # The net effect is that both are 1 regardless of what the caller set.
+        #
+        # Deliberately NOT writing to THIS/BEST here. MATLAB passes structs by
+        # value, so those two assignments are local and the caller never sees
+        # them; in Python they would escape and silently pin the caller's
+        # vga_index. That is the defect class behind five of the eight engine
+        # bugs, and tests/test_reference_leaks.py flags it -- it caught this
+        # exact code on the first run.
+        vga_curr = 1
+        vga_best = 1
+    else:
+        vga_curr = getattr(THIS, 'vga_index', 1)
+        vga_best = getattr(BEST, 'vga_index', 1)
 
     def _finish(skip_it, reason, raw_L1_TX=float('nan'), L1_w=float('nan'),
                 L2_w=float('nan'), hard_cap=float('nan')):
@@ -10989,6 +11096,31 @@ def get_TDR(S, OP, param, ZT, nport,
     RLf = RLf * TDR_results.Rx_filter
     TDR_results.tx_filter = H_t
 
+    # 4p16p0 L7460-7474: bail out on a channel with essentially no reflection.
+    # "some test fixtures have almost zero CM and will cause TD conversion to
+    # fail" -- 4p15p0 ran the conversion regardless. Returns a degenerate result
+    # with ERL = inf (infinitely good return loss) and ERLRMS = -300 dB.
+    if (str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+            and float(np.mean(np.abs(RL))) < 1e-6):
+        dt = float(param.sample_dt)
+        M = int(param.samples_per_ui)
+        TDR_results.delay = 0
+        TDR_results.tdr = np.ones(1000)
+        # MATLAB 0:dt:999*dt is inclusive of both ends -> exactly 1000 samples.
+        TDR_results.t = np.arange(1000) * dt
+        TDR_results.x = 0
+        TDR_results.y = 0
+        TDR_results.avgZport = 0
+        TDR_results.RL = np.zeros(1000)
+        TDR_results.ptdr_RL = np.zeros(1000)
+        # 0:dt*M:999*dt -- step dt*M, last value <= 999*dt, so floor(999/M)+1
+        # samples (32 when M = 32), NOT 1000.
+        TDR_results.WC_ptdr_samples_t = np.arange(0, 999 * dt + 1e-18, dt * M)
+        TDR_results.WC_ptdr_samples = np.zeros(len(TDR_results.WC_ptdr_samples_t))
+        TDR_results.ERL = np.inf
+        TDR_results.ERLRMS = -300
+        return TDR_results
+
     # ---- Impulse response ----
     IR, t, causality_dB, truncation_dB = s21_fn(RLf, f, param.sample_dt, OP, param)
 
@@ -13439,9 +13571,16 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             # NonZeroLSMethod: 1 -> Hansel adaptive search, else legacy
                             if (getattr(param, 'NonZeroLSMethod', 0) == 1
                                     and _OptFom_Adaptive_Local_Search_fn is not None):
+                                # 4p16p0 L9017 passes Overwrite_Min_Radius as the
+                                # second positional argument; here it is a keyword
+                                # so the 4p15p0 call shape is unchanged.
                                 skip_it = _OptFom_Adaptive_Local_Search_fn(
                                     param.LOCAL_SEARCH, BEST, THIS, FOM_history,
-                                    iter_count, num_txffe_runs)
+                                    iter_count, num_txffe_runs,
+                                    Overwrite_Min_Radius=getattr(
+                                        param, 'Overwrite_Min_Radius', None),
+                                    matlab_version=getattr(
+                                        param, 'matlab_version', '4p15p0'))
                             else:
                                 skip_it = _OptFom_Local_Search_fn(
                                     param.LOCAL_SEARCH, BEST, THIS, txffe_sweep_indices)
@@ -14711,6 +14850,12 @@ def read_PR_files(param, OP, chdata):
 
 _SENTINEL = object()
 
+# Which MATLAB release to emulate. '4p15p0' is the baseline and the default:
+# the 208-case reference corpus and the whole correlation result are 4p15p0.
+# Set to '4p16p0' to enable the newer behaviour (see docs/MATLAB_4p16p0_CHANGES.md).
+# A config's 'COM Version' keyword, if present, wins over this default.
+COM_MATLAB_VERSION = '4p15p0'
+
 
 # ---------------------------------------------------------------------------
 # File loading helpers
@@ -15159,7 +15304,30 @@ def read_ParamConfigFile(paramFile, OP):
     param.DER_CDR = _read_ParamConfigFile__xls_param(parameter, 'DER_CDR', True, 1e-2)
     param.N_qb = _read_ParamConfigFile__xls_param(parameter, 'N_qb', True, 0)
     param.P_qc = _read_ParamConfigFile__xls_param(parameter, 'P_qc', True, 2 * param.specBER)
-    param.clip_method = _read_ParamConfigFile__xls_param(parameter, 'Clip Method', False, 'Fast')
+    # ---- MATLAB version switch --------------------------------------------
+    # 4p15p0 is the baseline: it is what the 208-case reference corpus in
+    # tests/2_Results_COM_Matlab/ was produced with, and what the correlation
+    # (FOM bit-exact 198/208) is evidence for. 4p16p0 behaviour is opt-in so
+    # that evidence is not silently invalidated.
+    #
+    #   python com.py ... --matlab-version 4p16p0
+    #   import com; com.COM_MATLAB_VERSION = '4p16p0'
+    #   or the config keyword 'COM Version'
+    #
+    # Read before anything that branches on it -- the Clip Method default is
+    # the first such consumer, immediately below.
+    param.matlab_version = str(_read_ParamConfigFile__xls_param(parameter, 'COM Version', False,
+                                          COM_MATLAB_VERSION)).strip()
+    if param.matlab_version not in ('4p15p0', '4p16p0'):
+        raise ValueError("unknown COM Version %r (expected '4p15p0' or "
+                         "'4p16p0')" % param.matlab_version)
+    _v416 = param.matlab_version == '4p16p0'
+
+    # 4p16p0 L10262 flipped this default from 'Fast' to 'Slow'. Configs that
+    # name the keyword are unaffected either way; configs that omit it change
+    # behaviour, which is why it follows the version.
+    param.clip_method = _read_ParamConfigFile__xls_param(parameter, 'Clip Method', False,
+                                   'Slow' if _v416 else 'Fast')
     param.P_peak = _read_ParamConfigFile__xls_param(parameter, 'P_peak', True, param.specBER)
     param.pass_threshold = _read_ParamConfigFile__xls_param(parameter, 'COM Pass threshold', False, 0)
     param.add_rx_noise = _read_ParamConfigFile__xls_param(parameter, 'add_rx_noise', True, param.pass_threshold)
@@ -15310,8 +15478,13 @@ def read_ParamConfigFile(paramFile, OP):
     elif param.Gx == 1:
         param.Grr = 2
 
-    # Hansel adaptive-local-search branch: 0 = legacy local search, 1 = adaptive
+    # Hansel adaptive-local-search branch: 0 = legacy local search, 1 = adaptive.
+    # Mainline in 4p16p0 (L10390); previously only in his branch file.
     param.NonZeroLSMethod = _read_ParamConfigFile__xls_param(parameter, 'Non-zero Local Search Method', True, 0)
+    # 4p16p0 L10391. Empty means "use the built-in min_radius rule"; a positive
+    # value overrides it. Read in both modes -- an unused parameter is harmless,
+    # and reading it keeps the config surface identical across versions.
+    param.Overwrite_Min_Radius = _read_ParamConfigFile__xls_param(parameter, 'Overwrite Minimum Radius', True, None)
     param.LOCAL_SEARCH = _read_ParamConfigFile__xls_param(parameter, 'Local Search', True, 0)
     param.Tukey_Window = _read_ParamConfigFile__xls_param(parameter, 'Tukey_Window', True, 0)
     param.zero_pad_tukey_window_in_fb = _read_ParamConfigFile__xls_param(parameter, 'zero_pad_tukey_window_in_fb', True, 0)
@@ -18829,6 +19002,11 @@ if __name__ == '__main__':
     parser.add_argument('--next', nargs='*', default=[])
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
+    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0'],
+                        help='which MATLAB release to emulate. Default 4p15p0, the '
+                             'version the 208-case reference corpus and the whole '
+                             'correlation result were produced with. 4p16p0 enables '
+                             'the newer behaviour -- see docs/MATLAB_4p16p0_CHANGES.md')
     parser.add_argument('--eye-under-mlse', action='store_true',
                         help='compute the eye contour and timing bathtub for PLOTTING even '
                              'when MLSE is enabled. MATLAB gates the eye on MLSE == 0 '
@@ -18836,6 +19014,9 @@ if __name__ == '__main__':
                              '(DFE-only) eye is well defined. Diagnostic only: no reported '
                              'COM, VEC, VEO or EW value changes.')
     args = parser.parse_args()
+    if args.matlab_version:
+        COM_MATLAB_VERSION = args.matlab_version
+        print(f'MATLAB version emulated: {COM_MATLAB_VERSION}')
     if args.eye_under_mlse:
         EYE_PLOT_UNDER_MLSE = True
     _fext = args.fext or []

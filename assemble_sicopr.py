@@ -348,6 +348,11 @@ if __name__ == '__main__':
     parser.add_argument('--next', nargs='*', default=[])
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
+    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0'],
+                        help='which MATLAB release to emulate. Default 4p15p0, the '
+                             'version the 208-case reference corpus and the whole '
+                             'correlation result were produced with. 4p16p0 enables '
+                             'the newer behaviour -- see docs/MATLAB_4p16p0_CHANGES.md')
     parser.add_argument('--eye-under-mlse', action='store_true',
                         help='compute the eye contour and timing bathtub for PLOTTING even '
                              'when MLSE is enabled. MATLAB gates the eye on MLSE == 0 '
@@ -355,6 +360,9 @@ if __name__ == '__main__':
                              '(DFE-only) eye is well defined. Diagnostic only: no reported '
                              'COM, VEC, VEO or EW value changes.')
     args = parser.parse_args()
+    if args.matlab_version:
+        COM_MATLAB_VERSION = args.matlab_version
+        print(f'MATLAB version emulated: {COM_MATLAB_VERSION}')
     if args.eye_under_mlse:
         EYE_PLOT_UNDER_MLSE = True
     _fext = args.fext or []
