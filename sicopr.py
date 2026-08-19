@@ -18778,7 +18778,15 @@ if __name__ == '__main__':
     parser.add_argument('--next', nargs='*', default=[])
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
+    parser.add_argument('--eye-under-mlse', action='store_true',
+                        help='compute the eye contour and timing bathtub for PLOTTING even '
+                             'when MLSE is enabled. MATLAB gates the eye on MLSE == 0 '
+                             '(4p15p0 L620), but MLSE is applied afterwards, so the pre-MLSE '
+                             '(DFE-only) eye is well defined. Diagnostic only: no reported '
+                             'COM, VEC, VEO or EW value changes.')
     args = parser.parse_args()
+    if args.eye_under_mlse:
+        EYE_PLOT_UNDER_MLSE = True
     _fext = args.fext or []
     _next = args.next or []
     _s4p_files = [args.thru_s4p] + _fext + _next
