@@ -4,7 +4,12 @@
 # ============================================================
 # Inlines TD_CTLE (4593–4609) and FFE (2026–2048).
 # MATLAB 1-based index fom_result.ctle → Python [ctle-1].
-# sample_start: MATLAB mod(t_s-1, M)+1 → Python mod(t_s-1, M) (0-based).
+# sample_start: MATLAB mod(t_s-1, M)+1 with t_s 1-BASED. Python's fom_result.t_s
+#   is BEST.cursor_i, already 0-based, so t_s_m = t_s_py + 1 and the 0-based
+#   start is mod(t_s_m - 1, M) = t_s_py % M. Same identity get_PSDs uses
+#   (cursor_i % M for MATLAB's mod(cursor_i-1,M)+1). An earlier version wrote
+#   (t_s - 1) % M, converting the RESULT to 0-based but not the INPUT, and so
+#   sampled the ADC-clip pulse one sample early.
 # OP.RxFFE branch calls the real force() to apply the Rx-FFE taps to the pulse.
 # chdata extended with zeros if shorter than fom_result.sbr.
 # ============================================================
@@ -100,7 +105,7 @@ def Apply_EQ(param, fom_result, chdata, OP):
 
         chdata[i].pulse_response_w_CFT_TXFFE_noRxFFE = eq_pulse
         chdata[i].ctle_pulse = eq_pulse
-        sample_start = int((fom_result.t_s - 1) % M)  # 0-based
+        sample_start = int(fom_result.t_s) % M  # 0-based; see header note
         chdata[i].pulse_sampled_w_tx_ffe_ctle = eq_pulse[sample_start::M]
         chdata[i].t_sampled_w_tx_ffe_ctle = np.asarray(chdata[i].t)[sample_start::M]
 
