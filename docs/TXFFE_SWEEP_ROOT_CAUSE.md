@@ -228,3 +228,70 @@ alongside as evidence, not as a replacement.
 
 Closing the last ten end to end needs the two answers in §5 — not more work on
 this side.
+
+
+---
+
+## 8. Looking for the same failure mode elsewhere, and a guard against it
+
+The defect class is **silent search-space collapse**: a parameter that should
+define a swept dimension reads as a scalar, nothing errors, and the optimiser
+quietly searches one point. Worth asking where else that can happen.
+
+### Audit (`tools/audit_search_space.py`)
+
+Two sweeps over all four shipped configs:
+
+**Adjacent-template** — a keyword whose value cell is a scalar while a real
+MATLAB range literal sits in the next cell along, i.e. the exact Tx FFE shape.
+Result: **3 findings, all of them the Tx FFE taps** (`c(-1)`, `c(-2)`, `c(1)`),
+in each of the four configs. Nothing else in the workbook has this shape.
+
+**Degenerate dimensions** — the five dimensions `optimize_fom` actually loops
+over:
+
+| dimension | size | verdict |
+|---|---|---|
+| `cursor_gain` (Gffe) | 1 | legitimate — see below |
+| `ctle_gdc_values` | 21 | swept |
+| `g_DC_HP_values` | 7 | swept |
+| **Tx FFE grid** | **1** | **the defect** |
+| itick range | 49 | swept |
+
+`cursor_gain` deserved a check because it is also 1. It is read from
+`'crusor_gain'` — a misspelling in the MATLAB source, which the port reproduces
+exactly — its config default is 0, and MATLAB's own comment says "only FFE and
+not supported". `length(0) == 1` in MATLAB too, so both engines agree. Not a
+defect.
+
+### Keyword parity
+
+One level up, the same class appears as *a keyword the reference honours and the
+port ignores*. Comparing every `xls_parameter` call in `com_ieee8023_4p15p0.m`
+against `com.py`: **every keyword MATLAB reads is read by the port.** The three
+the port reads and 4p15p0 does not are `COM Version` (a port-only version
+switch) and `Non-zero Local Search Method` / `Overwrite Minimum Radius`, both of
+which exist in 4p16p0 with exactly those spellings.
+
+*(An initial pass reported 8 missing keywords. Four are read through the
+package-block helper, two — `Impulse response truncatio threshold` and
+`Include PCB (table 92-13)` — are commented out in the MATLAB source, and the
+regex was matching inside comments. Fixed.)*
+
+### The guard: `tests/test_config_search_space.py`
+
+Nothing in the suite could have caught this, because every existing test asks
+"does this function compute the right answer?" and none asked "is the optimiser
+being given anything to search?". The new test asks the second question:
+
+1. **Search dimensions are pinned** per config. If a parser change, a config edit
+   or a version switch moves one, the test fails and forces the correlation to be
+   re-stated rather than shifting unnoticed. *This is the check that would have
+   caught the Tx FFE defect on day one.*
+2. **Adjacent-template ledger** — a *new* scalar-beside-a-range keyword fails;
+   the three known ones carry a documented reason.
+3. **Keyword parity** — a keyword MATLAB reads and the port does not fails.
+
+Verified by mutation: setting the expected Tx FFE dimension to 198 fails all four
+configs, and removing `c(-1)` from the ledger fails all four. It is wired into
+`tests/run_all.ps1` by auto-discovery.
