@@ -141,12 +141,20 @@ ten cases should close.
 
 **The published runtime comparison is not like-for-like.** Python has been
 searching 1 Tx FFE candidate per CTLE where MATLAB searched a swept grid — 198
-combinations from the `c(-1)`/`c(1)` ranges alone, before adaptive pruning. The
-one measurement taken so far: `wXtalk_T1_R07` runs in **1.1 min** as supplied and
-roughly **15–20 min** with the sweep enabled.
+combinations from the `c(-1)`/`c(1)` ranges alone, before pruning.
 
-Any claim that the Python port is faster than MATLAB must be re-measured on a
-matched search space before it is repeated.
+Measured on `wXtalk_T1_R07`:
 
-This does **not** affect the adaptive-vs-full-grid result, which compares Python
-against Python on one and the same grid.
+| configuration | wall clock |
+|---|---|
+| as supplied (1 Tx FFE point) | **1.1 min** |
+| sweep on, adaptive local search | **1.8 min** |
+| sweep on, legacy local search | slower again (all 198 visited per CTLE) |
+
+*(An earlier draft of this section put the sweep-enabled figure at 15–20 minutes.
+That was wrong — it came from a full-grid pinned-CTLE diagnostic scan, not from a
+normal run. The correct penalty with adaptive search is about 1.6×.)*
+
+Any claim that the Python port is faster than MATLAB must still be re-measured on
+a matched search space, but the correction matters: the penalty is modest, so a
+corrected full-corpus run is affordable.
