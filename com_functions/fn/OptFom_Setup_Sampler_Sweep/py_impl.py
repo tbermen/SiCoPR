@@ -22,7 +22,11 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
     cluster = np.array([])
     box_mid = []
 
-    si = np.argsort(np.abs(full_sample_range))  # sort indices by |value|
+    # MATLAB's sort is STABLE; numpy's default argsort is quicksort, which is not.
+    # A symmetric sample range ties every +/-k pair, and the orders genuinely
+    # differ (... -2, 2, 3, -3 ... vs ... -2, 2, -3, 3 ...). Under
+    # TS_SRCH_MODE='middle' this order drives OptFom_Itick_LocalSearch's pruning.
+    si = np.argsort(np.abs(full_sample_range), kind='stable')  # ML 3827
 
     mode = str(OP.TS_SRCH_MODE).strip().lower()
     if mode == 'full-sweep':

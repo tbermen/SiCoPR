@@ -27,26 +27,119 @@ from types import SimpleNamespace
 _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
-def _findbankloc(hisi, N_tail_start, N_bmax, N_bf, bmaxg_val, bmaxg, N_bg):
-    """Simplified findbankloc: select N_bg*N_bf tap positions with highest power."""
-    hisi = np.asarray(hisi, dtype=float).ravel()
-    n_banks = int(N_bg)
-    bank_size = int(N_bf)
-    n_taps = n_banks * bank_size
-    power = np.abs(hisi)
-    # greedy: pick n_banks non-overlapping banks of size bank_size
-    available = list(range(len(hisi) - bank_size + 1))
-    chosen = []
-    for _ in range(n_banks):
-        if not available:
-            break
-        # find available start with highest bank power
-        best = max(available, key=lambda s: np.sum(power[s:s + bank_size]))
-        chosen.extend(range(best, best + bank_size))
-        # remove overlapping positions
-        available = [k for k in available if k + bank_size - 1 < best or k > best + bank_size - 1]
-    return np.sort(np.array(chosen, dtype=int)) + 1  # 1-based like MATLAB
+def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
+    """Faithful port of MATLAB findbankloc (ML 5918-6069).
 
+    This was previously a "pick the highest-power non-overlapping banks"
+    approximation, which is not what MATLAB does. The real routine ranks bank
+    start positions by ndiff = h0n - h1n and then runs a badV/goodV
+    admissibility loop that can reject the strongest bank and pre-commit the
+    next one, so the selected set differs from a plain energy ranking.
+
+    idx_st/idx_en are MATLAB 1-based bounds. Returns MATLAB-convention 1-based
+    positions in hisi, which is what the callers here expect (MMSE_FOM selects
+    columns as idx + RxFFE_cmx; force places taps at cmx + 1 + idx - 1).
+    """
+    hisi = np.asarray(hisi, dtype=float).ravel()
+    idx_st, idx_en = int(idx_st), int(idx_en)
+    tap_bk, N_bg = int(tap_bk), int(N_bg)
+    len_ = idx_en - idx_st + 1
+    h0 = np.abs(hisi[idx_st - 1:idx_en])
+    h1 = np.maximum(0.0, h0 - bmaxg * curval)
+    if curval < 0:
+        # ML 5934: a negative cursor would invert ndiff and make the WEAKEST isi
+        # the most desirable, so h1 is forced flat.
+        h1 = np.zeros(len_)
+
+    n_bins = len_ - tap_bk + 1
+    h0n = np.zeros(n_bins)
+    h1n = np.zeros(n_bins)
+    for _ii in range(tap_bk):
+        h0n += h0[_ii:_ii + n_bins] ** 2
+        h1n += h1[_ii:_ii + n_bins] ** 2
+    ndiff = h0n - h1n
+
+    def _bad_range(b_start, b_end):
+        """Taps closer than one bank below new_bank[0] (ML 6002-6009)."""
+        if b_end < 0:
+            return np.array([], dtype=int)
+        return np.arange(max(0, b_start), b_end + 1, dtype=int)
+
+    MIN_E = -np.inf
+    idx = np.full(tap_bk * N_bg, -1, dtype=int)
+    ordered_set = np.arange((N_bg - 1) * tap_bk + 1)
+    set_next_bank = -1
+
+    for k in range(N_bg):
+        # stable, to match MATLAB's sort(...,'descend'); ndiff ties are common
+        # because the isi tail is mostly zeros.
+        val_sort = np.argsort(-ndiff, kind='stable')
+
+        if k == 0 and np.array_equal(np.sort(val_sort[:len(ordered_set)]), ordered_set):
+            idx = np.arange(N_bg * tap_bk)
+            break
+
+        if set_next_bank >= 0:
+            new_bank = np.arange(set_next_bank, set_next_bank + tap_bk)
+            idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
+            set_next_bank = -1
+            ndiff[new_bank] = MIN_E
+            badV = _bad_range(new_bank[0] - tap_bk + 1, new_bank[0] - 1)
+            if len(badV):
+                ndiff[badV] = MIN_E
+            continue
+
+        new_bank = np.arange(val_sort[0], val_sort[0] + tap_bk)
+        if k == N_bg - 1:
+            idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
+            break
+
+        placed = idx[:tap_bk * k]
+        badV = np.array([], dtype=int)
+        do_it_again, first_time, num_loops = True, True, 0
+        while do_it_again:
+            do_it_again = False
+            if num_loops > len(ndiff):
+                break
+            badV = _bad_range(new_bank[0] - tap_bk + 1, new_bank[0] - 1)
+            if len(badV) and len(placed):
+                badV = badV[~np.isin(badV, placed)]
+            goodV_idx = new_bank[0] - tap_bk
+
+            if len(badV) > 0:
+                if not first_time:
+                    val_sort = np.argsort(-ndiff, kind='stable')
+                first_time = False
+                checkV = np.concatenate([badV, new_bank])
+                badV_pos = np.array([int(np.where(val_sort == v)[0][0]) for v in badV])
+
+                found_goodV = False
+                ii_found = len(val_sort) - 1
+                for ii_vs in range(len(val_sort)):
+                    if val_sort[ii_vs] == goodV_idx:
+                        found_goodV = True
+                        ii_found = ii_vs
+                        break
+                    if not np.any(val_sort[ii_vs] == checkV):
+                        ii_found = ii_vs
+                        break
+
+                if (not found_goodV) and len(badV_pos) and np.min(badV_pos) < ii_found:
+                    do_it_again = True
+                    ndiff[new_bank[0]] = MIN_E
+                    new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
+                if found_goodV:
+                    set_next_bank = goodV_idx
+            num_loops += 1
+
+        ndiff[new_bank] = MIN_E
+        idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
+        if len(badV):
+            ndiff[badV] = MIN_E
+
+    # ML 6069 returns idx+idx_st-1 as 1-based; our idx is 0-based within the
+    # window, so +idx_st lands on the same 1-based value.
+    return idx + idx_st
 
 def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
               idx=None, HH_full=None):

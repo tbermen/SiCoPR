@@ -22,7 +22,7 @@ def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     set_next_bank = -1
 
     for k in range(N_bg):
-        val_sort = np.argsort(-ndiff)
+        val_sort = np.argsort(-ndiff, kind='stable')
         if k == 0:
             ns = len(ordered_set)
             if np.array_equal(np.sort(val_sort[:ns]), ordered_set):
@@ -60,7 +60,7 @@ def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
             goodV_idx = new_bank[0] - tap_bk
             if len(badV) > 0:
                 if not first_time:
-                    val_sort = np.argsort(-ndiff)
+                    val_sort = np.argsort(-ndiff, kind='stable')
                 first_time = False
                 checkV = np.concatenate([badV, new_bank])
                 badV_pos = np.array([int(np.where(val_sort == v)[0][0]) for v in badV])

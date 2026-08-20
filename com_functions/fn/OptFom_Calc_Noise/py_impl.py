@@ -92,11 +92,12 @@ def OptFom_Calc_Noise(THIS, Best_FOM, sbr, SETTINGS, chdata, param, OP):
             candidate = 20 * np.log10(A_s / sigma_ISI)
             if candidate < Best_FOM:
                 abort_status = 1 if exe_mode == 1 else 2
-                THIS.h_J = h_J
-                THIS.sigma_TX = sigma_TX
-                THIS.ISI_N = ISI_N
-                THIS.sigma_N = sigma_N
-                THIS.total_noise_rms = sigma_ISI  # placeholder
+                # MATLAB returns here with THIS untouched: h_J/sigma_TX/ISI_N are
+                # still locals at this point and are only written into THIS at the
+                # end of the function (ML 2935-2941). Python passes THIS by
+                # reference, so writing them here would leave the ABORTED tick's
+                # values visible to the caller where MATLAB leaves the last
+                # successfully scored tick's. Leave THIS alone.
                 return THIS, abort_status
 
     # sigma_J (Equation 93A-32)
