@@ -91,6 +91,65 @@ the longest package. Per test the values are identical:
 Package length is **not** a factor. Included because the pooled number looks like
 a strong signal and is not one.
 
+## 3b. Is the crosstalk contribution itself the source?
+
+The natural reading of "all eight are with-crosstalk" is that the crosstalk noise
+computation is where the discrepancy enters. Tested three ways; all three say no.
+
+**(a) The crosstalk computation is bit-exact.** Every channel-level crosstalk
+quantity agrees on all 208 cases:
+
+| quantity | exact |
+|---|---|
+| `ICN_mV` | 208 / 208 |
+| `MDFEXT_ICN_92_47_mV` | 208 / 208 |
+| `MDNEXT_ICN_92_46_mV` | 208 / 208 |
+| `SNR_MDFEXT` | 104 / 104 (all wXtalk) |
+
+**(b) The post-equalization crosstalk terms disagree only where the sampling
+point already differs.** `sgm_xt`, `peak_MDFEXT_interference_at_BER_mV`,
+`peak_MDNEXT…` and `peak_MDXTK…` are each exact on 198/208, and the ten that are
+not are precisely the 8 tick mismatches plus the 2 cases with non-exact FOM
+(`wXtalk_T3_R07`, `wXtalk_T3_R15`). They move because the eye is being sampled
+somewhere else — consequence, not cause.
+
+**(c) The one crosstalk-only *decision* does not separate the sets.** `get_PSDs`
+chooses each aggressor's sampling phase by `argmax` over M candidate norms —
+code that runs only for with-crosstalk cases, and a plausible place for a
+discrete flip. Measured on the 8 divergent cases and 6 matched with-crosstalk
+controls, the margin between the best and second-best phase is:
+
+| set | median min-margin | range |
+|---|---|---|
+| divergent (8) | 1.58e-5 | 3.7e-6 … 1.0e-4 |
+| control (6) | 2.31e-5 | 3.8e-6 … 1.1e-4 |
+
+The distributions overlap almost completely (83% of control values fall inside
+the divergent range) and the divergent median is *larger*, not smaller, than a
+tie hypothesis would predict. At ~1e-5 these margins are also ten orders of
+magnitude above floating-point noise, so a last-bit difference could not flip
+the choice in any case.
+
+### What crosstalk does do
+
+The correlation splits cleanly by condition:
+
+| | FOM bit-exact | itick exact | max \|ΔCOM\| |
+|---|---|---|---|
+| woXtalk | **104 / 104** | **104 / 104** | 0.034719 |
+| wXtalk | 94 / 104 | 96 / 104 | 0.175602 |
+
+Without crosstalk the two engines agree on every FOM and every sampling phase.
+So crosstalk is the **enabling condition**, not the defect: `S_xn` enters the
+MMSE noise, which changes the RxFFE solve and therefore the shape of FOM versus
+sampling phase. It is what makes the tick selection contested enough for a small
+underlying difference to change the winner — while the crosstalk arithmetic
+itself is exact.
+
+That is worth stating precisely to Hansel, because "it only happens with
+crosstalk" invites the assumption that the crosstalk model differs, and the data
+says it does not.
+
 ## 4. The question for Hansel
 
 These eight are the cases where the two engines disagree about *where in the UI*
