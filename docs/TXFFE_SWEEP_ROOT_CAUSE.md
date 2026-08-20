@@ -125,8 +125,12 @@ two engines' anchors differ is the Tx FFE, not an ambiguity in the anchor rule.
 
 Not `cursor_i` any more:
 
-> **Which Tx FFE tap ranges were active in the run that produced these
+> **1. Which Tx FFE tap ranges were active in the run that produced these
 > workbooks?**
+>
+> **2. Which local-search method produced them?** `com_ieee8023_4p15p0.m`
+> contains only `OptFom_Local_Search`; `OptFom_Adaptive_Local_Search` is a
+> 4p16p0 addition, yet the configs set `Non-zero Local Search Method = 1`.
 
 The configs as supplied set `c(-1)`, `c(-2)` and `c(1)` to `0` in the value
 column, which yields a single unity Tx FFE — but the results contain non-unity
@@ -158,3 +162,63 @@ normal run. The correct penalty with adaptive search is about 1.6×.)*
 Any claim that the Python port is faster than MATLAB must still be re-measured on
 a matched search space, but the correction matters: the penalty is modest, so a
 corrected full-corpus run is affordable.
+
+---
+
+## 7. Re-running the corpus on a *guessed* grid makes correlation worse
+
+The obvious next step is to re-run all 208 with the sweep on. Done
+(`--txffe-sweep`, results in `matlab_compare_results/cases_txffesweep/`):
+
+| | FOM bit-exact | COM bit-exact | itick exact | max \|ΔCOM\| | flips |
+|---|---|---|---|---|---|
+| as supplied (baseline) | **198 / 208** | **170 / 208** | **200 / 208** | 0.1852 | 1 |
+| Tx FFE sweep enabled | 189 / 208 | 163 / 208 | 192 / 208 | 0.2029 | 1 |
+
+It gets **worse**, and the reason is instructive rather than discouraging.
+
+Of the ten cases the sweep was meant to fix, **five now match MATLAB exactly**
+(bit-exact FOM and identical `itick`): `wXtalk_T1_R15`, `T2_R16`, `T3_R16`,
+`T3_R17`, `T3_R15`. On the other five Python's search stops at a different tap
+set from MATLAB's:
+
+| case | MATLAB | Python (sweep) | ΔFOM |
+|---|---|---|---|
+| wXtalk_T1_R07 | −0.04 | −0.02 | −7.1e−3 |
+| wXtalk_T1_R08 | −0.04 | −0.02 | −5.8e−3 |
+| wXtalk_T1_R16 | −0.10 | −0.06 | −1.2e−3 |
+| wXtalk_T2_R15 | −0.02 | unity | −6.9e−3 |
+| wXtalk_T3_R07 | −0.02 | unity | −8.7e−4 |
+
+And it costs about fourteen previously-matching cases: Python selects a non-unity
+Tx FFE on **22** of 208 where MATLAB selected one on **10**.
+
+### What that tells us
+
+The grid is a guess, and a guess is not good enough. Two things about the real
+run are still unknown, and both change which candidates a local search visits:
+
+1. **The exact tap ranges.** MATLAB's `TXLE_taps` has four elements, so the
+   `c(-2)` slot survived the trim in `OptFom_Build_TXFFE` — meaning it held at
+   least two values. My injection sets only `c(-1)` and `c(1)`, so my grid has a
+   different *shape*, which changes `num_txffe_runs`, the sweep-index ordering
+   and hence the pruning.
+2. **The local-search method.** `com_ieee8023_4p15p0.m` contains only
+   `OptFom_Local_Search`; `OptFom_Adaptive_Local_Search` is a 4p16p0 addition.
+   The configs set `Non-zero Local Search Method = 1`, so Python ran the
+   *adaptive* search against a *legacy* reference. With the single-point grid
+   that was unobservable; on a real grid it is not.
+
+A spot check on `wXtalk_T1_R07` with the legacy method reaches FOM 12.4454 —
+*above* MATLAB's 12.4432 — so Python is not under-searching. The two engines are
+simply walking different grids with different pruning rules.
+
+### Consequence
+
+**The as-supplied run stays the headline correlation.** It is a faithful use of
+the configs we were given, the ten outliers are explained and independently
+verified (§3), and it is the better number besides. The sweep run is kept
+alongside as evidence, not as a replacement.
+
+Closing the last ten end to end needs the two answers in §5 — not more work on
+this side.
