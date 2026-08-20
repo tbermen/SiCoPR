@@ -377,31 +377,32 @@ Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_I
    "the same answer written two ways". That reading was wrong: the non-unity values are
    real, and they are the whole explanation for the remaining disagreement.*
 
-2. **Which local-search method produced the workbooks?**
+2. **Confirmation only: adaptive local search, with a backported implementation?**
 
-   `com_ieee8023_4p15p0.m` contains only `OptFom_Local_Search`;
-   `OptFom_Adaptive_Local_Search` is a 4p16p0 addition. But the supplied configs set
-   `Non-zero Local Search Method = 1`, so COM Python has been running the **adaptive**
-   search against a **4p15p0** reference.
+   The reference workbooks are named `..._AdaptiveLS.xlsx`, so the run used adaptive
+   local search and COM Python's `Non-zero Local Search Method = 1` matches it. Worth
+   one line of confirmation because `com_ieee8023_4p15p0.m` **as distributed** contains
+   only `OptFom_Local_Search` — `OptFom_Adaptive_Local_Search` first appears in 4p16p0.
+   The natural reading is that the run used a 4p15p0 build with the adaptive search
+   backported, which is what one would expect from its author.
 
-   With the single-point Tx FFE grid this made no observable difference — which is why
-   198 of 208 matched anyway — but on a real grid it changes which candidates get pruned,
-   and the two engines then stop at different points.
+   *An earlier draft of this section listed the search method as a second mismatch and
+   asserted that COM Python "has been running the adaptive search against a legacy
+   reference". That was wrong — the workbook filenames say `AdaptiveLS`. The search
+   method is not a discrepancy; the only open unknown is the Tx FFE grid in item 1.*
 
-   Related, and worth raising for the proposal itself: MATLAB's own reported answer is
-   **not** its grid's optimum on 2 of the 10 cases. On `wXtalk_T3_R17` seven candidates
-   beat it at its own CTLE, including unity itself (13.8662 vs the reported 13.8016). So
-   adaptive local search demonstrably stops short on a real Tx FFE grid. The
-   "adaptive == full grid, 9/9 bit-identical" result in §5 was measured with the configs
-   as supplied, i.e. on a single-point grid where the adaptive search has nothing to
-   prune in that dimension; it should be re-run on a real grid before being quoted.
+   **What does still matter for the proposal:** MATLAB's own reported answer is not its
+   grid's optimum on 2 of the 10 cases. On `wXtalk_T3_R17` seven candidates beat it at
+   its own CTLE, including unity itself (13.8662 vs the reported 13.8016). So adaptive
+   local search can stop short on a real Tx FFE grid. The "adaptive == full grid, 9/9
+   bit-identical" result in §5 was measured with the configs as supplied, i.e. on a
+   single-point Tx FFE grid where the adaptive search has nothing to prune in that
+   dimension; it should be re-run on a real grid before being quoted.
 
-   *`cursor_i` / absolute `t_s` is no longer requested. It was asked for to test a
-   frame-origin hypothesis that the Tx FFE finding has since displaced, and the stage-6
-   noise question it was also meant to settle turned out to be a Python defect —
-   `BEST.PSD_results` held a reference to a struct MATLAB copies by value, so the
-   reported noise came from the last sampling phase swept rather than the winning one
-   (`docs/STAGE6_NOISE_AGREEMENT.md` §8, fixed).*
+   *`cursor_i` / absolute `t_s` is no longer requested — the frame-origin hypothesis it
+   was meant to test has been displaced, and the stage-6 noise question it was also meant
+   to settle turned out to be a Python defect (`docs/STAGE6_NOISE_AGREEMENT.md` §8,
+   fixed).*
 
 ---
 

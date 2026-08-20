@@ -128,15 +128,18 @@ Not `cursor_i` any more:
 > **1. Which Tx FFE tap ranges were active in the run that produced these
 > workbooks?**
 >
-> **2. Which local-search method produced them?** `com_ieee8023_4p15p0.m`
-> contains only `OptFom_Local_Search`; `OptFom_Adaptive_Local_Search` is a
-> 4p16p0 addition, yet the configs set `Non-zero Local Search Method = 1`.
+> **2.** (confirmation only) The workbooks are named `..._AdaptiveLS.xlsx`, so
+> adaptive local search was used and Python matches it. Worth one line to confirm
+> the implementation was the 4p16p0 one backported into a 4p15p0 build, since
+> 4p15p0 as distributed has no adaptive search.
 
 The configs as supplied set `c(-1)`, `c(-2)` and `c(1)` to `0` in the value
 column, which yields a single unity Tx FFE — but the results contain non-unity
 winners on 10 cases, so the run used a different setting. Specifically: was
 `c(-2)` set to `[ 0.14:.02:0]` (which evaluates empty) or to something else, and
 were `c(-3)`/`c(-4)` in play?
+
+This is now the **only** open unknown — see §7 and the note on item 2 below.
 
 With that, the corpus can be re-run on a matched search space and the remaining
 ten cases should close.
@@ -203,15 +206,18 @@ run are still unknown, and both change which candidates a local search visits:
    least two values. My injection sets only `c(-1)` and `c(1)`, so my grid has a
    different *shape*, which changes `num_txffe_runs`, the sweep-index ordering
    and hence the pruning.
-2. **The local-search method.** `com_ieee8023_4p15p0.m` contains only
-   `OptFom_Local_Search`; `OptFom_Adaptive_Local_Search` is a 4p16p0 addition.
-   The configs set `Non-zero Local Search Method = 1`, so Python ran the
-   *adaptive* search against a *legacy* reference. With the single-point grid
-   that was unobservable; on a real grid it is not.
+2. ~~The local-search method.~~ **Not a mismatch — corrected 2026-08-20.** The
+   reference workbooks are named `..._AdaptiveLS.xlsx`, so the run used adaptive
+   local search and Python's `Non-zero Local Search Method = 1` matches it.
+   (`com_ieee8023_4p15p0.m` *as distributed* contains only `OptFom_Local_Search`;
+   the adaptive variant first appears in 4p16p0, so the reference run used a
+   4p15p0 build with it backported — expected, from its author.) An earlier
+   version of this document listed this as a second mismatch. It is not one.
 
-A spot check on `wXtalk_T1_R07` with the legacy method reaches FOM 12.4454 —
-*above* MATLAB's 12.4432 — so Python is not under-searching. The two engines are
-simply walking different grids with different pruning rules.
+So there is **one** unknown, not two: the grid shape. A spot check on
+`wXtalk_T1_R07` with the legacy method reaches FOM 12.4454 — *above* MATLAB's
+12.4432 — confirming Python is not under-searching either way. The two engines
+are walking differently-shaped grids.
 
 ### Consequence
 

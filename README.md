@@ -267,10 +267,11 @@ on all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
 Honest caveats for anyone relying on the numbers:
 
 - **The eight sampling-phase divergences are explained** — a Tx FFE search-space
-  mismatch, not an engine defect (see above). Two configuration questions remain open
-  with Hansel: which Tx FFE tap ranges were active, and which local-search method. Note
-  that `com_ieee8023_4p15p0.m` contains only `OptFom_Local_Search`; the adaptive variant
-  is a 4p16p0 addition, yet the configs set `Non-zero Local Search Method = 1`.
+  mismatch, not an engine defect (see above). One configuration question remains open
+  with Hansel: which Tx FFE tap ranges were active. The search *method* is not a
+  mismatch — the reference workbooks are named `..._AdaptiveLS.xlsx` and the port's
+  `Non-zero Local Search Method = 1` matches them (4p15p0 as distributed has no adaptive
+  search, so the reference run used a build with the 4p16p0 one backported).
 - **The MATLAB-vs-Python runtime comparison is not like-for-like** and should not be
   quoted until re-measured: Python searched one Tx FFE candidate per CTLE where MATLAB
   swept a grid. The Python-vs-Python speed-up is unaffected.
