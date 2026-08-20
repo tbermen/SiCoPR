@@ -2,10 +2,17 @@
 
 Eight of the 208 reference cases select a different sampling phase (`itick`) from
 MATLAB. This isolates them: what the correlation looks like without them, what
-they have in common, and the one question that would settle it.
+they have in common, what the search actually does, and the one question that
+would settle it.
+
+Headline: the search is not at fault (every tick is evaluated, §4), the crosstalk
+model is not at fault (§3b), and `itick` is an offset from an origin that moves
+with the equalizer (§5) — so several of the eight may not be sampling at
+different instants at all.
 
 Regenerate with `python tools/itick_subset_report.py`.
-Machine-readable table: `report_data/itick_subset.csv` (8 rows, 34 columns).
+Machine-readable tables: `report_data/itick_subset.csv` (8 rows, 34 columns) and
+`report_data/fom_surface_<case>.csv` (`python tools/fom_surface_probe.py <case>`).
 
 ---
 
@@ -150,30 +157,192 @@ That is worth stating precisely to Hansel, because "it only happens with
 crosstalk" invites the assumption that the crosstalk model differs, and the data
 says it does not.
 
-## 4. The question for Hansel
+## 4. The search is not the cause — every tick is evaluated
 
-These eight are the cases where the two engines disagree about *where in the UI*
-to sample. Three facts constrain the explanation:
+Before blaming anything numerical, the search itself had to be ruled out. For
+all four 208-case configs:
 
-1. **Python cannot reach MATLAB's reported FOM at MATLAB's reported tick under
-   any equalizer setting** — short by 2.36 dB and 5.43 dB on the two worst —
-   **yet the peak FOM values agree to 0.06–0.09 dB.** Both engines find the same
-   quality of solution; they disagree about the coordinate it sits at.
-2. **Adaptive pruning is not responsible.** An exhaustive full-grid run
-   reproduces Python's answer on 9 of 9 of the hardest cases, including
-   `wXtalk_T1_R16`, where the full grid independently lands on Python's tick.
-3. **A second, independent investigation lands on the same unknown.** Stage-6
-   noise terms built by decimating the pulse at `cursor_i % samples_per_ui`
-   disagree, while the analytic term that uses no cursor is exact; the error is
-   ~1e-12 at `itick = −8` and grows with distance from it. See
-   `docs/STAGE6_NOISE_AGREEMENT.md`.
+| switch | value | consequence |
+|---|---|---|
+| `TS_SRCH_MODE` | `full-sweep` | `middle_search = 0`, so the whole `ts_sample_adj_range` (−24…+24, 49 ticks) is swept in order |
+| `LOCAL_SEARCH` | 2 | but `OptFom_Itick_LocalSearch` is gated on `middle_search`, so it never skips a tick |
+| `RxFFE` + `FFE_OPT_METHOD` | on + `MMSE` | `RxFFE_with_MMSE = 1` |
 
-**The request: `cursor_i`, or the absolute `t_s`, reported alongside `itick`.**
+`RxFFE_with_MMSE = 1` has three effects that matter here, identical in both
+engines (ML 8772-8785, 3613-3622, and `OptFom_Compute_RxFFE`):
 
-One extra column. If `cursor_i − SBR_peak ≠ itick` on these eight, the divergence
-is a frame-origin convention rather than a numerical disagreement, and the
-stage-6 residual is explained at the same time. The workbooks currently expose
-only `itick`, so the origin is unobservable from the outputs.
+- `OptFom_Calc_Noise`'s abort bound (`20log10(A_s/sigma_ISI) < Best_FOM`, the one
+  piece of history-dependent pruning in the tick loop) is **disabled**;
+- `OptFom_Compute_RxFFE`'s `RXFFE_Illegal` early-out is **skipped**;
+- `OptFom_Calc_FOM` is **never called** — the FOM is `MMSE_results.FOM`.
 
-Falsifiable either way: `sigma_TX` should agree exactly wherever the two cursors
-differ by a whole multiple of `samples_per_ui`, and not otherwise.
+So the winning tick is a **plain argmax over a fully evaluated 49-point
+surface**. There is no pruning, no early termination, and no order dependence
+left to blame. Measured on four cases, Python scores 49/49 ticks for every EQ
+candidate, confirming this. Whatever differs has to be a difference in FOM
+*values*, not in which values got looked at.
+
+## 5. `itick` is measured from an origin that moves
+
+`ts_anchor = 1` in all four configs, so the anchor is
+
+```
+raw_cursor_i = argmax(sbr[Peak_Search_Range])      (ML 3529-3531)
+THIS.cursor_i = raw_cursor_i + THIS.itick          (ML 8766)
+```
+
+recomputed **for every EQ candidate**, on that candidate's own equalized pulse.
+The peak of the equalized pulse moves as the equalizer changes, so the anchor
+moves with it. Measured (`tools/fom_surface_probe.py`):
+
+| case | EQ candidates | distinct anchors | anchor spread |
+|---|---|---|---|
+| wXtalk_T1_R01 | 17 | 3 | 2 samples |
+| wXtalk_T1_R07 | 25 | 5 | 4 samples |
+| wXtalk_T1_R16 | 20 | 4 | 3 samples |
+| wXtalk_T3_R17 | 20 | 3 | 2 samples |
+
+The consequence is direct. Taking only the EQ candidates within 0.5 dB of the
+best, and asking where each one's own optimum sits:
+
+| case | argmax as `itick` | argmax as *absolute* sample |
+|---|---|---|
+| wXtalk_T1_R16 | 3, 4, 5 (3 labels) | 28357, 28358 (**2 samples**) |
+| wXtalk_T1_R07 | −8, −7, −6, −5 (4 labels) | 23971, 23972, 23973 (3 samples) |
+| wXtalk_T3_R17 | −20, −19, −18 (3 labels) | 14703, 14704, 14705 (3 samples) |
+
+On R16, seventeen near-optimal equalizer settings agree on **two** physical
+sampling instants but disagree across **three** `itick` labels. The label is
+noisier than the thing it labels.
+
+**So an `itick` difference of a few samples between two engines that chose
+slightly different equalizers is expected, and does not by itself mean they
+sampled at different instants.** Five of the eight have Δ = +1 or +2, and three
+of the eight land on a different winning CTLE from MATLAB — the regime where this
+effect is largest.
+
+How far it goes is worth stating precisely rather than assuming, because the
+measured spread does not cover all eight:
+
+| case | Δ | Python absolute cursor | anchor MATLAB would need | Python's anchors | covered? |
+|---|---|---|---|---|---|
+| wXtalk_T1_R07 | +1 | 23972 (anchor 23979, itick −7) | 23980 | 23977…23981 | **yes** |
+| wXtalk_T1_R16 | +5 | 28357 (anchor 28352, itick +5) | 28357 | 28351…28354 | no — 3 beyond |
+| wXtalk_T3_R17 | −25 | 14704 (anchor 14723, itick −19) | 14698 | 14722…14724 | no — 24 beyond |
+
+For R07 the anchor MATLAB would need in order to be sampling Python's instant
+falls inside the range Python itself produced across its 25 candidates, so anchor
+movement is a sufficient explanation. For R16 it is 3 samples beyond anything
+Python produced — plausible, since MATLAB won on a different CTLE (−20 vs −19),
+but **not** established. For R17 it is 24 samples out, which anchor movement
+cannot explain; that case is the bimodal one (§6).
+
+So this mechanism accounts for some of the eight, not all of them. `cursor_i`
+would say which.
+
+This also retires the earlier "anchor-origin offset" reading. There is no fixed
+frame origin to be offset: with `ts_anchor = 1` the origin is an `argmax` that is
+re-derived per candidate, and both engines re-derive it the same way.
+
+## 6. What the FOM surfaces actually look like
+
+`tools/fom_surface_probe.py` dumps FOM vs tick for every EQ candidate. Best
+Python FOM at MATLAB's reported tick, maximised over **all** EQ candidates:
+
+| case | Python peak | at tick | MATLAB peak | at tick | Python at MATLAB's tick | short by |
+|---|---|---|---|---|---|---|
+| wXtalk_T1_R01 (control) | 12.0943 | −6 | 12.0943 | −6 | 12.0943 | 0.0000 |
+| wXtalk_T1_R07 | 12.4255 | −7 | 12.4432 | −8 | 12.4015 | 0.0416 |
+| wXtalk_T1_R16 | 11.6070 | +5 | 11.6910 | 0 | 6.2573 | **5.4337** |
+| wXtalk_T3_R17 | 13.8662 | −19 | 13.8016 | +6 | 11.4398 | **2.3618** |
+
+Two observations:
+
+- **The peak values agree to 0.005–0.084 dB in every case** — including
+  `wXtalk_T3_R17`, where Python's peak is *higher* than MATLAB's. Both engines
+  find equally good solutions.
+- The surfaces are smooth, not notched. R16 climbs monotonically 0→+5
+  (6.26, 8.57, 10.79, 11.49, 11.54, 11.61); there is no isolated hole at
+  MATLAB's tick. A 5-sample offset of a smooth ramp is what a 5-sample anchor
+  difference looks like.
+
+`wXtalk_T3_R17` is a different animal and should be treated separately: its
+surface is genuinely **bimodal**, with 13.866 at −19 and a second optimum of
+13.680 at +2, and MATLAB's reported 13.802 falls between them. Two well-separated
+optima within 0.065 dB — the engines picked different basins. That is not an
+anchor effect and not a defect; it is a legitimately ambiguous optimum.
+
+## 7. What was ruled out in the Python code
+
+Read against the 4p15p0 source, site by site:
+
+| checked | verdict |
+|---|---|
+| phase arithmetic (`mod(cursor_i-1,M)+1`, `mod(cursor_i,M)`) at all 5 `get_PSDs` sites | equivalent |
+| `sampling_offset<=1` guard and early/late cursor slicing | equivalent |
+| `MMSE` array build: `dh`, `isi_start`/`isi_end`, zero-pad to `num_ui`, toeplitz row-trim branch | equivalent |
+| `MMSE_FOM` clipping branches (`~isequal` exact-equality tests, b-refresh placement) | equivalent |
+| `FOM_rxffe_floating_taps` greedy bank search: positional-then-value removal, `max` first-wins tie-break | equivalent (sequential removal == union removal) |
+| `Peak_Search_Range` construction and `ts_anchor` handling | equivalent |
+
+Three latent defects were found that are **not** active in these configs, and so
+cannot explain the eight, but are real and would bite under other settings:
+
+1. `OptFom_Setup_Sampler_Sweep` uses `np.argsort(np.abs(full_sample_range))`.
+   NumPy's default is quicksort, which is **not stable**; MATLAB's `sort` is. On
+   a symmetric range every ±k pair ties, and the orders genuinely differ
+   (`… −2, 2, 3, −3, −4 …` vs `… −2, 2, −3, 3, −4 …`). Dead here because
+   `TS_SRCH_MODE = 'full-sweep'` never reads `si`; live for `'middle'`, where
+   visit order drives the pruning.
+2. `OptFom_Calc_Noise` writes five fields into `THIS` on its abort path
+   (`h_J`, `sigma_TX`, `ISI_N`, `sigma_N`, `total_noise_rms`) where MATLAB's
+   early `return` leaves `THIS` untouched — the by-reference-vs-by-value class
+   that caused 5 of the original 8 defects. Dead here because
+   `RxFFE_with_MMSE = 1` makes the whole block unreachable.
+3. `_findbankloc` in `MMSE` is a self-described "simplified" reimplementation of
+   MATLAB's `findbankloc`, not a translation of it. Dead here because
+   `RXFFE_FLOAT_CTL = 'FOM'`; live for `'ISI'`.
+
+## 8. The question for Hansel
+
+To be clear about what this is and is not: **nothing here suggests a defect in
+the MATLAB engine.** Both engines sweep the same 49 ticks with no pruning, and
+their peak FOM values agree to within 0.084 dB on all four cases examined in
+detail. The problem is that the reported quantity cannot distinguish the two
+explanations that remain.
+
+`itick` is an offset from `raw_cursor_i = argmax(sbr[Peak_Search_Range])`, which
+is re-derived per EQ candidate and was measured to move by 2–4 samples within a
+single case (§5). So two engines that settle on slightly different equalizers
+report `itick` on different origins. Given only `itick`, "sampled at a different
+instant" and "sampled at the same instant, labelled from a different anchor" look
+identical in the outputs.
+
+**The request: `cursor_i` — or the absolute `t_s` — reported alongside `itick`.**
+
+One extra column, and it is diagnostic rather than accusatory: it puts both
+engines on a common axis so the eight can be sorted into the two buckets.
+
+Concretely, for each of the eight, compare `cursor_i` directly:
+
+- **equal** → the engines sampled the same instant and the `itick` difference is
+  pure anchor movement. Nothing to fix; the correlation is better than the
+  headline number suggests.
+- **different** → a genuine difference in the FOM surface, and the size of the
+  gap points at where. `wXtalk_T3_R17` is already known to be this kind: its
+  surface is bimodal with two optima 0.065 dB apart at ticks 25 samples apart,
+  so the engines picked different basins (§6).
+
+Useful alongside it, and cheap if the run is being done anyway: `raw_cursor_i`
+and the winning CTLE/TxFFE indices, which would let the anchor movement be
+confirmed directly rather than inferred.
+
+### Related, and now less coupled than it was
+
+The stage-6 noise residual (`docs/STAGE6_NOISE_AGREEMENT.md`) also turns on the
+sampling anchor: terms built by decimating the pulse at
+`cursor_i % samples_per_ui` disagree, while the analytic term that uses no cursor
+is exact, and the error grows with distance from `itick = −8`. The same column
+would settle both. But note §7 — the phase arithmetic itself has now been checked
+site by site against 4p15p0 and is equivalent, so a stated-convention mismatch is
+no longer the leading candidate there either.
