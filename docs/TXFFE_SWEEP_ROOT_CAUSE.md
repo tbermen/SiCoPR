@@ -60,25 +60,53 @@ range syntax correctly when it is given it:
 '[ 0.14:.02:0]'   ->   0 values (empty, exactly as MATLAB's 0.14:.02:0)
 ```
 
-## 3. Confirmation by experiment
+## 3. Confirmation: 10 / 10, to 1e-11
 
-Injecting the column-C ranges into `param` after the config is read — changing
-nothing else — and re-running `wXtalk_T1_R07`:
+Pinning the CTLE to MATLAB's reported value, enabling the `c(-1)`/`c(1)` sweep
+and evaluating **every** Tx FFE candidate on a full grid, then looking up
+MATLAB's own tap vector in the result (`scratchpad/txffe_scan.py`):
 
-| | Tx FFE | itick | FOM |
-|---|---|---|---|
-| Python, as supplied (1 grid point) | `[1]` | −7 | 12.4255 |
-| **Python, sweep enabled (198 points)** | `[−0.02, 0.98, 0]` | −7 | **12.4361** |
-| MATLAB reference | `[0, −0.04, 0.96, 0]` | −8 | 12.4432 |
+| case | MATLAB Tx FFE | itick ML | itick PY | rank in Python | FOM ML | ΔFOM |
+|---|---|---|---|---|---|---|
+| wXtalk_T1_R07 | `[0, −0.04, 0.96, 0]` | −8 | **−8** | #2 | 12.443168 | −1.2e−11 |
+| wXtalk_T1_R08 | `[0, −0.04, 0.96, 0]` | −6 | **−6** | #1 | 11.875333 | −1.5e−11 |
+| wXtalk_T1_R15 | `[0, −0.02, 0.98, 0]` | −3 | **−3** | #1 | 12.528249 | −3.2e−12 |
+| wXtalk_T1_R16 | `[0, −0.1, 0.9, 0]` | 0 | **0** | #1 | 11.691042 | −2.3e−11 |
+| wXtalk_T2_R15 | `[0, −0.02, 0.98, 0]` | −4 | **−4** | #1 | 11.128613 | −4.7e−12 |
+| wXtalk_T2_R16 | `[0, −0.06, 0.94, 0]` | 1 | **1** | #1 | 9.955886 | −1.6e−11 |
+| wXtalk_T3_R07 | `[0, −0.02, 0.98, 0]` | −8 | **−8** | #1 | 10.759523 | −9.7e−12 |
+| wXtalk_T3_R15 | `[0, −0.02, 0.98, 0]` | −3 | **−3** | #1 | 10.589143 | −5.0e−12 |
+| wXtalk_T3_R16 | `[0, −0.04, 0.96, 0]` | 2 | **2** | #1 | 9.361404 | −1.5e−11 |
+| wXtalk_T3_R17 | `[0, −0.1, 0.9, 0]` | 6 | **6** | #9 | 13.801599 | −1.7e−12 |
 
-Python moves off unity and its FOM rises toward MATLAB's. It does not land
-exactly on MATLAB's answer, and the tap vector shows why: Python returns **3**
-taps, MATLAB **4**. `OptFom_Build_TXFFE` trims leading single-valued zero taps
-until the first non-trivial one, so a 4-element result means MATLAB's grid kept
-the `c(-2)` position while mine trimmed it — Hansel's config had something at
-`c(-2)` that my injection did not reproduce.
+**Given the same Tx FFE, Python reproduces MATLAB's sampling phase exactly and
+its FOM to 1e-11 on all ten.** The COM engine is correct; the residual was
+entirely the search space.
 
-The mechanism is established; the exact grid is not.
+The most striking is `wXtalk_T1_R16`. It was the case where "Python cannot reach
+MATLAB's FOM at MATLAB's tick under any equalizer setting — short by 5.43 dB".
+With `[0, −0.1, 0.9, 0]` in the grid, Python produces 11.691042 at `itick = 0`,
+matching MATLAB to 2.3e−11. The equalizer was never in the grid to be found.
+
+### A second finding: MATLAB's own answer is not always its grid's optimum
+
+The "rank" column is Python's full-grid ranking at MATLAB's CTLE. On 8 of 10
+MATLAB's choice is rank #1. On two it is not:
+
+- `wXtalk_T1_R07` — rank #2; `[−0.06, 0.94, 0]` scores 12.4454, +0.0023 dB better.
+- `wXtalk_T3_R17` — rank #9; seven candidates beat it, including **unity itself**
+  at 13.8662 versus MATLAB's 13.8016 (+0.0796 dB).
+
+Unity is certainly in MATLAB's grid (its `c(-1)` range spans 0), so on R17
+MATLAB's adaptive local search terminated before evaluating a point 0.08 dB
+better. **This is direct evidence, from the reference data itself, that adaptive
+local search can stop short of the optimum on a real Tx FFE grid.**
+
+That matters for the proposal, and it qualifies an earlier result: the
+"adaptive LS == full grid, bit-identical, 9/9" check was run on the configs as
+supplied — i.e. with a **single-point** Tx FFE grid, where the adaptive search has
+nothing to prune in that dimension. It should be re-run on a real grid before
+being quoted.
 
 ## 4. What this replaces
 
