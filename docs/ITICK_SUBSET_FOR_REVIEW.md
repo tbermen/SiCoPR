@@ -267,10 +267,17 @@ Two observations:
   difference looks like.
 
 `wXtalk_T3_R17` is a different animal and should be treated separately: its
-surface is genuinely **bimodal**, with 13.866 at −19 and a second optimum of
-13.680 at +2, and MATLAB's reported 13.802 falls between them. Two well-separated
-optima within 0.065 dB — the engines picked different basins. That is not an
-anchor effect and not a defect; it is a legitimately ambiguous optimum.
+surface is **bimodal**, with 13.866 at −19 and a second, lower optimum of 13.680
+at +2 — two basins 21 ticks apart and 0.187 dB apart in height. MATLAB's reported
+13.802 sits between the two, 0.065 dB below Python's peak and 0.12 dB above
+Python's secondary one, at tick +6. So the engines settled in different basins on
+a surface that has more than one, and the winning heights are close. This is not
+an anchor effect (§5 shows the anchor cannot move 24 samples) and not obviously a
+defect; it is a genuinely contested optimum.
+
+Note this is compatible with the earlier finding that the landscapes are sharply
+peaked — only 2 of 49 ticks lie within 0.1 dB of the peak here too. "Bimodal"
+refers to two separated local maxima, not to a flat top.
 
 ## 7. What was ruled out in the Python code
 
