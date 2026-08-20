@@ -238,16 +238,16 @@ Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
 | | result |
 |---|---|
 | FOM bit-exact | 198 / 208 |
-| COM bit-exact | 170 / 208 |
+| COM bit-exact | **198 / 208** |
 | sampling phase (`itick`) exact | 200 / 208 |
 | max \|ΔCOM\| | 0.185 dB |
-| rms ΔCOM | 0.019 dB |
-| pass/fail disagreements | 1 (within 0.01 dB of the 3 dB threshold) |
+| rms ΔCOM | 0.018 dB |
+| pass/fail disagreements | **0** |
 
-On the 200 cases whose sampling phase agrees, max \|ΔCOM\| is 0.028 dB and rms is
-0.005 dB.
+On the 200 cases whose sampling phase agrees, COM is bit-exact on 197, max
+\|ΔCOM\| is 0.0088 dB and rms is 0.0010 dB.
 
-Nine engine defects were found and fixed in the process. Reproduce with
+Ten engine defects were found and fixed in the process. Reproduce with
 `python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
 [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
 
@@ -275,8 +275,11 @@ Honest caveats for anyone relying on the numbers:
 - **The MATLAB-vs-Python runtime comparison is not like-for-like** and should not be
   quoted until re-measured: Python searched one Tx FFE candidate per CTLE where MATLAB
   swept a grid. The Python-vs-Python speed-up is unaffected.
-- **A residual ~0.002 dB mean bias remains in the COM PDF path** (max 0.035 dB). It is
-  what produces the 2 knife-edge pass/fail disagreements.
+- **The COM PDF residual is fixed** — an off-by-one in the ADC-clip sampling phase
+  (`docs/COM_PDF_RESIDUAL.md`). COM bit-exact went 170 → 198 of 208 and the last
+  pass/fail disagreement cleared. One case (`wXtalk_T4_R10`) still differs by
+  0.0076 dB on a channel that fails by 3.4 dB, from a separate ~4e-5 residual in the
+  combined interference-and-noise PDF.
 - **Results produced before August 2026 are not comparable to current output.** The nine
   engine fixes changed COM materially — the largest single correction removed a systematic
   FOM bias affecting 95.7% of cases. Regenerate rather than compare against archived numbers.

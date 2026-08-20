@@ -14,21 +14,22 @@ All 208 cases run, **0 failures**.
 
 | metric | FOM | COM |
 |---|---|---|
-| **bit-exact** | **198 / 208 (95.2 %)** | **170 / 208 (81.7 %)** |
+| **bit-exact** | **198 / 208 (95.2 %)** | **198 / 208 (95.2 %)** |
 | median \|Δ\| | **0.000000 dB** | **0.000000 dB** |
-| rms Δ | 0.0082 dB | 0.0187 dB |
-| mean Δ | −0.0007 dB | −0.0002 dB |
-| \|Δ\| ≤ 0.01 dB | 202 / 208 | 184 / 208 |
+| rms Δ | 0.0082 dB | 0.0177 dB |
+| mean Δ | −0.0007 dB | −0.0013 dB |
+| \|Δ\| ≤ 0.01 dB | 202 / 208 | 202 / 208 |
 | \|Δ\| ≤ 0.05 dB | 206 / 208 | 203 / 208 |
 | max \|Δ\| | 0.0841 dB | 0.1852 dB |
 | sampling phase (`itick`) exact | **200 / 208** | |
 
-**Without crosstalk the agreement is exact: FOM 104/104, `itick` 104/104.**
+**Without crosstalk the agreement is exact: FOM 104/104, COM 104/104, `itick`
+104/104, max \|ΔCOM\| = 0.0000.**
 
 | condition | n | FOM exact | COM exact | `itick` exact | max \|ΔCOM\| |
 |---|---|---|---|---|---|
-| with crosstalk | 104 | 94 | 82 | 96 | 0.1852 |
-| without crosstalk | 104 | **104** | 88 | **104** | 0.0282 |
+| with crosstalk | 104 | 94 | 94 | 96 | 0.1852 |
+| without crosstalk | 104 | **104** | **104** | **104** | 0.0000 |
 
 Both engines ran **adaptive local search** — the supplied configs set
 `Local Search = 2` and `Non-zero Local Search Method = 1`, and MATLAB used those same
@@ -103,8 +104,9 @@ because they are easy traps:
 
 ## 3. Engine defects found and fixed
 
-Correlation started at max \|ΔCOM\| **6.256 dB**. Nine fixes took it to 0.185 dB
-(0.028 dB on the 200 cases whose sampling phase agrees).
+Correlation started at max \|ΔCOM\| **6.256 dB**. Ten fixes took it to 0.185 dB
+(0.0088 dB on the 200 cases whose sampling phase agrees), with **zero** pass/fail
+disagreements.
 Each was found by ranking all comparable output columns by relative error and letting
 the data localise the fault; reading code to guess causes failed repeatedly.
 
@@ -119,6 +121,7 @@ the data localise the fault; reading code to guess causes failed repeatedly.
 | 7 | **Cursor index base in `optimize_fom`** (audit finding B16-D20). | see note |
 | 8 | **`process_sxp` OP leak** (§2). | the systematic FOM bias |
 | 9 | **`BEST.PSD_results` stored a *reference* to a struct `get_PSDs` mutates in place**, so the reported noise came from the last sampling phase swept, not the winning one. MATLAB copies that struct by value. | noise stage 55 % → 76 %, COM bit-exact 135 → 170 |
+| 10 | **ADC-clip sampling phase off by one** — `(t_s-1) % M` on an already 0-based `t_s`, where MATLAB's `mod(t_s-1,M)+1` takes a 1-based one. Sampled the clip pulse one sample early. | noise 76 % → 91 %, COM 170 → 198, pass/fail flips 1 → 0 |
 
 **A methodological trap worth sharing.** Fix 7 was tried early, made agreement *5–20×
 worse*, and was reverted. It was correct all along — it and defect 6 were compensating.
@@ -128,7 +131,7 @@ what prompted re-testing it.
 > Never judge a fix by end-to-end COM agreement while another defect of similar
 > magnitude is still open. Test each fix against the pipeline stage it acts on.
 
-Six of the nine are the same defect class: **MATLAB passes structs by value, Python by
+Six of the ten are the same defect class: **MATLAB passes structs by value, Python by
 reference.** It is worth grepping the port for any `OP.<field> = ...` inside a function.
 Defect 9 is the subtler form: the object *is* returned, and what was missing is the
 **copy on store** — which an AST leak lint cannot see.

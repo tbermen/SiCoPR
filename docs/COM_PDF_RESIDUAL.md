@@ -1,5 +1,10 @@
 # The COM PDF residual — SOLVED
 
+> **Corpus result: COM bit-exact 170 → 198 of 208, and the pass/fail
+> disagreement is gone (1 → 0).** On the 200 cases whose sampling phase
+> agrees, COM is now exact on 197 and max |ΔCOM| drops from 0.028201 to
+> 0.008778 dB (rms 0.004946 → 0.001022, a 4.8× improvement).
+
 **Root cause: an off-by-one in the sampling phase used to build the ADC-clip
 PDF.** Found and fixed 2026-08-20. This was the last engine-level disagreement
 with MATLAB, and the only one large enough to move a case across the 3 dB
@@ -119,3 +124,51 @@ perturbs rounding, as suspected.
 It remains a real fidelity gap worth closing, along with the same
 `argsort(...)[::-1]` pattern at roughly ten other PDF sites — but it is cosmetic,
 not numeric, and it is **not** this defect.
+
+
+## 7. Corpus result
+
+Full 208-case re-run (208/208 ok):
+
+| | before | after |
+|---|---|---|
+| FOM bit-exact | 198 / 208 | 198 / 208 |
+| **COM bit-exact** | 170 / 208 | **198 / 208** |
+| `itick` exact | 200 / 208 | 200 / 208 |
+| **pass/fail disagreements** | 1 | **0** |
+| rms ΔCOM | 0.018660 | 0.017735 |
+
+On the 200 cases whose sampling phase agrees:
+
+| | before | after |
+|---|---|---|
+| COM bit-exact | 170 / 200 | **197 / 200** |
+| max \|ΔCOM\| | 0.028201 | **0.008778** |
+| rms ΔCOM | 0.004946 | **0.001022** |
+
+FOM and `itick` are unchanged, as expected — the defect is downstream of the
+equalizer and the sampling-point choice.
+
+By pipeline stage: **Noise 75.8% → 90.8%** (+14.9 pts) and **COM 86.7% → 96.3%**
+(+9.5 pts). Stages 1–5 are byte-for-byte identical, which is the right signature
+for a fix confined to the COM noise path.
+
+### What the remaining 10 are
+
+Nine are the Tx FFE configuration cases (`docs/TXFFE_SWEEP_ROOT_CAUSE.md`) — the
+engines were given different search spaces, so their COM is not comparable.
+
+**One is not:** `wXtalk_T4_R10`, ΔCOM **+0.007623 dB**, with exact FOM and exact
+`itick`. On that case the clip path is now exact —
+
+```
+peak_clip   7.9e-13      sgm_Q  8.0e-13      sgm_N  8.6e-13      A_s  7.9e-13
+```
+
+— and what remains is a **4.1e-5** difference in `sgm_Ani__isi_xt_noise`, the
+combined interference-and-noise PDF. That is a different and much smaller
+mechanism than the one fixed here.
+
+Its COM is **−0.366 dB**: a channel failing by more than 3 dB, so the 2% *relative*
+error is small-denominator inflation, and it is nowhere near the pass/fail
+threshold. Recorded rather than chased.
