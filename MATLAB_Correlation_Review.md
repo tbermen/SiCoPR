@@ -14,21 +14,21 @@ All 208 cases run, **0 failures**.
 
 | metric | FOM | COM |
 |---|---|---|
-| **bit-exact** | **198 / 208 (95.2 %)** | **135 / 208 (64.9 %)** |
+| **bit-exact** | **198 / 208 (95.2 %)** | **170 / 208 (81.7 %)** |
 | median \|Δ\| | **0.000000 dB** | **0.000000 dB** |
-| rms Δ | 0.0082 dB | 0.0186 dB |
-| mean Δ | −0.0007 dB | +0.0004 dB |
-| \|Δ\| ≤ 0.01 dB | 202 / 208 | 180 / 208 |
+| rms Δ | 0.0082 dB | 0.0187 dB |
+| mean Δ | −0.0007 dB | −0.0002 dB |
+| \|Δ\| ≤ 0.01 dB | 202 / 208 | 184 / 208 |
 | \|Δ\| ≤ 0.05 dB | 206 / 208 | 203 / 208 |
-| max \|Δ\| | 0.0841 dB | 0.1756 dB |
+| max \|Δ\| | 0.0841 dB | 0.1852 dB |
 | sampling phase (`itick`) exact | **200 / 208** | |
 
 **Without crosstalk the agreement is exact: FOM 104/104, `itick` 104/104.**
 
 | condition | n | FOM exact | COM exact | `itick` exact | max \|ΔCOM\| |
 |---|---|---|---|---|---|
-| with crosstalk | 104 | 94 | 65 | 96 | 0.1756 |
-| without crosstalk | 104 | **104** | 70 | **104** | 0.0347 |
+| with crosstalk | 104 | 94 | 82 | 96 | 0.1852 |
+| without crosstalk | 104 | **104** | 88 | **104** | 0.0282 |
 
 Both engines ran **adaptive local search** — the supplied configs set
 `Local Search = 2` and `Non-zero Local Search Method = 1`, and MATLAB used those same
@@ -38,7 +38,7 @@ config files. This is an adaptive-vs-adaptive comparison.
 
 | | before | after |
 |---|---|---|
-| max \|ΔCOM\| | 6.256 dB (start of correlation) | 0.176 dB |
+| max \|ΔCOM\| | 6.256 dB (start of correlation) | 0.185 dB |
 | FOM bit-exact | 8 / 208 (3.8 %) | **198 / 208 (95.2 %)** |
 | systematic FOM bias | Python lower in 199/208 (95.7 %) | **eliminated** |
 
@@ -103,7 +103,8 @@ because they are easy traps:
 
 ## 3. Engine defects found and fixed
 
-Correlation started at max \|ΔCOM\| **6.256 dB**. Eight fixes took it to 0.176 dB.
+Correlation started at max \|ΔCOM\| **6.256 dB**. Nine fixes took it to 0.185 dB
+(0.028 dB on the 200 cases whose sampling phase agrees).
 Each was found by ranking all comparable output columns by relative error and letting
 the data localise the fault; reading code to guess causes failed repeatedly.
 
@@ -117,6 +118,7 @@ the data localise the fault; reading code to guess causes failed repeatedly.
 | 6 | **Package die network truncated to 1 of 3 LC sections** (three inlined copies). | ~15 ps die delay, 53-sample pulse shift |
 | 7 | **Cursor index base in `optimize_fom`** (audit finding B16-D20). | see note |
 | 8 | **`process_sxp` OP leak** (§2). | the systematic FOM bias |
+| 9 | **`BEST.PSD_results` stored a *reference* to a struct `get_PSDs` mutates in place**, so the reported noise came from the last sampling phase swept, not the winning one. MATLAB copies that struct by value. | noise stage 55 % → 76 %, COM bit-exact 135 → 170 |
 
 **A methodological trap worth sharing.** Fix 7 was tried early, made agreement *5–20×
 worse*, and was reverted. It was correct all along — it and defect 6 were compensating.
@@ -126,8 +128,10 @@ what prompted re-testing it.
 > Never judge a fix by end-to-end COM agreement while another defect of similar
 > magnitude is still open. Test each fix against the pipeline stage it acts on.
 
-Five of the eight are the same defect class: **MATLAB passes structs by value, Python by
+Six of the nine are the same defect class: **MATLAB passes structs by value, Python by
 reference.** It is worth grepping the port for any `OP.<field> = ...` inside a function.
+Defect 9 is the subtler form: the object *is* returned, and what was missing is the
+**copy on store** — which an AST leak lint cannot see.
 
 ---
 
@@ -149,19 +153,42 @@ reference.** It is worth grepping the port for any `OP.<field> = ...` inside a f
 All are DAC/BPK assemblies; `HN_3in_DAC_Z_1p5m` diverges in 3 of its 4 configs. **The
 `process_sxp` fix did not change this set** — the divergences are a separate phenomenon.
 
-Six hypotheses were tested and rejected: a flat/multimodal FOM surface (only 2 of 49
-phases lie within 0.1 dB of the peak), reflections (ERL does not separate the groups),
-residual size (`li_dj` has the largest \|ΔFOM\| and zero divergences), `auto_port_order`
-(all 208 report `[1 3 2 4]`), anchor ambiguity (a tick-matched control has a *wider*
-plateau), and adaptive pruning (see §5 — full grid reproduces Python's answer).
+#### ROOT CAUSE (2026-08-20): a Tx FFE search-space mismatch
 
-**The measurement that constrains it:** Python cannot reach MATLAB's reported FOM at
-MATLAB's reported tick **under any equalizer setting** — short by 2.36 dB and 5.43 dB on
-the two worst cases — yet the *peak* FOM values agree to within 0.06–0.09 dB. MATLAB's
-reported FOM is consistent with Python's chosen phase, not with MATLAB's own reported
-phase. The most probable explanation is a **reporting inconsistency on the MATLAB
-side**: the `itick` written to the workbook does not correspond to the FOM written
-alongside it.
+MATLAB reports its winning Tx FFE in `TXLE_taps_1..4`. Splitting the 104 with-crosstalk
+cases on that column separates the agreement perfectly:
+
+| MATLAB's winning Tx FFE | cases | FOM bit-exact | `itick` mismatched |
+|---|---|---|---|
+| unity `[0, 0, 1, 0]` | 94 | **94 / 94** | 0 |
+| **non-unity** | 10 | **0 / 10** | **8** |
+
+Every case where MATLAB selects pre-emphasis is a case Python gets wrong; every case
+where it selects unity is bit-exact. Those ten are exactly the eight above plus
+`wXtalk_T3_R07` and `wXtalk_T3_R15`, the two non-exact-FOM cases — the entire residual.
+
+**Why.** In `COM_Settings` the Tx FFE rows read `c(-1) | 0 | [ -0.34:.02:0] |
+[min:step:max]`. Both engines read the cell immediately *right* of the label — the `0` —
+and the sweep range is only a template one column further over. So the configs as
+supplied define a Tx FFE grid with **one** point, unity, and Python could never select
+the equalizers MATLAB selected. This is not a parsing bug: the MATLAB range syntax parses
+correctly when actually present.
+
+**Verification — 10 / 10.** Pinning the CTLE to MATLAB's reported value, enabling the
+sweep and evaluating every Tx FFE candidate on a full grid, then looking up MATLAB's own
+tap vector: Python reproduces MATLAB's `itick` **exactly** and its FOM to ≤2.3e-11 on all
+ten. `wXtalk_T1_R16` — the case previously reported as "unreachable under any equalizer,
+short by 5.43 dB" — lands on 11.691042 at `itick = 0`, matching to 2.3e-11.
+
+Full evidence: [`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md).
+
+**Withdrawn.** An earlier version of this section concluded that the most probable
+explanation was "a reporting inconsistency on the MATLAB side — the `itick` written to
+the workbook does not correspond to the FOM written alongside it". That was wrong. The
+`itick` and FOM MATLAB reports are mutually consistent; Python was searching a smaller
+space. Six earlier hypotheses (flat surface, reflections, residual size,
+`auto_port_order`, anchor ambiguity, adaptive pruning) were correctly rejected, but the
+seventh, which the previous draft accepted, is now also rejected.
 
 ### 4.2 A small residual in the COM PDF path
 
@@ -330,50 +357,51 @@ Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_I
 
 ## 6. Requests
 
-1. **Do the two reference workbooks record Tx FFE at different granularity?**
-   The with-crosstalk workbook carries four columns, `TXLE_taps_1..4`, holding the full
-   tap vector: `[0 0 1 0]` on 94 of its 104 cases and **genuinely non-trivial on the
-   other 10** (`[0, −0.02, 0.98, 0]`, `[0, −0.04, 0.96, 0]`, `[0, −0.06, 0.94, 0]`,
-   `[0, −0.1, 0.9, 0]`). The without-crosstalk workbook carries a single `TXLE_taps`
-   column, equal to `1` in all 104 cases — with the same `config_file` recorded in both.
+1. **Which Tx FFE tap ranges were active in the run that produced the workbooks?**
 
-   Our reading is that these are the same answer written two ways, the single column
-   being the cursor of an otherwise-zero `[0 0 1 0]`. That is consistent with MATLAB's
-   own `OptFom_Build_TXFFE` (L2789–2816): with the shipped config (`c(-4)…c(-1) = 0`,
-   `c(1) = 0`) every all-zero fixed tap is dropped and `txffe` collapses to the scalar
-   `[1.0]`, while as soon as any tap is non-trivial the `auto_count_trigger` latch
-   retains the whole vector including its zeros. COM Python is a faithful port of that
-   logic, verified line by line and pinned by unit tests.
+   The four configs supplied set `c(-1)`, `c(-2)` and `c(1)` to `0` in the value column,
+   which yields a single unity Tx FFE. The workbooks contain non-unity winners on 10
+   cases (`[0, −0.02, 0.98, 0]`, `[0, −0.04, 0.96, 0]`, `[0, −0.06, 0.94, 0]`,
+   `[0, −0.1, 0.9, 0]`), so that run used a wider grid — see §4.1.
 
-   Confirming that reading closes the question. If the single column means something
-   else, the Tx FFE side of the without-crosstalk comparison needs re-reading.
+   Part of it can be inferred: MATLAB's reported `TXLE_taps` has **four** elements, and
+   `OptFom_Build_TXFFE` trims leading single-valued zero taps until the first non-trivial
+   one, so the `c(-2)` slot survived — meaning it held at least two values. Specifically:
+   was `c(-2)` set to `[ 0.14:.02:0]` (which evaluates *empty*) or to something else, and
+   were `c(-3)` / `c(-4)` in play?
 
-2. **`cursor_i` (or absolute `t_s`) reported alongside `itick`.**
+   With the exact set, the corpus can be re-run on a matched search space.
 
-   *Context (§4.1):* on 8 of the 208 cases the two engines select a different sampling
-   phase — the position within the UI at which the eye is evaluated. `itick` is chosen
-   by maximising FOM across a 49-phase sweep, so a different tick changes the reported
-   FOM, DFE taps and COM. Everything upstream agrees to 12+ significant figures on those
-   same cases, and COM Python cannot reach MATLAB's reported FOM at MATLAB's reported
-   tick under **any** equalizer setting, while the two peak FOM values agree to
-   0.06–0.09 dB. That pattern fits a frame-origin offset rather than a different search
-   outcome.
+   *An earlier version of this request asked whether the two workbooks record Tx FFE at
+   different granularity, and proposed that the single-column and four-column forms were
+   "the same answer written two ways". That reading was wrong: the non-unity values are
+   real, and they are the whole explanation for the remaining disagreement.*
 
-   One extra column settles it: if `cursor_i − SBR_peak ≠ itick` on those eight cases,
-   the offset is confirmed and the divergence is a reporting convention rather than a
-   numerical disagreement. The workbook currently exposes only `itick`, so the frame
-   origin is unobservable from the outputs.
+2. **Which local-search method produced the workbooks?**
 
-   **This column now unblocks a second item as well.** A separate investigation into
-   stage-6 noise agreement (`docs/STAGE6_NOISE_AGREEMENT.md`) arrives at the same
-   unknown from the other direction. `sigma_TX` and `sigma_rj` are built by decimating
-   the pulse at `cursor_i % samples_per_ui`, while `sigma_N` is analytic and uses no
-   cursor — and only the cursor-derived terms disagree. Their error is ~1e-12 at
-   `itick = −8` and grows with distance from it, and `itick` separates the exact cases
-   from the rest with 1.0% overlap. That is the signature of two engines agreeing at one
-   sampling anchor and drifting either side of it. With `cursor_i` in hand the check is
-   one line: `sigma_TX` should agree exactly wherever the two cursors differ by a
-   multiple of `samples_per_ui`.
+   `com_ieee8023_4p15p0.m` contains only `OptFom_Local_Search`;
+   `OptFom_Adaptive_Local_Search` is a 4p16p0 addition. But the supplied configs set
+   `Non-zero Local Search Method = 1`, so COM Python has been running the **adaptive**
+   search against a **4p15p0** reference.
+
+   With the single-point Tx FFE grid this made no observable difference — which is why
+   198 of 208 matched anyway — but on a real grid it changes which candidates get pruned,
+   and the two engines then stop at different points.
+
+   Related, and worth raising for the proposal itself: MATLAB's own reported answer is
+   **not** its grid's optimum on 2 of the 10 cases. On `wXtalk_T3_R17` seven candidates
+   beat it at its own CTLE, including unity itself (13.8662 vs the reported 13.8016). So
+   adaptive local search demonstrably stops short on a real Tx FFE grid. The
+   "adaptive == full grid, 9/9 bit-identical" result in §5 was measured with the configs
+   as supplied, i.e. on a single-point grid where the adaptive search has nothing to
+   prune in that dimension; it should be re-run on a real grid before being quoted.
+
+   *`cursor_i` / absolute `t_s` is no longer requested. It was asked for to test a
+   frame-origin hypothesis that the Tx FFE finding has since displaced, and the stage-6
+   noise question it was also meant to settle turned out to be a Python defect —
+   `BEST.PSD_results` held a reference to a struct MATLAB copies by value, so the
+   reported noise came from the last sampling phase swept rather than the winning one
+   (`docs/STAGE6_NOISE_AGREEMENT.md` §8, fixed).*
 
 ---
 

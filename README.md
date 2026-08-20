@@ -238,15 +238,27 @@ Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
 | | result |
 |---|---|
 | FOM bit-exact | 198 / 208 |
-| COM bit-exact | 135 / 208 |
+| COM bit-exact | 170 / 208 |
 | sampling phase (`itick`) exact | 200 / 208 |
-| max \|ΔCOM\| | 0.176 dB |
+| max \|ΔCOM\| | 0.185 dB |
 | rms ΔCOM | 0.019 dB |
-| pass/fail disagreements | 2 (both within 0.02 dB of the 3 dB threshold) |
+| pass/fail disagreements | 1 (within 0.01 dB of the 3 dB threshold) |
 
-Eight engine defects were found and fixed in the process. Reproduce with
+On the 200 cases whose sampling phase agrees, max \|ΔCOM\| is 0.028 dB and rms is
+0.005 dB.
+
+Nine engine defects were found and fixed in the process. Reproduce with
 `python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
 [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
+
+**The 10 cases that do not agree are a configuration difference, not an engine
+defect.** MATLAB's winning Tx FFE is non-unity on exactly those 10 (94/94 bit-exact
+where it is unity, 0/10 where it is not), and the supplied configs define a Tx FFE
+grid with a single unity point — the sweep ranges sit in the column *right of* the
+value cell, which neither engine reads. Given MATLAB's Tx FFE, Python reproduces
+MATLAB's sampling phase exactly and its FOM to ≤2.3e-11 on all ten. Full evidence in
+[`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md); re-run a matched
+search space with `--txffe-sweep`.
 
 That result is against **4p15p0**, which is why it stays the default emulation target — see
 §8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical
@@ -254,12 +266,17 @@ on all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
 
 Honest caveats for anyone relying on the numbers:
 
-- **Eight sampling-phase divergences remain unexplained.** On those cases Python cannot
-  reach MATLAB's FOM at MATLAB's tick under any equalizer setting, yet the peak values
-  agree — consistent with an anchor-origin offset. Open question with Hansel.
+- **The eight sampling-phase divergences are explained** — a Tx FFE search-space
+  mismatch, not an engine defect (see above). Two configuration questions remain open
+  with Hansel: which Tx FFE tap ranges were active, and which local-search method. Note
+  that `com_ieee8023_4p15p0.m` contains only `OptFom_Local_Search`; the adaptive variant
+  is a 4p16p0 addition, yet the configs set `Non-zero Local Search Method = 1`.
+- **The MATLAB-vs-Python runtime comparison is not like-for-like** and should not be
+  quoted until re-measured: Python searched one Tx FFE candidate per CTLE where MATLAB
+  swept a grid. The Python-vs-Python speed-up is unaffected.
 - **A residual ~0.002 dB mean bias remains in the COM PDF path** (max 0.035 dB). It is
   what produces the 2 knife-edge pass/fail disagreements.
-- **Results produced before August 2026 are not comparable to current output.** The eight
+- **Results produced before August 2026 are not comparable to current output.** The nine
   engine fixes changed COM materially — the largest single correction removed a systematic
   FOM bias affecting 95.7% of cases. Regenerate rather than compare against archived numbers.
 - Only the C2M **TxFFE/CTLE/DFE** path is exercised end-to-end; the other features are
