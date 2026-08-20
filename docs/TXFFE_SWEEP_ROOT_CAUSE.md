@@ -299,46 +299,62 @@ configs, and removing `c(-1)` from the ledger fails all four. It is wired into
 
 ---
 
-## 9. Adaptive local search is lossy on a real Tx FFE grid
+## 9. Adaptive local search on a real Tx FFE grid: optimal on 15 of 16
 
 The `adaptive LS == full grid, bit-identical 9/9` result is the centrepiece of the
 proposal, and it was measured with the configs as supplied — i.e. on a
 **single-point** Tx FFE grid, where the adaptive search has nothing to prune in
-that dimension. Repeating the comparison on a real grid.
+that dimension. Repeating it on a real grid.
 
-`wXtalk_T1_R07`, CTLE pinned to MATLAB's −17 / −4, Tx FFE grid of 198 candidates:
+### Method
 
-| search | Tx FFE | itick | FOM | vs full grid |
-|---|---|---|---|---|
-| Python **full grid** (rank #1) | `[−0.06, 0.94, 0]` | −9 | 12.4454352312 | — |
-| Python **legacy** local search | `[−0.06, 0.94, 0]` | −9 | 12.4454352312 | **0.0000** |
-| MATLAB **adaptive** LS (reported) | `[0, −0.04, 0.96, 0]` | −8 | 12.4431675894 | −0.0023 |
-| Python **adaptive** LS | `[−0.02, 0.98, 0]` | −7 | 12.4360986990 | −0.0093 |
+A joint full grid over CTLE × Tx FFE is **1.43M evaluations per case** (21 CTLE ×
+7 g_DC_HP × 198 Tx FFE × 49 ticks), roughly 198× the as-supplied full grid that
+already cost 7–9 h per case. Not available. So the measurement isolates the
+dimension that was actually degenerate: **CTLE and `g_DC_HP` pinned to the
+adaptive search's own choice, then all 198 Tx FFE candidates evaluated.**
 
-The clean comparison is the middle pair against the top row, because they are the
-same engine on the same grid: **the legacy search finds the full-grid optimum
-bit-identically, and the adaptive search stops 0.0093 dB short.** MATLAB's
-adaptive search also stops short of that optimum, by 0.0023 dB, though its number
-is not strictly comparable because its grid has a different shape (§7).
+16 cases spanning DAC, BPK twinax and OSFP, both crosstalk conditions, all four
+package configurations.
 
-### What this does and does not say
+### Result
 
-- It **does** show that "adaptive == full grid" is a property of the
-  single-point-grid configuration, not a general property of the algorithm. On a
-  real Tx FFE grid the adaptive search demonstrably loses FOM.
-- It **does not** quantify the loss in general. This is one case at one CTLE.
-  A defensible number needs the comparison re-run across the corpus on a real
-  grid — which needs the grid (§5).
-- The loss is small in absolute terms (0.009 dB of FOM here) and the runtime
-  saving is large. That may well be the right trade; the point is that it *is* a
-  trade, and the current framing says it is free.
+| | |
+|---|---|
+| cases | 16 |
+| adaptive found the full-grid optimum | **15 / 16** |
+| mean loss | 0.000584 dB |
+| median loss | **0.000000 dB** |
+| max loss | 0.009337 dB |
 
-This is consistent with the independent observation in §3 that MATLAB's own
-reported answer is not its grid's optimum on 2 of the 10 cases — including
-`wXtalk_T3_R17`, where seven candidates beat it at its own CTLE, unity among them
-(13.8662 vs the reported 13.8016, a 0.0796 dB gap).
+The single miss is `wXtalk_T1_R07`: adaptive picks `[−0.02, 0.98, 0]`
+(FOM 12.436099, rank #4) where the full grid finds `[−0.06, 0.94, 0]`
+(12.445435). Every other case lands on rank #1 exactly.
 
-**Recommendation before the proposal is presented:** re-run the
-adaptive-vs-full-grid comparison on a real Tx FFE grid and quote *that* number.
-The claim is stronger for being honest about the cost, and an IEEE reviewer with
-a swept config will find this immediately.
+For that one case the legacy local search was also run, and it *does* find the
+full-grid optimum bit-identically (12.4454352312), so the miss is specific to the
+adaptive pruning rather than to local search in general.
+
+### What to say about it
+
+**Adaptive local search is not bit-identical to full grid once the Tx FFE grid is
+real — it missed on 1 of 16 — but the typical loss is zero and the worst observed
+is 0.009 dB.** That is a defensible and, for the proposal, a good result.
+
+*An earlier version of this section was written from the `wXtalk_T1_R07` case
+alone and concluded that "adaptive search is not free", recommending the claim be
+re-measured before the proposal is presented. That over-generalised from a single
+case. The recommendation to re-measure was right; the conclusion drawn before
+doing so was not.*
+
+### Caveats that remain
+
+- This pins CTLE and `g_DC_HP` and full-grids the Tx FFE only. It does not test
+  the adaptive search's pruning in the CTLE dimension — though the original 9/9
+  result did exactly that, and found no loss.
+- 16 cases, not 208.
+- Separately, and not from this experiment: MATLAB's own reported answer is not
+  its grid's optimum on 2 of the 10 non-unity cases (§3), including
+  `wXtalk_T3_R17` where seven candidates beat it at its own CTLE. That is
+  consistent with a small, occasional pruning loss of the size measured here.
+
