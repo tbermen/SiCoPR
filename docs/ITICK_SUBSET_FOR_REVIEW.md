@@ -20,17 +20,24 @@ Machine-readable tables: `report_data/itick_subset.csv` (8 rows, 34 columns) and
 
 | set | FOM bit-exact | COM bit-exact | itick exact | max \|ΔCOM\| | rms ΔCOM | pass/fail flips |
 |---|---|---|---|---|---|---|
-| all 208 | 198 / 208 (95.2%) | 135 / 208 (64.9%) | 200 / 208 (96.2%) | 0.175602 | 0.018592 | 2 |
-| **the 200 agreeing ticks** | **198 / 200 (99.0%)** | 135 / 200 (67.5%) | 200 / 200 (100%) | **0.034719** | **0.006266** | 2 |
-| the 8 mismatched | 0 / 8 | 0 / 8 | 0 / 8 | 0.175602 | 0.089477 | 0 |
+| all 208 | 198 / 208 (95.2%) | 170 / 208 (81.7%) | 200 / 208 (96.2%) | 0.185248 | 0.018660 | 1 |
+| **the 200 agreeing ticks** | **198 / 200 (99.0%)** | **170 / 200 (85.0%)** | 200 / 200 (100%) | **0.028201** | **0.004946** | 1 |
+| the 8 mismatched | 0 / 8 | 0 / 8 | 0 / 8 | 0.185248 | 0.091876 | 0 |
 
 Excluding them, **FOM is bit-exact on 99.0%**, the worst COM difference drops
-**5×** (0.176 → 0.035 dB) and rms drops **3×** (0.0186 → 0.0063 dB).
+**6.6×** (0.185 → 0.028 dB) and rms drops **3.8×** (0.0187 → 0.0049 dB).
+
+> Figures updated 2026-08-20, after the `BEST.PSD_results` value-copy fix
+> (`00529f8`, `docs/STAGE6_NOISE_AGREEMENT.md` §8). That fix took COM bit-exact
+> from 135 to 170 of 208 and pass/fail flips from 2 to 1. It left FOM (198) and
+> `itick` (200) untouched, because the optimiser always rebuilt the tick-dependent
+> PSDs correctly — so everything below about the eight still stands unchanged.
 
 Two things worth noting, because they say these eight are not the only story:
 
-- **The 2 pass/fail flips are not in this set.** `wXtalk_T2_R06` and
-  `wXtalk_T2_R24` both have matching ticks; they sit at COM 3.007 vs 2.997 and
+- **The remaining pass/fail flip is not in this set.** `wXtalk_T2_R06` and
+  `wXtalk_T2_R24` both have matching ticks (one of the two was resolved by the
+  `BEST.PSD_results` fix); they sit at COM 3.007 vs 2.997 and
   3.007 vs 3.000, i.e. within 0.01 dB of the 3 dB threshold. They belong to the
   separate COM-PDF residual, not to this.
 - **Only 2 of the 200 have non-exact FOM** — `wXtalk_T3_R07` (ΔFOM −8.7e-4) and
