@@ -1,5 +1,12 @@
 # The eight sampling-phase cases — subset for review
 
+> **SUPERSEDED 2026-08-20 as to CAUSE** — see `docs/TXFFE_SWEEP_ROOT_CAUSE.md`.
+> The eight are a **config mismatch**, not an engine defect. MATLAB's winning
+> Tx FFE is non-unity on exactly the 10 cases that disagree (94/94 bit-exact
+> where it is unity, 0/10 where it is not), and the supplied configs define a
+> Tx FFE grid with a single unity point, so Python could never select those
+> equalizers. The measurements below stand; the explanation in section 5-6 does not.
+
 Eight of the 208 reference cases select a different sampling phase (`itick`) from
 MATLAB. This isolates them: what the correlation looks like without them, what
 they have in common, what the search actually does, and the one question that
