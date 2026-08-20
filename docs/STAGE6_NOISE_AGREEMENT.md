@@ -165,3 +165,20 @@ None of these columns is COM. `COM_dB`, `FOM`, `VEO_mV`, `VEC_dB`, `itick` and
 `ERL` are unaffected by this residual — stage 7 (COM) is at 77% and the headline
 correlation is FOM bit-exact on 198/208. Group B is internal noise
 instrumentation, and its worst median error is 6e-3 relative.
+
+## 7. Ruled out: the crosstalk contribution itself
+
+Group B's disagreements are concentrated in with-crosstalk cases, which invites
+the reading that `S_xn` — the crosstalk noise term — is where the error enters.
+It is not. The crosstalk arithmetic is bit-exact (`ICN_mV`, `MDFEXT_ICN_92_47_mV`,
+`MDNEXT_ICN_92_46_mV` all 208/208; `SNR_MDFEXT` 104/104), the post-equalization
+crosstalk terms disagree only on cases whose sampling point already differs, and
+the one crosstalk-only *decision* — `get_PSDs` choosing each aggressor's phase by
+`argmax` over M candidate norms — is nowhere near a tie on the divergent cases
+(median top-two margin 1.6e-5, statistically indistinguishable from controls).
+
+Crosstalk is the **enabling condition**: `S_xn` enters `S_n`, which changes the
+RxFFE solve and the shape of FOM versus sampling phase, making the tick contested
+enough for a small underlying difference to change the winner. Without crosstalk,
+FOM and `itick` are exact on 104/104. Full working in
+`docs/ITICK_SUBSET_FOR_REVIEW.md` §3b.
