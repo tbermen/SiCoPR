@@ -31,19 +31,21 @@ try {
     Run-Step "Interface checks"        "python dev/check_interfaces.py"
     Run-Step "Unit tests (157 functions)" "python -m pytest com_functions/fn -q --tb=short"
 
-    # tests/ holds two kinds of file. The three below are pytest modules; the
+    # tests/ holds two kinds of file. The four below are pytest modules; the
     # rest are standalone audit scripts that must be run directly -- pointing
     # pytest at the whole directory collects the audit scripts, hits their
     # module-level sys.exit, and reports "no tests ran" while exiting 0.
     Run-Step "Smoke tests"             "python -m pytest tests/test_smoke.py -v"
     Run-Step "Checkpoint tests (Stage 4)" "python -m pytest tests/test_checkpoints.py -v"
     Run-Step "End-to-end tests (Stage 5)" "python -m pytest tests/test_end_to_end.py -v -s"
+    Run-Step "Results-export columns"  "python -m pytest tests/test_export_columns.py -q"
 
     Write-Host ""
     Write-Host "=== Audit scripts ===" -ForegroundColor Cyan
     $failed = @()
     Get-ChildItem "$Root\tests\test_*.py" | Where-Object {
-        $_.Name -notin @('test_smoke.py', 'test_checkpoints.py', 'test_end_to_end.py')
+        $_.Name -notin @('test_smoke.py', 'test_checkpoints.py', 'test_end_to_end.py',
+                         'test_export_columns.py')
     } | ForEach-Object {
         Write-Host "--- $($_.Name)"
         python $_.FullName
