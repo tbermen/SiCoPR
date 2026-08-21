@@ -362,3 +362,92 @@ doing so was not.*
   `wXtalk_T3_R17` where seven candidates beat it at its own CTLE. That is
   consistent with a small, occasional pruning loss of the size measured here.
 
+
+---
+
+## 10. RESOLVED — 10 / 10, with two settings
+
+The ten cases reproduce MATLAB exactly once **both** of the following are set. Each
+alone is insufficient.
+
+### Setting 1 — the Tx FFE grid, including c(-2)
+
+```
+c(-1) = [ -0.34:.02:0]     18 values
+c(-2) = [0:.02:0.14]        8 values     <-- ascending, NOT the backwards form
+c(1)  = [ -0.2:.02:0]      11 values
+                          ---------
+                           1584 candidates
+```
+
+The `[ 0.14:.02:0]` printed in the config's **Units** column is written backwards
+and evaluates **empty** under the MATLAB colon operator. The ascending form is
+the one that reproduces MATLAB's 4-element `TXLE_taps`, because `c(-2)` then
+survives `OptFom_Build_TXFFE`'s leading-zero trim.
+
+### Setting 2 — the adaptive-search radius floor
+
+`min_radius = 2`, the 4p16p0 rule for a multi-candidate grid. The 4p15p0 path
+forced `1`.
+
+With the grid alone the result was **5 of 10**. Adding the radius floor took it
+to **10 of 10**:
+
+| case | MATLAB Tx FFE | Python | itick ML/PY | ΔFOM |
+|---|---|---|---|---|
+| wXtalk_T1_R07 | `[0, −0.04, 0.96, 0]` | same | −8 / −8 | −1.2e−11 |
+| wXtalk_T1_R08 | `[0, −0.04, 0.96, 0]` | same | −6 / −6 | −1.5e−11 |
+| wXtalk_T1_R15 | `[0, −0.02, 0.98, 0]` | same | −3 / −3 | −3.2e−12 |
+| wXtalk_T1_R16 | `[0, −0.1, 0.9, 0]` | same | 0 / 0 | −2.3e−11 |
+| wXtalk_T2_R15 | `[0, −0.02, 0.98, 0]` | same | −4 / −4 | −4.7e−12 |
+| wXtalk_T2_R16 | `[0, −0.06, 0.94, 0]` | same | 1 / 1 | −1.6e−11 |
+| wXtalk_T3_R16 | `[0, −0.04, 0.96, 0]` | same | 2 / 2 | −1.5e−11 |
+| wXtalk_T3_R17 | `[0, −0.1, 0.9, 0]` | same | 6 / 6 | −1.7e−12 |
+| wXtalk_T3_R07 | `[0, −0.02, 0.98, 0]` | same | −8 / −8 | −9.7e−12 |
+| wXtalk_T3_R15 | `[0, −0.02, 0.98, 0]` | same | −3 / −3 | −5.0e−12 |
+
+### Why the attribution to min_radius is sound
+
+The 4p15p0-vs-4p16p0 comparison over all 208 cases shows COM, FOM, VEO, VEC,
+itick and ERL **identical** on a single-point Tx FFE grid. `min_radius` is the
+only 4p16p0 change that is `num_txffe_runs`-dependent, so it is the only one that
+can act once the grid has more than one point.
+
+### Engine change
+
+`Overwrite_Min_Radius` is now honoured in **both** version paths. It was read only
+under 4p16p0, so a config setting it while emulating 4p15p0 had it silently
+discarded — the same silent-config-discard class as the Tx FFE defect itself.
+
+## 11. The two reference workbooks were produced with different Tx FFE configs
+
+Traced because the two workbooks report this column differently:
+
+| workbook | column | implies |
+|---|---|---|
+| WithXtalk | `TXLE_taps_1..4` | 4-element vector, so `c(-2)` survived the trim → **swept** grid |
+| WithoutXtalk | single `TXLE_taps` = 1 | fully trimmed `[1.0]` → **single-point** grid |
+
+**Nothing in `com_ieee8023_4p15p0.m` makes that length depend on crosstalk:**
+
+- `param.tx_ffe_c*_values` is assigned in exactly one place, the config read
+  (L9858–9864). Nothing else in the file modifies it.
+- `OptFom_Build_TXFFE(param)` takes only `param` — no `chdata`, no crosstalk
+  flag, no channel count.
+- `output_args.TXLE_taps = fom_result.txffe` (L4081) is the only write, with no
+  branch.
+- `num_pre` counts param *fields*, which `xls_parameter` always creates.
+- The workbook is not written by `com_ieee8023_` at all — it only writes a
+  keywords CSV — so the column naming comes from an external harness flattening
+  whatever length the field has.
+
+So the tap-vector length is a pure function of the config, and the two runs used
+different `c(-2)` settings **despite recording the same config filenames**.
+
+That also explains, with no further hypothesis, why COM Python matches woXtalk
+**104/104** on FOM, COM and itick while missing exactly 10 wXtalk cases: the
+config we were given is the **woXtalk** one.
+
+*(Checked and dismissed: the workbooks record `PKGA` for Cases 3–4 where our files
+are named `PKGB`. `Pkg_len_TX_1` is 12/33/30/45 in both, matching our configs, so
+the package content agrees and the filename difference is cosmetic.)*

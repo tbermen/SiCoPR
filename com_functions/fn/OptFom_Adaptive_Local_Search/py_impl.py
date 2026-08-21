@@ -113,7 +113,21 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
             if _omr is not None and _omr > 0:
                 min_radius = _omr
     else:
-        min_radius = 1  # Hansel's branch forces 1 (2 tends to slow down)
+        # 4p15p0 as distributed has no adaptive search at all; this path models the
+        # backported branch, which forces 1 (2 tends to slow down).
+        min_radius = 1
+    # A positive Overwrite_Min_Radius from the config wins in EITHER version path.
+    # Previously it was honoured only under 4p16p0, so a config that set it while
+    # emulating 4p15p0 had it silently ignored -- and the floor matters: with a
+    # real Tx FFE grid, min_radius 1 vs 2 is the difference between reproducing
+    # the reference workbooks on 5 of 10 cases and on 10 of 10.
+    if Overwrite_Min_Radius is not None:
+        try:
+            _omr = float(np.asarray(Overwrite_Min_Radius).ravel()[0])
+        except (TypeError, ValueError, IndexError):
+            _omr = None
+        if _omr is not None and _omr > 0:
+            min_radius = _omr
     edge_weight = 1.0
     lp_weight = 0.25
     vga_weight = 0.5
