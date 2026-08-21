@@ -423,13 +423,25 @@ Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_I
 
 ```
 com_python_results/
-    Results_COM_Python_adaptiveLS_wXtalk.xlsx     104 cases
-    Results_COM_Python_adaptiveLS_woXtalk.xlsx    104 cases
+    as-supplied/
+        Results_COM_Python_as-supplied_wXtalk.xlsx        104 cases
+        Results_COM_Python_as-supplied_woXtalk.xlsx       104 cases
+    settings-aligned/
+        Results_COM_Python_settings-aligned_wXtalk.xlsx   104 cases
+        Results_COM_Python_settings-aligned_woXtalk.xlsx  104 cases
 ```
 
+Two sets, because the two MATLAB reference workbooks were evidently produced with
+different Tx FFE settings (§11): **as-supplied** runs every case on the four config
+spreadsheets as received; **settings-aligned** runs each condition on the settings its
+own reference used. Only the wXtalk half differs between them, and that half is a
+reconstruction — each workbook's NOTES sheet says so, and records which result
+directories it was built from.
+
 Same four tabs, same 26 rows, same 262-column header in the same order as the MATLAB
-workbooks, so the two sets diff column-by-column with no remapping. 241 of 262 columns
-populated; a NOTES sheet in each workbook lists what is blank and why.
+workbooks, so the two sets diff column-by-column with no remapping. A NOTES sheet in
+each workbook lists the columns blank on every row, derived from the exported data
+rather than from a fixed list.
 
 ```
 COM_Python_MATLAB_Review.pptx   17-slide review deck
@@ -443,8 +455,10 @@ R/correlation_report.R          the figures in the deck
 
 ```bash
 python tools/matlab_compare.py --validate                 # resolve all 208 cases
-python tools/matlab_compare.py --run --jobs 5             # ~3.4 h, checkpointed
-python tools/export_results.py                            # result workbooks
+python tools/matlab_compare.py --run --modal-erl --jobs 5  # ~3.4 h, checkpointed
+python tools/matlab_compare.py --run --modal-erl --txffe-sweep --min-radius 2 \n       --only-cond wXtalk --jobs 5                       # the aligned wXtalk half
+python tools/export_results.py --set as-supplied          # result workbooks
+python tools/export_results.py --set settings-aligned
 python tools/export_compare_csv.py                        # tidy CSVs
 Rscript R/correlation_report.R                            # figures
 python tools/build_review_pptx.py                         # deck
