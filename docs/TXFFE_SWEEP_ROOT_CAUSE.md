@@ -1,5 +1,11 @@
 # The eight sampling-phase cases are a config mismatch, not an engine defect
 
+> **RESOLVED.** With the with-crosstalk grid reconstructed (`c(-2)=[0:.02:0.14]`
+> alongside `c(-1)`/`c(1)`, plus adaptive-search `min_radius = 2`), all ten
+> previously divergent cases reproduce MATLAB exactly. Matched-configuration
+> correlation over the full corpus: **FOM 208/208 bit-exact, itick 208/208 exact,
+> COM 207/208, max |ΔCOM| 0.0076 dB, zero pass/fail disagreements.** See §10–§12.
+
 **Found 2026-08-20, from data already on disk.** The `itick` divergences — and
 the two non-exact-FOM cases alongside them — trace to the Tx FFE search space,
 not to any arithmetic in the port.
@@ -451,3 +457,46 @@ config we were given is the **woXtalk** one.
 *(Checked and dismissed: the workbooks record `PKGA` for Cases 3–4 where our files
 are named `PKGB`. `Pkg_len_TX_1` is 12/33/30/45 in both, matching our configs, so
 the package content agrees and the filename difference is cosmetic.)*
+
+---
+
+## 12. Final result — matched configuration
+
+Running each condition on the config its reference actually used
+(`python tools/compare_matched_config.py`):
+
+| | result |
+|---|---|
+| cases | 208 |
+| **FOM bit-exact** | **208 / 208** |
+| **COM bit-exact** | **207 / 208** |
+| **sampling phase (`itick`) exact** | **208 / 208** |
+| max \|ΔCOM\| | **0.007623 dB** |
+| rms ΔCOM | **0.000529 dB** |
+| pass/fail disagreements | **0** |
+
+The single COM miss is `wXtalk_T4_R10` at +0.0076 dB — the separate
+combined-PDF residual (`docs/COM_PDF_RESIDUAL.md` §7), on a channel failing by
+3.4 dB. For scale, this cycle began at max \|ΔCOM\| = 6.256 dB.
+
+### The 2×2 control
+
+| condition | config | FOM | COM | itick | max \|ΔCOM\| |
+|---|---|---|---|---|---|
+| woXtalk | **own** (as supplied) | **104** | **104** | **104** | **0.000000** |
+| woXtalk | other (swept) | 88 | 88 | 91 | 0.229710 |
+| wXtalk | **own** (swept + min_radius 2) | **104** | 103 | **104** | 0.007623 |
+| wXtalk | other (as supplied) | 94 | 94 | 96 | 0.185248 |
+
+Each condition is near-exact on its own config and materially worse on the
+other's. That is the evidence that the two reference runs used different Tx FFE
+settings — it is not merely that a swept grid helps wXtalk, but that the unswept
+grid is *required* for woXtalk.
+
+### Standing caveat
+
+**The wXtalk grid is a reconstruction, not a config we were sent.** It is
+supported by reproducing MATLAB's tap vector, sampling phase and FOM on all ten
+previously divergent cases, and by the 2×2 above — but it should be confirmed
+against the real settings before the numbers are quoted as a like-for-like
+correlation.

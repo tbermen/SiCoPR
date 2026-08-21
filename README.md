@@ -237,28 +237,38 @@ Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
 
 | | result |
 |---|---|
-| FOM bit-exact | 198 / 208 |
-| COM bit-exact | **198 / 208** |
-| sampling phase (`itick`) exact | 200 / 208 |
-| max \|ΔCOM\| | 0.185 dB |
-| rms ΔCOM | 0.018 dB |
-| pass/fail disagreements | **0** |
+| | as supplied | **matched config** |
+|---|---|---|
+| FOM bit-exact | 198 / 208 | **208 / 208** |
+| COM bit-exact | 198 / 208 | **207 / 208** |
+| sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
+| max \|ΔCOM\| | 0.185 dB | **0.0076 dB** |
+| rms ΔCOM | 0.018 dB | **0.00053 dB** |
+| pass/fail disagreements | 0 | **0** |
 
-On the 200 cases whose sampling phase agrees, COM is bit-exact on 197, max
-\|ΔCOM\| is 0.0088 dB and rms is 0.0010 dB.
+**Matched config** pairs each crosstalk condition with the settings its reference
+workbook was actually produced with. The two references differ: the
+without-crosstalk run used a single-point Tx FFE grid (the config we were given),
+the with-crosstalk run used a swept one. Reproduce with
+`python tools/compare_matched_config.py`; full analysis in
+[`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md).
+
+The with-crosstalk grid is a **reconstruction** — supported by reproducing
+MATLAB's tap vector, sampling phase and FOM on all ten previously divergent
+cases, and by a 2×2 control in which each condition is near-exact on its own
+config and materially worse on the other's — but not yet confirmed against the
+real settings.
 
 Ten engine defects were found and fixed in the process. Reproduce with
 `python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
 [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
 
-**The 10 cases that do not agree are a configuration difference, not an engine
-defect.** MATLAB's winning Tx FFE is non-unity on exactly those 10 (94/94 bit-exact
-where it is unity, 0/10 where it is not), and the supplied configs define a Tx FFE
-grid with a single unity point — the sweep ranges sit in the column *right of* the
-value cell, which neither engine reads. Given MATLAB's Tx FFE, Python reproduces
-MATLAB's sampling phase exactly and its FOM to ≤2.3e-11 on all ten. Full evidence in
-[`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md); re-run a matched
-search space with `--txffe-sweep`.
+**The 10 cases that did not agree were a configuration difference, not an engine
+defect, and are now resolved.** MATLAB's winning Tx FFE is non-unity on exactly
+those 10, and the supplied config defines a single-point Tx FFE grid. Two settings
+together reproduce MATLAB on all ten: the swept grid including
+`c(-2) = [0:.02:0.14]`, and adaptive-search `min_radius = 2`. Re-run with
+`--txffe-sweep --min-radius 2`.
 
 That result is against **4p15p0**, which is why it stays the default emulation target — see
 §8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical
@@ -266,12 +276,12 @@ on all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
 
 Honest caveats for anyone relying on the numbers:
 
-- **The eight sampling-phase divergences are explained** — a Tx FFE search-space
-  mismatch, not an engine defect (see above). One configuration question remains open
-  with Hansel: which Tx FFE tap ranges were active. The search *method* is not a
-  mismatch — the reference workbooks are named `..._AdaptiveLS.xlsx` and the port's
-  `Non-zero Local Search Method = 1` matches them (4p15p0 as distributed has no adaptive
-  search, so the reference run used a build with the 4p16p0 one backported).
+- **The eight sampling-phase divergences are resolved** — a Tx FFE search-space
+  mismatch, not an engine defect. One question remains open with Hansel: the exact Tx
+  FFE tap ranges and `Overwrite Minimum Radius` used for the with-crosstalk run, since
+  the config supplied to us matches his without-crosstalk run. The search *method* is
+  not a mismatch — the reference workbooks are named `..._AdaptiveLS.xlsx` and the
+  port's `Non-zero Local Search Method = 1` matches them.
 - **The MATLAB-vs-Python runtime comparison is not like-for-like** and should not be
   quoted until re-measured: Python searched one Tx FFE candidate per CTLE where MATLAB
   swept a grid. The Python-vs-Python speed-up is unaffected.
