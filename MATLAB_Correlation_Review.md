@@ -224,30 +224,38 @@ just *below* 3 dB because Python's COM was biased low.
 
 ## 5. Adaptive local search vs full grid
 
-A full-grid baseline (`Local Search = 0`, everything else identical) was run on nine
-channels covering all four families, chosen to include every case where COM Python and
-MATLAB pick a different sampling phase — the hardest cases available.
+A full-grid baseline (`Local Search = 0`, everything else identical) was run on **all
+208 cases**, re-measured 2026-08-21 on the current engine after every fix in this cycle.
 
 **Adaptive local search is bit-identical to exhaustive full grid on FOM, COM *and*
-sampling phase — 9 of 9 — at a median 113× runtime saving.**
+sampling phase — 208 of 208 — at a median 13x runtime saving.**
 
-| case | channel | FOM adaptive | FOM full grid | ΔFOM | COM adaptive | COM full grid | ΔCOM | itick | penalty |
-|---|---|---|---|---|---|---|---|---|---|
-| T1_R01 | OSFP 22 dB | 12.0943 | 12.0943 | **0.0000** | 2.8856 | 2.8856 | **0.0000** | −6/−6 | 170× |
-| T1_R05 | DAC X 0.5 m | 14.1699 | 14.1699 | **0.0000** | 5.0410 | 5.0410 | **0.0000** | −12/−12 | 26× |
-| T1_R07 | DAC X 1.0 m | 12.4255 | 12.4255 | **0.0000** | 3.2692 | 3.2692 | **0.0000** | −7/−7 | 22× |
-| T1_R08 | DAC X 1.5 m | 11.8564 | 11.8564 | **0.0000** | 2.7006 | 2.7006 | **0.0000** | −5/−5 | 167× |
-| T1_R10 | DAC Y 1.0 m | 13.7627 | 13.7627 | **0.0000** | 4.6105 | 4.6105 | **0.0000** | −16/−16 | 104× |
-| T1_R15 | DAC Z 1.0 m | 12.5230 | 12.5230 | **0.0000** | 3.4966 | 3.4966 | **0.0000** | −2/−2 | 113× |
-| T1_R16 | DAC Z 1.5 m | 11.6070 | 11.6070 | **0.0000** | 2.3159 | 2.3159 | **0.0000** | 5/5 | 133× |
-| T1_R17 | BPK twinax | 15.3059 | 15.3059 | **0.0000** | 6.0491 | 6.0491 | **0.0000** | −21/−21 | 15× |
-| T1_R24 | li_dj CR C | 13.9110 | 13.9110 | **0.0000** | 5.1469 | 5.1469 | **0.0000** | −9/−9 | 236× |
+| | adaptive vs full grid |
+|---|---|
+| FOM identical | **208 / 208** |
+| COM identical | **208 / 208** |
+| sampling phase (`itick`) identical | **208 / 208** |
+| max \|ΔFOM\|, max \|ΔCOM\| | **0.000e+00** |
+| identical, with crosstalk | 104 / 104 |
+| identical, without crosstalk | 104 / 104 |
+| total runtime | 3.0 h vs 32.4 h |
+| median per case | 0.67 min vs 9.47 min |
+| runtime penalty | median **13x** (range 5x–20x) |
 
-Sanity check `FOM(full grid) ≥ FOM(adaptive)` passes 9/9 — full grid searches a superset
-of the adaptive candidates, so any violation would indicate broken search wiring.
+Sanity check `FOM(full grid) >= FOM(adaptive)` passes **208/208** — full grid searches a
+superset of the adaptive candidates, so any violation would indicate broken search
+wiring.
 
-Runtime penalty ranges 15×–236×; the spread tracks how much of the equalizer grid the
-adaptive search is able to prune on that channel.
+> **Two corrections to the previous version of this section.** It reported 9 of 9 cases
+> and a median **113x** runtime saving. The agreement result is now much stronger (the
+> whole corpus, not nine hand-picked channels). The runtime saving is **smaller**: the
+> performance work in this cycle sped full grid up more than it sped adaptive up, so the
+> honest figure is 13x, not 113x. Quote 13x.
+
+**Scope.** This is measured with the configs as supplied, i.e. a **single-point Tx FFE
+grid**, where the adaptive search has nothing to prune in that dimension. On a real Tx
+FFE grid the adaptive search finds the full-grid optimum on 15 of 16 cases, with a worst
+observed loss of 0.0093 dB — see `docs/TXFFE_SWEEP_ROOT_CAUSE.md` §9.
 
 **This also exonerates adaptive pruning for the §4.1 divergences.** On R16 the exhaustive
 full grid independently arrives at Python's `itick = 5` where MATLAB reported 0. The
@@ -397,10 +405,11 @@ Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_I
    **What does still matter for the proposal:** MATLAB's own reported answer is not its
    grid's optimum on 2 of the 10 cases. On `wXtalk_T3_R17` seven candidates beat it at
    its own CTLE, including unity itself (13.8662 vs the reported 13.8016). So adaptive
-   local search can stop short on a real Tx FFE grid. The "adaptive == full grid, 9/9
-   bit-identical" result in §5 was measured with the configs as supplied, i.e. on a
+   local search can stop short on a real Tx FFE grid. The "adaptive == full grid"
+   result in §5 (now 208/208) is measured with the configs as supplied, i.e. on a
    single-point Tx FFE grid where the adaptive search has nothing to prune in that
-   dimension; it should be re-run on a real grid before being quoted.
+   dimension. On a real grid it finds the optimum on 15 of 16, worst loss 0.0093 dB
+   (`docs/TXFFE_SWEEP_ROOT_CAUSE.md` §9).
 
    *`cursor_i` / absolute `t_s` is no longer requested — the frame-origin hypothesis it
    was meant to test has been displaced, and the stage-6 noise question it was also meant

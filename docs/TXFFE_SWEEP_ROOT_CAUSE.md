@@ -175,8 +175,12 @@ The obvious next step is to re-run all 208 with the sweep on. Done
 
 | | FOM bit-exact | COM bit-exact | itick exact | max \|ΔCOM\| | flips |
 |---|---|---|---|---|---|
-| as supplied (baseline) | **198 / 208** | **170 / 208** | **200 / 208** | 0.1852 | 1 |
-| Tx FFE sweep enabled | 189 / 208 | 163 / 208 | 192 / 208 | 0.2029 | 1 |
+| as supplied (baseline) | **198 / 208** | **198 / 208** | **200 / 208** | 0.1852 | 0 |
+| Tx FFE sweep enabled | 189 / 208 | 188 / 208 | 192 / 208 | 0.2101 | 0 |
+
+*(Both rows re-measured 2026-08-21 on the engine including the ADC-clip fix, so
+the comparison is like-for-like. The earlier version of this table had the
+baseline row refreshed and the sweep row not, which made it apples-to-oranges.)*
 
 It gets **worse**, and the reason is instructive rather than discouraging.
 
@@ -301,8 +305,8 @@ configs, and removing `c(-1)` from the ledger fails all four. It is wired into
 
 ## 9. Adaptive local search on a real Tx FFE grid: optimal on 15 of 16
 
-The `adaptive LS == full grid, bit-identical 9/9` result is the centrepiece of the
-proposal, and it was measured with the configs as supplied — i.e. on a
+The `adaptive LS == full grid` result (now **208/208 bit-identical**, `MATLAB_Correlation_Review.md` §5)
+is the centrepiece of the proposal, and it is measured with the configs as supplied — i.e. on a
 **single-point** Tx FFE grid, where the adaptive search has nothing to prune in
 that dimension. Repeating it on a real grid.
 
