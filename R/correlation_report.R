@@ -27,7 +27,13 @@ theme_com <- theme_minimal(base_size = 13) +
         plot.subtitle = element_text(colour = "grey35", size = 11),
         legend.position = "top")
 
-cmp <- read.csv(file.path(din, "compare.csv"), stringsAsFactors = FALSE)
+# Optional 2nd/3rd args select an alternative input CSV and an output suffix, so
+# the same figures can be produced for the "settings aligned" configuration:
+#   Rscript R/correlation_report.R . compare_aligned.csv _aligned
+csv_in <- if (length(args) >= 2) args[2] else "compare.csv"
+sfx    <- if (length(args) >= 3) args[3] else ""
+fig    <- function(name) file.path(dout, paste0(name, sfx, ".png"))
+cmp <- read.csv(file.path(din, csv_in), stringsAsFactors = FALSE)
 cmp$config <- factor(paste0("Test_", cmp$test))
 cmp$cond   <- factor(cmp$cond, levels = c("wXtalk", "woXtalk"),
                      labels = c("with crosstalk", "no crosstalk"))
@@ -46,7 +52,7 @@ p1 <- ggplot(cmp, aes(com_mat, com_py, colour = cond)) +
   labs(title = "COM Python vs COM MATLAB",
        subtitle = lab, x = "COM MATLAB (dB)", y = "COM Python (dB)") +
   theme_com
-ggsave(file.path(dout, "fig_correlation.png"), p1, width = 7.2, height = H, dpi = DPI)
+ggsave(fig("fig_correlation"), p1, width = 7.2, height = H, dpi = DPI)
 
 # ---- 2. error distribution ---------------------------------------------------
 p2 <- ggplot(cmp, aes(dcom)) +
@@ -60,7 +66,7 @@ p2 <- ggplot(cmp, aes(dcom)) +
                           sum(abs(cmp$dcom) <= 0.02), nrow(cmp)),
        x = "COM Python − COM MATLAB (dB)", y = "cases") +
   theme_com
-ggsave(file.path(dout, "fig_dcom_hist.png"), p2, width = W, height = H, dpi = DPI)
+ggsave(fig("fig_dcom_hist"), p2, width = W, height = H, dpi = DPI)
 
 # ---- 3. COM and FOM by package config ---------------------------------------
 both <- cmp %>%
@@ -81,7 +87,7 @@ p3 <- ggplot(both, aes(config, delta, fill = cond)) +
                         "Both shrink monotonically with package loss."),
        x = NULL, y = NULL) +
   theme_com
-ggsave(file.path(dout, "fig_dcom_by_config.png"), p3, width = W, height = H, dpi = DPI)
+ggsave(fig("fig_dcom_by_config"), p3, width = W, height = H, dpi = DPI)
 
 # ---- 3b. FOM correlation ----------------------------------------------------
 nlow <- sum(cmp$dfom < 0)
@@ -97,7 +103,7 @@ p3b <- ggplot(cmp, aes(fom_mat, fom_py, colour = cond)) +
   labs(title = "FOM Python vs FOM MATLAB",
        subtitle = flab, x = "FOM MATLAB (dB)", y = "FOM Python (dB)") +
   theme_com
-ggsave(file.path(dout, "fig_fom_correlation.png"), p3b, width = 7.2, height = H,
+ggsave(fig("fig_fom_correlation"), p3b, width = 7.2, height = H,
        dpi = DPI)
 
 # ---- 3c. FOM error distribution, showing the systematic bias ----------------
@@ -118,7 +124,7 @@ p3c <- ggplot(cmp, aes(dfom)) +
                           sum(abs(cmp$dfom) < 1e-9), nrow(cmp), mean(cmp$dfom)),
        x = "FOM Python − FOM MATLAB (dB)", y = "cases") +
   theme_com
-ggsave(file.path(dout, "fig_fom_hist.png"), p3c, width = W, height = H, dpi = DPI)
+ggsave(fig("fig_fom_hist"), p3c, width = W, height = H, dpi = DPI)
 
 # ---- 3d. FOM residual vs COM outcome ----------------------------------------
 # Linear axes on purpose: on log-log the ~100 bit-exact COM cases collapse to
@@ -138,7 +144,7 @@ p3d <- ggplot(cmp, aes(abs(dfom) * 1000, abs(dcom) * 1000, colour = com_exact)) 
                           n_fom_exact, nrow(cmp), n_com_exact),
        x = "|ΔFOM| (mdB)", y = "|ΔCOM| (mdB)") +
   theme_com
-ggsave(file.path(dout, "fig_fom_vs_com.png"), p3d, width = W, height = H, dpi = DPI)
+ggsave(fig("fig_fom_vs_com"), p3d, width = W, height = H, dpi = DPI)
 
 # ---- 4. stage-by-stage agreement --------------------------------------------
 # Reported as (a) the share of output columns that match MATLAB bit-for-bit and
@@ -183,7 +189,7 @@ p4 <- ggplot(st, aes(y = stage, x = pct_exact, fill = band)) +
                          "case is identical while 8 cases differ outright."),
        x = "output columns agreeing to better than 1e-9 relative", y = NULL) +
   theme_com
-ggsave(file.path(dout, "fig_stage_agreement.png"), p4, width = W, height = H, dpi = DPI)
+ggsave(fig("fig_stage_agreement"), p4, width = W, height = H, dpi = DPI)
 
 # ---- 5. sampling-phase divergence rate --------------------------------------
 by_cfg <- cmp %>% group_by(config) %>%
@@ -206,7 +212,7 @@ p5 <- ggplot(dv, aes(reorder(grp, rate), rate)) +
                           sum(cmp$tick_match == 0), nrow(cmp)),
        x = NULL, y = "cases with differing itick (%)") +
   theme_com
-ggsave(file.path(dout, "fig_divergence.png"), p5, width = W, height = H, dpi = DPI)
+ggsave(fig("fig_divergence"), p5, width = W, height = H, dpi = DPI)
 
 # ---- 6. adaptive vs full grid (only if that run has produced cases) ----------
 sp <- file.path(din, "search.csv")
@@ -235,7 +241,7 @@ Adaptive costs NOTHING in accuracy;",
                               n_fom, nrow(s), n_com, nrow(s), n_tick, nrow(s)),
            x = NULL, y = "full-grid runtime / adaptive runtime", fill = NULL) +
       theme_com
-    ggsave(file.path(dout, "fig_search.png"), p6, width = W, height = H, dpi = DPI)
+    ggsave(fig("fig_search"), p6, width = W, height = H, dpi = DPI)
     cat(sprintf("fig_search.png written (%d channels)\n", nrow(s)))
   } else {
     cat("search.csv empty - full-grid run still in progress, fig_search skipped\n")

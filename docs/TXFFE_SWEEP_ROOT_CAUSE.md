@@ -109,7 +109,7 @@ better. **This is direct evidence, from the reference data itself, that adaptive
 local search can stop short of the optimum on a real Tx FFE grid.**
 
 That matters for the proposal, and it qualifies an earlier result: the
-"adaptive LS == full grid, bit-identical, 9/9" check was run on the configs as
+"adaptive LS == full grid" check (now 208/208) was run on the configs as
 supplied — i.e. with a **single-point** Tx FFE grid, where the adaptive search has
 nothing to prune in that dimension. It should be re-run on a real grid before
 being quoted.
@@ -360,8 +360,8 @@ doing so was not.*
 ### Caveats that remain
 
 - This pins CTLE and `g_DC_HP` and full-grids the Tx FFE only. It does not test
-  the adaptive search's pruning in the CTLE dimension — though the original 9/9
-  result did exactly that, and found no loss.
+  the adaptive search's pruning in the CTLE dimension — though the 208/208
+  full-grid result does exactly that, and finds no loss.
 - 16 cases, not 208.
 - Separately, and not from this experiment: MATLAB's own reported answer is not
   its grid's optimum on 2 of the 10 non-unity cases (§3), including

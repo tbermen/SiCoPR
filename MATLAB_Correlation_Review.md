@@ -285,9 +285,10 @@ also compared **against itself**, which removes the hardware dependence.
 3.15 h and 3.57 h, so treat these as ±13 % — the machine has meaningful run-to-run
 variance and the speed-up should be read as "roughly 4.5–5×", not a precise figure.
 
-**Every correlation statistic is unchanged** — FOM bit-exact 198/208, COM bit-exact
-135/208, `itick` 200/208, max \|ΔCOM\| 0.175602 dB, rms 0.018592 dB, 2 pass/fail
-disagreements. `COM_dB`, `VEO_mV` and `VEC_dB` are bit-identical case by case, verified
+**Every correlation statistic was unchanged by the speed work** — that was verified
+at the time against the then-current figures (FOM 198/208, COM 135/208, `itick`
+200/208, max \|ΔCOM\| 0.175602 dB, 2 pass/fail disagreements). Those figures have
+since improved through later fixes; see §1 for the current numbers. `COM_dB`, `VEO_mV` and `VEC_dB` are bit-identical case by case, verified
 by re-running the full corpus after each change rather than trusting a sample.
 
 Four changes, each measured before being kept:

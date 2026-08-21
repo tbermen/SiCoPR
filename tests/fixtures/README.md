@@ -32,7 +32,8 @@ particular 802.3ck pair, and filling it in from com.py's own output would make
 the assertion circular.
 
 Numeric parity with MATLAB is established elsewhere, and much more thoroughly —
-208 reference cases via `tools/matlab_compare.py`, with FOM bit-exact on 198/208
-and max |ΔCOM| 0.176 dB. See [`MATLAB_Correlation_Review.md`](../../MATLAB_Correlation_Review.md).
+208 reference cases via `tools/matlab_compare.py`. With each condition on the
+settings its own reference used, FOM is bit-exact on 208/208 and max |ΔCOM| is
+0.0076 dB; on the configs exactly as supplied it is 198/208 and 0.185 dB. See [`MATLAB_Correlation_Review.md`](../../MATLAB_Correlation_Review.md).
 Those cases use the 802.3dj channel set (`akinwale_3dj_01_2310/`, 210 MB, also
 not committed — see `.gitignore`).
