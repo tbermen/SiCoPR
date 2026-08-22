@@ -196,6 +196,51 @@ filters.
 
 ---
 
+## 2026-08-22 — index-base conformance checking (`tests/test_index_base.py`)
+
+Not a fix; a guard against the largest recurring class. Four of the fourteen
+entries above are index-base errors, and they share a shape that defeats
+ordinary testing: a 1-based value used as a 0-based subscript reads the **wrong
+element** while the array is long enough, and only raises `IndexError` when the
+index lands on the last entry. #14 carried that from the initial commit until a
+`--max-ctle 3` sweep happened to put the winning CTLE last.
+
+Approaches measured and rejected before settling:
+
+| approach | result |
+|---|---|
+| `int` subclass raising in `__index__` | **no enforcement at all** — CPython/numpy use a C fast path; `big[OneBased(3)]` silently returned element 3 |
+| mypy / pyright | defeated by the data model — 177 `SimpleNamespace` constructions, 462 attributes across `param`/`OP`/`result`/`BEST`/`THIS`, all `Any` |
+| contradiction detection (field used both ways) | 1 of 4 recall — needs the bug to coexist with a correct use |
+| **declaration conformance** | **3 of 4**, adopted |
+
+The registry declares each index field's base *once*, with the evidence for it,
+and three rules prove every use conforms: **A** a 1-based field reaching a
+subscript unconverted, **B** an explicit `− 1` on a 0-based field, **C** an
+index-shaped struct attribute with no declared base.
+
+Rule C is what makes it scale — a new feature cannot introduce an undeclared
+index without failing the run. It caught three on its first execution
+(`DFE_taps_i`, `start_max_idx`, `end_max_idx`), all since declared.
+
+Replayed against the historical versions in git: `b2b2621~1` flags `cursor_i` in
+`optimize_fom` (#7); `62dbce6~1` flags `t_s` in `Apply_EQ` (#11) and
+`ctle`/`G_high_pass` (#14); `bc4cecb~1` flags #14; HEAD is clean. The miss is #4,
+which is not a base error — a valid index applied to the wrong array frame.
+
+It runs over the assembled `com.py`, so it covers all inlined copies of a
+function at once, and it sees paths no test executes.
+
+**A real finding came out of building the registry**, logged as an `xcheck`
+rather than fixed: `floating_tap_locations` is produced 1-based by `MMSE`
+(`idx + RxFFE_cmx + 1`, "1-based for reporting") and MATLAB indexes with it
+1-based at 4p15p0 L4144, but `com.py:5865` subscripts it directly — one element
+low. `Floating_DFE` is off in all 208 configs, so it cannot be verified against
+MATLAB and was not silently changed. Resolving it means confirming what
+`floatingDFE` and `force` return, which disagree today.
+
+---
+
 ## Appendix — the gated fix pass (closed 2026-08-17)
 
 Retained for history. An earlier, differently-structured pass that was overtaken
