@@ -55,8 +55,9 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 | 12 | 2026-08-20 | `Overwrite_Min_Radius` honoured in both version paths | silent discard | Tx FFE investigation | a config setting it under 4p15p0 had it silently discarded | `abdba31` |
 | 13 | 2026-08-21 | `TXLE_taps_1..4`, `Pre2Pmax`, mixed-mode ERL absent from results.xlsx | reporting | user review | columns claimed to agree were never exported | `cb28dca`, `3f0404e` |
 | 14 | 2026-08-21 | `BEST.ctle` / `BEST.G_high_pass` used 1-based as 0-based in `OptFom_Update_BEST_Post_Optimize` | **1- vs 0-based** | corpus sweep crash | reporting-only, but it **hard-crashed** any run whose winning CTLE was last in the list | (this commit) |
+| 15 | 2026-08-22 | `floating_tap_locations` had a **producer-dependent base** — 0-based from `floatingDFE`, 1-based from `MMSE`/`force` | **1- vs 0-based** | index registry | the FDFE cursor-time vector was one UI early under `Floating_DFE` | (this commit) |
 
-**Five of the fourteen are the same root class**: MATLAB assigns structs **by
+**Five of the fifteen are the same root class**: MATLAB assigns structs **by
 value**, Python binds a **reference**. #8, #9 and part of #10 are direct
 instances; #3 and #6 are the same failure to carry a whole structure across a
 boundary. This is the single most productive thing to check first in this port.
@@ -231,13 +232,53 @@ which is not a base error — a valid index applied to the wrong array frame.
 It runs over the assembled `com.py`, so it covers all inlined copies of a
 function at once, and it sees paths no test executes.
 
-**A real finding came out of building the registry**, logged as an `xcheck`
-rather than fixed: `floating_tap_locations` is produced 1-based by `MMSE`
-(`idx + RxFFE_cmx + 1`, "1-based for reporting") and MATLAB indexes with it
-1-based at 4p15p0 L4144, but `com.py:5865` subscripts it directly — one element
-low. `Floating_DFE` is off in all 208 configs, so it cannot be verified against
-MATLAB and was not silently changed. Resolving it means confirming what
-`floatingDFE` and `force` return, which disagree today.
+**A real finding came out of building the registry** — see #15 below, which also
+corrects how it was first described here.
+
+---
+
+## 2026-08-22 — `floating_tap_locations` producer-dependent base
+
+Found by writing the index registry. The field had **no single base**: three
+functions produce it and they disagreed.
+
+| producer | Python base | MATLAB |
+|---|---|---|
+| `floatingDFE` | **0-based** ("all using 0-based indices") | 1-based (`tap_loc` indexes `hisi`) |
+| `MMSE` | 1-based (`idx + RxFFE_cmx + 1`) | 1-based (ML 2576) |
+| `force` | 1-based (`# idx is 1-based`) | 1-based |
+
+Both consumers sit behind `if param.Floating_DFE`, so they read the
+**`floatingDFE`** value — the 0-based one:
+
+- `BEST.FDFE_taps_mV = BEST.DFE_taps_mV[floc]` — 0-based subscript of a 0-based
+  value, which is **correct**, matching MATLAB's 1-based `DFE_taps_mV(floc)` at
+  ML 4143.
+- `BEST.sampled_sbr_fdfecursors_t = ((cursor_i + 1)/M + floc) * ui` — MATLAB
+  4133 is `(cursor_i/M + floc)*ui` with `floc` 1-based, so Python was **one UI
+  early**. That was the defect.
+
+> **Correction.** The first version of this entry, and the commit message that
+> introduced the checker, named the wrong line: they said the `DFE_taps_mV`
+> subscript at `com.py:5865` was defective. It was not — its producer is
+> 0-based, so the raw subscript was right. The time vector was the broken one.
+> The registry flagged the field correctly; the initial reading of *why* was wrong.
+
+Fixed by normalising at the single boundary where `floatingDFE`'s output becomes
+the shared field (`OptFom_Compute_DFE`), so the field is **1-based whatever
+produced it** — matching MATLAB and the other two producers. The consumer now
+converts for its subscript, and the time vector matches ML 4133 unchanged. The
+`MMSE` comment that claimed "in Python we keep as 0-based", directly above code
+adding `+ 1`, is corrected — that contradiction is what made the base ambiguous.
+
+**Verification.** All 249 output fields bit-identical on re-run cases, and
+`floating_tap_locations` = [22…29] in both Python and MATLAB on
+`wXtalk_T1_R16` — so the RxFFE/MMSE path is exercised by the corpus and its
+1-based convention is confirmed against the reference. The `Floating_DFE` path
+is not reachable by any of the 208 configs, so the time-vector correction rests
+on matching ML 4133 line-for-line rather than on measured data. Both fields are
+write-only in the port (MATLAB uses them for a stem plot), so nothing downstream
+moves either way.
 
 ---
 

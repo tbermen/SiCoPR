@@ -3292,7 +3292,11 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
 # MMSE_FOM inlined via import (same package, but per protocol we call it directly).
 # Craw = w / w[dw] → normalised by cursor tap.
 # floating_tap_locations: MATLAB idx + RxFFE_cmx + 1 (1-based) → Python idx + RxFFE_cmx (0-based? No — MATLAB returns 1-based indices here as locations for reporting).
-# Actually MMSE_results.floating_tap_locations=idx+param.RxFFE_cmx+1 in MATLAB means they remain 1-based for reporting. In Python we keep as 0-based (idx + RxFFE_cmx).
+# MMSE_results.floating_tap_locations = idx + param.RxFFE_cmx + 1 (ML 2576) is
+# 1-BASED, and this port matches it -- see the assignment below. An earlier
+# version of this comment claimed "in Python we keep as 0-based", which
+# contradicted the code directly beneath it and is what made the base of this
+# field ambiguous. All three producers now agree on 1-based.
 # ============================================================
 
 
@@ -5115,7 +5119,14 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
 
     THIS.dfetaps = dfetaps
     if param.Floating_DFE:
-        THIS.floating_tap_locations = floating_tap_locations
+        # floatingDFE returns 0-BASED positions into hisi (see its docstring),
+        # but MATLAB stores this field 1-based (ML 3559, where tap_loc indexes
+        # hisi 1-based) and both consumers -- the fdfecursors time vector at
+        # ML 4133 and the DFE_taps_mV lookup at ML 4143 -- read it that way.
+        # The other two producers of this same field, MMSE and force, already
+        # return 1-based. Normalise here so the field has ONE base whatever
+        # produced it; OptFom_Update_BEST_Post_Optimize converts to subscript.
+        THIS.floating_tap_locations = np.asarray(floating_tap_locations) + 1
     THIS.floating_tap_coef = floating_tap_coef
     THIS.tail_RSS = tail_RSS
     THIS.excess_dfe_cursors = excess_dfe_cursors
@@ -5861,7 +5872,9 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
         BEST.cursor * bmin[:min(ndfe, len(bmin))])
 
     if getattr(param, 'Floating_DFE', False) and hasattr(BEST, 'floating_tap_locations'):
-        floc_arr = np.asarray(BEST.floating_tap_locations, dtype=int)
+        # 1-based (see OptFom_Compute_DFE); MATLAB 4143 indexes DFE_taps_mV with
+        # it directly because MATLAB is 1-based, so Python must convert.
+        floc_arr = np.asarray(BEST.floating_tap_locations, dtype=int) - 1
         BEST.FDFE_taps_mV = BEST.DFE_taps_mV[floc_arr]
     else:
         BEST.FDFE_taps_mV = np.array([])

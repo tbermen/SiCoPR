@@ -107,11 +107,12 @@ REGISTRY = {
     'sampled_sbr_precursors_t':  (NOT_INDEX, "time vector, seconds"),
     'sampled_sbr_postcursors_t': (NOT_INDEX, "time vector, seconds"),
 
-    # --- declared, but the producers disagree: see the xcheck below --------
-    'floating_tap_locations': (UNRESOLVED,
-                               "MMSE returns idx+RxFFE_cmx+1 ('1-based for reporting') "
-                               "and MATLAB 4144 indexes with it 1-based, but the "
-                               "floatingDFE and force producers need confirming"),
+    'floating_tap_locations': (ONE,
+                               "ML 3559/2576: MATLAB stores this 1-based, and both "
+                               "consumers (ML 4133 time vector, ML 4143 DFE_taps_mV "
+                               "lookup) read it that way. MMSE and force already "
+                               "returned 1-based; OptFom_Compute_DFE now normalises "
+                               "floatingDFE's 0-based output to match."),
 }
 
 # Attribute names that look like an index and therefore must be declared.
@@ -204,10 +205,8 @@ def scan(path):
                 base = REGISTRY.get(f, (None,))[0]
                 if conv:
                     continue
-                if base == ONE:
+                if base in (ONE, UNRESOLVED):
                     vio_a.append((f, fn.name, node.lineno))
-                elif base == UNRESOLVED:
-                    vio_a.append(('%s [UNRESOLVED]' % f, fn.name, node.lineno))
 
         # Rule C: index-shaped struct attributes that are not declared
         for node in ast.walk(fn):
@@ -232,10 +231,7 @@ def main():
 
     a, b, undeclared = scan(COM_PY)
 
-    # The UNRESOLVED entry is reported separately so a genuine Rule-A regression
-    # is not buried inside a known-open question.
-    a_known = [v for v in a if 'UNRESOLVED' in v[0]]
-    a_real = [v for v in a if 'UNRESOLVED' not in v[0]]
+    a_real = a
 
     check('rule_A_no_1based_index_used_raw', not a_real,
           'a field declared 1-based reaches a subscript without conversion: %s. '
@@ -255,19 +251,6 @@ def main():
           'if the name only looks like an index. This is the rule that keeps the '
           'check honest as new features land.'
           % ', '.join('%s (%s)' % (k, v) for k, v in sorted(undeclared.items())[:8]))
-
-    # A real finding, raised by building the registry: floating_tap_locations is
-    # produced 1-based by MMSE and indexed 1-based by MATLAB (4p15p0 L4144), but
-    # com.py subscripts it directly. The corpus cannot settle it -- Floating_DFE
-    # is off in all 208 configs -- so it is logged as a known divergence rather
-    # than silently fixed or silently ignored. Resolving it means confirming what
-    # floatingDFE and force return, then either converting the use or the producer.
-    xcheck('floating_tap_locations_base_resolved', not a_known,
-           'floating_tap_locations is used as a subscript at %s while MMSE '
-           'documents it as 1-based; MATLAB L4144 does the same indexing but is '
-           '1-based itself, so Python is one element low. Unreachable in the 208 '
-           'configs (Floating_DFE off), hence unverified against MATLAB.'
-           % _fmt(a_known))
 
     return finish()
 

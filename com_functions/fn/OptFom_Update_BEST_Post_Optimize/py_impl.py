@@ -155,7 +155,9 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
         BEST.cursor * bmin[:min(ndfe, len(bmin))])
 
     if getattr(param, 'Floating_DFE', False) and hasattr(BEST, 'floating_tap_locations'):
-        floc_arr = np.asarray(BEST.floating_tap_locations, dtype=int)
+        # 1-based (see OptFom_Compute_DFE); MATLAB 4143 indexes DFE_taps_mV with
+        # it directly because MATLAB is 1-based, so Python must convert.
+        floc_arr = np.asarray(BEST.floating_tap_locations, dtype=int) - 1
         BEST.FDFE_taps_mV = BEST.DFE_taps_mV[floc_arr]
     else:
         BEST.FDFE_taps_mV = np.array([])

@@ -209,7 +209,14 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
 
     THIS.dfetaps = dfetaps
     if param.Floating_DFE:
-        THIS.floating_tap_locations = floating_tap_locations
+        # floatingDFE returns 0-BASED positions into hisi (see its docstring),
+        # but MATLAB stores this field 1-based (ML 3559, where tap_loc indexes
+        # hisi 1-based) and both consumers -- the fdfecursors time vector at
+        # ML 4133 and the DFE_taps_mV lookup at ML 4143 -- read it that way.
+        # The other two producers of this same field, MMSE and force, already
+        # return 1-based. Normalise here so the field has ONE base whatever
+        # produced it; OptFom_Update_BEST_Post_Optimize converts to subscript.
+        THIS.floating_tap_locations = np.asarray(floating_tap_locations) + 1
     THIS.floating_tap_coef = floating_tap_coef
     THIS.tail_RSS = tail_RSS
     THIS.excess_dfe_cursors = excess_dfe_cursors

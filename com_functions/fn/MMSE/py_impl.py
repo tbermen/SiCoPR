@@ -14,7 +14,11 @@
 # MMSE_FOM inlined via import (same package, but per protocol we call it directly).
 # Craw = w / w[dw] → normalised by cursor tap.
 # floating_tap_locations: MATLAB idx + RxFFE_cmx + 1 (1-based) → Python idx + RxFFE_cmx (0-based? No — MATLAB returns 1-based indices here as locations for reporting).
-# Actually MMSE_results.floating_tap_locations=idx+param.RxFFE_cmx+1 in MATLAB means they remain 1-based for reporting. In Python we keep as 0-based (idx + RxFFE_cmx).
+# MMSE_results.floating_tap_locations = idx + param.RxFFE_cmx + 1 (ML 2576) is
+# 1-BASED, and this port matches it -- see the assignment below. An earlier
+# version of this comment claimed "in Python we keep as 0-based", which
+# contradicted the code directly beneath it and is what made the base of this
+# field ambiguous. All three producers now agree on 1-based.
 # ============================================================
 
 import numpy as np
