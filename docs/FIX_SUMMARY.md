@@ -336,6 +336,99 @@ partials before being recorded. None is live, but two findings are worth having:
 
 ---
 
+## 2026-08-22 — the DER residual in the Noise stage: mechanism found, fix rejected
+
+The "6 Noise" pipeline stage sits at 95.1% of columns exact where every other
+stage is at 99.7% or better. Investigated on the reading that a stage short of
+100% is a defect waiting to be root-caused. **The mechanism was found and
+proven. It is not a defect, and the fix attempted for it was reverted as a net
+regression.** Both halves of that are worth recording.
+
+### What the shortfall is made of
+
+Measured per column across the settings-aligned set:
+
+| column | inexact | median relative error | direction |
+|---|---|---|---|
+| `DER_MLSE` | 154 / 204 | 1.36 % | Python low on **133 of 154** |
+| `DER_DFE` | 125 / 208 | 1.45 % | Python low on **123 of 125** |
+| `DER_thresh` | 4 / 208 | 2.4e-4 | low on 4 of 4 |
+| `sgm_isi` chain | 4 / 208 | 1.7e-4 | see the separate item below |
+
+A 98% one-directional split at a stable ~1.5% median is the signature that
+located the `process_sxp` leak, so it was treated as a bias.
+
+### The mechanism
+
+`DER_DFE = CDF_ev(A_s, PDF, CDF)`, and `CDF_ev` is a **discrete bin lookup**:
+
+```matlab
+index = find(PDF.x >= -val, 1, 'first');   % ML 1144-1146
+```
+
+`BinSize` is derived from `A_s` such that `A_s / BinSize == 1000` **exactly**, so
+`-A_s` lands precisely on bin -1000 on essentially every case. The `>=` is
+therefore decided on an exact tie, and the tie is broken by the last bits of the
+grid. Proven at bit level on `woXtalk_T1_R02`:
+
+```
+(-A_s)              = -0x1.11f683ba71df9p-8
+Python x[i]         = -0x1.11f683ba71df9p-8   bit-identical -> >= TRUE  -> bin i
+start + k*BinSize   = -0x1.11f683ba71e00p-8   7 ulp lower   -> >= FALSE -> bin i+1
+```
+
+and MATLAB's reported `DER_DFE` equals this port's `CDF[i+1]` **to 11
+significant digits**. One bin of a decaying CDF tail is ~1.5%, which is the
+entire observed error.
+
+`A_s` itself is never bit-identical to MATLAB (208/208 differ, max 2.3e-11
+relative) — ordinary double-precision accumulation through the pipeline. So
+which side of the tie a case lands on is decided by the 11th digit of `A_s`.
+
+### The fix that was tried, and why it was reverted
+
+MATLAB has two grid idioms that are algebraically identical and different in
+floating point:
+
+```matlab
+p.x = (p.Min*p.BinSize : p.BinSize : pMax*p.BinSize)   % ML 2247, 5808, 5828
+pdf.x = (pdf.Min:-pdf.Min)*binsize                     % ML 5700, 5954, 8835
+```
+
+The port writes both as `arange(...) * BinSize`. Reproducing the first as naive
+accumulation (`start + k*step`) at all 25 scaled-colon sites — the canonical
+`conv_fct`, `conv_fct_MeanNotZero` and `Init_PDF_Fast` plus every inlined copy —
+**made agreement worse**, measured over 52 cases:
+
+| column | before | after |
+|---|---|---|
+| `DER_DFE` exact | 12 | **9** |
+| `DER_MLSE` exact | 8 | **3** |
+| COM / FOM / VEO / VEC / `sgm_*` | unchanged | unchanged |
+
+Reverted. The useful negative result: **MATLAB's colon is more accurate than
+naive `start + k*step`** — it is endpoint-corrected — so the port's existing
+integer form is the *closer* approximation of the two, and emulating the colon
+as accumulation is wrong in the other direction. Matching MATLAB here would
+require reproducing its colon bit-exactly, which cannot be verified without
+MATLAB.
+
+### Conclusion
+
+The `DER_*` columns are **quantisation-limited, not wrong**. Everything in this
+stage that is not a bin lookup — `sgm_*`, `sigma_before_clip`, `peak_clip`, and
+downstream COM / FOM / VEO / VEC / `itick` — agrees exactly. Chasing the Noise
+stage to 100% on the current metric means chasing which side of an exact tie the
+11th digit of `A_s` falls on, and that is not a property the port can control.
+
+The honest reporting change is to score `DER_*` as agreeing when Python's value
+equals MATLAB's within **one CDF bin**, which is a physically meaningful
+statement about a discrete lookup. That has NOT been applied, because it should
+not be applied while a real residual is still outstanding in the same stage —
+see the `sgm_isi` item, which is a genuine target and the last COM miss.
+
+---
+
 ## Test ROI — what the added guards have actually caught
 
 Added because the same defect classes kept recurring. This section exists to let
