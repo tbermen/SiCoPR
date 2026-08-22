@@ -120,3 +120,64 @@ def test_claimed_columns_are_populated():
     assert not blank, (
         'columns the correlation review compares, but which this export leaves '
         'blank: %s -- either populate them or stop claiming they agree' % blank)
+
+
+def test_nothing_matlab_populates_is_left_blank():
+    """The stronger question: is the export missing anything the reference has?
+
+    The per-column check above only guards columns someone thought to list. This
+    asks the complement -- for every column blank on every row of the Python
+    export, confirm MATLAB leaves it blank too. A column MATLAB fills and Python
+    does not is a genuine coverage gap, and it would otherwise be invisible: a
+    blank cell looks the same whether the feature is disabled or unimplemented.
+    """
+    import openpyxl
+
+    refs = sorted(glob.glob(os.path.join(
+        _ROOT, 'tests', '2_Results_COM_Matlab', '*.xlsx')))
+    if not refs:
+        pytest.skip('MATLAB reference workbooks not present')
+
+    exports = sorted(glob.glob(os.path.join(
+        _ROOT, 'com_python_results', '*', '*.xlsx')))
+    if not exports:
+        pytest.skip('no exported workbook to check')
+
+    # columns blank on every row of every exported sheet
+    blank = None
+    for p in exports:
+        wb = openpyxl.load_workbook(p, read_only=True)
+        for sn in wb.sheetnames:
+            if sn == 'NOTES':
+                continue
+            ws = wb[sn]
+            rows = list(ws.iter_rows(values_only=True))
+            if len(rows) < 2:
+                continue
+            hdr = rows[0]
+            here = {h for i, h in enumerate(hdr)
+                    if h is not None
+                    and all(r[i] in (None, '') for r in rows[1:])}
+            blank = here if blank is None else (blank & here)
+        wb.close()
+    if not blank:
+        return
+
+    filled = []
+    for p in refs:
+        wb = openpyxl.load_workbook(p, data_only=True, read_only=True)
+        for sn in wb.sheetnames:
+            ws = wb[sn]
+            rows = [r for r in ws.iter_rows(values_only=True)]
+            if len(rows) < 2:
+                continue
+            hdr = rows[0]
+            body = [r for r in rows[1:] if r[0] not in (None, '')]
+            for i, h in enumerate(hdr):
+                if h in blank and any(r[i] not in (None, '') for r in body):
+                    filled.append('%s/%s' % (sn, h))
+        wb.close()
+
+    assert not filled, (
+        'MATLAB populates %d column(s) that the Python export leaves blank on '
+        'every row: %s' % (len(filled), sorted(set(filled))[:20]))
