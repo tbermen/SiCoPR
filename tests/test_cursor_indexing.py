@@ -216,4 +216,65 @@ check("COM_eye_width_center_is_max_open",
       int(np.argmax(mid_eye)) in (half_UI - 1, half_UI, half_UI + 1),
       "widest eye opening at phase %d, expected ~center %d" % (int(np.argmax(mid_eye)), half_UI))
 
+
+# ---------------------------------------------------------------------------
+# BEST.ctle / BEST.G_high_pass index base (regression, 2026-08-21)
+#
+# THIS.ctle_index and THIS.g_LP_index are set 1-BASED to match MATLAB, and
+# OptFom_Update_Best_Setttings copies them straight into BEST.ctle and
+# BEST.G_high_pass. OptFom_Update_BEST_Post_Optimize then used them to index
+# param.CTLE_fz / f_HP / g_DC_HP_values with a comment claiming 0-based, so it
+# read one entry too high on every run.
+#
+# It hid for two reasons, both worth knowing: the fields feed only
+# OptFom_Plot_Best_Results (the COM path recomputes ctle_gain in optimize_fom,
+# which does convert), and an over-long CTLE list turns the error into a silently
+# wrong lookup instead of an IndexError. It only raised when the winning CTLE was
+# the LAST in the list -- which is exactly what a truncated --max-ctle sweep does.
+# The 208-case corpus cannot reach it.
+_ctle_n = 3
+_param = SimpleNamespace(
+    samples_per_ui=32, ndfe=0, ui=1.0 / 106.25e9,
+    CTLE_fz=np.array([1e9, 2e9, 3e9]),
+    CTLE_fp1=np.array([4e9, 5e9, 6e9]),
+    CTLE_fp2=np.array([7e9, 8e9, 9e9]),
+    CTLE_type='CL93',
+)
+# OP must disable all three filters, or OptFom_Calc_Hr raises before the CTLE
+# lookup is ever reached and the check passes without testing anything. An
+# earlier version of this test did exactly that; mutation testing caught it.
+_OP = SimpleNamespace(Butterworth=False, Bessel_Thomson=False, Raised_Cosine=False)
+_BEST = SimpleNamespace(
+    sbr=np.zeros(64), cursor_i=32, ctle=_ctle_n, gdc=-5.0, G_high_pass=1,
+    bmax=np.array([]), bmin=np.array([]),
+)
+_f = np.linspace(1e8, 50e9, 64)
+
+_raised = None
+try:
+    _got = com.OptFom_Update_BEST_Post_Optimize(copy.deepcopy(_BEST), _f, _param, _OP)
+except Exception as _e:          # noqa: BLE001 - any failure here is a real result
+    _raised = _e
+    _got = None
+
+check("post_optimize_ctle_index_is_1_based",
+      _raised is None,
+      "OptFom_Update_BEST_Post_Optimize failed for the LAST CTLE entry "
+      "(BEST.ctle=%d, len(CTLE_fz)=%d). BEST.ctle is 1-based and must be "
+      "converted before indexing -- %s: %s"
+      % (_ctle_n, _ctle_n, type(_raised).__name__, _raised))
+
+# Value check, not just absence-of-crash: the winning CTLE is the LAST entry, so
+# the pole/zero used must be the last of each list.
+_expect = _FD_CTLE_ref = None
+if _got is not None:
+    num = 10 ** (-5.0 / 20) + 1j * _f / 3e9
+    den = (1 + 1j * _f / 6e9) * (1 + 1j * _f / 9e9)
+    _expect = num / den
+    check("post_optimize_ctle_uses_the_selected_entry",
+          np.allclose(np.asarray(_got.ctle_gain1), _expect, rtol=0, atol=0),
+          "ctle_gain1 was not built from CTLE_fz/fp1/fp2[-1]; an off-by-one here "
+          "silently uses the neighbouring CTLE setting whenever the list is long "
+          "enough to stay in range")
+
 finish()

@@ -5,9 +5,16 @@ tool. It computes COM / VEO / VEC and the supporting equalization and noise anal
 serial channel described by Touchstone S-parameter files and an Excel configuration
 spreadsheet.
 
-The port is function-for-function: `com.py` follows the structure of
-`matlab/com_ieee8023_4p15p0.m` closely enough to navigate by MATLAB line number, takes the
-same `.xlsx` + `.s4p` inputs, and produces the same outputs.
+The port is function-for-function: `com.py` follows the structure of the MATLAB source
+closely enough to navigate by MATLAB line number, takes the same `.xlsx` + `.s4p` inputs,
+and produces the same outputs.
+
+**Two MATLAB releases are supported.** `com.py` emulates **`com_ieee8023_4p15p0`** by
+default — that is the release the 208-case reference corpus was produced with, so it is the
+version the correlation result in §7 is evidence for — and **`com_ieee8023_4p16p0`** via
+`--matlab-version 4p16p0` (or `com.COM_MATLAB_VERSION`, or a `COM Version` config keyword).
+4p16p0 is a small delta, and its measured effect on all 208 cases is in §8. Which release a
+given `com.py` emulates is recorded in its header and in `VERSION.json`.
 
 On top of the engine there is a study layer (`tools/`, `R/`) built to answer one question:
 **does pruning the equalizer search grid change COM?** Results in §5.
@@ -94,6 +101,7 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `com.py`, so they live beside it |
 | `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
 | `R/` | interactive HTML reports |
+| `VERSION.json` | which MATLAB release the port emulates; `assemble_com.py` generates `com.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | historical development prompts, state ledgers, one-shot scripts — kept for provenance, not needed to run anything |
@@ -111,7 +119,15 @@ they evaluate:
 | **legacy local search** | `LOCAL_SEARCH = N`, `NonZeroLSMethod = 0` — fixed-radius prune |
 | **adaptive local search** | `LOCAL_SEARCH = N`, `NonZeroLSMethod = 1` — Hansel D'silva's branch |
 
-### Result (7 channels, 100–1400 mm, 2026-08-07)
+### Result (7 channels, 100–1400 mm, 2026-08-07) — REGENERATING
+
+> ⚠️ **These numbers predate the eight engine fixes of August 2026** and are being
+> regenerated. They were produced on 2026-08-07; the fixes since then move COM materially
+> (about 0.1 dB on the bundled 802.3ck config, enough to flip a case). The *comparison*
+> they report — adaptive vs full grid on the same engine — is not obviously affected, since
+> both methods shift together, but the absolute COM values below are stale and the speedup
+> figure predates the performance work, which sped the full grid up more than the pruned
+> search. Do not quote either until this section is refreshed.
 
 **Adaptive returns COM bit-identical to the exhaustive grid on all seven channels** — ΔCOM
 exactly 0 to 17 significant digits, same winning EQ operating point — while evaluating ~7%
@@ -132,7 +148,7 @@ Full numbers, caveats, and regeneration commands: [`corpus_results/RESULTS.md`](
 **The corpus is one channel family** (same topology, varying only cable length), one config,
 thru-only. That is its main limitation and is documented alongside the results.
 
-### Running it
+### Running sweep commands for com.py
 
 ```powershell
 # one channel, three methods -> sweep_results/{full_grid,legacy,adaptive}_log.csv + summary.json

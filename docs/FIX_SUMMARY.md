@@ -1,4 +1,206 @@
-# FIX SUMMARY, com_functions/ gated fix pass
+# Fix ledger — every correctness fix applied to COM Python
+
+**One-stop history.** Root-cause investigations come and go and get their own
+documents; this file keeps a permanent one-line-plus-summary entry for every fix
+that changed a number, with a pointer to the detail. If you want to know *what
+has been fixed and what it bought*, read this file and nothing else.
+
+**Adding an entry.** When a fix lands, add a row to the ledger and a short
+subsection under the matching date. Record what it *bought* — a fix with no
+measured effect is a claim, not a result — and link the detailed write-up rather
+than reproducing it. Keep entries even when the underlying investigation doc is
+later deleted.
+
+> Scope: fixes to the engine (`com_functions/fn/*/py_impl.py`, from which
+> `com.py` is assembled) and to the settings the engine is run with. Tooling,
+> reporting and documentation changes are not tracked here, with one exception
+> noted below.
+
+---
+
+## Current correlation status
+
+208 MATLAB reference cases (`com_ieee8023_4p15p0`, 26 channels × 4 packages ×
+with/without crosstalk). The two reference workbooks were produced with
+different Tx FFE settings, so both readings are reported — see
+[`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md).
+
+| | configs as supplied | settings aligned |
+|---|---|---|
+| FOM bit-exact | 198 / 208 | **208 / 208** |
+| COM bit-exact | 198 / 208 | **207 / 208** |
+| sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
+| max \|ΔCOM\| | 0.1852 dB | **0.0076 dB** |
+| pass/fail disagreements at 3 dB | 0 | **0** |
+
+Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
+
+---
+
+## The ledger
+
+| # | date | fix | class | found by | bought | commit |
+|---|---|---|---|---|---|---|
+| 1 | 2026-08-14 | `z_p` transpose for RX / NEXT / FEXT | config parse | column-ranked error | RX package built from a matrix row → ~15 dB spurious loss | `b2b2621` |
+| 2 | 2026-08-14 | Insertion-loss fit solved at effective rank 2 of 4 | numerics | column-ranked error | `lstsq` silently truncated rank; half the fit basis restored | `b2b2621` |
+| 3 | 2026-08-14 | RxFFE floating-tap array sized by tap COUNT, not SPAN | allocation | column-ranked error | floating taps past index 23 were being discarded | `b2b2621` |
+| 4 | 2026-08-14 | `get_TDR` `tfstart` index base | 1- vs 0-based | column-ranked error | Z11est/Z22est 1.4e-2 → 4e-15 | `b2b2621` |
+| 5 | 2026-08-14 | `get_TDR` `fctrx` initialisation | translation | column-ranked error | ERL11/ERL22/ERL 4e-1 → ~1e-15 | `b2b2621` |
+| 6 | 2026-08-14 | Package die network truncated to 1 of 3 LC sections | translation | column-ranked error | restored ~15 ps of die delay (a 53-sample pulse shift) | `b2b2621` |
+| 7 | 2026-08-14 | Cursor index base in `optimize_fom` (audit B16-D20) | 1- vs 0-based | audit + #6 | was reverted early as "worse"; it and #6 were **compensating** | `b2b2621` |
+| 8 | 2026-08-14 | `process_sxp` leaked a TDR-only setting into the whole run | **by-reference** | sign of the bias | **the systematic FOM bias** — Python low on 199/208 (95.7%) | `b2b2621` |
+| 9 | 2026-08-19 | `BEST.PSD_results` aliased a struct MATLAB copies by value | **by-reference** | stage-6 noise gap | COM bit-exact 135 → **170**, pass/fail flips 2 → **1** | `00529f8` |
+| 10 | 2026-08-20 | Four latent fidelity defects (unstable sort ×2, abort-path leak, `_findbankloc` stubs ×2) | mixed | itick investigation | **inert on this corpus by design** — real under other settings | `6994b4a` |
+| 11 | 2026-08-20 | Off-by-one in the ADC-clip sampling phase | 1- vs 0-based | variance decomposition | COM bit-exact 170 → **198**, pass/fail flips 1 → **0** | `62dbce6` |
+| 12 | 2026-08-20 | `Overwrite_Min_Radius` honoured in both version paths | silent discard | Tx FFE investigation | a config setting it under 4p15p0 had it silently discarded | `abdba31` |
+| 13 | 2026-08-21 | `TXLE_taps_1..4`, `Pre2Pmax`, mixed-mode ERL absent from results.xlsx | reporting | user review | columns claimed to agree were never exported | `cb28dca`, `3f0404e` |
+| 14 | 2026-08-21 | `BEST.ctle` / `BEST.G_high_pass` used 1-based as 0-based in `OptFom_Update_BEST_Post_Optimize` | **1- vs 0-based** | corpus sweep crash | reporting-only, but it **hard-crashed** any run whose winning CTLE was last in the list | (this commit) |
+
+**Five of the fourteen are the same root class**: MATLAB assigns structs **by
+value**, Python binds a **reference**. #8, #9 and part of #10 are direct
+instances; #3 and #6 are the same failure to carry a whole structure across a
+boundary. This is the single most productive thing to check first in this port.
+
+---
+
+## 2026-08-14 — the eight defects found by the 208-case correlation (`b2b2621`)
+
+Max \|ΔCOM\| 6.256 dB → ~0.18 dB. Detail in
+[`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md) §2–§4.
+
+**Method note worth keeping.** Every one of these was found by ranking all
+comparable output columns by relative error and letting the data localise the
+fault. Reading code to guess causes failed repeatedly.
+
+#8 is the one to remember. `process_sxp` set
+`OP.impulse_response_truncation_threshold = 1e-5` on the shared `OP`, and the
+MATLAB source says in a comment at L9311 that it is "Only for TDR not returned
+out of process_sxp function" — true under by-value semantics, false under
+Python's. A 100× tighter truncation retained excess impulse-response tail,
+lengthened the pulse response, inflated residual ISI and biased FOM low on
+95.7% of cases, while the whole unit suite stayed green.
+
+#7 is the cautionary one: applying it alone made agreement 5–20× *worse*, so it
+was reverted as wrong. It was correct all along — it and #6 were compensating.
+**A fix that makes things worse is not necessarily the wrong fix.**
+
+## 2026-08-19 — `BEST.PSD_results` aliasing (`00529f8`)
+
+`BEST.PSD_results = THIS.PSD_results` copies by value in MATLAB and binds a
+reference in Python, while `get_PSDs` mutates its `result` argument in place and
+`optimize_fom` reuses one object per CTLE block. The reported noise therefore
+came from the **last tick swept (+24)**, not the winner's.
+
+**Why it hid**: `ts_sample_adj_range` is [−24, 24] and `samples_per_ui` is 32,
+and **24 ≡ −8 (mod 32)** — so the stale arrays were *correct* exactly when the
+winning tick was −8. The data showed `sgm_TX` exact on 10 of 208 cases, all 10
+at `itick = −8`, with the error growing with distance from −8.
+
+`sgm_TX` went from 2/208 exact to 42/48 on the re-run subset. This fix does
+**not** move `itick`; that was a separate cause (#12 and the Tx FFE settings).
+
+## 2026-08-20 — four latent defects (`6994b4a`)
+
+All four are **unreachable in the 208-case configs**, verified: the corpus
+re-ran bit-identical on `com_py`, `fom_py`, `itick_py` and `tick_match` across
+all 208. That is the point — they are real under other settings and the corpus
+cannot catch a regression in them, so they were fixed deliberately rather than
+left for a future config to trip over.
+
+1. `np.argsort` defaults to quicksort, which is **not stable**; MATLAB's `sort`
+   is. Live under `TS_SRCH_MODE='middle'`. Same defect inside `findbankloc`'s
+   `argsort(-ndiff)`, where ties are not hypothetical — the ISI tail is mostly
+   zeros.
+2. By-reference leak on `OptFom_Calc_Noise`'s abort path — the caller saw the
+   *aborted* tick's values where MATLAB sees the last successfully scored one.
+3. `MMSE._findbankloc` and `force._findbankloc` were "simplified" stubs picking
+   the highest-power non-overlapping banks. The real routine ranks bank starts
+   by `ndiff = h0n - h1n` and runs a `badV`/`goodV` admissibility loop that can
+   reject the strongest bank outright. A faithful port already existed and had
+   simply never been wired into these two copies.
+
+**Deliberately not done**: ~25 other `argsort` sites, several using
+`argsort(x)[::-1]`, which inverts tie order relative to a stable descending sort
+even with `kind='stable'` added. They need individual checks against the MATLAB
+they came from, not a blanket edit.
+
+## 2026-08-20 — ADC-clip sampling phase (`62dbce6`)
+
+Detail in [`COM_PDF_RESIDUAL.md`](COM_PDF_RESIDUAL.md). The last engine-level
+disagreement, and the only one large enough to move a case across the 3 dB
+threshold.
+
+MATLAB's `mod(t_s-1,M)+1` takes a **1-based** `t_s`; Python's `fom_result.t_s`
+is already 0-based, so `(t_s - 1) % M` sampled **one sample early**. The port was
+already inconsistent with itself — `get_PSDs` does the same decimation correctly,
+and that inconsistency is what confirmed the reading.
+
+Localised by **convolution adds variances**: `sigma_before_clip² = σ_signal² +
+σ_combined²`, so measuring Python's `σ_combined` and subtracting isolated the
+signal PDF, which has exactly one input — the sampled pulse.
+
+A lead recorded as **wrong** so it is not re-followed: the non-stable
+`argsort(...)[::-1]` in `get_pdf_from_sampled_signal` is *not* this defect. A
+stable descending sort gives a bit-identical sigma.
+
+## 2026-08-20 — `Overwrite_Min_Radius` version path (`abdba31`)
+
+Found while resolving the ten Tx FFE cases. The keyword was read only under
+4p16p0, so a config setting it while emulating 4p15p0 had it **silently
+discarded** — the same silent-config-discard class as the Tx FFE settings
+mismatch itself. Guarded since by `tests/test_config_search_space.py`.
+
+The accompanying settings finding is not an engine fix and is recorded in
+[`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md): the supplied configs
+pin Tx FFE `c(-1)` to a single zero, so Python searched 1 candidate where MATLAB
+searched ~1584.
+
+## 2026-08-21 — results.xlsx columns (`cb28dca`, `3f0404e`)
+
+Not an engine fix, but listed because it invalidated a *claim*, which is worse
+than a wrong number: `TXLE_taps_1..4` was reported as agreeing with MATLAB on
+all 208 cases while never being exported at all, and the mixed-mode ERL variants
+and `Pre2Pmax` were described as "not computed" by a hand-maintained note long
+after they were. All are now populated and bit-exact against MATLAB, and guarded
+by `tests/test_export_columns.py`, which fails when a column the review compares
+is left blank.
+
+---
+
+## 2026-08-21 — `BEST.ctle` index base in post-optimize
+
+`THIS.ctle_index` and `THIS.g_LP_index` are set **1-based to match MATLAB**, and
+`OptFom_Update_Best_Setttings` copies them straight into `BEST.ctle` and
+`BEST.G_high_pass`. `OptFom_Update_BEST_Post_Optimize` then indexed
+`param.CTLE_fz` / `f_HP` / `g_DC_HP_values` with them under a comment claiming
+`# 0-based`, reading one entry too high on every run since the initial commit.
+
+**Why it survived the 208-case correlation.** The mis-indexed values feed only
+`OptFom_Plot_Best_Results`; the COM path recomputes `ctle_gain` inside
+`optimize_fom`, which *does* convert. Verified rather than assumed: re-running
+`wXtalk_T1_R16` after the fix left **all 218 numeric output fields
+bit-identical**, `COM_dB` included. No published result changes.
+
+**Why it surfaced now.** An over-long CTLE list turns the error into a silently
+wrong lookup instead of an `IndexError`; it only raises when the winning CTLE is
+the **last** in the list. The 7-channel sweep runs `--max-ctle 3`, which
+truncates the list to exactly the loop count, and the August engine fixes moved
+the winning CTLE onto the last entry. It crashed on channel 1.
+
+Guarded by two checks in `tests/test_cursor_indexing.py` — one that the call
+survives a winner at the last index, one that the pole/zero actually used is the
+selected entry's. The first version of that test passed against the reintroduced
+bug because a missing `OP.Butterworth` raised before the lookup was reached;
+mutation testing caught the vacuous pass, and the fixture now disables all three
+filters.
+
+---
+
+## Appendix — the gated fix pass (closed 2026-08-17)
+
+Retained for history. An earlier, differently-structured pass that was overtaken
+by the 208-case correlation.
+
 
 Driven by `FIX_PROMPT_com_conversion_v2.md`. Fixes edit
 `com_functions/fn/<name>/py_impl.py` (never `com.py`, which is a generated build

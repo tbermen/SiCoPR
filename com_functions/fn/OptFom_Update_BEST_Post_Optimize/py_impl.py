@@ -80,7 +80,14 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 
     BEST.H_r = _OptFom_Calc_Hr(f, param, OP)
 
-    ctle_idx = BEST.ctle  # 0-based
+    # BEST.ctle is 1-BASED: it is copied straight from THIS.ctle_index, which
+    # optimize_fom sets as `ctle_index + 1  # 1-based to match MATLAB`. The
+    # comment here used to claim 0-based and the value was used unadjusted, so
+    # every lookup below read one CTLE entry too high. It stayed invisible
+    # because these fields feed only OptFom_Plot_Best_Results -- the COM path
+    # recomputes ctle_gain in optimize_fom, which does convert -- and it only
+    # raises IndexError when the winning CTLE is the LAST in the list.
+    ctle_idx = int(BEST.ctle) - 1
     BEST.ctle_gain1 = _FD_CTLE(
         f,
         float(np.asarray(param.CTLE_fz).ravel()[ctle_idx]),
@@ -92,7 +99,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
     if ctle_type == 'CL93':
         BEST.H_low = 1.0
     elif ctle_type == 'CL120d':
-        hp_idx = BEST.G_high_pass  # 0-based
+        hp_idx = int(BEST.G_high_pass) - 1  # 1-based, from THIS.g_LP_index
         BEST.H_low = _FD_CTLE(
             f,
             float(np.asarray(param.f_HP).ravel()[hp_idx]),

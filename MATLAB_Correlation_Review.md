@@ -12,7 +12,8 @@ crosstalk = **208 cases**. MATLAB `code_revision = com_ieee8023_4p15p0.m`.
 
 All 208 cases run, **0 failures**.
 
-The two reference workbooks were produced with **different Tx FFE settings** (§11),
+The two reference workbooks were produced with **different Tx FFE settings**
+([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md) §11),
 and only the without-crosstalk config was supplied. Both readings are therefore
 reported throughout, and every figure is generated in both variants:
 
@@ -28,7 +29,8 @@ reported throughout, and every figure is generated in both variants:
 **Settings aligned** pairs each crosstalk condition with the settings its own
 reference used. Its with-crosstalk half is a **reconstruction**, not a config we were
 sent — supported by reproducing MATLAB's tap vector, sampling phase and FOM on all
-ten previously divergent cases, and by the 2×2 control in §11, but to be confirmed
+ten previously divergent cases, and by the 2×2 control in that document's §11, but
+to be confirmed
 before the numbers are quoted as like-for-like. The single remaining COM miss is
 `wXtalk_T4_R10` at +0.0076 dB, on a channel failing by 3.4 dB.
 
@@ -162,85 +164,87 @@ Defect 9 is the subtler form: the object *is* returned, and what was missing is 
 
 ## 4. What remains
 
-### 4.1 Sampling-phase divergences — 8 cases, all with crosstalk
+Everything in this section is reported under **both** readings, because the two
+differ in what is left over, not just by how much.
 
-| case | Δtick | channel |
+| | configs as supplied | settings aligned |
 |---|---|---|
-| wXtalk_T1_R07 | +1 | HN_3in_DAC_X_1p0m |
-| wXtalk_T1_R08 | +1 | HN_3in_DAC_X_1p5m |
-| wXtalk_T1_R15 | +1 | HN_3in_DAC_Z_1p0m |
-| wXtalk_T2_R15 | +1 | HN_3in_DAC_Z_1p0m |
-| wXtalk_T2_R16 | +2 | HN_3in_DAC_Z_1p5m |
-| wXtalk_T3_R16 | +2 | HN_3in_DAC_Z_1p5m |
-| wXtalk_T1_R16 | +5 | HN_3in_DAC_Z_1p5m |
-| wXtalk_T3_R17 | **−25** | BPK twinax 100 mm |
+| sampling-phase (`itick`) divergences | **8** | **0** |
+| COM not bit-exact | **10** | **1** |
+| pass/fail disagreements at 3 dB | **0** | **0** |
 
-All are DAC/BPK assemblies; `HN_3in_DAC_Z_1p5m` diverges in 3 of its 4 configs. **The
-`process_sxp` fix did not change this set** — the divergences are a separate phenomenon.
+Under settings aligned, **the only thing that remains is one case at +0.0076 dB**
+(§4.3). Everything else in this section describes the as-supplied run, and every
+item in it is explained by the Tx FFE settings difference
+([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md) §11) rather than by
+an engine disagreement.
 
-#### ROOT CAUSE (2026-08-20): a Tx FFE search-space mismatch
+### 4.1 Sampling-phase divergences — 8 cases as supplied, 0 aligned
 
-MATLAB reports its winning Tx FFE in `TXLE_taps_1..4`. Splitting the 104 with-crosstalk
-cases on that column separates the agreement perfectly:
+**Root-caused.** These were an open question through most of this cycle and are
+not one any more: the supplied configs pin Tx FFE `c(-1)` to a single zero, so
+Python searched one candidate where MATLAB searched ~1584. Give both engines the
+same search space and all eight agree.
 
-| MATLAB's winning Tx FFE | cases | FOM bit-exact | `itick` mismatched |
+| case | Δtick | ΔCOM (as supplied) | channel |
 |---|---|---|---|
-| unity `[0, 0, 1, 0]` | 94 | **94 / 94** | 0 |
-| **non-unity** | 10 | **0 / 10** | **8** |
+| wXtalk_T1_R07 | +1 | 0.000000 | HN_3in_DAC_X_1p0m |
+| wXtalk_T2_R15 | +1 | −0.007440 | HN_3in_DAC_Z_1p0m |
+| wXtalk_T1_R08 | +1 | −0.041814 | HN_3in_DAC_X_1p5m |
+| wXtalk_T2_R16 | +2 | −0.054311 | HN_3in_DAC_Z_1p5m |
+| wXtalk_T1_R15 | +1 | −0.061061 | HN_3in_DAC_Z_1p0m |
+| wXtalk_T3_R16 | +2 | −0.070361 | HN_3in_DAC_Z_1p5m |
+| wXtalk_T3_R17 | **−25** | +0.132145 | BPK twinax 100 mm |
+| wXtalk_T1_R16 | +5 | −0.185248 | HN_3in_DAC_Z_1p5m |
 
-Every case where MATLAB selects pre-emphasis is a case Python gets wrong; every case
-where it selects unity is bit-exact. Those ten are exactly the eight above plus
-`wXtalk_T3_R07` and `wXtalk_T3_R15`, the two non-exact-FOM cases — the entire residual.
+All are DAC/BPK assemblies and all carry crosstalk — the profile of a channel
+where Tx FFE pre-emphasis wins (high FEXT, high residual ISI, a contested
+equalizer optimum). That clustering is the fingerprint of the missing search
+dimension, not an independent risk profile. Two of these eight are among the ten
+cases where MATLAB selected a non-unity `c(-1)`; the rest move because the
+sampling phase is chosen jointly with the equalizer.
 
-**Why.** In `COM_Settings` the Tx FFE rows read `c(-1) | 0 | [ -0.34:.02:0] |
-[min:step:max]`. Both engines read the cell immediately *right* of the label — the `0` —
-and the sweep range is only a template one column further over. So the configs as
-supplied define a Tx FFE grid with **one** point, unity, and Python could never select
-the equalizers MATLAB selected. This is not a parsing bug: the MATLAB range syntax parses
-correctly when actually present.
+**Under settings aligned, `itick` is exact on 208 of 208.**
 
-**Verification — 10 / 10.** Pinning the CTLE to MATLAB's reported value, enabling the
-sweep and evaluating every Tx FFE candidate on a full grid, then looking up MATLAB's own
-tap vector: Python reproduces MATLAB's `itick` **exactly** and its FOM to ≤2.3e-11 on all
-ten. `wXtalk_T1_R16` — the case previously reported as "unreachable under any equalizer,
-short by 5.43 dB" — lands on 11.691042 at `itick = 0`, matching to 2.3e-11.
+### 4.2 COM differences — 10 cases as supplied, 1 aligned
 
-Full evidence: [`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md).
+As supplied, the ten cases whose COM is not bit-exact are **exactly the eight
+above plus two more**, and every one of them carries a non-zero ΔFOM. That is
+the signature of a different equalizer answer, not of a difference in the COM
+computation: with the search spaces matched, nine of the ten go to zero.
 
-**Withdrawn.** An earlier version of this section concluded that the most probable
-explanation was "a reporting inconsistency on the MATLAB side — the `itick` written to
-the workbook does not correspond to the FOM written alongside it". That was wrong. The
-`itick` and FOM MATLAB reports are mutually consistent; Python was searching a smaller
-space. Six earlier hypotheses (flat surface, reflections, residual size,
-`auto_port_order`, anchor ambiguity, adaptive pruning) were correctly rejected, but the
-seventh, which the previous draft accepted, is now also rejected.
+The residual that *was* in the COM PDF path — a mean +0.0018 dB bias over the
+cases with exact FOM and matching `itick`, which used to leave 135 of 198 exact
+and produced two knife-edge pass/fail disagreements — has been fixed. It was an
+off-by-one in the sampling phase used to build the ADC-clip PDF; see
+[`docs/COM_PDF_RESIDUAL.md`](docs/COM_PDF_RESIDUAL.md). On the cases whose FOM
+and sampling phase agree, COM is now bit-exact on 197 of 200 and max \|ΔCOM\|
+dropped from 0.028201 to 0.008778 dB.
 
-### 4.2 A small residual in the COM PDF path
+### 4.3 The one case that is not explained by settings: `wXtalk_T4_R10`
 
-Isolating the cases where FOM is bit-exact *and* `itick` matches (198 of 208) leaves a
-COM-only difference:
+| | value |
+|---|---|
+| ΔCOM | **+0.007623 dB** |
+| ΔFOM | **0.000000** (bit-exact) |
+| `itick` | **matches** |
+| Python COM | −0.366 dB |
 
-| config | n | COM exact | mean ΔCOM | max \|ΔCOM\| |
-|---|---|---|---|---|
-| Test_1 | 48 | 25 | +0.0033 | 0.0347 |
-| Test_2 | 50 | 29 | +0.0022 | 0.0215 |
-| Test_3 | 48 | 36 | +0.0010 | 0.0202 |
-| Test_4 | 52 | 45 | +0.0008 | 0.0083 |
-| **all** | **198** | **135** | **+0.0018** | **0.0347** |
+The clip path on this case is now exact (`peak_clip` 7.9e-13, `sgm_Q` 8.0e-13,
+`sgm_N` 8.6e-13, `A_s` 7.9e-13). What remains is a **4.1e-5** difference in
+`sgm_Ani__isi_xt_noise`, the combined interference-and-noise PDF — a different
+and much smaller mechanism than the one fixed in §4.2.
 
-Still graded by package loss, but ~10× smaller than the pre-fix state and opposite in
-sign. This is downstream of the equalizer, in the COM PDF / noise-convolution path.
+Its COM is −0.366 dB: a channel failing by more than 3 dB, so the ~2% *relative*
+error is small-denominator inflation and it is nowhere near the pass/fail
+threshold. **Recorded rather than chased.**
 
-### 4.3 Two pass/fail disagreements at the 3 dB threshold
+### 4.4 Pass/fail disagreements: none
 
-| case | Python | MATLAB | Δ | `itick` | ΔFOM |
-|---|---|---|---|---|---|
-| wXtalk_T2_R06 | 3.00696 | 2.99655 | +0.0104 | −11/−11 | **0.00000** |
-| wXtalk_T2_R24 | 3.00696 | 2.99958 | +0.0074 | −10/−10 | **0.00000** |
-
-Both have bit-exact FOM and matching `itick`; both sit within 0.011 dB of the threshold.
-They are knife-edge cases of §4.2, not search or equalizer differences. Pre-fix they sat
-just *below* 3 dB because Python's COM was biased low.
+There were two, then one, and now none under either reading. Both former cases
+(`wXtalk_T2_R06`, `wXtalk_T2_R24`) sat within 0.011 dB of the 3 dB threshold with
+bit-exact FOM and matching `itick`; they were knife-edge instances of the ADC-clip
+residual, and both resolved when it was fixed.
 
 ---
 
@@ -454,7 +458,8 @@ com_python_results/
 ```
 
 Two sets, because the two MATLAB reference workbooks were evidently produced with
-different Tx FFE settings (§11): **as-supplied** runs every case on the four config
+different Tx FFE settings ([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md)
+§11): **as-supplied** runs every case on the four config
 spreadsheets as received; **settings-aligned** runs each condition on the settings its
 own reference used. Only the wXtalk half differs between them, and that half is a
 reconstruction — each workbook's NOTES sheet says so, and records which result
