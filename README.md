@@ -119,34 +119,34 @@ they evaluate:
 | **legacy local search** | `LOCAL_SEARCH = N`, `NonZeroLSMethod = 0` — fixed-radius prune |
 | **adaptive local search** | `LOCAL_SEARCH = N`, `NonZeroLSMethod = 1` — Hansel D'silva's branch |
 
-### Result (7 channels, 100–1400 mm, 2026-08-07) — REGENERATING
-
-> ⚠️ **These numbers predate the eight engine fixes of August 2026** and are being
-> regenerated. They were produced on 2026-08-07; the fixes since then move COM materially
-> (about 0.1 dB on the bundled 802.3ck config, enough to flip a case). The *comparison*
-> they report — adaptive vs full grid on the same engine — is not obviously affected, since
-> both methods shift together, but the absolute COM values below are stale and the speedup
-> figure predates the performance work, which sped the full grid up more than the pruned
-> search. Do not quote either until this section is refreshed.
+### Result (7 channels, 100–1400 mm, 2026-08-22)
 
 **Adaptive returns COM bit-identical to the exhaustive grid on all seven channels** — ΔCOM
-exactly 0 to 17 significant digits, same winning EQ operating point — while evaluating ~7%
-of the candidates at a median **12.9× speedup** (range 11.75–15.10×). Legacy also matched
-exactly, at 1.27×. No pass/fail flips at the 3 dB threshold.
+exactly 0 to 17 significant digits, same winning EQ operating point — while evaluating ~8%
+of the candidates at a median **11.91× speedup** (range 8.60–12.52×). Legacy also matched
+exactly, at 1.28×. No pass/fail flips at the 3 dB threshold, for any method.
 
 The winning EQ setting *moves* with channel length, so the agreement is not an artifact of a
-constant answer: adaptive tracks a genuinely shifting optimum while skipping 93% of the work.
+constant answer: adaptive tracks a genuinely shifting optimum while skipping ~92% of the work.
 
-A second measurement is arguably more interesting. Recomputing true COM for the top-20
-candidates by FOM shows **FOM is not a faithful proxy for COM**: Spearman ρ runs 0.60–0.81,
-and on 2 of 7 channels the FOM winner is not the COM winner, costing up to 0.036 dB. That
-cost belongs to FOM-driven search itself — the exhaustive full grid pays it too. Adaptive
-adds exactly zero on top.
+Recomputing true COM for the top-20 candidates by FOM (140 probes) shows the FOM argmax
+**is** the COM argmax on 7 of 7 channels — COM regret is **zero everywhere**, with Spearman
+ρ from 0.770 to 0.952. FOM ordering is still imperfect deeper in the list (ρ never reaches
+1), but the disagreement no longer reaches the top of the ranking, which is the only part a
+FOM-driven search uses.
+
+> This corpus was **regenerated on the corrected engine**. The 2026-08-07 run predates the
+> eight engine defects found by the MATLAB correlation and its COM values were materially
+> wrong (100 mm moved 3.217 → 6.720 dB). Two of its conclusions changed as a result — most
+> notably "FOM is not a faithful proxy", which was substantially an artifact of those
+> defects. Both changes are documented in
+> [`corpus_results/RESULTS.md`](corpus_results/RESULTS.md).
 
 Full numbers, caveats, and regeneration commands: [`corpus_results/RESULTS.md`](corpus_results/RESULTS.md).
 
 **The corpus is one channel family** (same topology, varying only cable length), one config,
-thru-only. That is its main limitation and is documented alongside the results.
+thru-only, and now spans 4.45–6.72 dB — so it contains no cases near the 3 dB threshold.
+Those are its main limitations and are documented alongside the results.
 
 ### Running sweep commands for com.py
 
