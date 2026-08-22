@@ -151,7 +151,7 @@ ggsave(fig("fig_fom_vs_com"), p3d, width = W, height = H, dpi = DPI)
 # (b) how many significant digits the WORST column in that stage agrees to.
 # Both are directly readable; an earlier version plotted raw relative error on a
 # log axis, which needs decoding before it means anything.
-st <- read.csv(file.path(din, "stages.csv"), stringsAsFactors = FALSE) %>%
+st <- read.csv(file.path(din, paste0("stages", sfx, ".csv")), stringsAsFactors = FALSE) %>%
   group_by(stage) %>%
   summarise(pct_exact = 100 * sum(n_exact) / sum(n_cols),
             typical = median(worst_rel_err),

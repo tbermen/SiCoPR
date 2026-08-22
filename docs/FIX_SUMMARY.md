@@ -336,6 +336,87 @@ partials before being recorded. None is live, but two findings are worth having:
 
 ---
 
+## Test ROI — what the added guards have actually caught
+
+Added because the same defect classes kept recurring. This section exists to let
+that investment be judged on evidence rather than on the assumption that more
+tests must help, so it records the **direct yield honestly, including where it is
+low**.
+
+### Direct yield: new defects found by the new tests
+
+| test | new defects found | what else it produced |
+|---|---|---|
+| `test_index_base.py` | **1** — #15, `floating_tap_locations` producer-dependent base, a real one-UI error in the FDFE cursor-time vector | 3 undeclared index fields forced into declaration (`DFE_taps_i`, `start_max_idx`, `end_max_idx`) |
+| `test_snapshot_isolation.py` | **0 live** | 20 aliased fields found and detached (13 in `OptFom_Update_Best_Setttings`, 7 in the EQ-failed variant); all verified numerically inert today |
+| `test_inlined_copies.py` (coverage 28% → 63%) | **0 live** | 12 divergences documented, incl. the `get_TDR` Bessel stub at DC gain 105 instead of 1, and `findbankloc` returning two different bases under one name |
+| `test_export_columns.py` | 0 (the miss was found by review) | now guards #13 against recurrence |
+
+**One new defect.** That is the honest headline, and on its own it is a thin
+return for the effort.
+
+### Indirect yield: regression coverage of the existing ledger
+
+The stronger case is what would now be caught *automatically* if it were
+reintroduced — i.e. whether the next cycle needs the MATLAB corpus to find these
+classes again. Verified by replaying the rules against the historical `com.py`
+in git, or by reintroducing the defect and watching the test fail:
+
+| # | defect | caught today? | how verified |
+|---|---|---|---|
+| 1 | `z_p` transpose | ✗ | — |
+| 2 | `lstsq` rank truncation | ✗ | — |
+| 3 | RxFFE array count vs span | ✗ | — |
+| 4 | `get_TDR` `tfstart` frame | ✗ | not a base error; needs analytic recovery |
+| 5 | `get_TDR` `fctrx` init | ✗ | needs analytic recovery |
+| 6 | die network 1 of 3 sections | ✗ | would be covered by `make_pkg` / `make_full_pkg` factories (5 copies, currently undrivable) |
+| 7 | cursor index base | **✓** | replay: flags `cursor_i` in `optimize_fom` at `b2b2621~1` |
+| 8 | `process_sxp` leak | **✓** | `test_reference_leaks`, mutation-verified |
+| 9 | `BEST.PSD_results` aliasing | **✓** | reintroduced; snapshot test fails naming `PSD_results` |
+| 10a | unstable sort | ✗ | needs the `argsort` lint |
+| 10b | abort-path leak | ✗ | different shape from the leak guard |
+| 10c | `_findbankloc` stubs | **✓** | now drivable; flags the `MMSE` and `force` copies |
+| 11 | ADC-clip sampling phase | **✓** | replay: Rule B flags `t_s` in `Apply_EQ` at `62dbce6~1` |
+| 12 | `Overwrite_Min_Radius` discard | partial | keyword parity sees unread keywords, not per-version-path ones |
+| 13 | results.xlsx columns | **✓** | mutation-verified |
+| 14 | `BEST.ctle` index base | **✓** | replay + mutation |
+| 15 | `floating_tap_locations` | **✓** | the test that found it |
+
+**8 of 15 caught automatically, 1 partial, 6 not.** Before this work the number
+was effectively 2 (`test_reference_leaks` and the config keyword check), and
+everything else required a MATLAB run to notice.
+
+### What the evidence does and does not support
+
+**Supported.** The recurring classes — index bases, by-reference aliasing,
+divergent duplicate copies — are now covered, and covered *statically or
+synthetically*, so they no longer consume a correlation cycle. #14 is the
+concrete case: it crashed only under a sweep configuration the 208-case corpus
+never runs, and would otherwise still be latent.
+
+**Not supported.** "More tests improve accuracy" is not what the data shows.
+Nineteen of the twenty aliasing fixes changed no number, and none of the 12
+copy divergences was live. What the work bought is **the cost of finding the
+next one**, not a measurable accuracy gain today. The accuracy gains in this
+cycle all came from the MATLAB correlation.
+
+**The honest caveat.** These detectors were designed knowing the defects. The
+claim worth defending is not "we would have caught them," it is that three of
+the families involved — analytic recovery, structural invariants, redundancy —
+require no knowledge of any particular defect and therefore generalise. That
+assumption is still unverified, and the way to verify it is whether the next
+correlation cycle finds anything in a class already guarded.
+
+### The measurable gap
+
+Six ledger defects remain uncovered, and they cluster: #2, #4 and #5 all need
+**analytic recovery** (build the input from the known answer), #1, #3 and #6 all
+need **structural invariants** from the config. Those are layers 3 and 4 of the
+plan. The per-function suite's independent-oracle coverage — 18 of 156 files —
+is the number to watch.
+
+---
+
 ## Appendix — the gated fix pass (closed 2026-08-17)
 
 Retained for history. An earlier, differently-structured pass that was overtaken
