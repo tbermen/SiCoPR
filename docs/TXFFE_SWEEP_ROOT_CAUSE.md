@@ -500,3 +500,53 @@ supported by reproducing MATLAB's tap vector, sampling phase and FOM on all ten
 previously divergent cases, and by the 2×2 above — but it should be confirmed
 against the real settings before the numbers are quoted as a like-for-like
 correlation.
+
+---
+
+## 13. What MATLAB actually selected — only `c(-1)` ever moves
+
+The sections above establish that `c(-2)` was **in** MATLAB's grid: the
+with-crosstalk workbook reports a 4-element `TXLE_taps`, and
+`OptFom_Build_TXFFE` trims leading precursor taps that are single-valued zeros,
+so a tap that survives the trim was multi-valued.
+
+That is a fact about the **search space**. It is easy to slide from there to "so
+`c(-2)` is the tap that differs" — which the data does not support. Measuring
+the winners separates the two (`tools/txffe_census.py`, from the reference
+workbooks):
+
+| `[ c(-2)  c(-1)  c(0)  c(1) ]` | cases | which |
+|---|---|---|
+| `[ 0  0  1  0 ]` | 94 | |
+| `[ 0  −0.02  0.98  0 ]` | 4 | T1_R15 T2_R15 T3_R07 T3_R15 |
+| `[ 0  −0.04  0.96  0 ]` | 3 | T1_R07 T1_R08 T3_R16 |
+| `[ 0  −0.10  0.90  0 ]` | 2 | T1_R16 T3_R17 |
+| `[ 0  −0.06  0.94  0 ]` | 1 | T2_R16 |
+
+Without crosstalk, all 104 cases are unity.
+
+So across all 208 reference cases:
+
+- **`c(-2)` and `c(1)` win at zero every single time.**
+- **`c(-1)` is the only tap that ever moves**, on exactly the 10 divergent
+  cases, taking −0.02, −0.04, −0.06 or −0.10.
+- `c(0)` is not independent — the cursor is `1 − Σ|other taps|`.
+
+### Why this matters for the ask
+
+The outcome turns on the **range given to `c(-1)`**, which the supplied config
+pins to a single zero. `c(-2)` and `c(1)` matter only in that they enlarge the
+candidate count, which is what brings `min_radius` into play — a search-reach
+effect, not a search-space one.
+
+This narrows the request to Hansel from "send the Tx FFE settings" to "confirm
+the `c(-1)` range", which is a question he can answer from one cell.
+
+### What this does *not* establish
+
+That the `c(-2)` and `c(1)` sweeps are unnecessary to *reproduce* the result.
+They change the candidate count, and `min_radius` is what made the difference
+between 5 of 10 and 10 of 10 — so removing them could plausibly change which
+`c(-1)` the adaptive search reaches. The census constrains the *answer*, not the
+*search*. Testing that would take a run with `c(-2)` fixed at zero; it has not
+been done, and the reconstruction keeps all three swept.
