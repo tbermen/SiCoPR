@@ -115,6 +115,17 @@ _rng = np.random.default_rng(12345)
 _F = np.linspace(0.0, 50e9, 256)
 _Z = _rng.standard_normal(256) + 1j * _rng.standard_normal(256)
 _PDF_A = com.normal_dist(0.01, 5, 1e-4)
+# A decaying ISI tail with sign changes -- the shape findbankloc and the PDF
+# builders actually see, and one where ties in `ndiff` are reachable.
+_ISI_TAIL = (np.exp(-np.arange(48) / 9.0)
+             * np.cos(np.arange(48) / 2.3) * 0.03)
+
+
+def _FILT_PARAM():
+    from types import SimpleNamespace
+    return SimpleNamespace(fb=106.25e9, fb_BT_cutoff=0.75, fb_BW_cutoff=0.75,
+                           BTorder=4, f_r=0.75, RC_Start=20e9, RC_end=40e9)
+
 _PDF_B = com.normal_dist(0.02, 5, 1e-4)
 
 # Synthetic inputs, built once per comparison and deep-copied for each side so
@@ -133,6 +144,33 @@ FACTORY = {
     'Init_PDF_Fast':     lambda: (com.normal_dist(0.01, 5, 1e-4),
                                   np.array([-2e-3, 0.0, 2e-3]),
                                   np.array([0.25, 0.5, 0.25])),
+
+    # --- added 2026-08-22 to raise behavioural coverage -------------------
+    # Coverage was 50 of 178 copies (28%). The gap is what let defect #10c
+    # through: MMSE and force each carried a "simplified" _findbankloc that
+    # picked the highest-power non-overlapping banks instead of running the
+    # real badV/goodV admissibility loop. Arity matched, so layer A passed;
+    # no factory existed, so layer B never ran. These ten factories cover the
+    # ten most-copied undrivable functions.
+    'findbankloc':       lambda: (_ISI_TAIL.copy(), 3, 20, 2, 1.0, 0.2, 2),
+    'd_cpdf':            lambda: (1e-4, np.array([-2e-3, 0.0, 2e-3]),
+                                  np.array([0.25, 0.5, 0.25])),
+    'get_pdf_from_sampled_signal':
+                         lambda: (_ISI_TAIL.copy(), 4, 1e-4, 0),
+    'dfe_clipper':       lambda: (_ISI_TAIL.copy(),
+                                  np.full(_ISI_TAIL.size, 0.05),
+                                  np.full(_ISI_TAIL.size, -0.05)),
+    'CDF_inv_ev':        lambda: (1e-5, _PDF_A, com.pdf_to_cdf(_PDF_A).y),
+    'FFE':               lambda: (np.array([0.0, 1.0, -0.1]), 1, 32,
+                                  _rng.standard_normal(512)),
+    'Bessel_Thomson_Filter':
+                         lambda: (_FILT_PARAM(), _F.copy(), 1),
+    'Butterworth_Filter':
+                         lambda: (_FILT_PARAM(), _F.copy(), 1),
+    'Tukey_Window':      lambda: (_F.copy(), _FILT_PARAM(), 20e9, 40e9),
+    'synth_tline':       lambda: (_F.copy(), 100.0, 100.0,
+                                  np.array([0.0, 1.1e-9, 1.0e-4, 0.0]),
+                                  6.5e-12, 0.15),
 }
 
 # Copies known to differ behaviourally, reviewed 2026-08-18. Each is a FALLBACK
@@ -154,6 +192,58 @@ KNOWN_BEHAVIOUR = {
     ('get_center_of_UI', 'get_pdf_full'):
         'INTENTIONAL: the get_pdf_full copy is M//2+1 (1-based, MATLAB-'
         'faithful) where the canonical is M//2. See audit finding D12.',
+
+    # --- surfaced 2026-08-22 when behavioural coverage rose 50 -> 113 copies.
+    # Every one was checked against com.py's _wired_* partials before being
+    # recorded; none is a live divergence. The filter stubs matter because they
+    # are BADLY wrong, not subtly so -- the get_TDR Bessel stub hardcodes the
+    # 4th-order coefficients without reversing them, giving DC gain 105 instead
+    # of 1 and returning a magnitude where MATLAB returns a complex response
+    # (ML 1033-1040 uses fliplr). Harmless only for as long as the injection
+    # holds.
+    ('Bessel_Thomson_Filter', 'get_TDR'):
+        'fallback stub: hardcoded coefficients, not reversed (DC gain 105 vs 1) '
+        'and magnitude-only. Dead in production: com.py:132 injects the real '
+        'function into _wired_get_TDR.',
+    ('Butterworth_Filter', 'get_TDR'):
+        'fallback stub alongside the Bessel one. Injected at com.py:133.',
+    ('Tukey_Window', 'get_TDR'):
+        'fallback stub returning ones, matching the MATLAB override inside this '
+        'function (H_tw=ones). Injected at com.py:134.',
+    ('get_pdf_from_sampled_signal', 'get_TDR'):
+        'fallback stub: a Gaussian fitted to the sample RMS, not the successive '
+        'delta convolution. Injected at com.py:138 (_get_pdf_fn).',
+    ('Bessel_Thomson_Filter', 'COM_FD_to_TD'):
+        'fallback stub; injected at com.py:148.',
+    ('Butterworth_Filter', 'COM_FD_to_TD'):
+        'fallback stub; injected at com.py:149.',
+    ('get_pdf_from_sampled_signal', 'COM_eye_width'):
+        'fallback stub (Gaussian); injected at com.py:167 (_get_pdf_ss_fn).',
+    ('Bessel_Thomson_Filter', 'get_RILN_cmp_td'):
+        'fallback stub. get_RILN_cmp_td has no wired caller, so dead by '
+        'unreachability rather than by injection.',
+    ('Butterworth_Filter', 'get_RILN_cmp_td'):
+        'fallback stub; get_RILN_cmp_td has no wired caller.',
+    ('get_pdf_from_sampled_signal', 'get_RILN_cmp_td'):
+        'fallback stub (Gaussian); get_RILN_cmp_td has no wired caller.',
+
+    # These two are LIVE -- called directly, not injected -- and are recorded
+    # because they are correct where they stand, not because they are dead.
+    # The canonical findbankloc returns `idx + (idx_st - 1)`, i.e. 0-BASED, which
+    # is what floatingDFE and OptFom_Compute_DFE want. The MMSE and force copies
+    # return `idx + idx_st`, 1-BASED, because their callers mirror MATLAB
+    # arithmetic directly: MMSE does idx + RxFFE_cmx + 1 exactly as ML 2576 does,
+    # and MATLAB's findbankloc is 1-based. Each is locally right; the hazard is
+    # that one NAME now means two bases, which is the same shape as
+    # FIX_SUMMARY #15. Changing it needs an oracle for the floating-tap paths,
+    # and the 208 configs do not exercise them.
+    ('findbankloc', 'MMSE'):
+        'returns 1-BASED (idx + idx_st) where the canonical returns 0-based, '
+        'because MMSE then applies ML 2576 arithmetic verbatim. Locally correct; '
+        'see FIX_SUMMARY #15 for the producer-dependent-base hazard.',
+    ('findbankloc', 'force'):
+        'returns 1-BASED, same reason as the MMSE copy -- force indexes with '
+        '`pos = cmx + 1 + k - 1  # idx is 1-based`.',
 }
 
 
@@ -187,8 +277,14 @@ for _name, _child, _parent in COPIES:
     _key = (_child, _parent)
     try:
         _args = FACTORY[_child]()
-        _a = getattr(com, _name)(*_copy.deepcopy(_args))
-        _b = getattr(com, _child)(*_copy.deepcopy(_args))
+        # Copies legitimately take fewer positional args than the canonical --
+        # get_pdf_from_sampled_signal has 3- and 4-arg forms, Tukey_Window 2-
+        # and 4-arg. Drive each side with the arguments IT accepts, taken from
+        # the same factory tuple, so the comparison stays like-for-like.
+        _na = len(_TOPS[_name].args.args)
+        _nb = len(_TOPS[_child].args.args)
+        _a = getattr(com, _name)(*_copy.deepcopy(_args[:_na]))
+        _b = getattr(com, _child)(*_copy.deepcopy(_args[:_nb]))
     except Exception as _e:                                  # noqa: BLE001
         _skipped += 1
         if _key not in KNOWN_BEHAVIOUR:

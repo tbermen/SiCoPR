@@ -5888,31 +5888,38 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 # --- OptFom_Update_Best_Settings_EQ_Failed (MATLAB lines 3891–3934) ---
 
 def _OptFom_Update_Best_Settings_EQ_Failed__value_copy(obj):
-    """MATLAB assigns structs BY VALUE; Python binds a reference.
+    """MATLAB assigns structs and arrays BY VALUE; Python binds a reference.
 
-    get_PSDs mutates its `result` argument in place, and optimize_fom reuses one
-    PSD_results object for every txffe/itick candidate inside a CTLE block. A
-    plain `BEST.PSD_results = THIS.PSD_results` therefore leaves BEST pointing at
-    an object that keeps being overwritten, so it ends up holding the LAST tick
-    swept rather than the winning one. The COM stage never rebuilds S_tn/S_jn/
-    S_rj_jn/S_xn -- it copies them out of fom_result.PSD_results and only rescales
-    by |H_rxffe|^2 (ML 547-553) -- so the stale arrays land straight in the
-    reported noise terms. Detach on store, which is what MATLAB does.
+    A snapshot of the winning candidate must therefore DETACH from the live
+    candidate, or later evaluation silently rewrites what was recorded. That is
+    defect #9: get_PSDs mutates its `result` argument in place and optimize_fom
+    reuses one PSD_results object per CTLE block, so BEST ended up holding the
+    LAST tick swept rather than the winning one, and the COM stage copies those
+    arrays straight into the reported noise (ML 547-553).
+
+    Recursive and type-general so it can be applied to every field uniformly:
+    scalars and strings are immutable and pass through untouched, so wrapping a
+    field costs nothing and removes the need to reason field-by-field about
+    whether something downstream mutates it.
+
+    tests/test_snapshot_isolation.py holds the invariant this exists to satisfy.
     """
     if obj is None:
         return None
-    out = SimpleNamespace(**vars(obj))
-    for k, v in vars(out).items():
-        if isinstance(v, np.ndarray):
-            setattr(out, k, v.copy())
-        elif isinstance(v, list):
-            setattr(out, k, [
-                SimpleNamespace(**{kk: (vv.copy() if isinstance(vv, np.ndarray) else vv)
-                                   for kk, vv in vars(e).items()})
-                if hasattr(e, '__dict__') else e
-                for e in v])
-    return out
-
+    if isinstance(obj, np.ndarray):
+        return obj.copy()
+    if isinstance(obj, list):
+        return [_OptFom_Update_Best_Settings_EQ_Failed__value_copy(e) for e in obj]
+    if isinstance(obj, tuple):
+        return tuple(_OptFom_Update_Best_Settings_EQ_Failed__value_copy(e) for e in obj)
+    if isinstance(obj, dict):
+        return {k: _OptFom_Update_Best_Settings_EQ_Failed__value_copy(v) for k, v in obj.items()}
+    if isinstance(obj, SimpleNamespace):
+        out = SimpleNamespace()
+        for k, v in vars(obj).items():
+            setattr(out, k, _OptFom_Update_Best_Settings_EQ_Failed__value_copy(v))
+        return out
+    return obj
 
 
 # --- inline from FFE (MATLAB 2026-2048) ---
@@ -5935,18 +5942,18 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
     Returns BEST.
     """
     sbr = np.asarray(sbr, dtype=float).ravel()
-    BEST.bmax = param.bmax
-    BEST.bmin = param.bmin
+    BEST.bmax = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(param.bmax)
+    BEST.bmin = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(param.bmin)
     BEST.tail_RSS = 0.0
     BEST.ffegain = 0.0
-    BEST.txffe = THIS.txffe
-    BEST.sbr = sbr
+    BEST.txffe = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.txffe)
+    BEST.sbr = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(sbr)
     BEST.ctle = THIS.ctle_index
 
     if OP.RxFFE:
         BEST.PSD_results = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.PSD_results)
-        BEST.MMSE_results = THIS.MMSE_results
-        BEST.RxFFE = THIS.C
+        BEST.MMSE_results = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.MMSE_results)
+        BEST.RxFFE = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.C)
 
     BEST.G_high_pass = THIS.g_LP_index
     BEST.FOM = THIS.FOM
@@ -5966,8 +5973,8 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
         else:
             BEST.IR = []
 
-    BEST.sigma_N = THIS.sigma_N
-    BEST.h_J = THIS.h_J
+    BEST.sigma_N = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.sigma_N)
+    BEST.h_J = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.h_J)
     BEST.A_p = float(np.max(sbr))
     BEST.ISI = 1.0
 
@@ -5992,31 +5999,38 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
 # --- OptFom_Update_Best_Setttings (MATLAB lines 3935–3975) ---
 
 def _OptFom_Update_Best_Setttings__value_copy(obj):
-    """MATLAB assigns structs BY VALUE; Python binds a reference.
+    """MATLAB assigns structs and arrays BY VALUE; Python binds a reference.
 
-    get_PSDs mutates its `result` argument in place, and optimize_fom reuses one
-    PSD_results object for every txffe/itick candidate inside a CTLE block. A
-    plain `BEST.PSD_results = THIS.PSD_results` therefore leaves BEST pointing at
-    an object that keeps being overwritten, so it ends up holding the LAST tick
-    swept rather than the winning one. The COM stage never rebuilds S_tn/S_jn/
-    S_rj_jn/S_xn -- it copies them out of fom_result.PSD_results and only rescales
-    by |H_rxffe|^2 (ML 547-553) -- so the stale arrays land straight in the
-    reported noise terms. Detach on store, which is what MATLAB does.
+    A snapshot of the winning candidate must therefore DETACH from the live
+    candidate, or later evaluation silently rewrites what was recorded. That is
+    defect #9: get_PSDs mutates its `result` argument in place and optimize_fom
+    reuses one PSD_results object per CTLE block, so BEST ended up holding the
+    LAST tick swept rather than the winning one, and the COM stage copies those
+    arrays straight into the reported noise (ML 547-553).
+
+    Recursive and type-general so it can be applied to every field uniformly:
+    scalars and strings are immutable and pass through untouched, so wrapping a
+    field costs nothing and removes the need to reason field-by-field about
+    whether something downstream mutates it.
+
+    tests/test_snapshot_isolation.py holds the invariant this exists to satisfy.
     """
     if obj is None:
         return None
-    out = SimpleNamespace(**vars(obj))
-    for k, v in vars(out).items():
-        if isinstance(v, np.ndarray):
-            setattr(out, k, v.copy())
-        elif isinstance(v, list):
-            setattr(out, k, [
-                SimpleNamespace(**{kk: (vv.copy() if isinstance(vv, np.ndarray) else vv)
-                                   for kk, vv in vars(e).items()})
-                if hasattr(e, '__dict__') else e
-                for e in v])
-    return out
-
+    if isinstance(obj, np.ndarray):
+        return obj.copy()
+    if isinstance(obj, list):
+        return [_OptFom_Update_Best_Setttings__value_copy(e) for e in obj]
+    if isinstance(obj, tuple):
+        return tuple(_OptFom_Update_Best_Setttings__value_copy(e) for e in obj)
+    if isinstance(obj, dict):
+        return {k: _OptFom_Update_Best_Setttings__value_copy(v) for k, v in obj.items()}
+    if isinstance(obj, SimpleNamespace):
+        out = SimpleNamespace()
+        for k, v in vars(obj).items():
+            setattr(out, k, _OptFom_Update_Best_Setttings__value_copy(v))
+        return out
+    return obj
 
 
 # --- inline from FFE (MATLAB 2026-2048) ---
@@ -6040,9 +6054,9 @@ def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
     Returns BEST.
     """
     BEST.ffegain = param.current_ffegain
-    BEST.txffe = THIS.txffe
-    BEST.txffe_index = THIS.tx_index_vector
-    BEST.sbr = sbr
+    BEST.txffe = _OptFom_Update_Best_Setttings__value_copy(THIS.txffe)
+    BEST.txffe_index = _OptFom_Update_Best_Setttings__value_copy(THIS.tx_index_vector)
+    BEST.sbr = _OptFom_Update_Best_Setttings__value_copy(sbr)
     BEST.ctle = THIS.ctle_index
     BEST.gdc = THIS.g_dc
     BEST.G_high_pass = THIS.g_LP_index
@@ -6059,28 +6073,28 @@ def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
     # setting so the engineering .mat export can reproduce the FD equalizer
     # chain without recomputing it. H_ctf = CTLE transfer fn; sdd21ctf =
     # channel cascaded with CTLE (both on chdata[0].faxis). No effect on COM.
-    BEST.H_ctf = getattr(THIS, 'H_ctf', None)
-    BEST.sdd21ctf = getattr(chdata[0], 'sdd21ctf', None)
+    BEST.H_ctf = _OptFom_Update_Best_Setttings__value_copy(getattr(THIS, 'H_ctf', None))
+    BEST.sdd21ctf = _OptFom_Update_Best_Setttings__value_copy(getattr(chdata[0], 'sdd21ctf', None))
 
-    BEST.sigma_N = THIS.sigma_N
-    BEST.h_J = THIS.h_J
+    BEST.sigma_N = _OptFom_Update_Best_Setttings__value_copy(THIS.sigma_N)
+    BEST.h_J = _OptFom_Update_Best_Setttings__value_copy(THIS.h_J)
     BEST.A_s = THIS.A_s
     BEST.A_p = THIS.A_p
-    BEST.ISI = THIS.ISI_N
-    BEST.bmax = param.use_bmax
-    BEST.bmin = param.use_bmin
+    BEST.ISI = _OptFom_Update_Best_Setttings__value_copy(THIS.ISI_N)
+    BEST.bmax = _OptFom_Update_Best_Setttings__value_copy(param.use_bmax)
+    BEST.bmin = _OptFom_Update_Best_Setttings__value_copy(param.use_bmin)
     BEST.tail_RSS = THIS.tail_RSS
-    BEST.dfetaps = THIS.dfetaps
+    BEST.dfetaps = _OptFom_Update_Best_Setttings__value_copy(THIS.dfetaps)
 
     if param.Floating_DFE:
-        BEST.floating_tap_locations = THIS.floating_tap_locations
-        BEST.floating_tap_coef = THIS.floating_tap_coef
+        BEST.floating_tap_locations = _OptFom_Update_Best_Setttings__value_copy(THIS.floating_tap_locations)
+        BEST.floating_tap_coef = _OptFom_Update_Best_Setttings__value_copy(THIS.floating_tap_coef)
     if param.Floating_RXFFE:
-        BEST.floating_tap_locations = THIS.floating_tap_locations
+        BEST.floating_tap_locations = _OptFom_Update_Best_Setttings__value_copy(THIS.floating_tap_locations)
     if OP.RxFFE:
-        BEST.RxFFE = THIS.C
+        BEST.RxFFE = _OptFom_Update_Best_Setttings__value_copy(THIS.C)
         BEST.PSD_results = _OptFom_Update_Best_Setttings__value_copy(THIS.PSD_results)
-        BEST.MMSE_results = THIS.MMSE_results
+        BEST.MMSE_results = _OptFom_Update_Best_Setttings__value_copy(THIS.MMSE_results)
 
     return BEST
 

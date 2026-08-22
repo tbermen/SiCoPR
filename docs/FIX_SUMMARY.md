@@ -282,6 +282,60 @@ moves either way.
 
 ---
 
+## 2026-08-22 — oracle-free guards, layers 1 and 2
+
+Built from the review of how each correlation-found defect could have been
+caught **without MATLAB results**. The measured starting point: all 156
+per-function tests cite MATLAB, but only **18** use an oracle independent of
+reading MATLAB. When the misreading *is* the bug, the test encodes it — which is
+literally what happened to #1, whose commit records that "the unit-test fixtures
+were written transposed, so they encoded the bug."
+
+### Layer 1 — snapshot isolation (`tests/test_snapshot_isolation.py`)
+
+Targets #9. The invariant needs no MATLAB data, only MATLAB's *semantics*:
+assignment copies, so **a best recorded at candidate N cannot be altered by
+candidate N+1**. The test records a best, mutates every mutable field of the
+live candidate in place, and asserts the record did not move — so it *discovers*
+which fields alias instead of relying on a maintained list.
+
+First run found **13 aliased fields** in `OptFom_Update_Best_Setttings` and 7 in
+the EQ-failed variant (`PSD_results` correctly absent — it was already copied).
+`_value_copy` was generalised to be recursive and type-general, and applied to
+all of them. Copying is now uniform rather than case-by-case, because "this
+object happens never to be mutated today" is not a property anyone should have
+to re-verify on every edit.
+
+**Verified inert:** all 249 output fields bit-identical on four re-run cases
+(~1000 comparisons).
+
+### Layer 2 — behavioural coverage of inlined copies
+
+Targets #10c. `test_inlined_copies.py` already compared copies behaviourally,
+but only for the 10 functions that had synthetic input factories — **50 of 178
+copies, 28%**. `findbankloc`, where #10c lived, had no factory, so its four
+copies were never driven.
+
+Ten more factories, plus arity-adaptive driving (copies legitimately take fewer
+arguments than the canonical), took coverage to **113 of 178, 63%**.
+
+That surfaced **12 divergences**, every one checked against com.py's `_wired_*`
+partials before being recorded. None is live, but two findings are worth having:
+
+- The `get_TDR` Bessel fallback stub is not subtly wrong — it hardcodes the
+  4th-order coefficients **without reversing them**, giving DC gain **105
+  instead of 1**, and returns a magnitude where MATLAB returns a complex
+  response (ML 1033-1040 uses `fliplr`). Harmless only for as long as the
+  injection at `com.py:132` holds.
+- `findbankloc` has the **producer-dependent base** disease of #15: the
+  canonical returns 0-based, the `MMSE` and `force` copies return 1-based
+  because their callers mirror ML 2576 arithmetic verbatim. Each is locally
+  correct; the hazard is that one name now means two bases. Not changed —
+  resolving it needs an oracle for the floating-tap paths, which the 208 configs
+  do not exercise.
+
+---
+
 ## Appendix — the gated fix pass (closed 2026-08-17)
 
 Retained for history. An earlier, differently-structured pass that was overtaken
