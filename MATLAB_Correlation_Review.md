@@ -1,6 +1,6 @@
 # COM Python — MATLAB Correlation and Adaptive Local Search
 
-**Status review for Hansel D'Silva — 15 August 2026**
+**Status review for Hansel D'Silva — 21 August 2026**
 
 Reference data: `Results_Matlab_COM_v4p15_*_ClipMethodSlow_AdaptiveLS.xlsx` (supplied
 12 Aug 2026), 26 IEEE 802.3dj CR/KR channels × 4 package configs × with/without
@@ -11,6 +11,28 @@ crosstalk = **208 cases**. MATLAB `code_revision = com_ieee8023_4p15p0.m`.
 ## 1. Headline
 
 All 208 cases run, **0 failures**.
+
+The two reference workbooks were produced with **different Tx FFE settings** (§11),
+and only the without-crosstalk config was supplied. Both readings are therefore
+reported throughout, and every figure is generated in both variants:
+
+| | configs **as supplied** | settings **aligned** |
+|---|---|---|
+| FOM bit-exact | 198 / 208 | **208 / 208** |
+| COM bit-exact | 198 / 208 | **207 / 208** |
+| sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
+| max \|ΔCOM\| | 0.1852 dB | **0.0076 dB** |
+| rms ΔCOM | 0.0177 dB | **0.00053 dB** |
+| pass/fail disagreements at 3 dB | 0 | **0** |
+
+**Settings aligned** pairs each crosstalk condition with the settings its own
+reference used. Its with-crosstalk half is a **reconstruction**, not a config we were
+sent — supported by reproducing MATLAB's tap vector, sampling phase and FOM on all
+ten previously divergent cases, and by the 2×2 control in §11, but to be confirmed
+before the numbers are quoted as like-for-like. The single remaining COM miss is
+`wXtalk_T4_R10` at +0.0076 dB, on a channel failing by 3.4 dB.
+
+The rest of this section details the **as-supplied** run.
 
 | metric | FOM | COM |
 |---|---|---|
