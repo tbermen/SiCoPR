@@ -301,11 +301,12 @@ Honest caveats for anyone relying on the numbers:
 - **The MATLAB-vs-Python runtime comparison is not like-for-like** and should not be
   quoted until re-measured: Python searched one Tx FFE candidate per CTLE where MATLAB
   swept a grid. The Python-vs-Python speed-up is unaffected.
-- **The COM PDF residual is fixed** — an off-by-one in the ADC-clip sampling phase
-  (`docs/COM_PDF_RESIDUAL.md`). COM bit-exact went 170 → 198 of 208 and the last
-  pass/fail disagreement cleared. One case (`wXtalk_T4_R10`) still differs by
-  0.0076 dB on a channel that fails by 3.4 dB, from a separate ~4e-5 residual in the
-  combined interference-and-noise PDF.
+- **The COM PDF residual is fully closed.** Two separate defects: an off-by-one in the
+  ADC-clip sampling phase (`docs/COM_PDF_RESIDUAL.md`), which took COM bit-exact from
+  170 → 198 of 208 and cleared the last pass/fail disagreement; and a banker's-rounding
+  tie in `nui = round(len/M)` (`MATLAB_Correlation_Review.md` §4.3), which dropped one
+  ISI sample on 4 case-instances. With both fixed, the settings-aligned correlation is
+  **bit-exact on FOM, COM and sampling phase across all 208 cases**, max |ΔCOM| 3.3e-14.
 - **Results produced before August 2026 are not comparable to current output.** The nine
   engine fixes changed COM materially — the largest single correction removed a systematic
   FOM bias affecting 95.7% of cases. Regenerate rather than compare against archived numbers.
