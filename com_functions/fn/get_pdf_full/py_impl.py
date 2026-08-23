@@ -22,6 +22,8 @@
 # h_j_full: (L, samp_UI) matrix where L = vs_raw.shape[0].
 # ============================================================
 
+import math
+
 import numpy as np
 from scipy.signal import fftconvolve
 from types import SimpleNamespace
@@ -35,6 +37,24 @@ from types import SimpleNamespace
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
 _CONV_FFT_MIN = 128
 
+
+
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's.
+
+    Not a theoretical concern here. `nui = round(len(residual_response)/M)` is a
+    ratio of two INTEGERS, so it lands exactly on .5 whenever the response length
+    is an odd multiple of M/2 -- a discrete quantity that really does hit the tie,
+    not a continuous one where ties are measure-zero. When it does, MATLAB rounds
+    up and Python rounds down to even, the vs matrix loses a row, and one ISI
+    sample is dropped from the PDF: sgm_isi comes out LOW.
+
+    Found on 4 of 208 reference case-instances (T1_R23 and T4_R10, both crosstalk
+    conditions), where exactly one of ~98,000 round() calls in a run sits on the
+    tie. docs/AUDIT_FINDINGS.md listed this site and dismissed it as "measure-zero
+    for continuous data", which is true of continuous inputs and false of this one.
+    """
+    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
 
 def _conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
@@ -212,7 +232,7 @@ def get_pdf_full(chdata, delta_y, t_s, param, OP, pdf_range=None):
         A_s_vec = R_LM * SBR[uiv_start:uiv_end] / (L_lvl - 1)
         residual_response[uiv_start:uiv_end] = 0.0
 
-    nui = round(len(residual_response) / samp_UI)
+    nui = _mround(len(residual_response) / samp_UI)
     block_start = samp_UI  # 1-based → 0-based: samp_UI (same as MATLAB index samp_UI+1 → 0-based samp_UI)
     block_end = samp_UI * (nui - 1)
 

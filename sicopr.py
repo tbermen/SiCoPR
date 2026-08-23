@@ -11886,6 +11886,7 @@ def get_cm_noise(M, PR, L, BER, OP=None):
 
 
 
+
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
 # ~1% of the calls (both operands long), while most calls have a kernel of a few
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
@@ -11893,6 +11894,24 @@ def get_cm_noise(M, PR, L, BER, OP=None):
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
 _CONV_FFT_MIN = 128
 
+
+
+def _get_pdf__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's.
+
+    Not a theoretical concern here. `nui = round(len(residual_response)/M)` is a
+    ratio of two INTEGERS, so it lands exactly on .5 whenever the response length
+    is an odd multiple of M/2 -- a discrete quantity that really does hit the tie,
+    not a continuous one where ties are measure-zero. When it does, MATLAB rounds
+    up and Python rounds down to even, the vs matrix loses a row, and one ISI
+    sample is dropped from the PDF: sgm_isi comes out LOW.
+
+    Found on 4 of 208 reference case-instances (T1_R23 and T4_R10, both crosstalk
+    conditions), where exactly one of ~98,000 round() calls in a run sits on the
+    tie. docs/AUDIT_FINDINGS.md listed this site and dismissed it as "measure-zero
+    for continuous data", which is true of continuous inputs and false of this one.
+    """
+    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
 
 def _get_pdf__conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
@@ -12040,7 +12059,7 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
         ec_len = min(len(effective_cancellation_samples), end_cancel - start_cancel, len(residual_response) - start_cancel)
         residual_response[start_cancel:start_cancel + ec_len] -= effective_cancellation_samples[:ec_len]
 
-    nui = round(len(residual_response) / M)
+    nui = _get_pdf__mround(len(residual_response) / M)
 
     # Build vs matrix: (nui-2) × M; MATLAB vs(i,:) = residual_response(M*(1:nui-2)+i) 1-based
     # Python (0-based): vs[:,i] = residual_response[M*np.arange(1, nui-1) + i]  (i=0..M-1)
@@ -12259,6 +12278,7 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
 
 
 
+
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
 # ~1% of the calls (both operands long), while most calls have a kernel of a few
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
@@ -12266,6 +12286,24 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
 _CONV_FFT_MIN = 128
 
+
+
+def _get_pdf_full__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's.
+
+    Not a theoretical concern here. `nui = round(len(residual_response)/M)` is a
+    ratio of two INTEGERS, so it lands exactly on .5 whenever the response length
+    is an odd multiple of M/2 -- a discrete quantity that really does hit the tie,
+    not a continuous one where ties are measure-zero. When it does, MATLAB rounds
+    up and Python rounds down to even, the vs matrix loses a row, and one ISI
+    sample is dropped from the PDF: sgm_isi comes out LOW.
+
+    Found on 4 of 208 reference case-instances (T1_R23 and T4_R10, both crosstalk
+    conditions), where exactly one of ~98,000 round() calls in a run sits on the
+    tie. docs/AUDIT_FINDINGS.md listed this site and dismissed it as "measure-zero
+    for continuous data", which is true of continuous inputs and false of this one.
+    """
+    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
 
 def _get_pdf_full__conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
@@ -12443,7 +12481,7 @@ def get_pdf_full(chdata, delta_y, t_s, param, OP, pdf_range=None):
         A_s_vec = R_LM * SBR[uiv_start:uiv_end] / (L_lvl - 1)
         residual_response[uiv_start:uiv_end] = 0.0
 
-    nui = round(len(residual_response) / samp_UI)
+    nui = _get_pdf_full__mround(len(residual_response) / samp_UI)
     block_start = samp_UI  # 1-based → 0-based: samp_UI (same as MATLAB index samp_UI+1 → 0-based samp_UI)
     block_end = samp_UI * (nui - 1)
 

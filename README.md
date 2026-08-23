@@ -256,9 +256,9 @@ Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
 | | as supplied | **matched config** |
 |---|---|---|
 | FOM bit-exact | 198 / 208 | **208 / 208** |
-| COM bit-exact | 198 / 208 | **207 / 208** |
+| COM bit-exact | 199 / 208 | **208 / 208** |
 | sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
-| max \|ΔCOM\| | 0.185 dB | **0.0076 dB** |
+| max \|ΔCOM\| | 0.185 dB | **3.3e-14 dB** |
 | rms ΔCOM | 0.018 dB | **0.00053 dB** |
 | pass/fail disagreements | 0 | **0** |
 

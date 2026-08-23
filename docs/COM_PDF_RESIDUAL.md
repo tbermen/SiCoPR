@@ -158,17 +158,11 @@ for a fix confined to the COM noise path.
 Nine are the Tx FFE configuration cases (`docs/TXFFE_SWEEP_ROOT_CAUSE.md`) — the
 engines were given different search spaces, so their COM is not comparable.
 
-**One is not:** `wXtalk_T4_R10`, ΔCOM **+0.007623 dB**, with exact FOM and exact
-`itick`. On that case the clip path is now exact —
-
-```
-peak_clip   7.9e-13      sgm_Q  8.0e-13      sgm_N  8.6e-13      A_s  7.9e-13
-```
-
-— and what remains is a **4.1e-5** difference in `sgm_Ani__isi_xt_noise`, the
-combined interference-and-noise PDF. That is a different and much smaller
-mechanism than the one fixed here.
-
-Its COM is **−0.366 dB**: a channel failing by more than 3 dB, so the 2% *relative*
-error is small-denominator inflation, and it is nowhere near the pass/fail
-threshold. Recorded rather than chased.
+**One was not**, and it has since been closed. `wXtalk_T4_R10` remained at
++0.007623 dB with exact FOM and exact `itick`, from a 4.1e-5 difference in
+`sgm_Ani__isi_xt_noise`. That turned out to be a *separate* defect: Python's
+`round()` is banker's rounding where MATLAB's rounds half away from zero, and
+`nui = round(len(residual_response) / M)` in `get_pdf` landed on a tie, dropping
+one ISI sample. Fixed 2026-08-22; see `MATLAB_Correlation_Review.md` §4.3.
+With both fixes in, the settings-aligned correlation is bit-exact on FOM, COM and
+sampling phase across all 208 cases (max |ΔCOM| 3.3e-14).

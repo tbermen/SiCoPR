@@ -28,9 +28,9 @@ different Tx FFE settings, so both readings are reported — see
 | | configs as supplied | settings aligned |
 |---|---|---|
 | FOM bit-exact | 198 / 208 | **208 / 208** |
-| COM bit-exact | 198 / 208 | **207 / 208** |
+| COM bit-exact | 199 / 208 | **208 / 208** |
 | sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
-| max \|ΔCOM\| | 0.1852 dB | **0.0076 dB** |
+| max \|ΔCOM\| | 0.1852 dB | **3.3e-14 dB** |
 | pass/fail disagreements at 3 dB | 0 | **0** |
 
 Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
@@ -56,6 +56,7 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 | 13 | 2026-08-21 | `TXLE_taps_1..4`, `Pre2Pmax`, mixed-mode ERL absent from results.xlsx | reporting | user review | columns claimed to agree were never exported | `cb28dca`, `3f0404e` |
 | 14 | 2026-08-21 | `BEST.ctle` / `BEST.G_high_pass` used 1-based as 0-based in `OptFom_Update_BEST_Post_Optimize` | **1- vs 0-based** | corpus sweep crash | reporting-only, but it **hard-crashed** any run whose winning CTLE was last in the list | (this commit) |
 | 15 | 2026-08-22 | `floating_tap_locations` had a **producer-dependent base** — 0-based from `floatingDFE`, 1-based from `MMSE`/`force` | **1- vs 0-based** | index registry | the FDFE cursor-time vector was one UI early under `Floating_DFE` | (this commit) |
+| 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — settings-aligned COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
 
 **Five of the fifteen are the same root class**: MATLAB assigns structs **by
 value**, Python binds a **reference**. #8, #9 and part of #10 are direct
@@ -426,6 +427,64 @@ equals MATLAB's within **one CDF bin**, which is a physically meaningful
 statement about a discrete lookup. That has NOT been applied, because it should
 not be applied while a real residual is still outstanding in the same stage —
 see the `sgm_isi` item, which is a genuine target and the last COM miss.
+
+---
+
+## 2026-08-22 — `nui` rounding: the last COM miss
+
+Found by asking why the **"6 Noise"** pipeline stage sat at 95.1% when every
+other stage was at 99.7% or better — on the reading that a stage short of 100%
+is a defect waiting to be root-caused. It was.
+
+`get_pdf` computes
+
+```python
+nui = round(len(residual_response) / M)
+```
+
+which sets the row count of the `vs` sampling matrix and therefore how many ISI
+samples enter the residual-ISI PDF. **Python's `round()` is banker's rounding;
+MATLAB's rounds half away from zero.** Instrumenting every `round()` call in a
+full run found **exactly one of 98,145** on a tie — `2360.500000`, MATLAB 2361,
+Python 2360. One row lost, one ISI sample dropped, `sgm_isi` low, and the deficit
+dilutes out through `sgm_isi_xt`, `sgm_Ani__isi_xt_noise` and
+`sigma_before_clip`.
+
+Reached only 4 of 208 case-instances (`T1_R23`, `T4_R10`, both crosstalk
+conditions) because the tie needs the response length to be an odd multiple of
+`M/2` — a function of channel **and** package, so each affected channel appears
+in 8 cases and diverges in 2.
+
+**The audit had already found this site and dismissed it.**
+`docs/AUDIT_FINDINGS.md` lists `nui=round(len/M)` among the bare-`round` sites
+and argues they "differ from MATLAB only for exact half-integer inputs
+(measure-zero for continuous data)". True of continuous inputs; false here,
+because `len(residual_response)` and `M` are both **integers**, so the quotient
+is a rational that lands on `.5` exactly. Second audit verdict this correlation
+has overturned.
+
+### Result
+
+| | before | after |
+|---|---|---|
+| settings-aligned COM bit-exact | 207 / 208 | **208 / 208** |
+| settings-aligned max \|ΔCOM\| | 0.007623 dB | **3.3e-14 dB** |
+| as-supplied COM bit-exact | 198 / 208 | **199 / 208** |
+| `wXtalk_T4_R10` output columns exact | 204 / 217 | **217 / 217** |
+| Noise-stage columns exact (aligned) | 95.1 % | **95.6 %** |
+| COM-stage columns exact (aligned) | 96.6 % | **100 %** |
+
+FOM and `itick` are unchanged, as they must be — the defect is downstream of the
+equalizer and the sampling-point choice.
+
+### What is left in the Noise stage, and why it stays
+
+After this fix, **every inexact column-instance in the Noise stage is `DER_MLSE`
+or `DER_DFE` — 275 of 275, 100%.** All 29 other noise columns are exact on all
+208 cases. Those two are `CDF_ev` bin lookups landing on an exact tie, proven
+quantisation-limited in the section above; they are not chasable. The Noise bar
+will not reach 100% on the current metric, and that is now a fully explained
+end state rather than an open question.
 
 ---
 

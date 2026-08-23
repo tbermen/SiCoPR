@@ -20,10 +20,10 @@ reported throughout, and every figure is generated in both variants:
 | | configs **as supplied** | settings **aligned** |
 |---|---|---|
 | FOM bit-exact | 198 / 208 | **208 / 208** |
-| COM bit-exact | 198 / 208 | **207 / 208** |
+| COM bit-exact | 199 / 208 | **208 / 208** |
 | sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
-| max \|ΔCOM\| | 0.1852 dB | **0.0076 dB** |
-| rms ΔCOM | 0.0177 dB | **0.00053 dB** |
+| max \|ΔCOM\| | 0.1852 dB | **3.3e-14 dB** |
+| rms ΔCOM | 0.0177 dB | **4.5e-15 dB** |
 | pass/fail disagreements at 3 dB | 0 | **0** |
 
 **Settings aligned** pairs each crosstalk condition with the settings its own
@@ -31,8 +31,9 @@ reference used. Its with-crosstalk half is a **reconstruction**, not a config we
 sent — supported by reproducing MATLAB's tap vector, sampling phase and FOM on all
 ten previously divergent cases, and by the 2×2 control in that document's §11, but
 to be confirmed
-before the numbers are quoted as like-for-like. The single remaining COM miss is
-`wXtalk_T4_R10` at +0.0076 dB, on a channel failing by 3.4 dB.
+before the numbers are quoted as like-for-like. **There is no remaining COM miss:**
+every case agrees to within 3.3e-14 dB, which is double-precision noise rather than
+agreement to a tolerance.
 
 The rest of this section details the **as-supplied** run.
 
@@ -170,11 +171,11 @@ differ in what is left over, not just by how much.
 | | configs as supplied | settings aligned |
 |---|---|---|
 | sampling-phase (`itick`) divergences | **8** | **0** |
-| COM not bit-exact | **10** | **1** |
+| COM not bit-exact | **9** | **0** |
 | pass/fail disagreements at 3 dB | **0** | **0** |
 
-Under settings aligned, **the only thing that remains is one case at +0.0076 dB**
-(§4.3). Everything else in this section describes the as-supplied run, and every
+Under settings aligned, **nothing remains**: FOM, COM and sampling phase are
+bit-exact on all 208 cases, with max |ΔCOM| = 3.3e-14 dB. Everything else in this section describes the as-supplied run, and every
 item in it is explained by the Tx FFE settings difference
 ([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md) §11) rather than by
 an engine disagreement.
@@ -221,23 +222,39 @@ off-by-one in the sampling phase used to build the ADC-clip PDF; see
 and sampling phase agree, COM is now bit-exact on 197 of 200 and max \|ΔCOM\|
 dropped from 0.028201 to 0.008778 dB.
 
-### 4.3 The one case that is not explained by settings: `wXtalk_T4_R10`
+### 4.3 The last COM miss, and how it was closed
 
-| | value |
-|---|---|
-| ΔCOM | **+0.007623 dB** |
-| ΔFOM | **0.000000** (bit-exact) |
-| `itick` | **matches** |
-| Python COM | −0.366 dB |
+`wXtalk_T4_R10` sat at +0.007623 dB with bit-exact FOM and matching `itick` — the
+only case not explained by the Tx FFE settings. It is now **bit-exact on all 217
+output columns**, along with three sibling case-instances that carried the same
+signature.
 
-The clip path on this case is now exact (`peak_clip` 7.9e-13, `sgm_Q` 8.0e-13,
-`sgm_N` 8.6e-13, `A_s` 7.9e-13). What remains is a **4.1e-5** difference in
-`sgm_Ani__isi_xt_noise`, the combined interference-and-noise PDF — a different
-and much smaller mechanism than the one fixed in §4.2.
+**Root cause: Python's `round()` is banker's rounding; MATLAB's rounds half away
+from zero.** `get_pdf` computes
 
-Its COM is −0.366 dB: a channel failing by more than 3 dB, so the ~2% *relative*
-error is small-denominator inflation and it is nowhere near the pass/fail
-threshold. **Recorded rather than chased.**
+```python
+nui = round(len(residual_response) / M)
+```
+
+which sets how many rows the `vs` sampling matrix has, and therefore how many ISI
+samples enter the residual-ISI PDF. Instrumenting every `round()` call in a run
+found **exactly one of 98,145** sitting on a tie — `2360.500000`, where MATLAB
+returns 2361 and Python returns 2360. One row lost, one ISI sample dropped, and
+`sgm_isi` comes out low; the deficit then dilutes through `sgm_isi_xt`,
+`sgm_Ani__isi_xt_noise` and `sigma_before_clip`.
+
+It reached only 4 of 208 case-instances (`T1_R23` and `T4_R10`, both crosstalk
+conditions) because the tie needs the response length to be an odd multiple of
+`M/2`, which depends on the channel **and** the package — each affected channel
+appears in 8 cases and diverges in only 2.
+
+> **This site was already in the audit ledger and had been dismissed.**
+> `docs/AUDIT_FINDINGS.md` lists `nui=round(len/M)` among the bare-`round` sites
+> and argues they "differ from MATLAB only for exact half-integer inputs
+> (measure-zero for continuous data)". That is correct for continuous inputs and
+> wrong here: `len(residual_response)` and `M` are both **integers**, so the
+> quotient is a rational that lands on `.5` exactly. It is the second audit
+> verdict this correlation has overturned.
 
 ### 4.4 Pass/fail disagreements: none
 

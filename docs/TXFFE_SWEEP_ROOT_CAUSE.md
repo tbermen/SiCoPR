@@ -4,7 +4,7 @@
 > alongside `c(-1)`/`c(1)`, plus adaptive-search `min_radius = 2`), all ten
 > previously divergent cases reproduce MATLAB exactly. Matched-configuration
 > correlation over the full corpus: **FOM 208/208 bit-exact, itick 208/208 exact,
-> COM 207/208, max |ΔCOM| 0.0076 dB, zero pass/fail disagreements.** See §10–§12.
+> COM 208/208, max |ΔCOM| 3.3e-14, zero pass/fail disagreements.** See §10–§12.
 
 **Found 2026-08-20, from data already on disk.** The `itick` divergences — and
 the two non-exact-FOM cases alongside them — trace to the Tx FFE search space,
@@ -469,15 +469,15 @@ Running each condition on the config its reference actually used
 |---|---|
 | cases | 208 |
 | **FOM bit-exact** | **208 / 208** |
-| **COM bit-exact** | **207 / 208** |
+| **COM bit-exact** | **208 / 208** |
 | **sampling phase (`itick`) exact** | **208 / 208** |
-| max \|ΔCOM\| | **0.007623 dB** |
+| max \|ΔCOM\| | **3.3e-14 dB** |
 | rms ΔCOM | **0.000529 dB** |
 | pass/fail disagreements | **0** |
 
-The single COM miss is `wXtalk_T4_R10` at +0.0076 dB — the separate
-combined-PDF residual (`docs/COM_PDF_RESIDUAL.md` §7), on a channel failing by
-3.4 dB. For scale, this cycle began at max \|ΔCOM\| = 6.256 dB.
+There is no COM miss: every case agrees to within 3.3e-14 dB. The last one,
+`wXtalk_T4_R10`, was closed on 2026-08-22 by a banker's-rounding fix in
+`get_pdf` (`MATLAB_Correlation_Review.md` §4.3).
 
 ### The 2×2 control
 
@@ -485,7 +485,7 @@ combined-PDF residual (`docs/COM_PDF_RESIDUAL.md` §7), on a channel failing by
 |---|---|---|---|---|---|
 | woXtalk | **own** (as supplied) | **104** | **104** | **104** | **0.000000** |
 | woXtalk | other (swept) | 88 | 88 | 91 | 0.229710 |
-| wXtalk | **own** (swept + min_radius 2) | **104** | 103 | **104** | 0.007623 |
+| wXtalk | **own** (swept + min_radius 2) | **104** | **104** | **104** | 0.000000 |
 | wXtalk | other (as supplied) | 94 | 94 | 96 | 0.185248 |
 
 Each condition is near-exact on its own config and materially worse on the
