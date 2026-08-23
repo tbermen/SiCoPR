@@ -6,9 +6,17 @@
 > 0.008778 dB (rms 0.004946 → 0.001022, a 4.8× improvement).
 
 **Root cause: an off-by-one in the sampling phase used to build the ADC-clip
-PDF.** Found and fixed 2026-08-20. This was the last engine-level disagreement
-with MATLAB, and the only one large enough to move a case across the 3 dB
-pass/fail threshold.
+PDF.** Found and fixed 2026-08-20. It is the only disagreement found in this
+cycle large enough to move a case across the 3 dB pass/fail threshold.
+
+> **It was not the last one.** This document originally called it "the last
+> engine-level disagreement with MATLAB". Two more were found afterwards: a
+> producer-dependent index base in `floating_tap_locations`
+> (`docs/FIX_SUMMARY.md` #15), and a banker's-rounding tie in
+> `nui = round(len/M)` (#16) which turned out to be the last COM miss. With #16
+> fixed the settings-aligned correlation is bit-exact on FOM, COM and sampling
+> phase across all 208 cases. Stating "last" while cases were still open was a
+> claim the evidence did not support at the time.
 
 ---
 

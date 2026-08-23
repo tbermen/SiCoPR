@@ -549,15 +549,43 @@ Key points confirmed:
   and their many copies), grid-length counts (s21_to_impulse_DC, already tracked
   as B03-D7), normal_dist Min (py 12412), `nui = round(len/M)` (py 10916, 11284),
   and combine_pdf shift (py 8020).
-- Consequence: these differ from MATLAB only for exact half-integer inputs, which
-  are measure-zero for continuous signal/frequency data; integer Min-sum rounds
-  are no-ops. Demonstrated at normal_dist: with `2*nsigma*sigma/binsize = 2.5`
-  the port gives Min = -2 (banker's) vs MATLAB -3 (half-away).
+- Consequence: these differ from MATLAB only for exact half-integer inputs.
+- Demonstrated at normal_dist: with `2*nsigma*sigma/binsize = 2.5` the port gives
+  Min = -2 (banker's) vs MATLAB -3 (half-away).
 - Evidence: FAIL normal_dist_Min_uses_matlab_half_away in
   tests/test_rounding_reshape.py (all 6 `_mround` helpers pass the half-away
   classic cases).
-- Recommended fix (not applied): route the PDF-binning, grid-count, normal_dist,
-  and nui rounds through a shared half-away helper, or accept as negligible.
+
+> **CORRECTION 2026-08-22 — this verdict was wrong, and `nui` was a live defect.**
+>
+> The reasoning above ended "…which are measure-zero for continuous
+> signal/frequency data", and on that basis the fix was left unapplied. That is
+> sound for a *continuous* input and false for `nui = round(len/M)`:
+> `len(residual_response)` and `M` are both **integers**, so the quotient is a
+> rational that lands on `.5` exactly whenever the response length is an odd
+> multiple of `M/2`. Not measure-zero — a discrete quantity that really does hit
+> the tie.
+>
+> It did, on 4 of the 208 reference case-instances. Instrumenting a full run
+> found exactly **one of 98,145** `round()` calls sitting on a tie
+> (`2360.500000`: MATLAB 2361, Python 2360). One row is lost from the `vs`
+> sampling matrix, one ISI sample is dropped from the residual-ISI PDF, and
+> `sgm_isi` comes out low. It was **the last COM miss**: fixing it took the
+> settings-aligned correlation from COM 207/208 to **208/208**, max \|ΔCOM\|
+> 0.0076 dB → 3.3e-14.
+>
+> Fixed in `get_pdf` and `get_pdf_full` via a local `_mround`. See
+> `MATLAB_Correlation_Review.md` §4.3 and `docs/FIX_SUMMARY.md` #16.
+>
+> **The lesson generalises beyond this site.** "Measure-zero for continuous data"
+> is only an argument when the input is continuous. Several of the ~50 remaining
+> bare-`round` sites take integer ratios or bin counts, and each of those needs
+> the argument re-made rather than inherited. The other sites listed above have
+> **not** been re-examined under this correction.
+>
+> This is the second EQUIVALENT/negligible verdict in this document overturned by
+> the corpus; the first was the `process_sxp` reference leak. Treat the ledger as
+> evidence, not proof.
 
 ### G9 reshape/order: clean
 

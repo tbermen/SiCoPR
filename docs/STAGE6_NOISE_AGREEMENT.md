@@ -8,6 +8,15 @@
 > −8 — which is precisely the signature this document describes below. Fixed in
 > `00529f8`; `sgm_TX` went from 2/208 exact to 42/48 on the validation subset.
 > See §8. The itick divergences are a separate matter and are NOT fixed by this.
+>
+> **Final state 2026-08-22.** Two further fixes moved this stage: the ADC-clip
+> sampling phase (`docs/COM_PDF_RESIDUAL.md`) and a banker's-rounding tie in
+> `nui = round(len/M)` (`docs/FIX_SUMMARY.md` #16). The Noise stage now sits at
+> **95.6%** on the settings-aligned reading, and **every** remaining inexact column
+> is `DER_MLSE` or `DER_DFE` — 275 of 275. Those two are `CDF_ev` bin lookups
+> landing on an exact tie and are quantisation-limited rather than wrong, so this
+> stage will not reach 100% on the current metric. All 29 other noise columns are
+> exact on all 208 cases.
 
 Investigation prompted by the review deck's stage-agreement chart. The bar is the
 share of reported output columns agreeing with MATLAB to better than 1e-9

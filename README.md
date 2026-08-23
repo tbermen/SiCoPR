@@ -136,7 +136,7 @@ Recomputing true COM for the top-20 candidates by FOM (140 probes) shows the FOM
 FOM-driven search uses.
 
 > This corpus was **regenerated on the corrected engine**. The 2026-08-07 run predates the
-> eight engine defects found by the MATLAB correlation and its COM values were materially
+> engine defects found by the MATLAB correlation and its COM values were materially
 > wrong (100 mm moved 3.217 → 6.720 dB). Two of its conclusions changed as a result — most
 > notably "FOM is not a faithful proxy", which was substantially an artifact of those
 > defects. Both changes are documented in
@@ -226,7 +226,7 @@ by re-introducing it:
 
 | script | guards against | why |
 |---|---|---|
-| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the eight engine defects** were this. Caught a new instance during the 4p16p0 port. |
+| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and six of the fifteen engine fixes overall. Caught a new instance during the 4p16p0 port. |
 | `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **178 copies of 70 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
 | `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the hoisted Gram matrix, FFT/direct convolution agreement, shared buffers. Found a live cache-aliasing defect. |
 | `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks — the only tests in the repo that assert against MATLAB rather than against Python. |
@@ -275,7 +275,8 @@ cases, and by a 2×2 control in which each condition is near-exact on its own
 config and materially worse on the other's — but not yet confirmed against the
 real settings.
 
-Ten engine defects were found and fixed in the process. Reproduce with
+Fifteen engine-level defects were found and fixed in the process (the ledger,
+with what each one bought, is [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md)). Reproduce with
 `python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
 [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
 
