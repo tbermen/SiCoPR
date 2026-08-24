@@ -65,6 +65,11 @@ desktop.ini
 Test_cases_from_Hansel_2026_08_12.txt
 
 # ---------------------------------------------------------------------------
+# Status reports
+# ---------------------------------------------------------------------------
+status_reports/
+
+# ---------------------------------------------------------------------------
 # MATLAB-comparison run artifacts (regenerable)
 #   per-case job/log/result JSON for all 208 cases; rebuild with
 #   `python tools/matlab_compare.py --validate --run`
