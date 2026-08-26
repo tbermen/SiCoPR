@@ -28,23 +28,55 @@ On top of the engine there is a study layer (`tools/`, `R/`) built to answer one
 
 ## 1. What ships in this repository — and what doesn't
 
-**Code, docs and the IEEE public-area channels ship. Vendor and bulk data do not.**
+**The port ships. The correlation data does not.** The engine, its tests, the tooling
+and the MATLAB reference sources are all here. The channel S-parameters and
+configuration workbooks used to correlate against MATLAB are IEEE 802.3 contributions
+and are not ours to redistribute — but every one of them is publicly available, and
+this section says exactly which.
 
-| Present | Not present (excluded in `.gitignore`) |
+| Present | Not present |
 |---|---|
-| the engine, tests, tooling, R reports | vendor-marked `.s4p` channels + config sheets |
-| **96 `.s4p` files** under `tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/` | `akinwale_3dj_01_2310/` (210 MB, public IEEE 802.3dj data) |
-| reference COM spreadsheets + MATLAB result workbooks (`tests/1_`, `tests/2_`) | `results/` (1.1 GB of generated figures/exports) |
-| `docs/`, `dev/`, `matlab/` references, study outputs | `matlab_compare_results/` (regenerable per-case JSON) |
+| the engine (`com.py` + `com_functions/`), tests, tooling, R reports | channel S-parameters (`tests/0_...`) |
+| `matlab/` — the BSD-3-Clause MATLAB reference sources | COM configuration workbooks (`tests/1_...`) |
+| `docs/`, `VERSION.json`, `LICENSE`, `CONTRIBUTING.md` | MATLAB reference result workbooks (`tests/2_...`) |
+| the correlation harness itself (`tools/matlab_compare.py`) | `results/`, `matlab_compare_results/` (both regenerable) |
 
-**A fresh clone can run the bundled IEEE channels immediately.** Two things need data you
-supply: the canonical example in §3 uses a vendor-marked channel, and the corpus/correlation
-commands in §5 assume `akinwale_3dj_01_2310/` is restored from the IEEE 802.3dj contribution
-`akinwale_3dj_elec_01_2310`.
+**A fresh clone is fully functional without any of it.** The unit suite runs and
+passes; the tests that need correlation data skip cleanly and say so. You only need
+the data to reproduce the 208-case correlation.
 
-To ship the channel data with the repo instead, delete the `akinwale_3dj_01_2310/` line from
-`.gitignore`. Review the "vendor / third-party inputs" section of that file before removing
-anything there.
+### Obtaining the correlation data
+
+All of it comes from the IEEE 802.3dj public area. Download each contribution and
+unpack it into the directory shown.
+
+| Contribution | Contents | Unpack into |
+|---|---|---|
+| `weaver_3dj_02_2311` | Arista CR channels | `tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/1_Arista/` |
+| `akinwale_3dj_01_2310` | Intel cable-assembly channels | `tests/0_.../2_Intel/` and `akinwale_3dj_01_2310/` |
+| `akinwale_3dj_02_2311` | Intel channels | `tests/0_.../0_Intel/` |
+| `lim_3dj_07_2309` | Intel + Molex channels | `tests/0_.../3_Intel_Molex/` |
+| `lim_3dj_04_230629` | Intel + TE Connectivity channels | `tests/0_.../4_Intel_TEConnectivity/` |
+| `lim_3dj_03_230629` | Intel + Amphenol channels | `tests/0_.../5_Intel_Amphenol/` |
+
+The **COM configuration workbooks** (`config_com_dj_200G_CAKR_178_PKGA/B_*.xlsx`,
+including the `_sweep_TxFFE` variants) and the **MATLAB reference result workbooks**
+(`Results_Matlab_COM_v4p15_With/WithoutXtalk_ClipMethodSlow_AdaptiveLS.xlsx`) come
+from the COM ad hoc rather than from a numbered contribution. Ask on the reflector, or
+substitute your own configuration and your own MATLAB run — the harness only needs a
+config per package case and a MATLAB result workbook in the standard column layout.
+
+Once the data is in place:
+
+```powershell
+python tools/matlab_compare.py --validate      # resolve all 208 cases, run nothing
+python tools/matlab_compare.py --run --modal-erl --min-radius 2 --jobs 5
+python tools/export_compare_csv.py             # compare.csv, stages.csv
+```
+
+`--validate` is the useful first step: it reports which cases it can and cannot
+resolve, so a partial download tells you what is missing before you spend hours
+running.
 
 ## 2. Install
 
@@ -104,8 +136,8 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_com.py` generates `com.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
-| `dev/` | historical development prompts, state ledgers, one-shot scripts — kept for provenance, not needed to run anything |
-| `tests/` | standalone cross-check scripts (run directly, not via pytest) |
+| `dev/` | audit and interface-check scripts, plus state ledgers. The development prompts under `dev/prompts/` are kept locally and not published |
+| `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |
 | `sweep_results/`, `corpus_results/` | study outputs, each with a `RESULTS.md` / `STATE.md` |
 
 ## 5. The EQ-search study

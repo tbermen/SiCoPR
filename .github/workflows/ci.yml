@@ -1,0 +1,126 @@
+name: CI
+
+# The point of this workflow is the thing that is easy to get wrong by hand:
+# a runner is a FRESH CLONE with no correlation data, which is exactly the state
+# a first-time visitor is in. That state was broken once already -- the suite
+# exited 1 because a test treated absent config workbooks as a failure rather
+# than as the normal case -- and nothing would have caught it except cloning the
+# repo and running it, which is what this does on every push.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    name: Suite on a clean checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: com.py must match its sources
+        # com.py is generated. If a contributor edited it directly, or edited a
+        # py_impl.py and forgot to re-assemble, the committed engine and its
+        # sources disagree -- and every test here would run the wrong one.
+        run: |
+          cp com.py /tmp/com_committed.py
+          python assemble_com.py
+          if ! diff -q /tmp/com_committed.py com.py > /dev/null; then
+            echo "::error::com.py does not match com_functions/fn/*/py_impl.py."
+            echo "Run 'python assemble_com.py' and commit the result."
+            diff /tmp/com_committed.py com.py | head -40
+            exit 1
+          fi
+          echo "com.py is in sync with its sources"
+
+      - name: Per-function unit tests
+        run: python -m pytest com_functions/fn -q --tb=short
+
+      - name: Interface checks
+        run: python dev/check_interfaces.py
+
+      - name: Pytest modules under tests/
+        # NOT `pytest tests/` -- most files there are standalone audit scripts
+        # whose module-level sys.exit makes pytest report "no tests ran" and exit
+        # 0. Naming them explicitly is what makes this step mean anything.
+        run: |
+          python -m pytest tests/test_smoke.py -q
+          python -m pytest tests/test_checkpoints.py -q
+          python -m pytest tests/test_end_to_end.py -q
+          python -m pytest tests/test_export_columns.py -q
+
+      - name: Audit scripts
+        # Each is run directly and must exit 0. A script that skips for want of
+        # correlation data must SKIP, not fail: that is the fresh-clone contract.
+        run: |
+          fail=0
+          for f in tests/test_*.py; do
+            case "$(basename "$f")" in
+              test_smoke.py|test_checkpoints.py|test_end_to_end.py|test_export_columns.py)
+                continue ;;
+            esac
+            echo "--- $f"
+            if ! python "$f"; then
+              echo "::error file=$f::audit script failed on a clean checkout"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  licence:
+    name: Licence notice is intact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: BSD-3-Clause attribution must survive
+        # Clause 1 requires the notice to travel with redistributed source, and
+        # com.py is the file most users actually receive. It is generated, so the
+        # notice can silently vanish if the header template is edited.
+        run: |
+          test -f LICENSE || { echo "::error::LICENSE is missing"; exit 1; }
+          for pat in "802-COM Authors" "SPDX-License-Identifier: BSD-3-Clause"; do
+            grep -q "$pat" LICENSE || { echo "::error::LICENSE lost: $pat"; exit 1; }
+            grep -q "$pat" com.py  || { echo "::error::com.py header lost: $pat"; exit 1; }
+          done
+          echo "licence notice present in LICENSE and in com.py"
+
+  hygiene:
+    name: No correlation data committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject re-added inputs and stray large files
+        # These were purged from history deliberately; re-adding one would put
+        # hundreds of MB back into every clone and redistribute material that is
+        # not ours to redistribute.
+        run: |
+          bad=$(git ls-files \
+            'tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/*' \
+            'tests/1_IEEE_802p3dj_COM_Spreadsheets*/*' \
+            'tests/2_Results_COM_Matlab/*' \
+            'dev/prompts/*' \
+            '*.s4p' 'config*.xlsx' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::correlation inputs must not be committed:"
+            echo "$bad"
+            exit 1
+          fi
+          big=$(git ls-files -z | xargs -0 -r du -k 2>/dev/null \
+                | awk '$1 > 5120 {print $1" KB\t"$2}' || true)
+          if [ -n "$big" ]; then
+            echo "::warning::files larger than 5 MB are tracked:"
+            echo "$big"
+          fi
+          echo "no correlation inputs tracked"
