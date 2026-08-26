@@ -65,7 +65,7 @@ check("find_sample_point_returns_0based_peak",
 #    removing it made MATLAB agreement WORSE, so it was retained and this check
 #    was left documenting an "open question" -- but that trial was confounded:
 #    the -1 was compensating a second defect in the die-network path. Once both
-#    were fixed together (b2b2621) com.py adopted the MATLAB-faithful
+#    were fixed together (the 8-defect correlation commit) com.py adopted the MATLAB-faithful
 #    sbr[sbr_peak_i] and FOM went bit-exact on 198/208 reference cases.
 #
 #    This check used to mirror the shipped expression as sbr[sbr_peak_i - 1] and

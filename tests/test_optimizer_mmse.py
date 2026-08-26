@@ -291,7 +291,7 @@ for bmax_val in np.linspace(0.02 * b_max_mag, 0.98 * b_max_mag, 60):
             _found = (bmax_val, np.asarray(py_s[5]), np.asarray(rf_s[5]), py_s[1], rf_s[1])
             break
 
-# B12-D17 was FIXED in b2b2621: the `b = Hb*wlim; blim = clip(b)` refresh now
+# B12-D17 was FIXED in the 8-defect correlation commit: the `b = Hb*wlim; blim = clip(b)` refresh now
 # runs only inside the `if ~isequal(w, wlim)` branch, matching MATLAB 2683-2692.
 # The sweep above is therefore a REGRESSION GUARD, not a bug demonstration: it
 # hunts across 60 DFE bounds for any clip-only case where com.py and the

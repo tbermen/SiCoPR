@@ -41,19 +41,19 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 
 | # | date | fix | class | found by | bought | commit |
 |---|---|---|---|---|---|---|
-| 1 | 2026-08-14 | `z_p` transpose for RX / NEXT / FEXT | config parse | column-ranked error | RX package built from a matrix row → ~15 dB spurious loss | `b2b2621` |
-| 2 | 2026-08-14 | Insertion-loss fit solved at effective rank 2 of 4 | numerics | column-ranked error | `lstsq` silently truncated rank; half the fit basis restored | `b2b2621` |
-| 3 | 2026-08-14 | RxFFE floating-tap array sized by tap COUNT, not SPAN | allocation | column-ranked error | floating taps past index 23 were being discarded | `b2b2621` |
-| 4 | 2026-08-14 | `get_TDR` `tfstart` index base | 1- vs 0-based | column-ranked error | Z11est/Z22est 1.4e-2 → 4e-15 | `b2b2621` |
-| 5 | 2026-08-14 | `get_TDR` `fctrx` initialisation | translation | column-ranked error | ERL11/ERL22/ERL 4e-1 → ~1e-15 | `b2b2621` |
-| 6 | 2026-08-14 | Package die network truncated to 1 of 3 LC sections | translation | column-ranked error | restored ~15 ps of die delay (a 53-sample pulse shift) | `b2b2621` |
-| 7 | 2026-08-14 | Cursor index base in `optimize_fom` (audit B16-D20) | 1- vs 0-based | audit + #6 | was reverted early as "worse"; it and #6 were **compensating** | `b2b2621` |
-| 8 | 2026-08-14 | `process_sxp` leaked a TDR-only setting into the whole run | **by-reference** | sign of the bias | **the systematic FOM bias** — Python low on 199/208 (95.7%) | `b2b2621` |
-| 9 | 2026-08-19 | `BEST.PSD_results` aliased a struct MATLAB copies by value | **by-reference** | stage-6 noise gap | COM bit-exact 135 → **170**, pass/fail flips 2 → **1** | `00529f8` |
-| 10 | 2026-08-20 | Four latent fidelity defects (unstable sort ×2, abort-path leak, `_findbankloc` stubs ×2) | mixed | itick investigation | **inert on this corpus by design** — real under other settings | `6994b4a` |
-| 11 | 2026-08-20 | Off-by-one in the ADC-clip sampling phase | 1- vs 0-based | variance decomposition | COM bit-exact 170 → **198**, pass/fail flips 1 → **0** | `62dbce6` |
-| 12 | 2026-08-20 | `Overwrite_Min_Radius` honoured in both version paths | silent discard | Tx FFE investigation | a config setting it under 4p15p0 had it silently discarded | `abdba31` |
-| 13 | 2026-08-21 | `TXLE_taps_1..4`, `Pre2Pmax`, mixed-mode ERL absent from results.xlsx | reporting | user review | columns claimed to agree were never exported | `cb28dca`, `3f0404e` |
+| 1 | 2026-08-14 | `z_p` transpose for RX / NEXT / FEXT | config parse | column-ranked error | RX package built from a matrix row → ~15 dB spurious loss | `git log --grep="Fix 8 engine defects"` |
+| 2 | 2026-08-14 | Insertion-loss fit solved at effective rank 2 of 4 | numerics | column-ranked error | `lstsq` silently truncated rank; half the fit basis restored | `git log --grep="Fix 8 engine defects"` |
+| 3 | 2026-08-14 | RxFFE floating-tap array sized by tap COUNT, not SPAN | allocation | column-ranked error | floating taps past index 23 were being discarded | `git log --grep="Fix 8 engine defects"` |
+| 4 | 2026-08-14 | `get_TDR` `tfstart` index base | 1- vs 0-based | column-ranked error | Z11est/Z22est 1.4e-2 → 4e-15 | `git log --grep="Fix 8 engine defects"` |
+| 5 | 2026-08-14 | `get_TDR` `fctrx` initialisation | translation | column-ranked error | ERL11/ERL22/ERL 4e-1 → ~1e-15 | `git log --grep="Fix 8 engine defects"` |
+| 6 | 2026-08-14 | Package die network truncated to 1 of 3 LC sections | translation | column-ranked error | restored ~15 ps of die delay (a 53-sample pulse shift) | `git log --grep="Fix 8 engine defects"` |
+| 7 | 2026-08-14 | Cursor index base in `optimize_fom` (audit B16-D20) | 1- vs 0-based | audit + #6 | was reverted early as "worse"; it and #6 were **compensating** | `git log --grep="Fix 8 engine defects"` |
+| 8 | 2026-08-14 | `process_sxp` leaked a TDR-only setting into the whole run | **by-reference** | sign of the bias | **the systematic FOM bias** — Python low on 199/208 (95.7%) | `git log --grep="Fix 8 engine defects"` |
+| 9 | 2026-08-19 | `BEST.PSD_results` aliased a struct MATLAB copies by value | **by-reference** | stage-6 noise gap | COM bit-exact 135 → **170**, pass/fail flips 2 → **1** | `git log --grep="BEST.PSD_results aliased"` |
+| 10 | 2026-08-20 | Four latent fidelity defects (unstable sort ×2, abort-path leak, `_findbankloc` stubs ×2) | mixed | itick investigation | **inert on this corpus by design** — real under other settings | `git log --grep="latent MATLAB-fidelity defects"` |
+| 11 | 2026-08-20 | Off-by-one in the ADC-clip sampling phase | 1- vs 0-based | variance decomposition | COM bit-exact 170 → **198**, pass/fail flips 1 → **0** | `git log --grep="ADC-clip sampling phase"` |
+| 12 | 2026-08-20 | `Overwrite_Min_Radius` honoured in both version paths | silent discard | Tx FFE investigation | a config setting it under 4p15p0 had it silently discarded | `git log --grep="all 10 Tx FFE cases reproduce"` |
+| 13 | 2026-08-21 | `TXLE_taps_1..4`, `Pre2Pmax`, mixed-mode ERL absent from results.xlsx | reporting | user review | columns claimed to agree were never exported | `git log --grep="Tx FFE tap columns were unpopulated"`, `git log --grep="refresh the as-supplied set"` |
 | 14 | 2026-08-21 | `BEST.ctle` / `BEST.G_high_pass` used 1-based as 0-based in `OptFom_Update_BEST_Post_Optimize` | **1- vs 0-based** | corpus sweep crash | reporting-only, but it **hard-crashed** any run whose winning CTLE was last in the list | (this commit) |
 | 15 | 2026-08-22 | `floating_tap_locations` had a **producer-dependent base** — 0-based from `floatingDFE`, 1-based from `MMSE`/`force` | **1- vs 0-based** | index registry | the FDFE cursor-time vector was one UI early under `Floating_DFE` | (this commit) |
 | 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — settings-aligned COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
@@ -65,7 +65,7 @@ boundary. This is the single most productive thing to check first in this port.
 
 ---
 
-## 2026-08-14 — the eight defects found by the 208-case correlation (`b2b2621`)
+## 2026-08-14 — the eight defects found by the 208-case correlation (`git log --grep="Fix 8 engine defects"`)
 
 Max \|ΔCOM\| 6.256 dB → ~0.18 dB. Detail in
 [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md) §2–§4.
@@ -86,7 +86,7 @@ lengthened the pulse response, inflated residual ISI and biased FOM low on
 was reverted as wrong. It was correct all along — it and #6 were compensating.
 **A fix that makes things worse is not necessarily the wrong fix.**
 
-## 2026-08-19 — `BEST.PSD_results` aliasing (`00529f8`)
+## 2026-08-19 — `BEST.PSD_results` aliasing (`git log --grep="BEST.PSD_results aliased"`)
 
 `BEST.PSD_results = THIS.PSD_results` copies by value in MATLAB and binds a
 reference in Python, while `get_PSDs` mutates its `result` argument in place and
@@ -101,7 +101,7 @@ at `itick = −8`, with the error growing with distance from −8.
 `sgm_TX` went from 2/208 exact to 42/48 on the re-run subset. This fix does
 **not** move `itick`; that was a separate cause (#12 and the Tx FFE settings).
 
-## 2026-08-20 — four latent defects (`6994b4a`)
+## 2026-08-20 — four latent defects (`git log --grep="latent MATLAB-fidelity defects"`)
 
 All four are **unreachable in the 208-case configs**, verified: the corpus
 re-ran bit-identical on `com_py`, `fom_py`, `itick_py` and `tick_match` across
@@ -126,7 +126,7 @@ left for a future config to trip over.
 even with `kind='stable'` added. They need individual checks against the MATLAB
 they came from, not a blanket edit.
 
-## 2026-08-20 — ADC-clip sampling phase (`62dbce6`)
+## 2026-08-20 — ADC-clip sampling phase (`git log --grep="ADC-clip sampling phase"`)
 
 Detail in [`COM_PDF_RESIDUAL.md`](COM_PDF_RESIDUAL.md). The last engine-level
 disagreement, and the only one large enough to move a case across the 3 dB
@@ -145,7 +145,7 @@ A lead recorded as **wrong** so it is not re-followed: the non-stable
 `argsort(...)[::-1]` in `get_pdf_from_sampled_signal` is *not* this defect. A
 stable descending sort gives a bit-identical sigma.
 
-## 2026-08-20 — `Overwrite_Min_Radius` version path (`abdba31`)
+## 2026-08-20 — `Overwrite_Min_Radius` version path (`git log --grep="all 10 Tx FFE cases reproduce"`)
 
 Found while resolving the ten Tx FFE cases. The keyword was read only under
 4p16p0, so a config setting it while emulating 4p15p0 had it **silently
@@ -157,7 +157,7 @@ The accompanying settings finding is not an engine fix and is recorded in
 pin Tx FFE `c(-1)` to a single zero, so Python searched 1 candidate where MATLAB
 searched ~1584.
 
-## 2026-08-21 — results.xlsx columns (`cb28dca`, `3f0404e`)
+## 2026-08-21 — results.xlsx columns (`git log --grep="Tx FFE tap columns were unpopulated"`, `git log --grep="refresh the as-supplied set"`)
 
 Not an engine fix, but listed because it invalidated a *claim*, which is worse
 than a wrong number: `TXLE_taps_1..4` was reported as agreeing with MATLAB on
@@ -225,9 +225,10 @@ Rule C is what makes it scale — a new feature cannot introduce an undeclared
 index without failing the run. It caught three on its first execution
 (`DFE_taps_i`, `start_max_idx`, `end_max_idx`), all since declared.
 
-Replayed against the historical versions in git: `b2b2621~1` flags `cursor_i` in
-`optimize_fom` (#7); `62dbce6~1` flags `t_s` in `Apply_EQ` (#11) and
-`ctle`/`G_high_pass` (#14); `bc4cecb~1` flags #14; HEAD is clean. The miss is #4,
+Replayed against the historical versions in git: the version before the 8-defect fix flags `cursor_i` in
+`optimize_fom` (#7); the version before the ADC-clip fix flags `t_s` in
+`Apply_EQ` (#11) and `ctle`/`G_high_pass` (#14); the version before the
+`BEST.ctle` fix flags #14; HEAD is clean. The miss is #4,
 which is not a base error — a valid index applied to the wrong array frame.
 
 It runs over the assembled `com.py`, so it covers all inlined copies of a
@@ -522,13 +523,13 @@ in git, or by reintroducing the defect and watching the test fail:
 | 4 | `get_TDR` `tfstart` frame | ✗ | not a base error; needs analytic recovery |
 | 5 | `get_TDR` `fctrx` init | ✗ | needs analytic recovery |
 | 6 | die network 1 of 3 sections | ✗ | would be covered by `make_pkg` / `make_full_pkg` factories (5 copies, currently undrivable) |
-| 7 | cursor index base | **✓** | replay: flags `cursor_i` in `optimize_fom` at `b2b2621~1` |
+| 7 | cursor index base | **✓** | replay: flags `cursor_i` in `optimize_fom` on the pre-8-defect version |
 | 8 | `process_sxp` leak | **✓** | `test_reference_leaks`, mutation-verified |
 | 9 | `BEST.PSD_results` aliasing | **✓** | reintroduced; snapshot test fails naming `PSD_results` |
 | 10a | unstable sort | ✗ | needs the `argsort` lint |
 | 10b | abort-path leak | ✗ | different shape from the leak guard |
 | 10c | `_findbankloc` stubs | **✓** | now drivable; flags the `MMSE` and `force` copies |
-| 11 | ADC-clip sampling phase | **✓** | replay: Rule B flags `t_s` in `Apply_EQ` at `62dbce6~1` |
+| 11 | ADC-clip sampling phase | **✓** | replay: Rule B flags `t_s` in `Apply_EQ` on the pre-ADC-clip version |
 | 12 | `Overwrite_Min_Radius` discard | partial | keyword parity sees unread keywords, not per-version-path ones |
 | 13 | results.xlsx columns | **✓** | mutation-verified |
 | 14 | `BEST.ctle` index base | **✓** | replay + mutation |
@@ -580,7 +581,7 @@ Driven by `FIX_PROMPT_com_conversion_v2.md`. Fixes edit
 artifact reassembled by `assemble_com.py`). One finding per gate.
 
 > **CLOSED 2026-08-17.** This gated fix pass was overtaken by the 208-case MATLAB
-> correlation, which fixed eight engine defects in one commit (`b2b2621`) — see
+> correlation, which fixed eight engine defects in one commit (`git log --grep="Fix 8 engine defects"`) — see
 > [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md). The
 > "Next: F6 get_pdf_full" item below was never worked in this format. The stale
 > guard flagged at the end of the batch-2 note (`get_TDR_s2p_RL_is_the_wrong_formula`)

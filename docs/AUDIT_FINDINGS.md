@@ -5,7 +5,7 @@
 > correlation — see [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md),
 > which is authoritative where the two disagree.
 >
-> What changed: eight engine defects were fixed (commit `b2b2621`), including
+> What changed: eight engine defects were fixed (commit `git log --grep="Fix 8 engine defects"`), including
 > **B16-D20, which this document rated "medium" and which a later end-to-end
 > trial wrongly appeared to refute** — it was compensating a second defect in the
 > die-network path, and both had to be fixed together. B12-D17 and B06-D9 are

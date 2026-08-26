@@ -35,7 +35,7 @@ Excluding them, **FOM is bit-exact on 99.0%**, the worst COM difference drops
 **6.6×** (0.185 → 0.028 dB) and rms drops **3.8×** (0.0187 → 0.0049 dB).
 
 > Figures updated 2026-08-20, after the `BEST.PSD_results` value-copy fix
-> (`00529f8`, `docs/STAGE6_NOISE_AGREEMENT.md` §8). That fix took COM bit-exact
+> (`git log --grep="BEST.PSD_results aliased"`, `docs/STAGE6_NOISE_AGREEMENT.md` §8). That fix took COM bit-exact
 > from 135 to 170 of 208 and pass/fail flips from 2 to 1. It left FOM (198) and
 > `itick` (200) untouched, because the optimiser always rebuilt the tick-dependent
 > PSDs correctly — so everything below about the eight still stands unchanged.

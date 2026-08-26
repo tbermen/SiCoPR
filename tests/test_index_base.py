@@ -23,9 +23,9 @@ cites the MATLAB line it mirrors.
 
 Measured recall when this was built, against the historical versions in git:
 
-  b2b2621~1   flags t_s in Apply_EQ and cursor_i in optimize_fom  -> defects #11, #7
-  62dbce6~1   flags t_s, plus ctle and G_high_pass                -> defects #11, #14
-  bc4cecb~1   flags ctle and G_high_pass in post-optimize         -> defect  #14
+  the version before the 8-defect fix   flags t_s in Apply_EQ and cursor_i in optimize_fom  -> defects #11, #7
+  the version before the ADC-clip fix   flags t_s, plus ctle and G_high_pass                -> defects #11, #14
+  the version before the BEST.ctle fix   flags ctle and G_high_pass in post-optimize         -> defect  #14
   HEAD        clean
 
 Three of the four known index defects, statically, with no false positives on
@@ -55,7 +55,8 @@ from audit_check import check, xcheck, finish  # noqa: E402
 # Optional path argument so the rules can be replayed against a historical
 # com.py -- that is how the recall figures above were measured, and how a future
 # change to the rules can be re-validated against known defects:
-#     git show b2b2621~1:com.py > /tmp/old.py && python tests/test_index_base.py /tmp/old.py
+#     git show <commit>:com.py > old.py && python tests/test_index_base.py old.py
+# Find the commit with e.g. git log --grep="ADC-clip sampling phase".
 COM_PY = (sys.argv[1] if len(sys.argv) > 1
           else os.path.join(os.path.dirname(_here), 'com.py'))
 

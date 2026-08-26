@@ -6,7 +6,7 @@
 > `ts_sample_adj_range = [-24, 24]` and `samples_per_ui = 32`, and **24 ≡ −8
 > (mod 32)**, the stale arrays were correct exactly when the winning tick was
 > −8 — which is precisely the signature this document describes below. Fixed in
-> `00529f8`; `sgm_TX` went from 2/208 exact to 42/48 on the validation subset.
+> `git log --grep="BEST.PSD_results aliased"`; `sgm_TX` went from 2/208 exact to 42/48 on the validation subset.
 > See §8. The itick divergences are a separate matter and are NOT fixed by this.
 >
 > **Final state 2026-08-22.** Two further fixes moved this stage: the ADC-clip

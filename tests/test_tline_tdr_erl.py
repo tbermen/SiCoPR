@@ -183,7 +183,7 @@ rho = (2 * ZT - S.Impedance) / (2 * ZT + S.Impedance)
 RL_matlab = (S11 - rho) / (1 - rho * S11)                 # ML: interim cancels
 
 # B06-D9 (get_TDR s2p RL used '/' where MATLAB 7080 uses '\' left division) was
-# FIXED in b2b2621. A second check used to sit here asserting com.py still
+# FIXED in the 8-defect correlation commit. A second check used to sit here asserting com.py still
 # produced the WRONG formula, interim^2/((s11-rho)*(1-rho*s11)); it inverted the
 # moment the bug was fixed and had been failing ever since. Removed -- the check
 # below is the one that carries meaning.

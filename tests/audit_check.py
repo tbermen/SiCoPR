@@ -67,7 +67,7 @@ def xcheck(name, cond, reason=""):
     Without this, every known divergence sat in the suite as a permanent FAIL,
     the totals never reached zero, and a genuine regression was invisible in the
     noise. Two entries had in fact gone stale unnoticed (the get_TDR s2p RL
-    formula and B16-D20's A_p offset, both fixed in b2b2621) — XPASS exists to
+    formula and B16-D20's A_p offset, both fixed in the 8-defect correlation commit) — XPASS exists to
     catch exactly that.
     """
     cond = bool(cond)
