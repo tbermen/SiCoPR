@@ -10,62 +10,44 @@ crosstalk = **208 cases**. MATLAB `code_revision = com_ieee8023_4p15p0.m`.
 
 ## 1. Headline
 
-All 208 cases run, **0 failures**.
+All 208 cases run, **0 failures**, on the configurations the MATLAB author
+confirmed: without-crosstalk on the base workbooks, with-crosstalk on the
+`*_sweep_TxFFE` workbooks that sweep the Tx FFE.
 
-The two reference workbooks were produced with **different Tx FFE settings**
-([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md) §11),
-and only the without-crosstalk config was supplied. Both readings are therefore
-reported throughout, and every figure is generated in both variants:
+| metric | result |
+|---|---|
+| FOM bit-exact | **208 / 208** |
+| COM bit-exact | **208 / 208** |
+| sampling phase (`itick`) exact | **208 / 208** |
+| max \|ΔCOM\| | **3.3e-14 dB** |
+| rms ΔCOM | **1.1e-14 dB** |
+| pass/fail disagreements at 3 dB | **0** |
 
-| | configs **as supplied** | settings **aligned** |
-|---|---|---|
-| FOM bit-exact | 198 / 208 | **208 / 208** |
-| COM bit-exact | 199 / 208 | **208 / 208** |
-| sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
-| max \|ΔCOM\| | 0.1852 dB | **3.3e-14 dB** |
-| rms ΔCOM | 0.0177 dB | **4.5e-15 dB** |
-| pass/fail disagreements at 3 dB | 0 | **0** |
+3.3e-14 dB is double-precision arithmetic noise, not agreement to a tolerance.
+The reference COM values span −4.82 to +6.68 dB, so the agreement holds across
+passing and failing channels alike and across all four package configurations.
 
-**Settings aligned** pairs each crosstalk condition with the settings its own
-reference used. Its with-crosstalk half is a **reconstruction**, not a config we were
-sent — supported by reproducing MATLAB's tap vector, sampling phase and FOM on all
-ten previously divergent cases, and by the 2×2 control in that document's §11, but
-to be confirmed
-before the numbers are quoted as like-for-like. **There is no remaining COM miss:**
-every case agrees to within 3.3e-14 dB, which is double-precision noise rather than
-agreement to a tolerance.
+Both engines ran **adaptive local search** — the reference workbooks are named
+`..._AdaptiveLS.xlsx`, and the configs set `Local Search = 2` with
+`Non-zero Local Search Method = 1`. This is an adaptive-vs-adaptive comparison.
 
-The rest of this section details the **as-supplied** run.
-
-| metric | FOM | COM |
-|---|---|---|
-| **bit-exact** | **198 / 208 (95.2 %)** | **198 / 208 (95.2 %)** |
-| median \|Δ\| | **0.000000 dB** | **0.000000 dB** |
-| rms Δ | 0.0082 dB | 0.0177 dB |
-| mean Δ | −0.0007 dB | −0.0013 dB |
-| \|Δ\| ≤ 0.01 dB | 202 / 208 | 202 / 208 |
-| \|Δ\| ≤ 0.05 dB | 206 / 208 | 203 / 208 |
-| max \|Δ\| | 0.0841 dB | 0.1852 dB |
-| sampling phase (`itick`) exact | **200 / 208** | |
-
-**Without crosstalk the agreement is exact: FOM 104/104, COM 104/104, `itick`
-104/104, max \|ΔCOM\| = 0.0000.**
-
-| condition | n | FOM exact | COM exact | `itick` exact | max \|ΔCOM\| |
-|---|---|---|---|---|---|
-| with crosstalk | 104 | 94 | 94 | 96 | 0.1852 |
-| without crosstalk | 104 | **104** | **104** | **104** | 0.0000 |
-
-Both engines ran **adaptive local search** — the supplied configs set
-`Local Search = 2` and `Non-zero Local Search Method = 1`, and MATLAB used those same
-config files. This is an adaptive-vs-adaptive comparison.
+> **There is no longer an "as supplied" versus "settings aligned" split.** An
+> earlier revision of this document reported two readings because only one of the
+> two configuration workbooks had been shared, and the with-crosstalk settings had
+> to be reconstructed. The MATLAB author confirmed on 2026-08-24 that the
+> with-crosstalk run did sweep the Tx FFE and supplied the workbooks that capture
+> it. What is reported here is the like-for-like comparison, not an inference.
+>
+> One setting is still inferred: the adaptive search's minimum radius. The
+> supplied workbooks set no radius keyword and the branch source forces 1, yet the
+> reference behaves as 2. The runs above use 2. See §4.
 
 ### What changed in this cycle
 
 | | before | after |
 |---|---|---|
-| max \|ΔCOM\| | 6.256 dB (start of correlation) | 0.185 dB |
-| FOM bit-exact | 8 / 208 (3.8 %) | **198 / 208 (95.2 %)** |
+| max \|ΔCOM\| | 6.256 dB (start of correlation) | **3.3e-14 dB** |
+| FOM bit-exact | 8 / 208 (3.8 %) | **208 / 208** |
 | systematic FOM bias | Python lower in 199/208 (95.7 %) | **eliminated** |
 
 ---
