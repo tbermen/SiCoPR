@@ -57,19 +57,33 @@ MATLAB_REF = os.path.join(_ROOT, 'matlab', 'com_ieee8023_4p15p0.m')
 # 1. Expected search-space size, per config, for the five dimensions
 #    optimize_fom actually loops over.
 #
-#    Tx FFE grid == 1 is the DEFECT DESCRIBED ABOVE, recorded deliberately: the
-#    supplied configs really do define a single unity tap set, and the MATLAB
-#    reference run did not. It is pinned so that if someone enables the sweep the
-#    test fails and forces the correlation to be re-stated, rather than the
-#    headline numbers shifting unnoticed.
+#    RESOLVED 2026-08-24. The MATLAB author confirmed that the with-crosstalk
+#    reference run DID sweep the Tx FFE; the workbook that captured those sweeps
+#    was simply not the one originally shared. The *_sweep_TxFFE configs carry
+#    the ranges in the Setting column and define a 1584-point grid.
+#
+#    Both shapes are therefore legitimate and both are pinned, keyed by filename:
+#    a plain config must stay single-point and a sweep config must stay 1584. If
+#    either moves, the correlation has to be re-stated rather than the headline
+#    numbers shifting unnoticed -- which is the whole point of this file.
 # ---------------------------------------------------------------------------
 EXPECTED_DIMS = {
     'cursor_gain (Gffe)': 1,     # 'crusor_gain' (MATLAB's typo) defaults to 0
     'ctle_gdc_values': 21,
     'g_DC_HP_values': 7,
-    'Tx FFE grid': 1,            # <-- see docs/TXFFE_SWEEP_ROOT_CAUSE.md
+    'Tx FFE grid': 1,            # overridden for *_sweep_TxFFE, see below
     'itick range': 49,
 }
+
+# Per-config overrides. The with-crosstalk reference used these.
+EXPECTED_DIMS_SWEEP = dict(EXPECTED_DIMS, **{
+    'Tx FFE grid': 1584,         # c(-1) 18 x c(-2) 8 x c(1) 11
+})
+
+
+def expected_for(base):
+    """Which pinned search space this config is required to have."""
+    return EXPECTED_DIMS_SWEEP if base.endswith('_sweep_TxFFE') else EXPECTED_DIMS
 
 # Keyword -> why a scalar value with a range template beside it is expected here.
 ADJACENT_KNOWN = {
@@ -148,8 +162,16 @@ def _strip_matlab_comments(text):
 
 def main():
     configs = sorted(glob.glob(os.path.join(CONFIG_DIR, '*.xlsx')))
-    check('configs_present', len(configs) >= 1,
-          'no config spreadsheets found in %s' % CONFIG_DIR)
+    if not configs:
+        # The COM configuration workbooks are correlation INPUTS and are not
+        # redistributed with the port (see README "What ships"). A clone without
+        # them is the normal case for anyone who has not downloaded the IEEE
+        # contributions, and it must not look like a broken repository: skip
+        # cleanly rather than failing the suite.
+        print('SKIP config_search_space: no config workbooks in %s' % CONFIG_DIR)
+        print('     These are correlation inputs, not shipped with the port.')
+        print('     See README.md for which IEEE 802.3dj contributions to download.')
+        return 0
 
     # ---- 1. search dimensions -------------------------------------------
     for path in configs:
@@ -159,7 +181,7 @@ def main():
         except Exception as exc:
             check('search_dims_%s' % base, False, 'could not evaluate: %r' % (exc,))
             continue
-        for key, expected in EXPECTED_DIMS.items():
+        for key, expected in expected_for(base).items():
             got = dims.get(key)
             check('dim_%s_%s' % (key.split()[0].strip('()'), base),
                   got == expected,
