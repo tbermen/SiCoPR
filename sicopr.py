@@ -9,6 +9,12 @@ To fix a function, edit its py_impl.py, re-run its test, then re-run assemble_co
 
 Translation reference: com_ieee8023_4p15p0_adaptive_local_search.m (12199 lines, 157 functions)
 Version metadata: VERSION.json
+
+Copyright 2025 802-COM Authors
+Copyright 2026 Todd Bermensolo
+SPDX-License-Identifier: BSD-3-Clause
+
+The MATLAB reference is BSD-3-Clause; this port is a derivative work released under the same terms. Clause 3 forbids implying endorsement -- this project is not affiliated with or approved by IEEE or the 802-COM Authors. See LICENSE.
 """
 
 import sys

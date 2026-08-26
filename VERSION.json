@@ -9,22 +9,40 @@
     "4p15p0 for the correlation corpus, then gained 4p16p0 support, while every",
     "generated com.py still announced 4p14p0."
   ],
-
   "default_matlab_version": "4p15p0",
-  "supported_matlab_versions": ["4p15p0", "4p16p0"],
-
+  "supported_matlab_versions": [
+    "4p15p0",
+    "4p16p0"
+  ],
   "primary_reference": {
     "file": "matlab/com_ieee8023_4p15p0_adaptive_local_search.m",
     "lines": 12199,
     "functions": 157,
     "note": "4p15p0 with the adaptive local search backported -- the build the 208-case reference workbooks were produced with. Plain 4p15p0 as distributed contains only OptFom_Local_Search."
   },
-
   "references": {
-    "4p14p0": {"file": "matlab/com_ieee8023_4p14p0.m", "lines": 11742, "functions": 153,
-               "note": "the original translation source; retained for history, no longer emulated"},
-    "4p15p0": {"file": "matlab/com_ieee8023_4p15p0.m", "lines": 11884, "functions": 154},
-    "4p16p0": {"file": "matlab/com_ieee8023_4p16p0.m", "lines": 12233, "functions": 157,
-               "note": "adaptive local search adopted into the mainline; see docs/MATLAB_4p16p0_CHANGES.md"}
+    "4p14p0": {
+      "file": "matlab/com_ieee8023_4p14p0.m",
+      "lines": 11742,
+      "functions": 153,
+      "note": "the original translation source; retained for history, no longer emulated"
+    },
+    "4p15p0": {
+      "file": "matlab/com_ieee8023_4p15p0.m",
+      "lines": 11884,
+      "functions": 154
+    },
+    "4p16p0": {
+      "file": "matlab/com_ieee8023_4p16p0.m",
+      "lines": 12233,
+      "functions": 157,
+      "note": "adaptive local search adopted into the mainline; see docs/MATLAB_4p16p0_CHANGES.md"
+    }
+  },
+  "license": {
+    "spdx": "BSD-3-Clause",
+    "original_copyright": "Copyright 2025 802-COM Authors",
+    "port_copyright": "Copyright 2026 Todd Bermensolo",
+    "note": "The MATLAB reference is BSD-3-Clause; this port is a derivative work released under the same terms. Clause 3 forbids implying endorsement -- this project is not affiliated with or approved by IEEE or the 802-COM Authors. See LICENSE."
   }
 }
