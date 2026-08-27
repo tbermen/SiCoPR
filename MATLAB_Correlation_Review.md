@@ -470,7 +470,7 @@ each workbook lists the columns blank on every row, derived from the exported da
 rather than from a fixed list.
 
 ```
-COM_Python_MATLAB_Review.pptx   17-slide review deck
+report_docs/COM_Python_MATLAB_Review.pptx   review deck (built, not tracked)
 MATLAB_Correlation_Review.md    this document
 tools/matlab_compare.py         --validate / --run / --report, checkpointed, --jobs N
 tools/export_results.py         result workbooks in the reference format

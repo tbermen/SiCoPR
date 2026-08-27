@@ -22,7 +22,7 @@ import com
 from sweep_compare import apply_grid_reduction, _extract_case
 import fom_com_probe as p
 
-CONFIG = 'config_com_dj_200G_CAKR_178_PKGA_06_2_2025__Case1_TXLEOn.xlsx'
+CONFIG = 'tests/ALS_test_configs/config_com_dj_200G_CAKR_178_PKGA_06_2_2025__Case1_TXLEOn.xlsx'
 THRU = 'akinwale_3dj_01_2310/Tx_NPC_250mm_32AWG_BPK_500mm_27AWG_BPK_250mm_32AWG_NPC_Rx_thru1.s4p'
 MAX_CTLE, MAX_TAP = 3, 3
 WIN = {'ctle_index': '0', 'lp_index': '3', 'gffe_index': '0',

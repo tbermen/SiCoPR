@@ -119,3 +119,53 @@ config*.xlsx
 # Development scaffolding -- prompts and state ledgers used while building the
 # port. Useful provenance locally, noise in a published repo.
 dev/prompts/
+
+# ---------------------------------------------------------------------------
+# Report documents (2026-08-27)
+# Decks and their PDF snapshots are deliverables, not source. Built by
+# tools/build_*_pptx.py from report_data/, so they are reproducible.
+report_docs/
+
+# ---------------------------------------------------------------------------
+# Correlation inputs, second pass (2026-08-27)
+# ALS study configs and their channels -- same reasoning as tests/1_ and 2_.
+tests/ALS_test_configs/
+
+# ---------------------------------------------------------------------------
+# MATLAB-derived reference values (2026-08-27)
+#
+# The first purge removed the reference WORKBOOKS but missed two places the same
+# numbers had been distilled into. Both carry MATLAB reference values keyed by
+# case, and vendor channel names:
+#
+#   tests/oracles/*.json   per-stage MATLAB oracles extracted from the workbooks
+#   report_data/*.csv      com_mat / fom_mat / matlab_rtmin columns
+#
+# Not ours to redistribute, in this form any more than in the original.
+tests/oracles/
+report_data/
+
+# ---------------------------------------------------------------------------
+# Generated outputs (2026-08-27)
+# All reproducible from the code plus the correlation inputs. The repo carries
+# the code that makes them, not the artifacts.
+report_figs/
+com_python_results/
+corpus_results/*.csv
+corpus_results/*.json
+corpus_results/*.html
+corpus_results/Tx_*/
+sweep_results/*.csv
+sweep_results/*.json
+sweep_results/*.html
+sweep_results/*.png
+sweep_results/archive_*/
+sweep_results/prefix_*/
+sweep_results/lib/
+# append-only log of every check ever run; grows without bound
+tests/results.csv
+
+# ---------------------------------------------------------------------------
+# Development scaffolding (2026-08-27)
+dev/state/
+.claude/
