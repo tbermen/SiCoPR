@@ -57,6 +57,14 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 | 14 | 2026-08-21 | `BEST.ctle` / `BEST.G_high_pass` used 1-based as 0-based in `OptFom_Update_BEST_Post_Optimize` | **1- vs 0-based** | corpus sweep crash | reporting-only, but it **hard-crashed** any run whose winning CTLE was last in the list | (this commit) |
 | 15 | 2026-08-22 | `floating_tap_locations` had a **producer-dependent base** — 0-based from `floatingDFE`, 1-based from `MMSE`/`force` | **1- vs 0-based** | index registry | the FDFE cursor-time vector was one UI early under `Floating_DFE` | (this commit) |
 | 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — settings-aligned COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
+| 17 | 2026-08-27 | adaptive-search radius floor forced to `1` on the 4p15p0 path, where the reference behaves as the 4p16p0 rule | **inferred setting** | the last open question | the `--min-radius 2` switch is **no longer needed** to reproduce the corpus | (this commit) |
+
+#17 is a settings deduction rather than a translation defect, and is written up in
+[`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) — including what it does
+not establish and what would overturn it. It is the **second** case of the supplied
+configuration snapshots post-dating the run that produced the reference results;
+the Tx FFE grid was the first. When a config and its own results disagree, suspect
+the config.
 
 **Five of the fifteen are the same root class**: MATLAB assigns structs **by
 value**, Python binds a **reference**. #8, #9 and part of #10 are direct

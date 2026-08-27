@@ -169,3 +169,8 @@ tests/results.csv
 # Development scaffolding (2026-08-27)
 dev/state/
 .claude/
+
+# ---------------------------------------------------------------------------
+# Input and report documents to exclude (2026-08-27)
+tests/ALS_test_configs
+report_docs

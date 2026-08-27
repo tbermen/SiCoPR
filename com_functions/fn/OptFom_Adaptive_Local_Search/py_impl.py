@@ -96,31 +96,26 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     adaptation_window = 2
     radius_shrink_factor = 0.60
     deterministic_shrink_rate = 0.15
-    if _v416:
-        # ML 4p16p0 L2782-2786: 1 only when there is a single TXFFE candidate,
-        # otherwise 2. The branch overrode this to 1 unconditionally, which is
-        # what the 4p15p0 path keeps. With a real TXFFE grid the mainline floor
-        # is therefore TWICE the branch's, so the pruning radius differs in the
-        # ordinary multi-candidate case.
-        min_radius = 1 if int(num_txffe_runs) == 1 else 2
-        # ML L2788-2792: a positive config value overrides the rule; empty
-        # leaves it alone.
-        if Overwrite_Min_Radius is not None:
-            try:
-                _omr = float(np.asarray(Overwrite_Min_Radius).ravel()[0])
-            except (TypeError, ValueError, IndexError):
-                _omr = None
-            if _omr is not None and _omr > 0:
-                min_radius = _omr
-    else:
-        # 4p15p0 as distributed has no adaptive search at all; this path models the
-        # backported branch, which forces 1 (2 tends to slow down).
-        min_radius = 1
-    # A positive Overwrite_Min_Radius from the config wins in EITHER version path.
-    # Previously it was honoured only under 4p16p0, so a config that set it while
-    # emulating 4p15p0 had it silently ignored -- and the floor matters: with a
-    # real Tx FFE grid, min_radius 1 vs 2 is the difference between reproducing
-    # the reference workbooks on 5 of 10 cases and on 10 of 10.
+    # ML 4p16p0 L2782-2786: the radius floor is 1 only when there is a single
+    # TXFFE candidate, otherwise 2.
+    #
+    # This rule is applied on BOTH version paths, which needs saying because the
+    # 4p15p0 adaptive-search branch source we hold forces 1 unconditionally.
+    # The reference workbooks do not behave that way. With the Tx FFE grid the
+    # reference actually swept (1584 candidates), a floor of 1 reproduces 5 of
+    # the 10 crosstalk cases that turn on it and a floor of 2 reproduces 10 of
+    # 10 -- see docs/MIN_RADIUS_ASSUMPTION.md. num_txffe_runs is the only
+    # quantity in the 4p16p0 delta that this floor depends on, so the mainline
+    # rule is both the simplest statement of the observed behaviour and one that
+    # already exists in published MATLAB. Modelling the branch's forced 1 would
+    # mean modelling a source revision that demonstrably did not produce the
+    # reference results.
+    #
+    # The single-candidate arm is unchanged by this: 1 either way.
+    min_radius = 1 if int(num_txffe_runs) == 1 else 2
+    # ML L2788-2792: a positive config value overrides the rule; empty leaves it
+    # alone. Honoured on both paths -- it used to be read only under 4p16p0, so a
+    # config setting it while emulating 4p15p0 had it silently discarded.
     if Overwrite_Min_Radius is not None:
         try:
             _omr = float(np.asarray(Overwrite_Min_Radius).ravel()[0])

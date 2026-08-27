@@ -78,7 +78,7 @@ Once the data is in place:
 
 ```powershell
 python tools/matlab_compare.py --validate      # resolve all 208 cases, run nothing
-python tools/matlab_compare.py --run --modal-erl --min-radius 2 --jobs 5
+python tools/matlab_compare.py --run --modal-erl --jobs 5
 python tools/export_compare_csv.py             # compare.csv, stages.csv
 python tools/plot_channel_sparams.py           # IL / RL / NEXT / FEXT over all 26 channels
 ```
@@ -328,8 +328,11 @@ with what each one bought, is [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md)). Rep
 defect, and are now resolved.** MATLAB's winning Tx FFE is non-unity on exactly
 those 10, and the supplied config defines a single-point Tx FFE grid. Two settings
 together reproduce MATLAB on all ten: the swept grid including
-`c(-2) = [0:.02:0.14]`, and adaptive-search `min_radius = 2`. Re-run with
-`--txffe-sweep --min-radius 2`.
+`c(-2) = [0:.02:0.14]`, and an adaptive-search radius floor of 2. That floor is
+no longer a switch — the port applies the 4p16p0 mainline rule (`1` for a
+single Tx FFE candidate, `2` otherwise) on both version paths, so
+`--txffe-sweep` alone reproduces them. See
+[`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md).
 
 That result is against **4p15p0**, which is why it stays the default emulation target — see
 §8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical

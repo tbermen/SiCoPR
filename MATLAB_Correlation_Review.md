@@ -38,9 +38,13 @@ Both engines ran **adaptive local search** — the reference workbooks are named
 > with-crosstalk run did sweep the Tx FFE and supplied the workbooks that capture
 > it. What is reported here is the like-for-like comparison, not an inference.
 >
-> One setting is still inferred: the adaptive search's minimum radius. The
-> supplied workbooks set no radius keyword and the branch source forces 1, yet the
-> reference behaves as 2. The runs above use 2. See §4.
+> The one setting that had to be deduced — the adaptive search's minimum radius
+> — is now settled, and needs no switch. The supplied workbooks set no radius
+> keyword and the branch source forces 1, yet the reference behaves as the
+> 4p16p0 mainline rule (`1` for a single Tx FFE candidate, `2` otherwise). The
+> port applies that rule on both version paths; the evidence, what it does not
+> establish, and what would overturn it are in
+> [`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md).
 
 ### What changed in this cycle
 
@@ -376,71 +380,94 @@ every case**, and no COM, FOM, VEO, VEC, `itick` or ERL value moves.
 | `Clip Method` default `Fast` → `Slow` | **COM +0.007 dB, FOM +0.22 dB**, but only for configs that omit the keyword — all 208 reference configs set it |
 | `min_radius` 1 → 2 in adaptive search | bit-identical answer, **4.3× the candidate evaluations, 2.5× the runtime** |
 
-The last two could not be exercised by the corpus (every case sweeps one TXFFE candidate,
-and every config names `Clip Method`), so they were measured separately on a config with a
-1584-point Tx FFE grid.
+Those measurements were taken when the whole corpus swept one TXFFE candidate per case.
+The with-crosstalk half now sweeps 1584, so `min_radius` **is** exercised by the corpus,
+and the port applies the mainline rule rather than the branch's forced 1 (§6.3,
+[`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md)). `Clip Method` still
+cannot be exercised here — all four configs name it explicitly.
 
-**Two points for you on this.** First, the mainline sets `min_radius = 2` where your branch
-forced 1; on that channel the mainline default evaluates 4.3× the candidates for a
-bit-identical answer, so we would be interested in what motivated 2 — it may help on channel
-classes not represented here. Second, a 4p16p0 run of these same 208 cases is what would let
-us move the default; with adaptive search now mainline it is a more useful comparison than
-when it was a branch.
+**Worth noting rather than asking:** on the CAKR channel the larger floor evaluates 4.3×
+the candidates for a bit-identical answer, so on that channel class it is pure overhead.
+It is not overhead everywhere — it is what reproduces 10 of the 10 crosstalk cases that
+turn on it.
 
 Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_IMPACT.md`
 (measured effect).
 
 ---
 
-## 6. Requests
+## 6. Open questions — all closed
 
-1. **Which Tx FFE tap ranges were active in the run that produced the workbooks?**
+Nothing is outstanding. This section used to carry requests; each is recorded
+here with how it was settled, because the answers are what the correlation now
+rests on.
 
-   The four configs supplied set `c(-1)`, `c(-2)` and `c(1)` to `0` in the value column,
-   which yields a single unity Tx FFE. The workbooks contain non-unity winners on 10
-   cases (`[0, −0.02, 0.98, 0]`, `[0, −0.04, 0.96, 0]`, `[0, −0.06, 0.94, 0]`,
-   `[0, −0.1, 0.9, 0]`), so that run used a wider grid — see §4.1.
+### 6.1 The Tx FFE grid — answered by the maintainer
 
-   Part of it can be inferred: MATLAB's reported `TXLE_taps` has **four** elements, and
-   `OptFom_Build_TXFFE` trims leading single-valued zero taps until the first non-trivial
-   one, so the `c(-2)` slot survived — meaning it held at least two values. Specifically:
-   was `c(-2)` set to `[ 0.14:.02:0]` (which evaluates *empty*) or to something else, and
-   were `c(-3)` / `c(-4)` in play?
+The four supplied configs set `c(-1)`, `c(-2)` and `c(1)` to `0` in the value
+column, yielding a single unity Tx FFE, while the reference workbooks contain
+non-unity winners on 10 cases. Confirmed on 2026-08-24: the with-crosstalk run
+**did** sweep the Tx FFE, and the workbooks capturing it were supplied
+(`*_sweep_TxFFE.xlsx`, 1584 candidates). The with-crosstalk half of the
+correlation now runs on those; the without-crosstalk half runs on the base
+workbooks, which is the configuration its own reference used.
 
-   With the exact set, the corpus can be re-run on a matched search space.
+Detail: [`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md).
 
-   *An earlier version of this request asked whether the two workbooks record Tx FFE at
-   different granularity, and proposed that the single-column and four-column forms were
-   "the same answer written two ways". That reading was wrong: the non-unity values are
-   real, and they are the whole explanation for the remaining disagreement.*
+*An earlier version of this item asked whether the two workbooks record Tx FFE at
+different granularity, and proposed that the single-column and four-column forms
+were "the same answer written two ways". That reading was wrong: the non-unity
+values are real, and they were the whole explanation for the disagreement.*
 
-2. **Confirmation only: adaptive local search, with a backported implementation?**
+### 6.2 Adaptive local search — answered by the workbook names
 
-   The reference workbooks are named `..._AdaptiveLS.xlsx`, so the run used adaptive
-   local search and COM Python's `Non-zero Local Search Method = 1` matches it. Worth
-   one line of confirmation because `com_ieee8023_4p15p0.m` **as distributed** contains
-   only `OptFom_Local_Search` — `OptFom_Adaptive_Local_Search` first appears in 4p16p0.
-   The natural reading is that the run used a 4p15p0 build with the adaptive search
-   backported, which is what one would expect from its author.
+The reference workbooks are named `..._AdaptiveLS.xlsx`, so the run used adaptive
+local search, and the port's `Non-zero Local Search Method = 1` matches it.
+`com_ieee8023_4p15p0.m` **as distributed** contains only `OptFom_Local_Search` —
+`OptFom_Adaptive_Local_Search` first appears in 4p16p0 — so the run used a
+4p15p0 build with the search backported, which is what one would expect from its
+author.
 
-   *An earlier draft of this section listed the search method as a second mismatch and
-   asserted that COM Python "has been running the adaptive search against a legacy
-   reference". That was wrong — the workbook filenames say `AdaptiveLS`. The search
-   method is not a discrepancy; the only open unknown is the Tx FFE grid in item 1.*
+*An earlier draft listed the search method as a second mismatch and asserted that
+the port "has been running the adaptive search against a legacy reference". That
+was wrong.*
 
-   **What does still matter for the proposal:** MATLAB's own reported answer is not its
-   grid's optimum on 2 of the 10 cases. On `wXtalk_T3_R17` seven candidates beat it at
-   its own CTLE, including unity itself (13.8662 vs the reported 13.8016). So adaptive
-   local search can stop short on a real Tx FFE grid. The "adaptive == full grid"
-   result in §5 (now 208/208) is measured with the configs as supplied, i.e. on a
-   single-point Tx FFE grid where the adaptive search has nothing to prune in that
-   dimension. On a real grid it finds the optimum on 15 of 16, worst loss 0.0093 dB
-   (`docs/TXFFE_SWEEP_ROOT_CAUSE.md` §9).
+**One finding here is worth keeping, because it is about the method rather than
+about the port.** MATLAB's own reported answer is not its grid's optimum on 2 of
+those 10 cases. On `wXtalk_T3_R17` seven candidates beat it at its own CTLE,
+including unity itself (13.8662 vs the reported 13.8016). So adaptive local
+search can stop short on a real Tx FFE grid. The "adaptive == full grid" result
+in §5 is measured on a single-point grid, where the search has nothing to prune
+in that dimension; on a real grid it finds the optimum on 15 of 16, worst loss
+0.0093 dB ([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md)
+§9).
 
-   *`cursor_i` / absolute `t_s` is no longer requested — the frame-origin hypothesis it
-   was meant to test has been displaced, and the stage-6 noise question it was also meant
-   to settle turned out to be a Python defect (`docs/STAGE6_NOISE_AGREEMENT.md` §8,
-   fixed).*
+### 6.3 The adaptive-search radius floor — deduced, and closed
+
+The last setting that had to be inferred. The supplied workbooks set no radius
+keyword and the branch source forces `1`, yet the reference behaves as `2` on a
+multi-candidate grid — a floor of 1 reproduces 5 of the 10 cases, a floor of 2
+reproduces 10 of 10.
+
+Rather than ask, the port adopts the rule that already exists in published
+MATLAB and produces exactly that behaviour — the 4p16p0 mainline
+`1 if num_txffe_runs == 1 else 2` (L2782-2786) — applied on both version paths.
+The reproduction command needs no radius switch as a result.
+
+This is the **second** instance of the same drift in the same run: the supplied
+configuration snapshots are a later state than the one that produced the
+results, which is ordinary for experimental work that is not under revision
+control, and is already established for the Tx FFE grid above. The assumption,
+its evidence, what it does *not* establish, and what would overturn it:
+[`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md).
+
+### 6.4 Withdrawn
+
+`cursor_i` / absolute `t_s` was requested to test a frame-origin hypothesis. That
+hypothesis has been displaced, and the stage-6 noise question the request was
+also meant to settle turned out to be a Python defect
+([`docs/STAGE6_NOISE_AGREEMENT.md`](docs/STAGE6_NOISE_AGREEMENT.md) §8, fixed).
+No further reference data is needed.
 
 ---
 
@@ -448,21 +475,17 @@ Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_I
 
 ```
 com_python_results/
-    as-supplied/
-        Results_COM_Python_as-supplied_wXtalk.xlsx        104 cases
-        Results_COM_Python_as-supplied_woXtalk.xlsx       104 cases
-    settings-aligned/
-        Results_COM_Python_settings-aligned_wXtalk.xlsx   104 cases
-        Results_COM_Python_settings-aligned_woXtalk.xlsx  104 cases
+    confirmed/
+        Results_COM_Python_confirmed_wXtalk.xlsx      104 cases
+        Results_COM_Python_confirmed_woXtalk.xlsx     104 cases
 ```
 
-Two sets, because the two MATLAB reference workbooks were evidently produced with
-different Tx FFE settings ([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md)
-§11): **as-supplied** runs every case on the four config
-spreadsheets as received; **settings-aligned** runs each condition on the settings its
-own reference used. Only the wXtalk half differs between them, and that half is a
-reconstruction — each workbook's NOTES sheet says so, and records which result
-directories it was built from.
+**One set, not two.** Each crosstalk condition is run on the configuration its own
+MATLAB reference was produced with: the without-crosstalk cases on the base workbooks,
+the with-crosstalk cases on the `*_sweep_TxFFE` workbooks. That pairing was confirmed by
+the COM maintainer on 2026-08-24, so this is a like-for-like comparison and no longer a
+reconstruction — which is why the earlier "as-supplied" / "settings-aligned" split has
+been retired. The radius floor needs no switch either (§6.3).
 
 Same four tabs, same 26 rows, same 262-column header in the same order as the MATLAB
 workbooks, so the two sets diff column-by-column with no remapping. A NOTES sheet in
@@ -482,7 +505,8 @@ R/correlation_report.R          the figures in the deck
 ```bash
 python tools/matlab_compare.py --validate                 # resolve all 208 cases
 python tools/matlab_compare.py --run --modal-erl --jobs 5  # ~3.4 h, checkpointed
-python tools/matlab_compare.py --run --modal-erl --txffe-sweep --min-radius 2 \n       --only-cond wXtalk --jobs 5                       # the aligned wXtalk half
+python tools/matlab_compare.py --run --modal-erl --txffe-sweep \
+       --only-cond wXtalk --jobs 5                       # the aligned wXtalk half
 python tools/export_results.py --set as-supplied          # result workbooks
 python tools/export_results.py --set settings-aligned
 python tools/export_compare_csv.py                        # tidy CSVs
