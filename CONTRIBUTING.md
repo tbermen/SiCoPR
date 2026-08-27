@@ -11,6 +11,68 @@ Thanks for looking at this. One rule matters more than all the others:
 
 ---
 
+## How to propose a change
+
+**Nobody pushes to `master`, including the maintainer.** Every change arrives as a
+pull request and is merged after review. If you have never done this on GitHub,
+the whole sequence is:
+
+```bash
+# 1. Fork on github.com (button, top right). You now own a copy.
+# 2. Clone YOUR fork
+git clone https://github.com/<you>/IEEE_COM_Python.git
+cd IEEE_COM_Python
+
+# 3. Branch. Name it after the change, not after yourself.
+git checkout -b fix-ctle-index-base
+
+# 4. Work. Follow "The loop" below, and make sure tests/run_all.ps1 is green.
+git add -A
+git commit          # see "Commit messages"
+
+# 5. Push to your fork and open the pull request
+git push -u origin fix-ctle-index-base
+# GitHub prints a link; follow it, or use the "Compare & pull request" button.
+```
+
+You do **not** need permission to do any of this, and you cannot break anything:
+a fork is your own copy, and a pull request is a proposal, not a change.
+
+**Open an issue first if the change is large or changes a number.** A defect
+report costs you five minutes and may save you a week — the answer is sometimes
+"the MATLAB does that too, on purpose" (see *Prefer fidelity over improvement*).
+For a typo or an obvious bug, skip straight to the pull request.
+
+### What happens to your pull request
+
+1. **CI runs automatically** on a clean clone with no correlation data: the unit
+   suite, the cross-check scripts, a check that `com.py` matches its sources, and
+   a check that the licence notice is intact. All of it must pass. You can run
+   the same thing locally first — that is what `tests/run_all.ps1` is.
+2. **The maintainer reviews it.** Expect questions about which MATLAB lines the
+   new behaviour matches; that is the review, not scepticism about you.
+3. **Numbers get checked against the reference set** if the change can move a
+   COM, FOM or sampling-phase value. That run needs data that is not in this
+   repository, so the maintainer does it. It takes a few hours; be patient.
+4. **Merge.** Your commits keep your name on them.
+
+A pull request that is stalled is usually waiting on a question, not rejected.
+Ask.
+
+### Reporting a defect without fixing it
+
+That is a real contribution and is welcome. What makes a report actionable:
+
+- the configuration and channel involved, or the smallest input that shows it;
+- what you expected, what you got, and **where the MATLAB says the expected
+  thing** if you know;
+- the full traceback, if it crashed.
+
+If the input is not yours to share, say so — a description of the shape of the
+problem is still worth having.
+
+---
+
 ## The loop
 
 ```bash

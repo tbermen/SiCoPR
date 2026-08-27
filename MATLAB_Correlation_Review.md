@@ -1,6 +1,10 @@
 # COM Python — MATLAB Correlation and Adaptive Local Search
 
-**Status review for Hansel D'Silva — 21 August 2026**
+**Correlation status review — 21 August 2026**
+
+*Written for, and reviewed with, Hansel D'Silva, who produced the MATLAB
+reference results this port is measured against. Published here because the
+evidence for the correctness claim belongs with the code that makes it.*
 
 Reference data: `Results_Matlab_COM_v4p15_*_ClipMethodSlow_AdaptiveLS.xlsx` (supplied
 12 Aug 2026), 26 IEEE 802.3dj CR/KR channels × 4 package configs × with/without

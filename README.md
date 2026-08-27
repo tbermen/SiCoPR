@@ -26,6 +26,29 @@ On top of the engine there is a study layer (`tools/`, `R/`) built to answer one
 
 ---
 
+## Licence and status
+
+**BSD-3-Clause** — [`LICENSE`](LICENSE). The MATLAB reference this is ported from is
+BSD-3-Clause (*Copyright 2025 802-COM Authors*); this port is a derivative work released
+under the same terms, so the licence travels with it. The reference sources are
+redistributed unmodified under `matlab/`, notices intact.
+
+> **Not an IEEE product.** This project is **not** endorsed by, affiliated with, or
+> approved by IEEE, the IEEE 802.3 working group, or the 802-COM Authors. It is an
+> independent port of the published MATLAB reference. Please describe it that way —
+> clause 3 of the licence requires it. "IEEE 802.3" appears here only to identify the
+> standard the reference implements.
+
+**Correctness is a measured claim, not a promise.** Against the 208-case reference set the
+port reproduces MATLAB bit-for-bit on COM, FOM and sampling phase, with the caveats and the
+things *not* covered stated plainly in §7. Read §7 before you rely on it for anything.
+
+**Contributions are welcome** — the process is short and is in
+[`CONTRIBUTING.md`](CONTRIBUTING.md). In brief: fork, branch, open a pull request; nobody
+pushes to `master` directly, including the maintainer.
+
+---
+
 ## 1. What ships in this repository — and what doesn't
 
 **The port ships. The correlation data does not.** The engine, its tests, the tooling

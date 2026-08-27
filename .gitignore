@@ -174,3 +174,9 @@ dev/state/
 # Input and report documents to exclude (2026-08-27)
 tests/ALS_test_configs
 report_docs
+1_run_com.bat
+1_start_cmd.bat
+# ---------------------------------------------------------------------------
+# Stale console dump (2026-08-27)
+# Kept locally for its error text; it also carries local paths.
+dev/debug_error_messages_*.txt
