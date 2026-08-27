@@ -80,6 +80,7 @@ Once the data is in place:
 python tools/matlab_compare.py --validate      # resolve all 208 cases, run nothing
 python tools/matlab_compare.py --run --modal-erl --min-radius 2 --jobs 5
 python tools/export_compare_csv.py             # compare.csv, stages.csv
+python tools/plot_channel_sparams.py           # IL / RL / NEXT / FEXT over all 26 channels
 ```
 
 `--validate` is the useful first step: it reports which cases it can and cannot
