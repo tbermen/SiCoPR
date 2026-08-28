@@ -159,6 +159,7 @@ sweep_results/*.csv
 sweep_results/*.json
 sweep_results/*.html
 sweep_results/*.png
+sweep_results/*.log
 sweep_results/archive_*/
 sweep_results/prefix_*/
 sweep_results/lib/
