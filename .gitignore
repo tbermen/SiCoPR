@@ -178,6 +178,12 @@ report_docs
 1_run_com.bat
 1_start_cmd.bat
 # ---------------------------------------------------------------------------
+# Agent guidance (2026-08-27)
+# How I work on this repo, not something anyone needs in order to run COM.
+# Ignored as well as untracked -- `git add -A` put it straight back once.
+CLAUDE.md
+
+# ---------------------------------------------------------------------------
 # Stale console dump (2026-08-27)
 # Kept locally for its error text; it also carries local paths.
 dev/debug_error_messages_*.txt
