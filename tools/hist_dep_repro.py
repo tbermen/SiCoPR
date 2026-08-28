@@ -18,7 +18,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # tools/
 os.chdir(_ROOT)
-import com
+import sicopr
 from sweep_compare import apply_grid_reduction, _extract_case
 import fom_com_probe as p
 
@@ -72,9 +72,9 @@ def snapshot(param, fom_result, chdata, OP):
 
 def run(mode):
     """mode 'A' = TXFFE pinned to winner; mode 'B' = all TXFFE rows."""
-    orig_read = com.read_ParamConfigFile
-    orig_build = com.OptFom_Build_TXFFE
-    orig_apply = com.Apply_EQ
+    orig_read = sicopr.read_ParamConfigFile
+    orig_build = sicopr.OptFom_Build_TXFFE
+    orig_apply = sicopr.Apply_EQ
     cap = {}
 
     def patched_read(cf, OP):
@@ -93,16 +93,16 @@ def run(mode):
             cap.update(snapshot(param, fom_result, chdata, OP))
         return orig_apply(param, fom_result, chdata, OP)
 
-    com.read_ParamConfigFile = patched_read
-    com.Apply_EQ = patched_apply
+    sicopr.read_ParamConfigFile = patched_read
+    sicopr.Apply_EQ = patched_apply
     if mode == 'A':
-        com.OptFom_Build_TXFFE = p._pinned_build(orig_build, WIN)
+        sicopr.OptFom_Build_TXFFE = p._pinned_build(orig_build, WIN)
     try:
-        res = com._run_com(CONFIG, 0, 0, [THRU], export_mat=False)
+        res = sicopr._run_com(CONFIG, 0, 0, [THRU], export_mat=False)
     finally:
-        com.read_ParamConfigFile = orig_read
-        com.OptFom_Build_TXFFE = orig_build
-        com.Apply_EQ = orig_apply
+        sicopr.read_ParamConfigFile = orig_read
+        sicopr.OptFom_Build_TXFFE = orig_build
+        sicopr.Apply_EQ = orig_apply
 
     r = _extract_case(res)
     return float(getattr(r, 'COM_dB', float('nan'))), cap

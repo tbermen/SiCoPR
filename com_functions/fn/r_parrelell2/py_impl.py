@@ -8,7 +8,7 @@
 #   s21 = s12 = 2 / (zref/rpad + 2) = 2*rpad / (zref + 2*rpad)
 # Output struct: SimpleNamespace with Parameters of shape (2,2,N).
 # Frequency-independent (values broadcast across all N freq points).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 from types import SimpleNamespace
 import numpy as np

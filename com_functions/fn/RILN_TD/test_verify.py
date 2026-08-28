@@ -13,13 +13,13 @@ import pytest
 from types import SimpleNamespace
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-import com  # assembled module (provides s21_to_impulse_DC, Bessel/Butterworth filters)
+import sicopr  # assembled module (provides s21_to_impulse_DC, Bessel/Butterworth filters)
 import com_functions.fn.RILN_TD.py_impl as _mod
 from com_functions.fn.RILN_TD.py_impl import RILN_TD
 
 # Inject the real top-level dependencies RILN_TD calls as bare globals.
-for _n in dir(com):
-    _v = getattr(com, _n)
+for _n in dir(sicopr):
+    _v = getattr(sicopr, _n)
     if callable(_v) and not _n.startswith('__') and not hasattr(_mod, _n):
         setattr(_mod, _n, _v)
 
@@ -104,4 +104,4 @@ def test_nonzero_channel_computes_riln():
 
 
 def test_uses_real_s21_to_impulse_DC():
-    assert _mod.s21_to_impulse_DC is com.s21_to_impulse_DC
+    assert _mod.s21_to_impulse_DC is sicopr.s21_to_impulse_DC

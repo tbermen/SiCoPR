@@ -3,7 +3,7 @@ section 6). Each audit test file does:
 
     from audit_check import check, xcheck, finish
     check("name_of_check", cond, "reason shown on FAIL")
-    xcheck("known_divergence", cond, "why com.py differs from MATLAB")
+    xcheck("known_divergence", cond, "why sicopr.py differs from MATLAB")
     ...
     finish()   # prints summary, exits nonzero on any UNEXPECTED outcome
 

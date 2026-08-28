@@ -28,7 +28,7 @@ $env:COM_TEST_FIXTURES = "D:\com_fixtures"; python -m pytest tests -q
 They are a **single-channel smoke check** — the pipeline runs end to end and the
 intermediate variables land in sensible ranges. `EXPECTED_COM_DB` in
 `test_end_to_end.py` is deliberately `None`: no MATLAB run exists for this
-particular 802.3ck pair, and filling it in from com.py's own output would make
+particular 802.3ck pair, and filling it in from sicopr.py's own output would make
 the assertion circular.
 
 Numeric parity with MATLAB is established elsewhere, and much more thoroughly —

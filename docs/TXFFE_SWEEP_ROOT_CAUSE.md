@@ -276,7 +276,7 @@ defect.
 
 One level up, the same class appears as *a keyword the reference honours and the
 port ignores*. Comparing every `xls_parameter` call in `com_ieee8023_4p15p0.m`
-against `com.py`: **every keyword MATLAB reads is read by the port.** The three
+against `sicopr.py`: **every keyword MATLAB reads is read by the port.** The three
 the port reads and 4p15p0 does not are `COM Version` (a port-only version
 switch) and `Non-zero Local Search Method` / `Overwrite Minimum Radius`, both of
 which exist in 4p16p0 with exactly those spellings.

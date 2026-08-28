@@ -1,5 +1,5 @@
 # com_analysis.R -- interactive R/Plotly visualisation of a COM engineering .mat
-# snapshot produced by `python com.py ... --export-mat`.
+# snapshot produced by `python sicopr.py ... --export-mat`.
 #
 # Dependencies:  install.packages(c("R.matlab", "plotly", "htmltools"))
 #
@@ -347,7 +347,7 @@ plot_pulse <- function(dat) {
            "port follows it, so neither tool emits an eye by default. That is a ",
            "reporting choice, not a limitation: MLSE is applied afterwards ",
            "(L667), so the pre-MLSE (DFE-only) eye is well defined. To plot it, ",
-           "re-run with  com.EYE_PLOT_UNDER_MLSE = True  -- diagnostic only, it ",
+           "re-run with  sicopr.EYE_PLOT_UNDER_MLSE = True  -- diagnostic only, it ",
            "changes no reported COM, VEC, VEO or EW value.")
   else
     paste0("No eye data in this .mat. COM_eye_width runs only when ",

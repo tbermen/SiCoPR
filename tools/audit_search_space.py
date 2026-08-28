@@ -68,19 +68,19 @@ def search_dims(path):
     """The five EQ search dimensions the optimiser actually loops over."""
     import io as _io
     from types import SimpleNamespace
-    import com
-    src = _io.open(os.path.join(_ROOT, 'com.py'), encoding='utf-8').read().split('\n')
+    import sicopr
+    src = _io.open(os.path.join(_ROOT, 'sicopr.py'), encoding='utf-8').read().split('\n')
     a = next(i for i, l in enumerate(src) if l.strip() == 'OP = SimpleNamespace()')
     b = next(i for i, l in enumerate(src) if 'param, OP = read_ParamConfigFile' in l)
     ns = {'SimpleNamespace': SimpleNamespace}
     exec('\n'.join(l[4:] for l in src[a:b]), ns)
-    param, OP = com.read_ParamConfigFile(path, ns['OP'])
+    param, OP = sicopr.read_ParamConfigFile(path, ns['OP'])
 
     def n(v):
         return int(np.atleast_1d(np.asarray(v)).size)
 
     tsar = np.atleast_1d(np.asarray(param.ts_sample_adj_range)).ravel()
-    txffe, _cur, _sw, _fv, _cv = com.OptFom_Build_TXFFE(param)
+    txffe, _cur, _sw, _fv, _cv = sicopr.OptFom_Build_TXFFE(param)
     return {
         'cursor_gain (Gffe)': n(getattr(param, 'cursor_gain', 0)),
         'ctle_gdc_values': n(param.ctle_gdc_values),

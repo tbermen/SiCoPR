@@ -1,6 +1,6 @@
 """Audit batch B08: G6 PDF/CDF noise pipeline, composite.
 
-Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
+Functions under audit (MATLAB com_ieee8023_4p15p0.m -> sicopr.py):
   Create_Noise_PDF              ML 1557-1685 -> py 1995-2125
   combine_pdf_same_voltage_axis ML 5418-5458 -> py 8009-8046
   comb_fct                      ML 5390-5415 -> py 7960-7984
@@ -31,7 +31,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def rel_err(a, b):
@@ -57,8 +57,8 @@ rng = np.random.default_rng(80808)
 # ===========================================================================
 p1 = mk_pdf(1e-3, -2, [0.1, 0.2, 0.4, 0.2, 0.1])
 p2 = mk_pdf(1e-3, -1, [0.25, 0.5, 0.25])
-cmnz = com.conv_fct_MeanNotZero(p1, p2)
-cf = com.conv_fct(p1, p2)
+cmnz = sicopr.conv_fct_MeanNotZero(p1, p2)
+cf = sicopr.conv_fct(p1, p2)
 check("conv_fct_MeanNotZero_agrees_with_conv_fct",
       rel_err(cmnz.y, cf.y) <= 1e-15 and cmnz.Min == cf.Min
       and rel_err(cmnz.x, cf.x) <= 1e-15,
@@ -73,7 +73,7 @@ check("conv_fct_MeanNotZero_conserves_mass",
 pa = mk_pdf(1e-3, -3, [0.05, 0.1, 0.2, 0.3, 0.2, 0.1, 0.05])   # x=-3..3
 pb = mk_pdf(1e-3, -2, [0.2, 0.3, 0.3, 0.2])                     # Min=-2, len 4
 # Oracle (ML 5398-5412): Min=min, shift pb into pa's range, add.
-pc = com.comb_fct(pa, pb)
+pc = sicopr.comb_fct(pa, pb)
 difsz = abs(pa.Min - pb.Min)
 oracle_pb = np.zeros(len(pa.y))
 oracle_pb[difsz:difsz + len(pb.y)] = pb.y
@@ -93,7 +93,7 @@ pdf1 = SimpleNamespace(BinSize=1e-3, x=np.arange(-4, 3) * 1e-3,
                        y=np.array([0.1, 0.1, 0.2, 0.2, 0.2, 0.1, 0.1]))
 pdf2 = SimpleNamespace(BinSize=1e-3, x=np.arange(-2, 5) * 1e-3,
                        y=np.array([0.15, 0.2, 0.3, 0.2, 0.1, 0.03, 0.02]))
-out = com.combine_pdf_same_voltage_axis(pdf1, pdf2)
+out = sicopr.combine_pdf_same_voltage_axis(pdf1, pdf2)
 check("combine_pdf_mass_is_sum",
       abs(np.sum(out.y) - (np.sum(pdf1.y) + np.sum(pdf2.y))) <= 1e-13,
       "combine_pdf mass != sum of input masses")
@@ -104,7 +104,7 @@ check("combine_pdf_common_axis",
       "combine_pdf did not build the union voltage axis")
 # Equal-min shortcut (shift_amount=0).
 pdf3 = SimpleNamespace(BinSize=1e-3, x=np.arange(-3, 4) * 1e-3, y=np.ones(7) / 7)
-out2 = com.combine_pdf_same_voltage_axis(pdf3, pdf3)
+out2 = sicopr.combine_pdf_same_voltage_axis(pdf3, pdf3)
 check("combine_pdf_equal_min",
       rel_err(out2.y, 2 * pdf3.y) <= 1e-15,
       "combine_pdf of identical PDFs != 2x")
@@ -118,7 +118,7 @@ values = 2 * np.arange(L) / (L - 1) - 1.0
 sigma_PAM2 = float(np.sum(values ** 2) / L)          # variance of uniform PAM levels
 
 isi = np.array([0.03, -0.02, 0.015, -0.008, 0.005])
-p_isi = com.get_pdf_from_sampled_signal(isi, L, BinSize)
+p_isi = sicopr.get_pdf_from_sampled_signal(isi, L, BinSize)
 check("gpfss_conserves_mass",
       abs(np.sum(p_isi.y) - 1.0) <= 1e-9,
       "get_pdf_from_sampled_signal mass != 1")
@@ -134,7 +134,7 @@ check("gpfss_variance_is_sum_of_terms",
       abs(var_out - var_expect) <= 1e-3 * var_expect,
       "ISI PDF variance %g != sum(v^2)*sigma_PAM^2 %g" % (var_out, var_expect))
 # Tiny input (all < BinSize) -> delta at 0.
-p_tiny = com.get_pdf_from_sampled_signal(np.array([1e-9, -1e-9]), L, BinSize)
+p_tiny = sicopr.get_pdf_from_sampled_signal(np.array([1e-9, -1e-9]), L, BinSize)
 check("gpfss_tiny_input_delta",
       len(p_tiny.y) == 1 and abs(p_tiny.y[0] - 1.0) <= 1e-15,
       "sub-bin input did not give the delta PDF")
@@ -146,9 +146,9 @@ delta_y = 1e-4
 levels = 4
 A_s = 0.5
 # Build ISI/crosstalk PDFs.
-sci = com.get_pdf_from_sampled_signal(np.array([0.02, -0.015, 0.01]), levels, delta_y)
-next_pdf = com.get_pdf_from_sampled_signal(np.array([0.008, -0.005]), levels, delta_y)
-fext_pdf = com.get_pdf_from_sampled_signal(np.array([0.006, 0.004]), levels, delta_y)
+sci = sicopr.get_pdf_from_sampled_signal(np.array([0.02, -0.015, 0.01]), levels, delta_y)
+next_pdf = sicopr.get_pdf_from_sampled_signal(np.array([0.008, -0.005]), levels, delta_y)
+fext_pdf = sicopr.get_pdf_from_sampled_signal(np.array([0.006, 0.004]), levels, delta_y)
 chdata = [SimpleNamespace(type='THRU', pdfr=sci, faxis=np.linspace(0, 40e9, 64)),
           SimpleNamespace(type='NEXT', pdfr=next_pdf),
           SimpleNamespace(type='FEXT', pdfr=fext_pdf)]
@@ -161,7 +161,7 @@ fom_result = SimpleNamespace(sigma_N=1.5e-3, h_J=h_J, ctle=1, txffe=[1.0], cur=1
 OP = SimpleNamespace(RX_CALIBRATION=False, FFE_OPT_METHOD='none', RxFFE=False,
                      SNR_TXwC0=False, force_BBN_Q_factor=False, PSDRXCAL=False)
 
-PDF, CDF, NS = com.Create_Noise_PDF(A_s, param, fom_result, chdata, OP, 0.0, None)
+PDF, CDF, NS = sicopr.Create_Noise_PDF(A_s, param, fom_result, chdata, OP, 0.0, None)
 
 check("Create_Noise_PDF_combined_mass_one",
       abs(np.sum(PDF.y) - 1.0) <= 1e-6,
@@ -213,7 +213,7 @@ param_f = SimpleNamespace(samples_per_ui=M_orig, samples_for_C2M=samp_UI,
                           use_bmin=bmin, levels=levels_f, R_LM=0.95)
 OP_f = SimpleNamespace(DISPLAY_WINDOW=False)
 
-pdf_list, h_j_full, A_s_vec = com.get_pdf_full(chdata_f, delta_yf, t_s_orig, param_f, OP_f, None)
+pdf_list, h_j_full, A_s_vec = sicopr.get_pdf_full(chdata_f, delta_yf, t_s_orig, param_f, OP_f, None)
 
 
 def gpf_oracle(pulse, t_s_orig, param):
@@ -237,7 +237,7 @@ def gpf_oracle(pulse, t_s_orig, param):
     post = t_s + samp_UI * np.arange(1, ndfe + 1)
     icc = SBR[post]
     cursor = residual[t_s]
-    ecc = com.dfe_clipper(icc, cursor * param.bmax[:ndfe], cursor * param.bmin[:ndfe])
+    ecc = sicopr.dfe_clipper(icc, cursor * param.bmax[:ndfe], cursor * param.bmin[:ndfe])
     ecs = np.repeat(ecc, samp_UI)
     start_cancel = t_s - half_UI_M + samp_UI + 1      # ML 1-based -> 0-based
     residual[start_cancel:start_cancel + ndfe * samp_UI] -= ecs
@@ -254,7 +254,7 @@ def gpf_oracle(pulse, t_s_orig, param):
     vs_shift = np.roll(vs, shift, axis=1)
     pdfs = [None] * samp_UI
     for k in range(1, samp_UI + 1):
-        pdfs[k - 1] = com.get_pdf_from_sampled_signal(vs_shift[:, k - 1], param.levels, delta_yf)
+        pdfs[k - 1] = sicopr.get_pdf_from_sampled_signal(vs_shift[:, k - 1], param.levels, delta_yf)
     return pdfs, A_s_vec
 
 

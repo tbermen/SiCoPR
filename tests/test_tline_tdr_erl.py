@@ -1,6 +1,6 @@
 """Audit batch B06: G5 S-parameter synthesis + TDR/ERL.
 
-Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
+Functions under audit (MATLAB com_ieee8023_4p15p0.m -> sicopr.py):
   synth_tline          ML 11434-11458 -> py 17475-17524
   get_TDR              ML 7034-7345   -> py 10231-10487 (+ helper 10212-10224)
   TDR_ERL_Processing   ML 4503-4597   -> py 6632-6725
@@ -28,7 +28,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def rel_err(a, b):
@@ -47,7 +47,7 @@ gc = np.array([0.0, 1.734e-3, 1.455e-4])
 tau = 6.141e-3
 d = 0.15
 
-s11, s12, s21, s22 = com.synth_tline(f, Z_c, Z_0, gc, tau, d)
+s11, s12, s21, s22 = sicopr.synth_tline(f, Z_c, Z_0, gc, tau, d)
 
 
 def synth_oracle(f, Z_c, Z_0, gc, tau, d):
@@ -83,7 +83,7 @@ check("synth_tline_passive",
       np.max(np.abs(s21)) <= 1.0 + 1e-9,
       "|s21| > 1 (non-passive tline)")
 # d=0 -> ideal through (rho=0 -> s11=0, s21=1).
-z11, _, z21, _ = com.synth_tline(f, Z_c, Z_0, gc, tau, 0.0)
+z11, _, z21, _ = sicopr.synth_tline(f, Z_c, Z_0, gc, tau, 0.0)
 check("synth_tline_zero_length_is_through",
       np.max(np.abs(z11)) <= 1e-15 and rel_err(z21, np.ones_like(z21)) <= 1e-15,
       "d=0 did not give an ideal through")
@@ -94,18 +94,18 @@ check("synth_tline_zero_length_is_through",
 zref = 50.0
 fr = np.linspace(0, 40e9, 16)
 Rs = 20.0
-Ss = com.R_series2(zref, fr, Rs).Parameters
+Ss = sicopr.R_series2(zref, fr, Rs).Parameters
 check("R_series2_matches_matlab",
       rel_err(Ss[0, 0], Rs / (Rs + 2 * zref)) <= 1e-14
       and rel_err(Ss[1, 0], 2 * zref / (Rs + 2 * zref)) <= 1e-14,
       "R_series2 != series-resistor S-parameter transcription")
 check("R_series2_limits",
-      abs(com.R_series2(zref, fr, 0.0).Parameters[1, 0, 0] - 1.0) <= 1e-14
-      and abs(com.R_series2(zref, fr, 1e12).Parameters[0, 0, 0] - 1.0) <= 1e-6,
+      abs(sicopr.R_series2(zref, fr, 0.0).Parameters[1, 0, 0] - 1.0) <= 1e-14
+      and abs(sicopr.R_series2(zref, fr, 1e12).Parameters[0, 0, 0] - 1.0) <= 1e-6,
       "series R=0 not through, or R=inf not open")
 
 rpad = 200.0
-Sp = com.r_parrelell2(zref, fr, rpad).Parameters
+Sp = sicopr.r_parrelell2(zref, fr, rpad).Parameters
 # MATLAB literal: -zref/(rpad*(zref/rpad+2)) == -zref/(zref+2*rpad).
 check("r_parrelell2_matches_matlab",
       rel_err(Sp[0, 0], -zref / (rpad * (zref / rpad + 2))) <= 1e-13
@@ -124,7 +124,7 @@ check("R_series2_r_parrelell2_passive_reciprocal",
 # ===========================================================================
 Zin, Zout = 100.0, 100.0
 # matched-through 4-port (s11=s22=0), Zin==Zout -> zero reflection.
-rl_matched = com._get_TDR__TDR_RL(Zin, Zout, 0.0, 1.0, 1.0, 0.0)
+rl_matched = sicopr._get_TDR__TDR_RL(Zin, Zout, 0.0, 1.0, 1.0, 0.0)
 check("TDR_RL_matched_is_zero",
       abs(rl_matched) <= 1e-12,
       "matched through with Zin==Zout gave nonzero reflection: %g" % abs(rl_matched))
@@ -139,7 +139,7 @@ den = (Zi * Zo * 2 + Zi**2 * s11r + Zi**2 * s22r - Zo**2 * s11r - Zo**2 * s22r
        + Zo**2 * s11r * s22r - Zo**2 * s12r * s21r
        - Zi * Zo * s11r * s22r * 2 + Zi * Zo * s12r * s21r * 2)
 check("TDR_RL_matches_matlab_formula",
-      rel_err(com._get_TDR__TDR_RL(Zi, Zo, s11r, s12r, s21r, s22r), num / den) <= 1e-12,
+      rel_err(sicopr._get_TDR__TDR_RL(Zi, Zo, s11r, s12r, s21r, s22r), num / den) <= 1e-12,
       "4-port TDR_RL rational function diverges from ML line 7065")
 
 # ===========================================================================
@@ -170,20 +170,20 @@ OP_tdr = SimpleNamespace(
     impulse_response_truncation_threshold=1e-3, ZERO_PAD=False, cb_step=0,
     DEBUG=True)
 
-res_s2p = com.get_TDR(S, OP_tdr, param_tdr, ZT, 0,
-                      _Bessel_Thomson_Filter_fn=com.Bessel_Thomson_Filter,
-                      _Butterworth_Filter_fn=com.Butterworth_Filter,
-                      _Tukey_Window_fn=com.Tukey_Window,
-                      _s21_to_impulse_DC_fn=com.s21_to_impulse_DC,
-                      _get_StepR_fn=com.get_StepR,
-                      _get_PulseR_fn=com.get_PulseR,
-                      _get_pdf_fn=com.get_pdf_from_sampled_signal)
+res_s2p = sicopr.get_TDR(S, OP_tdr, param_tdr, ZT, 0,
+                      _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+                      _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+                      _Tukey_Window_fn=sicopr.Tukey_Window,
+                      _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+                      _get_StepR_fn=sicopr.get_StepR,
+                      _get_PulseR_fn=sicopr.get_PulseR,
+                      _get_pdf_fn=sicopr.get_pdf_from_sampled_signal)
 
 rho = (2 * ZT - S.Impedance) / (2 * ZT + S.Impedance)
 RL_matlab = (S11 - rho) / (1 - rho * S11)                 # ML: interim cancels
 
 # B06-D9 (get_TDR s2p RL used '/' where MATLAB 7080 uses '\' left division) was
-# FIXED in the 8-defect correlation commit. A second check used to sit here asserting com.py still
+# FIXED in the 8-defect correlation commit. A second check used to sit here asserting sicopr.py still
 # produced the WRONG formula, interim^2/((s11-rho)*(1-rho*s11)); it inverted the
 # moment the bug was fixed and had been failing ever since. Removed -- the check
 # below is the one that carries meaning.
@@ -204,14 +204,14 @@ S4 = SimpleNamespace(Frequencies=faxis, Parameters=P4, Impedance=2 * ZT, NumPort
 param4 = SimpleNamespace(**vars(param_tdr))
 param4.FLAG = SimpleNamespace(S2P=0)
 
-res_s4p = com.get_TDR(S4, OP_tdr, param4, ZT, 0,
-                      _Bessel_Thomson_Filter_fn=com.Bessel_Thomson_Filter,
-                      _Butterworth_Filter_fn=com.Butterworth_Filter,
-                      _Tukey_Window_fn=com.Tukey_Window,
-                      _s21_to_impulse_DC_fn=com.s21_to_impulse_DC,
-                      _get_StepR_fn=com.get_StepR,
-                      _get_PulseR_fn=com.get_PulseR,
-                      _get_pdf_fn=com.get_pdf_from_sampled_signal)
+res_s4p = sicopr.get_TDR(S4, OP_tdr, param4, ZT, 0,
+                      _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+                      _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+                      _Tukey_Window_fn=sicopr.Tukey_Window,
+                      _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+                      _get_StepR_fn=sicopr.get_StepR,
+                      _get_PulseR_fn=sicopr.get_PulseR,
+                      _get_pdf_fn=sicopr.get_pdf_from_sampled_signal)
 check("get_TDR_s4p_matched_zero_reflection",
       np.max(np.abs(res_s4p.RL)) <= 1e-9,
       "matched s4p (Zin==Zout, s11=0) produced nonzero RL: %g" % np.max(np.abs(res_s4p.RL)))
@@ -235,7 +235,7 @@ OP_e = SimpleNamespace(TDR=True, ERL=True, AUTO_TFX=False, ERL_ONLY=True,
                        Report_Modal_ERL='disable', DISPLAY_WINDOW=False)
 param_e = SimpleNamespace(FLAG=SimpleNamespace(S2P=False), Z_t=100.0)
 
-oa, ERL, min_ERL = com.TDR_ERL_Processing(oa, OP_e, 1, chdata_e, param_e)
+oa, ERL, min_ERL = sicopr.TDR_ERL_Processing(oa, OP_e, 1, chdata_e, param_e)
 check("TDR_ERL_min_and_array",
       min_ERL == 15.0 and ERL[0] == 15.0 and ERL[1] == 18.0,
       "min_ERL/ERL array wrong: min=%s ERL=%s" % (min_ERL, ERL))

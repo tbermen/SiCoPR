@@ -7,7 +7,7 @@
 # eps guard: t11==0 → np.finfo(float).eps.
 # Formula: s = [[t21/t11, delta/t11], [1/t11, -t12/t11]]
 #   where delta = t11*t22 - t21*t12.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

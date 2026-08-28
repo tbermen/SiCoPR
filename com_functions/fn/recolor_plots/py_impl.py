@@ -7,7 +7,7 @@
 # Python/matplotlib manages colour cycles automatically; there is no
 # equivalent operation needed.  Implemented as a documented no-op stub.
 # Output shape: none (void).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 
 

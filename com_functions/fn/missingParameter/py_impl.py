@@ -7,7 +7,7 @@
 # MATLAB error(): raises an exception with an identifier and message.
 #   Python equivalent: raise ValueError with the same message text.
 # Output shape: no return value — function always raises.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 
 

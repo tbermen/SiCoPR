@@ -1,6 +1,6 @@
-"""Tier 0 coverage-map builder for the com.py vs com_ieee8023_4p15p0.m audit.
+"""Tier 0 coverage-map builder for the sicopr.py vs com_ieee8023_4p15p0.m audit.
 
-Parses function definitions from the MATLAB reference and com.py, maps each
+Parses function definitions from the MATLAB reference and sicopr.py, maps each
 MATLAB function to its Python counterpart (same name, or hoisted
 _Parent__helper), checks in-file provenance citations, cross-checks against
 com_functions/registry.json, and emits:
@@ -18,7 +18,7 @@ import datetime
 
 MATLAB_FILE = os.path.join("matlab", "com_ieee8023_4p15p0.m")
 ADAPTIVE_FILE = os.path.join("matlab", "com_ieee8023_4p15p0_adaptive_local_search.m")
-PY_FILE = "com.py"
+PY_FILE = "sicopr.py"
 REGISTRY = os.path.join("com_functions", "registry.json")
 
 # ---------------------------------------------------------------- MATLAB parse
@@ -78,7 +78,7 @@ BANNER_RE = re.compile(
 
 def scan_banners(pylines):
     """Map function name -> (banner_line, cited_start, cited_end) for the
-    '# --- Name (MATLAB lines A-B) ---' block headers in com.py."""
+    '# --- Name (MATLAB lines A-B) ---' block headers in sicopr.py."""
     banners = {}
     for i, line in enumerate(pylines, start=1):
         m = BANNER_RE.match(line)
@@ -252,7 +252,7 @@ def main():
         "python_under_audit": PY_FILE,
         "python_total_lines": py_total,
         "notes": [
-            "com.py header states it was assembled from com_ieee8023_4p14p0.m; "
+            "sicopr.py header states it was assembled from com_ieee8023_4p14p0.m; "
             "this audit judges it against 4p15p0 per the audit prompt, so "
             "4p14p0-to-4p15p0 deltas will surface as findings.",
             "compare_to_matlab.py no longer exists (only a stale .pyc); Tier 5 "
@@ -304,7 +304,7 @@ def main():
 
     # ------------------------------------------------------------- findings
     with open("AUDIT_FINDINGS.md", "w", encoding="utf-8") as f:
-        f.write("# AUDIT FINDINGS, com.py vs com_ieee8023_4p15p0.m\n\n")
+        f.write("# AUDIT FINDINGS, sicopr.py vs com_ieee8023_4p15p0.m\n\n")
         f.write("Status: Tier 0 complete, waiting at Gate 0. "
                 "No function bodies audited yet.\n\n")
         f.write("## Top-risk open items\n\n")

@@ -1,6 +1,6 @@
 """Audit batch B02: G2 frequency grid construction.
 
-Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
+Functions under audit (MATLAB com_ieee8023_4p15p0.m -> sicopr.py):
   FD_Processing    ML 1689-2030 -> py 2177-2394 (+ helpers 2160-2174)
   interp_Sparam    ML 8080-8295 -> py 11739-11971
   read_s4p_files   ML 10729-10909 -> py 16060-16203 (+ s2p inline 15971-16055)
@@ -30,7 +30,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def rel_err(a, b):
@@ -50,27 +50,27 @@ N = len(fax)
 # ML index_f2: a=find(faxis>=f2,1,'first'); if empty -> length(faxis).
 # 40 GHz lands exactly on a grid point (index 400 0-based). find(>=) returns it.
 check("FD_find_ge_exact_on_grid",
-      com._FD_Processing__find_idx_ge(fax, 40e9) == 400,
+      sicopr._FD_Processing__find_idx_ge(fax, 40e9) == 400,
       "find_idx_ge(40GHz) != 400")
 # Between grid points: 40.05 GHz -> first strictly-greater point at 40.1 GHz (401).
 check("FD_find_ge_between_points",
-      com._FD_Processing__find_idx_ge(fax, 40.05e9) == 401,
+      sicopr._FD_Processing__find_idx_ge(fax, 40.05e9) == 401,
       "find_idx_ge(40.05GHz) != 401")
 # No point >= f: ML resets to length(faxis) (last index). Python clamps to N-1.
 check("FD_find_ge_none_clamps_last",
-      com._FD_Processing__find_idx_ge(fax, 99e9) == N - 1,
+      sicopr._FD_Processing__find_idx_ge(fax, 99e9) == N - 1,
       "find_idx_ge(99GHz) != N-1")
 # ML index_f1: b=find(faxis<=f1,1,'last'); exact match INCLUDED.
 check("FD_find_le_exact_on_grid",
-      com._FD_Processing__find_idx_le(fax, 10e9) == 100,
+      sicopr._FD_Processing__find_idx_le(fax, 10e9) == 100,
       "find_idx_le(10GHz) != 100")
 # Between points: 10.05 GHz -> last point <= is 10.0 GHz (100).
 check("FD_find_le_between_points",
-      com._FD_Processing__find_idx_le(fax, 10.05e9) == 100,
+      sicopr._FD_Processing__find_idx_le(fax, 10.05e9) == 100,
       "find_idx_le(10.05GHz) != 100")
 # No point <= f (f below faxis[0]): ML resets index_f1=1 -> 0-based 0.
 check("FD_find_le_none_clamps_first",
-      com._FD_Processing__find_idx_le(fax, -1.0) == 0,
+      sicopr._FD_Processing__find_idx_le(fax, -1.0) == 0,
       "find_idx_le(-1) != 0")
 
 # W (eq 93A-57) transcription: 1/fb * sinc(f/fb)^2 / (1+(f/ft)^4) / (1+(f/fr)^8).
@@ -81,7 +81,7 @@ ftest = np.linspace(1e8, 60e9, 257)   # avoid f=0 and integer multiples of fb
 W_ml = (1.0 / fb * (np.sin(np.pi * ftest / fb) / (np.pi * ftest / fb)) ** 2
         * 1.0 / (1 + (ftest / ftr) ** 4) * 1.0 / (1 + (ftest / fr) ** 8))
 check("FD_W_matches_matlab_eq93A57",
-      rel_err(com._FD_Processing__W(ftest, ftr, fr, fb), W_ml) <= 1e-12,
+      rel_err(sicopr._FD_Processing__W(ftest, ftr, fr, fb), W_ml) <= 1e-12,
       "W transcription mismatch")
 
 # ===========================================================================
@@ -122,8 +122,8 @@ OP = SimpleNamespace(WC_PORTZ=False, TDMODE=False, GET_FD=True,
                      include_pcb=False, DEBUG=False, pkg_len_select=[1])
 
 out = SimpleNamespace()
-chdata, out = com.FD_Processing(chdata, out, param, OP, None, True,
-                                _get_ILN_fn=com.get_ILN)
+chdata, out = sicopr.FD_Processing(chdata, out, param, OP, None, True,
+                                _get_ILN_fn=sicopr.get_ILN)
 
 # --- Oracle index selection + delta_f ---
 idx_f1 = int(np.nonzero(fax >= 0)[0][0])          # find(<=f1,1,last): last<=0.05e9
@@ -140,7 +140,7 @@ temp_angle[0] = 1e-20
 SINC = np.sin(temp_angle) / temp_angle
 PWF = SINC ** 2 / (1 + (fax / ftr) ** 4) / (1 + (fax / fr) ** 8)
 Il_dB = -20 * np.log10(np.abs(sdd21f_thru))
-W_sl = com._FD_Processing__W(fax[idx_f1:idx_f2 + 1], ftr, fr, fb)
+W_sl = sicopr._FD_Processing__W(fax[idx_f1:idx_f2 + 1], ftr, fr, fb)
 P_signal_ml = 2 * df * np.sum(W_sl * 10 ** (-Il_dB[idx_f1:idx_f2 + 1] / 10))
 check("FD_P_signal_matches_matlab",
       abs(out.P_signal_FD - P_signal_ml) <= 1e-10 * P_signal_ml,
@@ -150,7 +150,7 @@ check("FD_P_signal_sigma_is_sqrt",
       "P_signal_sigma mismatch")
 
 # --- Oracle FOM_ILD (ML 1940) ---
-ILD_magft, _ = com.get_ILN(sdd21f_thru[idx_f1:idx_f2_ild + 1], fax[idx_f1:idx_f2_ild + 1])
+ILD_magft, _ = sicopr.get_ILN(sdd21f_thru[idx_f1:idx_f2_ild + 1], fax[idx_f1:idx_f2_ild + 1])
 FOM_ILD_ml = np.sqrt(df / fb * np.sum(PWF[idx_f1:idx_f2_ild + 1] * np.asarray(ILD_magft) ** 2))
 check("FD_FOM_ILD_matches_matlab",
       abs(out.FOM_ILD - FOM_ILD_ml) <= 1e-9 * max(FOM_ILD_ml, 1e-12),
@@ -185,8 +185,8 @@ thru2 = SimpleNamespace(type='THRU', faxis=fax, ftr=ftr,
                         scd21_orig=1e-4 * np.ones(N), sdc21_orig=1e-4 * np.ones(N))
 thru2.sdd21f[idx_f2] *= 0.5                # change IL exactly at f2
 out2 = SimpleNamespace()
-_, out2 = com.FD_Processing([thru2], SimpleNamespace(), param, OP, None, True,
-                            _get_ILN_fn=com.get_ILN)
+_, out2 = sicopr.FD_Processing([thru2], SimpleNamespace(), param, OP, None, True,
+                            _get_ILN_fn=sicopr.get_ILN)
 check("FD_f2_bin_included_in_P_signal",
       abs(out2.P_signal_FD - out.P_signal_FD) > 1e-12 * out.P_signal_FD,
       "bin at exactly f2 did not affect P_signal (should be inclusive)")
@@ -204,7 +204,7 @@ fin = np.arange(0.0, 20e9 + 1.0, 1e8)
 tau2 = 1e-9
 Sin_lin = (0.9 / (1 + 1j * fin / 8e9)) * np.exp(-1j * 2 * np.pi * fin * tau2)
 fout_wide = np.arange(0.0, 30e9 + 1.0, 1e8)   # extends beyond fin[-1]=20 GHz
-Sout = com.interp_Sparam(Sin_lin, fin, fout_wide, 'linear_trend_to_DC',
+Sout = sicopr.interp_Sparam(Sin_lin, fin, fout_wide, 'linear_trend_to_DC',
                          'trend_and_shift_to_DC', OPi, pari)
 # Oracle for the magnitude in the DATA band (fout <= fin[-1]): linear interp of |Sin|.
 mag_in = np.abs(Sin_lin)
@@ -218,7 +218,7 @@ check("interp_Sparam_linear_trend_mag_interior",
 # Pure delay so unwrapped phase is exactly linear: MATLAB interp1(...'extrap')
 # continues the line beyond fin[-1]; np.interp holds it flat.
 Sin_del = np.exp(-1j * 2 * np.pi * fin * tau2)   # |S|=1, phase = -2*pi*f*tau2
-Sout_del = com.interp_Sparam(Sin_del, fin, fout_wide, 'old',
+Sout_del = sicopr.interp_Sparam(Sin_del, fin, fout_wide, 'old',
                              'extrap_cubic_to_dc_linear_to_inf', OPi, pari)
 ph_py = np.unwrap(np.angle(Sout_del))
 ph_oracle = -2 * np.pi * fout_wide * tau2       # MATLAB linear extrapolation
@@ -244,7 +244,7 @@ fin_e = np.arange(0.0, 20e9 + 1.0, 1e8)
 mag_e = 0.5 * np.ones(len(fin_e))
 mag_e[50] = 1e-20                               # deep null well below MATLAB eps
 Sin_e = mag_e * np.exp(-1j * 2 * np.pi * fin_e * tau2)
-Sout_e = com.interp_Sparam(Sin_e, fin_e, fin_e, 'old', 'zero_DC', OPi, pari)
+Sout_e = sicopr.interp_Sparam(Sin_e, fin_e, fin_e, 'old', 'zero_DC', OPi, pari)
 mag_at_null = float(np.abs(Sout_e[50]))
 matlab_eps = np.finfo(float).eps                # 2.220446e-16
 check("interp_Sparam_mag_floor_matlab_eps",
@@ -255,7 +255,7 @@ check("interp_Sparam_mag_floor_matlab_eps",
 
 # --- ZERO_PAD tail zeroing (ML 8292 -> py 11969) ---
 OPz = SimpleNamespace(DEBUG=True, ZERO_PAD=True)
-Sout_z = com.interp_Sparam(Sin_del, fin, fout_wide, 'old', 'zero_DC', OPz, pari)
+Sout_z = sicopr.interp_Sparam(Sin_del, fin, fout_wide, 'old', 'zero_DC', OPz, pari)
 check("interp_Sparam_zero_pad_zeros_beyond_fin_end",
       np.all(np.abs(Sout_z[fout_wide > fin[-1]]) <= 1e-300 * 10),
       "ZERO_PAD did not zero the tail beyond fin[-1]")
@@ -287,7 +287,7 @@ param_r = SimpleNamespace(Z0=50.0, flim=float('inf'), fb=50e9,
 OP_r = SimpleNamespace(DISPLAY_WINDOW=False, ZERO_PAD=False,
                        INC_PACKAGE=0, RX_CALIBRATION=0, include_pcb=0)
 ch_r = SimpleNamespace(filename=s2p_path, ext='.s2p', type='THRU')
-chdata_r, _, _, _ = com.read_s4p_files(param_r, OP_r, [ch_r])
+chdata_r, _, _, _ = sicopr.read_s4p_files(param_r, OP_r, [ch_r])
 
 got = np.asarray(chdata_r[0].faxis, dtype=float).ravel()
 expect_hz = fghz * 1e9
@@ -313,7 +313,7 @@ write_s2p(s2p_path2, fghz2, 0.01 / (1.0 + (fghz2 / 8.0) ** 2))
 ch_a = SimpleNamespace(filename=s2p_path, ext='.s2p', type='THRU')
 ch_b = SimpleNamespace(filename=s2p_path2, ext='.s2p', type='FEXT')
 try:
-    com.read_s4p_files(SimpleNamespace(**vars(param_r)), OP_r, [ch_a, ch_b])
+    sicopr.read_s4p_files(SimpleNamespace(**vars(param_r)), OP_r, [ch_a, ch_b])
     raised_axis = False
 except Exception:
     raised_axis = True

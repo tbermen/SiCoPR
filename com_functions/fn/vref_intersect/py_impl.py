@@ -10,7 +10,7 @@
 #   The returned line_intersection is therefore also in 1-based index space.
 # Column indexing: eye_contour(:,1) in MATLAB = eye_contour[:,0] in Python.
 # Output shape: scalar float (fractional index, 1-based).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

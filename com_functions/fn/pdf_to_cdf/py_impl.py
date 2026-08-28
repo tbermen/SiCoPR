@@ -12,7 +12,7 @@
 #   then takes the minimum across each row.  Equivalent to np.minimum(yB, yT).
 # Output shape: cdf.y is 1-D (MATLAB produces a column vector, which we
 #   store as a flat NumPy array consistent with our pdf convention).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 from types import SimpleNamespace
 import numpy as np

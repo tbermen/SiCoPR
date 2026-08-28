@@ -123,10 +123,10 @@ def _fig_sparams(outdir, chdata, param):
 
 
 def _fig_filters(outdir, chdata, param, OP):
-    import com  # lazy: com is fully loaded by run time
+    import sicopr  # lazy: the engine is fully loaded by run time
     f = np.asarray(chdata[0].faxis, dtype=float).ravel()
     fG = f / 1e9
-    H_r = com.OptFom_Calc_Hr(f, param, OP)                       # main path (no H_t)
+    H_r = sicopr.OptFom_Calc_Hr(f, param, OP)                       # main path (no H_t)
     ttr = float(OP.transmitter_transition_time)
     H_t = np.exp(-(np.pi * f / 1e9 * ttr / 1.6832) ** 2)
     fig, ax = plt.subplots(figsize=(9.5, 5))

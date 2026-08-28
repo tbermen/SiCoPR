@@ -9,7 +9,7 @@
 #   avg = E[x]     = sum(x * y)
 #   sgm = std(x)   = sqrt(sum((x - avg)^2 * y))
 #   (This is the RMS voltage spread, i.e., std dev of the PDF.)
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

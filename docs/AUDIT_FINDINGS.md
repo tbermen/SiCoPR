@@ -1,4 +1,4 @@
-# AUDIT FINDINGS, com.py vs com_ieee8023_4p15p0.m
+# AUDIT FINDINGS, sicopr.py vs com_ieee8023_4p15p0.m
 
 > **SUPERSEDED IN PART (2026-08-17).** This document records the static
 > code-reading audit. It has since been overtaken by the 208-case MATLAB
@@ -22,7 +22,7 @@ All 157 MATLAB functions + 2 cross-cutting scans are now classified: 0
 NOT_YET_AUDITED. B01-B12 covered the risk-ordered work queue (section 3, groups
 G1-G10) with bespoke multi-angle tests; B13 resolved the 4p14p0->4p15p0 version
 question for the whole file (101 byte-identical bodies; auto-port-order +
-cursor_tap already in com.py); B14-B21 completed the lower-risk remainder.
+cursor_tap already in sicopr.py); B14-B21 completed the lower-risk remainder.
 
 146 functions EQUIVALENT, 11 DIVERGENT functions (get_PSDs, interp_Sparam,
 s21_to_impulse_DC, s_for_c4, get_TDR, TDR_ERL_Processing, get_pdf_full, MMSE_FOM,
@@ -52,7 +52,7 @@ unused), B08-D12 (get_pdf_full C2M), B10-D14 (rounding), B12-D16 (MMSE_FOM
 subset-gate edge), B11-D15 (optimize_fom round).
 
 B13 established version-neutrality for the remainder (101 byte-identical 4p14==4p15
-bodies; auto-port-order + cursor_tap already in com.py) and every function has a
+bodies; auto-port-order + cursor_tap already in sicopr.py) and every function has a
 green com_functions/fn test (865 pass / 0 fail). CAVEAT: a green fn test does NOT
 prove full translation equivalence - spot-checks found real bugs in
 "version-identical, fn-test-green" functions (get_xtlk_noise B13-D18; MLSE
@@ -71,7 +71,7 @@ tests/test_optimizer_fom.py (33 checks, 32/1),
 tests/test_optimizer_mmse.py (26 checks, 25/1), and
 tests/test_xtlk_noise.py (5 checks, 3/2); every FAIL is deliberate divergence
 documentation (results.csv, 2026-07-09/10/11). The com_functions/fn per-function
-suite (865/0) backs the assembled com.py bodies.
+suite (865/0) backs the assembled sicopr.py bodies.
 
 The historical double-DFE-subtraction concern is now closed: get_pdf applies the
 DFE cancellation exactly once (B07, test-pinned) and get_PSDs S_isi applies it
@@ -84,7 +84,7 @@ once (B01, test-pinned).
 - MATLAB: com_ieee8023_4p15p0.m lines 8788-8801. `cursor_i` is 1-based (from
   `cursor_sample_index`), so `cursor = sbr(cursor_i)`, `A_p = sbr(sbr_peak_i)`,
   and the far/precursor colon windows read the true cursor/peak with no offset.
-- Python: com.py `optimize_fom` subtracts 1 at every one of these sites -
+- Python: sicopr.py `optimize_fom` subtracts 1 at every one of these sites -
   `cursor = sbr[THIS.cursor_i - 1]` (12722), `A_p = sbr[sbr_peak_i - 1]` (12723),
   `far_start = cursor_i - T_O + M*(ndfe+1) - 1` (12731), `pre_start = cursor_i - M
   - 1` (12735) - but `OptFom_Find_Sample_Point` / `cursor_sample_index` already
@@ -105,7 +105,7 @@ once (B01, test-pinned).
   cursor_i, so they did not exercise the real 0-based return of
   cursor_sample_index. (Lesson: verify the index BASE end-to-end, not just the
   slice formula.)
-- Recommended fix (not applied): remove the `-1` at com.py 12722/12723/12731/
+- Recommended fix (not applied): remove the `-1` at sicopr.py 12722/12723/12731/
   12735 so A_s/A_p and the ISI windows use `sbr[cursor_i]`/`sbr[sbr_peak_i]`
   (0-based), matching OptFom_Compute_DFE and the main pipeline.
 
@@ -116,7 +116,7 @@ once (B01, test-pinned).
   index, and lines 8051/8054 sum `... PWF(1:index_f2) ...`, which INCLUDES the
   first frequency bin above `fb`. The empty case (no bin above `fb`) sets
   `index_f2 = length(faxis)` (all bins).
-- Python: com.py line 11553 (`get_xtlk_noise`) sets
+- Python: sicopr.py line 11553 (`get_xtlk_noise`) sets
   `index_f2 = argmax(f > fb)` (0-based) and slices `PWF[:index_f2]`, which
   EXCLUDES the first bin above `fb`; the empty case uses `len(f)-1`, omitting the
   last bin.
@@ -124,7 +124,7 @@ once (B01, test-pinned).
   (eq 93A-46/47) are short by one frequency bin at the `fb` band edge, so
   crosstalk noise is slightly UNDER-estimated and COM slightly OPTIMISTIC
   whenever FEXT/NEXT aggressors are present. Reproduced on a synthetic single
-  FEXT aggressor: com.py sigma_FEXT 0.363781 vs MATLAB-correct 0.363824, with the
+  FEXT aggressor: sicopr.py sigma_FEXT 0.363781 vs MATLAB-correct 0.363824, with the
   gap equal exactly to the omitted first-bin term; empty case 0.360099 vs
   0.360942. Small per-run magnitude but systematic and in the optimistic
   direction.
@@ -141,19 +141,19 @@ once (B01, test-pinned).
   precedence and left-associative, so `sigma_noise` ends up in the NUMERATOR:
   `(1-2*alpha)*main*sigma_noise/(L-1)`. (The commented reference at line 2295 uses
   `/sigma_noise`, so 2311 looks like a MATLAB typo, but the audit reproduces MATLAB.)
-- Python: com.py line 2749, `_MLSE__qfunc((1-2*alpha)*A_peak/((L-1)*sigma_noise))`
+- Python: sicopr.py line 2749, `_MLSE__qfunc((1-2*alpha)*A_peak/((L-1)*sigma_noise))`
   puts `sigma_noise` in the DENOMINATOR - differing from MATLAB by a factor
   `sigma_noise^2`.
 - Consequence: DIAGNOSTIC ONLY. It changes the reported
   `MLSE_results.SNR_DFE_eqivalent_Gaussian` and `delta_com_Gaussian`, but NOT any
   COM value: MATLAB sets both `COM_Gaussian` and `COM_CDF` to `new_com_CDF` (the
-  CDF path, lines 2345-2346) and com.py does the same (2778-2779). The CDF path,
+  CDF path, lines 2345-2346) and sicopr.py does the same (2778-2779). The CDF path,
   the `j=1:200` DER_MLSE sum, and the CDF convergence loop all match.
 - Evidence: FAIL mlse_gaussian_qfunc_arg_matches_matlab (MATLAB arg 2.667e-4 vs
-  com.py 6.667e-1, ratio = sigma^2) and PASS mlse_COM_Gaussian_equals_COM_CDF in
+  sicopr.py 6.667e-1, ratio = sigma^2) and PASS mlse_COM_Gaussian_equals_COM_CDF in
   tests/test_mlse.py.
 - Recommended fix (not applied): to reproduce MATLAB exactly, multiply by
-  `sigma_noise` at com.py 2749; or leave as-is since it is diagnostic-only.
+  `sigma_noise` at sicopr.py 2749; or leave as-is since it is diagnostic-only.
 
 ### B12-D17. MMSE_FOM recomputes the DFE tap limit unconditionally (DFE-clip path)
 
@@ -163,7 +163,7 @@ once (B01, test-pinned).
   renormalised). If the RxFFE taps are within limits (w == wlim), MATLAB keeps
   the `blim` from the earlier DFE clip (line 2670 / 2687), i.e.
   `clip(original DFE taps)`.
-- Python: com.py lines 3367-3369 (top-level MMSE_FOM) and 3119-3121
+- Python: sicopr.py lines 3367-3369 (top-level MMSE_FOM) and 3119-3121
   (hoisted `_MMSE__MMSE_FOM`) run `b_upd = Hb @ wlim; blim = clip(b_upd)`
   UNCONDITIONALLY whenever `Nb > 0`, outside the `if not allclose(w, wlim)` block.
 - Consequence: when the DFE taps are clipped (the first re-solve at 2671-2674
@@ -180,7 +180,7 @@ once (B01, test-pinned).
   mmse_fom_D17_python_uses_Hb_times_w (Python's blim == clip(Hb*w_resolved)). The
   no-clip path is verified to match an independent MATLAB reference to 1e-9.
 - Recommended fix (not applied): move `b = Hb @ wlim; blim = clip(b)` inside the
-  `if not np.allclose(w, wlim):` branch at com.py 3361/3114, matching MATLAB.
+  `if not np.allclose(w, wlim):` branch at sicopr.py 3361/3114, matching MATLAB.
 
 ### B06-D9. get_TDR s2p reflection renormalisation inverted (mldivide mistranslated)
 
@@ -189,7 +189,7 @@ once (B01, test-pinned).
   left-division, so `interim \ X` = `X/interim` and the `interim` factors
   cancel, leaving the standard bilinear renormalisation
   `RL = (s11 - rho) / (1 - rho*s11)`.
-- Python: com.py line 10304 uses `/`:
+- Python: sicopr.py line 10304 uses `/`:
   `interim / (s11 - rho) / (1 - rho*s11) * interim`
   = `interim^2 / ((s11 - rho) * (1 - rho*s11))`, the reciprocal structure.
 - Consequence: for a matched reference (rho=0) MATLAB returns `s11` while Python
@@ -208,7 +208,7 @@ once (B01, test-pinned).
   Alternating-Projections causality step zeros `impulse_response(1:a(1))`
   (inclusive of the first above-threshold sample) and
   `impulse_response(floor(L/2):end)`.
-- Python: com.py line 17040 sets `start_ind = candidates[0]` (0-based) and zeros
+- Python: sicopr.py line 17040 sets `start_ind = candidates[0]` (0-based) and zeros
   `impulse_response[:start_ind]`, one fewer leading sample; line 17045 zeros
   `impulse_response[half:]` with `half = L//2`, omitting the 0-based
   `floor(L/2)-1` sample MATLAB zeros. The Python causal window keeps two boundary
@@ -243,7 +243,7 @@ once (B01, test-pinned).
 - MATLAB: com_ieee8023_4p15p0.m line 8185,
   `H_ph_i = interp1(fin, H_ph, fout, 'linear', 'extrap')` extrapolates phase
   linearly beyond the source band.
-- Python: com.py line 11855 uses `np.interp(fout, fin, H_ph, left=H_ph[0],
+- Python: sicopr.py line 11855 uses `np.interp(fout, fin, H_ph, left=H_ph[0],
   right=H_ph[-1])`, which CLAMPS the phase to the endpoint value.
 - Consequence: for the default phase method
   `extrap_cubic_to_dc_linear_to_inf` on a DC-referenced grid (fin[0]==0), the
@@ -282,7 +282,7 @@ once (B01, test-pinned).
   OP.LIMIT_JITTER_CONTRIB_TO_DFE_SPAN enabled, the early/late cursor samples
   are h(cursor_i-1+M*(-1:ndfe)) and h(cursor_i+1+M*(-1:ndfe)), one sample
   either side of the cursor.
-- Python: com.py lines 9673-9674 use idx_early = cursor_i + M*k and
+- Python: sicopr.py lines 9673-9674 use idx_early = cursor_i + M*k and
   idx_late = cursor_i + 2 + M*k (0-based), which is one sample late on both.
 - Consequence: the jitter sensitivity vector h_J is the pulse slope evaluated
   at cursor+1 sample instead of at the cursor, so S_jn and S_rj_jn (and the
@@ -308,7 +308,7 @@ once (B01, test-pinned).
   sigma_Q quadratically. Downstream consumers of ctle_signal_sigma would hit
   an AttributeError.
 - Evidence: FAIL get_PSDs_adc_clip_slow_matches_matlab and
-  FAIL get_PSDs_slow_sets_ctle_signal_sigma. Caveat: the oracle uses com.py's
+  FAIL get_PSDs_slow_sets_ctle_signal_sigma. Caveat: the oracle uses sicopr.py's
   own get_pdf_from_sampled_signal/conv_fct/CDF_inv_ev as MATLAB stand-ins;
   those are audited in B07/B08.
 - Recommended fix (not applied): port MATLAB 6717-6725 verbatim using the
@@ -321,7 +321,7 @@ once (B01, test-pinned).
   defaults (lines 9443-9456) are stubs: a flat eta_0 PSD with no 1/2 factor
   and no CTLE or Bessel-Thomson shaping, an all-zeros S_IN, and a
   magnitude-only linear interp.
-- Consequence: every in-repo call site injects the real functions (com.py
+- Consequence: every in-repo call site injects the real functions (sicopr.py
   167-170, 195, 215, and 4622), so mainline results are unaffected. But any
   direct call to get_PSDs mirroring MATLAB usage silently produces a wrong
   S_rn and a zero S_in instead of failing.
@@ -341,7 +341,7 @@ normalized (comment- and whitespace-insensitive) function-body diff of the two
 MATLAB files shows:
 - 101 functions have byte-identical bodies in 4p14p0 and 4p15p0.
 - 4 base functions differ, all for one coherent 4p15 feature plus one fix, and
-  com.py already carries the 4p15 behavior (verified in source):
+  sicopr.py already carries the 4p15 behavior (verified in source):
   `com_ieee8023_`, `read_p4_s4params`, `read_Nport_touchstone` implement the
   automatic port-order detection (`snpPortsOrder -> []`, `auto_port_order`
   inlined and called when the order is empty, `output_args.port_order`);
@@ -352,10 +352,10 @@ MATLAB files shows:
 So auditing against 4p15p0 is, for these, the same as auditing against the
 4p14p0 basis the port was written from.
 
-**2. Every function has green executable per-function coverage.** com.py is
+**2. Every function has green executable per-function coverage.** sicopr.py is
 machine-assembled (assemble_com.py) verbatim from com_functions/fn/*/py_impl.py,
 and the com_functions/fn test suite is green (865 passed / 0 failed), so those
-tests exercise the exact bodies that end up in com.py.
+tests exercise the exact bodies that end up in sicopr.py.
 
 **3. Spot-check - and why the remainder is not blanket-cleared.** A green fn test
 only covers what it exercises. Spot-checking get_xtlk_noise (version-identical,
@@ -436,7 +436,7 @@ Key points confirmed:
 
 - MATLAB: lines 2608/2613 subset `H` and `Rnn` to the used tap columns when
   `param.N_bg ~= 0` (the floating-tap config flag).
-- Python: com.py line 3312 gates the same subsetting on `len(idx) > 0`.
+- Python: sicopr.py line 3312 gates the same subsetting on `len(idx) > 0`.
 - Consequence: identical in the normal case (`N_bg != 0` with a non-empty float
   search) and in the no-float case (`N_bg == 0`, empty idx). They differ only when
   `N_bg != 0` but the float search returns an empty `idx` (a degenerate config
@@ -504,7 +504,7 @@ Key points confirmed:
 - MATLAB: com_ieee8023_4p15p0.m line 8749,
   `triple_transit_time = round(sbr_peak_i*2/param.samples_per_ui)+20`
   (half-away-from-zero).
-- Python: com.py line 12689 uses the builtin `round()` (round-half-to-even).
+- Python: sicopr.py line 12689 uses the builtin `round()` (round-half-to-even).
 - Consequence: at an exact half-integer `2*sbr_peak_i/samples_per_ui` (e.g.
   peak=5, spui=4 gives 2.5) Python yields 22 where MATLAB yields 23, shifting the
   `min_number_of_UI_in_response` lower bound by one UI. `min_number_of_UI_in_response`
@@ -520,7 +520,7 @@ Key points confirmed:
 - Variant: the empty-tap `return` sits inside `if log_yes_1_no_0==1` (line 2859),
   so with logging OFF (the default) MATLAB falls through to the `[lp;vga]`
   distance computation.
-- Python: com.py line 3680 returns `skip=False` unconditionally on empty tap
+- Python: sicopr.py line 3680 returns `skip=False` unconditionally on empty tap
   vectors.
 - Consequence: none. Tap vectors are always at least `[1]` (OptFom_Build_TXFFE
   sets `FULL_tx_index_vector=1` when there are no TXFFE taps), so the empty
@@ -652,7 +652,7 @@ standard COM uses is EQUIVALENT.
 get_pdf_full is used only by optimize_fom_for_C2M (ML 1391), so this affects the
 chip-to-module eye path, not standard COM.
 
-- com.py builds the resampled time axis with
+- sicopr.py builds the resampled time axis with
   `np.arange(0, floor(x*samp_UI)+2)/samp_UI` on each side (py 11218-11222), which
   adds one extra point beyond the data range per side compared to MATLAB's colon
   `0:-1/samp_UI:min` / `0:1/samp_UI:max` (ML 7665-7667). np.interp clamps the
@@ -923,7 +923,7 @@ Verified equivalences worth recording (all test-pinned):
 
 ## Context and caveats
 
-- com.py header states it was assembled from com_ieee8023_4p14p0.m; this audit judges it against 4p15p0 per the audit prompt, so 4p14p0-to-4p15p0 deltas will surface as findings.
+- sicopr.py header states it was assembled from com_ieee8023_4p14p0.m; this audit judges it against 4p15p0 per the audit prompt, so 4p14p0-to-4p15p0 deltas will surface as findings.
 - compare_to_matlab.py no longer exists (only a stale .pyc); Tier 5 npz seam-dump convention must be recreated when first needed.
 - Prior 7-bug hypothesis audit (completed 2026-07-01) preserved in audit_state_prior_bughunt_20260701.json; its per-function results are carried in prior_audit fields but do NOT exempt those functions from this audit's per-function test requirement.
 

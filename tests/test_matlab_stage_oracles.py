@@ -258,7 +258,7 @@ if not _live:
     print("the standing full-corpus equivalent is:")
     print("   python tools/matlab_compare.py --validate --run --jobs 5")
 else:
-    import com  # noqa: F401  (imported only when actually running the engine)
+    import sicopr  # noqa: F401  (imported only when actually running the engine)
 
     _manifest = os.path.join(_ROOT, 'matlab_compare_results', 'manifest.json')
     if not os.path.exists(_manifest):
@@ -274,7 +274,7 @@ else:
             if not job or not os.path.exists(job['thru']):
                 continue
             files = [job['thru']] + list(job['fext']) + list(job['next'])
-            res = com._run_com(job['config'], len(job['fext']),
+            res = sicopr._run_com(job['config'], len(job['fext']),
                                len(job['next']), files, export_mat=False)
             r = res[0] if isinstance(res, (list, tuple)) else res
             _ran += 1

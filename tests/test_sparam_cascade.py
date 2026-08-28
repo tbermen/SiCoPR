@@ -1,6 +1,6 @@
 """Audit batch B05: G5 S-parameter interpolation and cascade.
 
-Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
+Functions under audit (MATLAB com_ieee8023_4p15p0.m -> sicopr.py):
   combines4p     ML 5459-5502 -> py 8052-8064
   stot           ML 11418-11424 -> py 17398-17428
   ttos           ML 11460-11466 -> py 17543-17573
@@ -34,7 +34,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def rel_err(a, b):
@@ -66,12 +66,12 @@ s11, s12, s21, s22 = rand_passive_2port(nf)
 S = np.zeros((2, 2, nf), dtype=complex)
 S[0, 0], S[0, 1], S[1, 0], S[1, 1] = s11, s12, s21, s22
 
-T = com.stot(S)
-S_rt = com.ttos(T)
+T = sicopr.stot(S)
+S_rt = sicopr.ttos(T)
 check("stot_ttos_round_trip",
       rel_err(S_rt, S) <= 1e-11,
       "ttos(stot(S)) != S")
-T_rt = com.stot(com.ttos(T))
+T_rt = sicopr.stot(sicopr.ttos(T))
 check("ttos_stot_round_trip",
       rel_err(T_rt, T) <= 1e-11,
       "stot(ttos(T)) != T")
@@ -93,16 +93,16 @@ check("stot_matches_matlab_transcription",
 a = rand_passive_2port(nf)   # (s11,s12,s21,s22)
 b = rand_passive_2port(nf)
 
-o11, o12, o21, o22 = com.combines4p(*a, *b)
+o11, o12, o21, o22 = sicopr.combines4p(*a, *b)
 
 # Cross-path: direct cascade formula == ttos(stot(A) @ stot(B)) elementwise.
 A = np.zeros((2, 2, nf), dtype=complex)
 A[0, 0], A[0, 1], A[1, 0], A[1, 1] = a
 B = np.zeros((2, 2, nf), dtype=complex)
 B[0, 0], B[0, 1], B[1, 0], B[1, 1] = b
-TA, TB = com.stot(A), com.stot(B)
+TA, TB = sicopr.stot(A), sicopr.stot(B)
 Tcasc = np.einsum('ijf,jkf->ikf', TA, TB)   # T_A @ T_B per frequency
-Scasc = com.ttos(Tcasc)
+Scasc = sicopr.ttos(Tcasc)
 check("combines4p_matches_T_matrix_cascade",
       rel_err(o11, Scasc[0, 0]) <= 1e-9 and rel_err(o12, Scasc[0, 1]) <= 1e-9
       and rel_err(o21, Scasc[1, 0]) <= 1e-9 and rel_err(o22, Scasc[1, 1]) <= 1e-9,
@@ -111,7 +111,7 @@ check("combines4p_matches_T_matrix_cascade",
 # Cascade identity: cascading with a matched through returns the original.
 thru = (np.zeros(nf, dtype=complex), np.ones(nf, dtype=complex),
         np.ones(nf, dtype=complex), np.zeros(nf, dtype=complex))
-i11, i12, i21, i22 = com.combines4p(*a, *thru)
+i11, i12, i21, i22 = sicopr.combines4p(*a, *thru)
 check("combines4p_through_is_identity",
       rel_err(i11, a[0]) <= 1e-12 and rel_err(i12, a[1]) <= 1e-12
       and rel_err(i21, a[2]) <= 1e-12 and rel_err(i22, a[3]) <= 1e-12,
@@ -128,7 +128,7 @@ check("combines4p_preserves_reciprocity",
 zref = 50.0
 f = np.linspace(0, 40e9, 64)
 cpad = 0.2e-12
-S2 = com.s_for_c2(zref, f, cpad)
+S2 = sicopr.s_for_c2(zref, f, cpad)
 p = S2.Parameters
 
 # Transcription (ML 11291-11294).
@@ -151,10 +151,10 @@ check("s_for_c2_lossless",
 # ===========================================================================
 # 4. s_for_c4 (ML 11297-11301) — port reorder snp2smp([1 3 2 4])
 # ===========================================================================
-S4 = com.s_for_c4(zref, f, cpad).Parameters   # (4,4,N)
+S4 = sicopr.s_for_c4(zref, f, cpad).Parameters   # (4,4,N)
 
 # MATLAB-faithful: block-diagonal embedding then reorder to [1 3 2 4] (0-based [0,2,1,3]).
-s2p = com.s_for_c2(zref, f, cpad).Parameters
+s2p = sicopr.s_for_c2(zref, f, cpad).Parameters
 blockdiag = np.zeros((4, 4, len(f)), dtype=complex)
 blockdiag[0:2, 0:2, :] = s2p
 blockdiag[2:4, 2:4, :] = s2p
@@ -165,7 +165,7 @@ reordered = blockdiag[np.ix_(perm, perm)]
 check("s_for_c4_reorder_is_nontrivial",
       rel_err(reordered, blockdiag) > 1e-3,
       "snp2smp([1 3 2 4]) unexpectedly equals the block-diagonal")
-# EXPECTED FAIL: com.py returns the block-diagonal, skipping the reorder.
+# EXPECTED FAIL: sicopr.py returns the block-diagonal, skipping the reorder.
 xcheck("s_for_c4_applies_port_reorder",
       rel_err(S4, reordered) <= 1e-12,
       "DIVERGENT (unused fn): py 17167 returns the block-diagonal and skips the "
@@ -206,15 +206,15 @@ fpk = np.linspace(1e7, 40e9, 128)
 par1 = mk_param(1)
 
 # mele=1 TX -> single make_pkg with Cd_Tx (index 0), C_pkg_board[0], pkg_Z_c[0].
-o_tx = com.make_full_pkg('TX', fpk, par1, 'THRU', 'dd', 1)
-o_tx_oracle = com.make_pkg(fpk, 7e-3, 1.0e-13, 0.5e-13, 90.0, par1, 0.1e-9, 0.3e-13)
+o_tx = sicopr.make_full_pkg('TX', fpk, par1, 'THRU', 'dd', 1)
+o_tx_oracle = sicopr.make_pkg(fpk, 7e-3, 1.0e-13, 0.5e-13, 90.0, par1, 0.1e-9, 0.3e-13)
 check("make_full_pkg_TX_mele1_dispatch",
       all(rel_err(o_tx[k], o_tx_oracle[k]) <= 1e-12 for k in range(4)),
       "TX mele=1 did not dispatch make_pkg with the TX (index-0) parameters")
 
 # mele=1 RX -> uses Cd_Rx (index 1), C_pkg_board[1], pkg_Z_c[1], Pkg_len_RX.
-o_rx = com.make_full_pkg('RX', fpk, par1, 'THRU', 'dd', 1)
-o_rx_oracle = com.make_pkg(fpk, 6e-3, 1.2e-13, 0.6e-13, 92.0, par1, 0.12e-9, 0.4e-13)
+o_rx = sicopr.make_full_pkg('RX', fpk, par1, 'THRU', 'dd', 1)
+o_rx_oracle = sicopr.make_pkg(fpk, 6e-3, 1.2e-13, 0.6e-13, 92.0, par1, 0.12e-9, 0.4e-13)
 check("make_full_pkg_RX_mele1_index_selection",
       all(rel_err(o_rx[k], o_rx_oracle[k]) <= 1e-12 for k in range(4)),
       "RX mele=1 did not use the RX (index-1) parameters")
@@ -224,8 +224,8 @@ check("make_full_pkg_TX_RX_differ",
 
 # dc/cd mode scaling: Z0/2, Cpad*2, Cball*2, Zpkg*2, Lcomp/2, Cbump*2 (ML 8467-8475).
 par1_dc = copy.copy(par1); par1_dc.Z0 = 25.0
-o_tx_dc = com.make_full_pkg('TX', fpk, par1, 'THRU', 'dc', 1)
-o_tx_dc_oracle = com.make_pkg(fpk, 7e-3, 1.0e-13 * 2, 0.5e-13 * 2, 90.0 * 2,
+o_tx_dc = sicopr.make_full_pkg('TX', fpk, par1, 'THRU', 'dc', 1)
+o_tx_dc_oracle = sicopr.make_pkg(fpk, 7e-3, 1.0e-13 * 2, 0.5e-13 * 2, 90.0 * 2,
                               par1_dc, 0.1e-9 / 2, 0.3e-13 * 2)
 check("make_full_pkg_dc_mode_scaling",
       all(rel_err(o_tx_dc[k], o_tx_dc_oracle[k]) <= 1e-12 for k in range(4)),
@@ -241,7 +241,7 @@ check("make_full_pkg_passive", psv <= 1.0 + 1e-9,
 
 # mele=4 multi-block cascade == manual 4-block cascade via combines4p.
 par4 = mk_param(4)
-o4 = com.make_full_pkg('TX', fpk, par4, 'THRU', 'dd', 1)
+o4 = sicopr.make_full_pkg('TX', fpk, par4, 'THRU', 'dd', 1)
 Cpad4 = [1.0e-13, 0, 0, 0]
 Lcomp4 = [0.1e-9, 0, 0, 0]
 Cbump4 = [0.3e-13, 0, 0, 0]
@@ -250,8 +250,8 @@ Zpkg4 = [90.0, 88.0, 91.0, 89.0]
 Len4 = [7e-3, 1e-3, 1e-3, 1e-3]
 acc = None
 for j in range(4):
-    seg = com.make_pkg(fpk, Len4[j], Cpad4[j], Cball4[j], Zpkg4[j], par4, Lcomp4[j], Cbump4[j])
-    acc = seg if acc is None else com.combines4p(*acc, *seg)
+    seg = sicopr.make_pkg(fpk, Len4[j], Cpad4[j], Cball4[j], Zpkg4[j], par4, Lcomp4[j], Cbump4[j])
+    acc = seg if acc is None else sicopr.combines4p(*acc, *seg)
 check("make_full_pkg_mele4_multiblock_cascade",
       all(rel_err(o4[k], acc[k]) <= 1e-11 for k in range(4)),
       "mele=4 cascade != manual 4-block combines4p chain")

@@ -11,7 +11,7 @@ So the check cannot be "does it crash" or "does the comment say 0-based" (the
 comment on BEST.ctle said 0-based and was wrong). It has to be: **the base is
 declared once, and every use is proved against the declaration.**
 
-Three rules, run over the assembled com.py:
+Three rules, run over the assembled sicopr.py:
 
   A  a 1-based field reaching a subscript without conversion
   B  an explicit `- 1` applied to a field declared 0-based
@@ -33,7 +33,7 @@ current code. The miss is #4 (get_TDR tfstart), which is not a base error at all
 -- the index is valid, it is applied to the wrong array frame. That class needs
 the sentinel-array probe, not this.
 
-Why static and not a runtime type: this runs over com.py, the assembled
+Why static and not a runtime type: this runs over sicopr.py, the assembled
 artifact, so it covers all inlined copies of a function at once (a fix reaching
 only one of several copies is a known hazard here), and it sees code paths no
 test executes -- which is exactly where BEST.ctle hid.
@@ -53,12 +53,12 @@ sys.path.insert(0, os.path.dirname(_here))
 from audit_check import check, xcheck, finish  # noqa: E402
 
 # Optional path argument so the rules can be replayed against a historical
-# com.py -- that is how the recall figures above were measured, and how a future
+# sicopr.py -- that is how the recall figures above were measured, and how a future
 # change to the rules can be re-validated against known defects:
-#     git show <commit>:com.py > old.py && python tests/test_index_base.py old.py
+#     git show <commit>:sicopr.py > old.py && python tests/test_index_base.py old.py
 # Find the commit with e.g. git log --grep="ADC-clip sampling phase".
 COM_PY = (sys.argv[1] if len(sys.argv) > 1
-          else os.path.join(os.path.dirname(_here), 'com.py'))
+          else os.path.join(os.path.dirname(_here), 'sicopr.py'))
 
 # Structs whose attributes carry values between functions. These are the seams
 # where a base convention gets misread; inside one function the author knows.
@@ -77,14 +77,14 @@ REGISTRY = {
     'ctle':         (ONE,  "OptFom_Update_Best_Setttings: BEST.ctle = THIS.ctle_index"),
     'g_LP_index':   (ONE,  "optimize_fom: THIS.g_LP_index = g_LP_index + 1  '1-based'"),
     'G_high_pass':  (ONE,  "OptFom_Update_Best_Setttings: BEST.G_high_pass = THIS.g_LP_index"),
-    'best_G_high_pass': (ONE, "result.best_G_high_pass = BEST.G_high_pass; consumers convert (com.py 507, 754, 2243)"),
+    'best_G_high_pass': (ONE, "result.best_G_high_pass = BEST.G_high_pass; consumers convert (sicopr.py 507, 754, 2243)"),
 
     # --- 0-based, Python-native -------------------------------------------
     'cursor_i':     (ZERO, "OptFom_Update_BEST_Post_Optimize: cursor_i = int(BEST.cursor_i)  # 0-based"),
     't_s':          (ZERO, "fom_result.t_s is BEST.cursor_i; see docs/COM_PDF_RESIDUAL.md"),
-    'start_max_idx': (ZERO, "com.py 4754: max(0, ...) -- a Python array position"),
-    'end_max_idx':   (ZERO, "com.py 4755: min(len(uneq_data) - 1, ...) -- a Python array position"),
-    'DFE_taps_i':    (ZERO, "com.py 5268: MATLAB cursor_i+(1:ndfe)*M is 1-based; "
+    'start_max_idx': (ZERO, "sicopr.py 4754: max(0, ...) -- a Python array position"),
+    'end_max_idx':   (ZERO, "sicopr.py 4755: min(len(uneq_data) - 1, ...) -- a Python array position"),
+    'DFE_taps_i':    (ZERO, "sicopr.py 5268: MATLAB cursor_i+(1:ndfe)*M is 1-based; "
                             "Python builds cursor_i+arange(1,ndfe+1)*M, 0-based"),
 
     # --- not indices: named like one, but never subscript anything ---------
@@ -221,13 +221,13 @@ def scan(path):
 
 
 def _fmt(vs):
-    return '; '.join('%s in %s (com.py:%d)' % v for v in vs[:6]) or 'none'
+    return '; '.join('%s in %s (sicopr.py:%d)' % v for v in vs[:6]) or 'none'
 
 
 def main():
     if not os.path.isfile(COM_PY):
         check('index_base_com_py_present', False,
-              'com.py not found -- run python assemble_com.py first')
+              'sicopr.py not found -- run python assemble_com.py first')
         return finish()
 
     a, b, undeclared = scan(COM_PY)

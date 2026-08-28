@@ -64,7 +64,7 @@ request runs code the author wrote. Specifically check:
   your machine and read it line by line.
 - **Does it add a dependency?** A new import in `requirements.txt` is a new piece
   of software you are asking every user to install. Ask what it buys.
-- **Does it edit `com.py` directly?** Reject it — `com.py` is generated, and CI
+- **Does it edit `sicopr.py` directly?** Reject it — `sicopr.py` is generated, and CI
   catches this, but say why so the contributor knows to redo it under
   `com_functions/fn/`.
 - **Does it add data?** Channel files, configuration workbooks and MATLAB

@@ -18,7 +18,7 @@
 # Column-major vs row-major: no significant arrays (all scalar/1D)
 # 1-based indexing: no significant index arithmetic
 # Output: (param, OP) tuple matching MATLAB [param, OP]
-# Known discrepancy from com.py: com.py missing pkg block parsing + many params
+# Known discrepancy from sicopr.py: sicopr.py missing pkg block parsing + many params
 # ============================================================
 
 import csv
@@ -491,8 +491,8 @@ def read_ParamConfigFile(paramFile, OP):
     # (FOM bit-exact 198/208) is evidence for. 4p16p0 behaviour is opt-in so
     # that evidence is not silently invalidated.
     #
-    #   python com.py ... --matlab-version 4p16p0
-    #   import com; com.COM_MATLAB_VERSION = '4p16p0'
+    #   python sicopr.py ... --matlab-version 4p16p0
+    #   import sicopr; sicopr.COM_MATLAB_VERSION = '4p16p0'
     #   or the config keyword 'COM Version'
     #
     # Read before anything that branches on it -- the Clip Method default is

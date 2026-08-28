@@ -1,10 +1,10 @@
 """Audit batch B12: G10 optimizer loops, MMSE + floating taps.
 
 Scope (audit prompt section 3 item 10, "Optimizer loops"):
-  - Full_Grid_Matrix         (MATLAB 2124-2184 -> com.py 2569-2593)
-  - FOM_rxffe_floating_taps  (MATLAB 2068-2113 -> com.py 2487-2525)
-  - MMSE                     (MATLAB 2485-2584 -> com.py 3133-3257)
-  - MMSE_FOM                 (MATLAB 2585-2697 -> com.py 3286-3385)
+  - Full_Grid_Matrix         (MATLAB 2124-2184 -> sicopr.py 2569-2593)
+  - FOM_rxffe_floating_taps  (MATLAB 2068-2113 -> sicopr.py 2487-2525)
+  - MMSE                     (MATLAB 2485-2584 -> sicopr.py 3133-3257)
+  - MMSE_FOM                 (MATLAB 2585-2697 -> sicopr.py 3286-3385)
 
 Verification strategy (no MATLAB, no golden data):
   1. Full_Grid_Matrix: the cartesian-product row order (last column varies
@@ -22,7 +22,7 @@ Verification strategy (no MATLAB, no golden data):
 
 One confirmed divergence (EXPECTED FAIL row):
   B12-D17 (medium): MMSE_FOM recomputes blim from Hb*wlim UNCONDITIONALLY when
-  Nb>0 (com.py 3367-3369 / 3119-3121), whereas MATLAB (2685-2688) recomputes it
+  Nb>0 (sicopr.py 3367-3369 / 3119-3121), whereas MATLAB (2685-2688) recomputes it
   only inside the `if ~isequal(w,wlim)` branch. When the DFE taps are clipped
   (first re-solve fires) but the RxFFE taps are within limits (w==wlim), MATLAB
   returns blim = clip(original DFE taps) while Python returns
@@ -43,38 +43,38 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 TOL = 1e-9   # linear-algebra agreement tolerance (double-precision solves)
 
 
 # ===========================================================================
-# 1. Full_Grid_Matrix  (MATLAB 2124-2184 -> com.py 2569-2593)
+# 1. Full_Grid_Matrix  (MATLAB 2124-2184 -> sicopr.py 2569-2593)
 #    Cartesian product; LAST column varies fastest (order is the trap).
 # ===========================================================================
 # (a) The MATLAB docstring example.
-ex = com.Full_Grid_Matrix([[1, 2], [100, 200]])
+ex = sicopr.Full_Grid_Matrix([[1, 2], [100, 200]])
 check("full_grid_matrix_docstring_example",
       ex == [[1, 100], [1, 200], [2, 100], [2, 200]],
       "Full_Grid_Matrix cartesian order != MATLAB example, got %s" % ex)
 
 # (b) Order matches itertools.product (last index fastest) for 3 mixed-length vars.
 a, b, c = [1, 2, 3], [10, 20], [7, 8, 9, 0]
-got = com.Full_Grid_Matrix([a, b, c])
+got = sicopr.Full_Grid_Matrix([a, b, c])
 ref = [list(t) for t in itertools.product(a, b, c)]
 check("full_grid_matrix_matches_product_order",
       got == ref and len(got) == len(a) * len(b) * len(c),
       "Full_Grid_Matrix != itertools.product order for 3 vars")
 
 # (c) Single-column and the number-of-cases invariant.
-one = com.Full_Grid_Matrix([[5, 6, 7]])
+one = sicopr.Full_Grid_Matrix([[5, 6, 7]])
 check("full_grid_matrix_single_column",
       one == [[5], [6], [7]],
       "single-column grid wrong: %s" % one)
 
 
 # ===========================================================================
-# 2. FOM_rxffe_floating_taps  (MATLAB 2068-2113 -> com.py 2487-2525)
+# 2. FOM_rxffe_floating_taps  (MATLAB 2068-2113 -> sicopr.py 2487-2525)
 #    Greedy bank-by-bank selection; injected mock MMSE_FOM controls the scores.
 # ===========================================================================
 # Config: RxFFE_cpx=0 (no cursor offset), 6 ISI taps, bank_size 1, 2 groups.
@@ -89,7 +89,7 @@ def _mock_fom(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx):
     score = -float(sum(np.min(np.abs(cval - _ideal)) for cval in cand))
     return (0.0, score, None, idx, 0, None)
 
-idx_ft = com.FOM_rxffe_floating_taps(
+idx_ft = sicopr.FOM_rxffe_floating_taps(
     param_ft, h_ft, None, 0, None, 0, 0, None, None, None, None, 0.5, 0, 6,
     _MMSE_FOM_fn=_mock_fom)
 # Group 1 ties at loc 3 and 5 -> MATLAB max()/np.argmax pick the FIRST (loc 3).
@@ -105,7 +105,7 @@ h_ft2 = np.arange(1.0, 12.0)   # hisi = h[0:8] -> 8 taps, max_isi = 8-2+1 = 7
 def _mock_fom_first(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx):
     cand = np.asarray(idx, dtype=float).ravel()
     return (0.0, -float(np.min(cand)), None, idx, 0, None)   # prefers smallest start
-idx_ft2 = com.FOM_rxffe_floating_taps(
+idx_ft2 = sicopr.FOM_rxffe_floating_taps(
     param_ft2, h_ft2, None, 0, None, 0, 0, None, None, None, None, 0.5, 0, 8,
     _MMSE_FOM_fn=_mock_fom_first)
 # One group of bank_size 2 starting at loc 1 -> taps {1,2}. +RxFFE_cpx=0.
@@ -116,7 +116,7 @@ check("floating_taps_bank_size2_start1",
 
 
 # ===========================================================================
-# 3. MMSE index seams  (MATLAB 2496/2497/2535/2572 -> com.py 3149/3153/3206/3244)
+# 3. MMSE index seams  (MATLAB 2496/2497/2535/2572 -> sicopr.py 3149/3153/3206/3244)
 #    Standalone reproductions of the 1-based -> 0-based translations.
 # ===========================================================================
 # (a) samp_idx starting phase: MATLAB (mod(cursor_i_1based-1,M)+1) 1-based ==
@@ -147,9 +147,9 @@ for loc in (1, 4, 7):
 
 
 # ===========================================================================
-# 4. MMSE_FOM block solve  (MATLAB 2585-2697 -> com.py 3286-3385)
+# 4. MMSE_FOM block solve  (MATLAB 2585-2697 -> sicopr.py 3286-3385)
 #    Independent MATLAB-semantics reference; the ONLY intended difference from
-#    com.py is the blim-recompute placement (conditional vs unconditional), so
+#    sicopr.py is the blim-recompute placement (conditional vs unconditional), so
 #    on no-clip inputs they must agree, and the D17 case isolates the difference.
 # ===========================================================================
 def matlab_ref_MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx):
@@ -226,13 +226,13 @@ sigma_X2 = float((4 ** 2 - 1) / (3 * (4 - 1) ** 2))   # levels=4
 dw, d, Nb = 1, 1, 2
 
 # (a) NO-CLIP case: loose DFE and RxFFE bounds -> block1 and block2 both quiet,
-#     so com.py (unconditional recompute) and the MATLAB reference must agree.
+#     so sicopr.py (unconditional recompute) and the MATLAB reference must agree.
 param_loose = SimpleNamespace(RxFFE_cmx=1, RxFFE_cpx=1, N_bmax=2, N_bf=1, N_bg=0,
                               bmax=np.array([1e3, 1e3]), bmin=np.array([-1e3, -1e3]),
                               R_LM=1.0, levels=4)
 wmax_l = np.array([1e6, 1.0, 1e6])
 wmin_l = np.array([-1e6, 1.0, -1e6])
-py = com.MMSE_FOM(param_loose, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
+py = sicopr.MMSE_FOM(param_loose, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
                   param_loose.bmin, param_loose.bmax, sigma_X2, None)
 rf = matlab_ref_MMSE_FOM(param_loose, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
                          param_loose.bmin, param_loose.bmax, sigma_X2, None)
@@ -245,7 +245,7 @@ check("mmse_fom_noclip_matches_matlab_reference",
       "(block1=%s block2=%s dFOM=%.3e)" % (rf[6], rf[7], abs(py[1] - rf[1])))
 
 # (b) Cross-path: the hoisted _MMSE__MMSE_FOM copy is identical to the top-level.
-py2 = com._MMSE__MMSE_FOM(param_loose, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
+py2 = sicopr._MMSE__MMSE_FOM(param_loose, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
                           param_loose.bmin, param_loose.bmax, sigma_X2, None)
 check("mmse_fom_hoisted_copy_identical",
       abs(py[0] - py2[0]) <= 1e-15 and abs(py[1] - py2[1]) <= 1e-15
@@ -254,7 +254,7 @@ check("mmse_fom_hoisted_copy_identical",
       "_MMSE__MMSE_FOM != top-level MMSE_FOM")
 
 # (c) FOM physics sign: less noise (smaller Rnn) => higher FOM (better channel).
-py_lownoise = com.MMSE_FOM(param_loose, H_test, Nb, 0.0001 * np.eye(3), dw, d,
+py_lownoise = sicopr.MMSE_FOM(param_loose, H_test, Nb, 0.0001 * np.eye(3), dw, d,
                            wmax_l, wmin_l, param_loose.bmin, param_loose.bmax,
                            sigma_X2, None)
 check("mmse_fom_less_noise_higher_fom",
@@ -285,7 +285,7 @@ for bmax_val in np.linspace(0.02 * b_max_mag, 0.98 * b_max_mag, 60):
     rf_s = matlab_ref_MMSE_FOM(p, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
                                p.bmin, p.bmax, sigma_X2, None)
     if rf_s[6] and not rf_s[7]:   # block1 fired, block2 quiet
-        py_s = com.MMSE_FOM(p, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
+        py_s = sicopr.MMSE_FOM(p, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
                             p.bmin, p.bmax, sigma_X2, None)
         if np.max(np.abs(np.asarray(py_s[5]) - np.asarray(rf_s[5]))) > TOL:
             _found = (bmax_val, np.asarray(py_s[5]), np.asarray(rf_s[5]), py_s[1], rf_s[1])
@@ -294,7 +294,7 @@ for bmax_val in np.linspace(0.02 * b_max_mag, 0.98 * b_max_mag, 60):
 # B12-D17 was FIXED in the 8-defect correlation commit: the `b = Hb*wlim; blim = clip(b)` refresh now
 # runs only inside the `if ~isequal(w, wlim)` branch, matching MATLAB 2683-2692.
 # The sweep above is therefore a REGRESSION GUARD, not a bug demonstration: it
-# hunts across 60 DFE bounds for any clip-only case where com.py and the
+# hunts across 60 DFE bounds for any clip-only case where sicopr.py and the
 # MATLAB-faithful reference disagree. Finding one means D17 has come back.
 #
 # This check previously asserted `_found is not None` -- it was written while
@@ -309,7 +309,7 @@ if _found is not None:
 
 check("mmse_fom_D17_dfe_clip_matches_matlab",
       _found is None,
-      "REGRESSION (B12-D17): com.py diverges from MATLAB on a DFE-clip-only "
+      "REGRESSION (B12-D17): sicopr.py diverges from MATLAB on a DFE-clip-only "
       "case. " + _detail)
 
 finish()

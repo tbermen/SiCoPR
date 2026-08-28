@@ -8,7 +8,7 @@
 # Output shape: same as input (2,2) or (2,2,N).
 # MATLAB [A B; C D] where A,B,C,D are 1×1×N → (2,2,N) result.
 # eps guard: s21==0 → np.finfo(float).eps to avoid division by zero.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

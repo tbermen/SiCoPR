@@ -2,7 +2,7 @@
 
 The EQ search maximises FOM, but the pass/fail metric is COM. COM is deliberately
 *not* computed during the search (optimize_fom runs with OP.COMPUTE_COM = False,
-com.py:448) — it is evaluated once at the end from the winning EQ setting, because
+sicopr.py:448) — it is evaluated once at the end from the winning EQ setting, because
 per-candidate COM would mean the full PDF/CDF convolution on every grid point.
 
 That makes FOM a proxy, and any local-search heuristic that prunes in FOM space is
@@ -39,7 +39,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))                    # tools/
-import com  # assembled COM module
+import sicopr  # assembled COM module
 from sweep_compare import _extract_case, apply_grid_reduction
 
 PROBE_HEADER = ['fom_rank', 'gffe_index', 'ctle_index', 'lp_index', 'txffe_index',
@@ -92,7 +92,7 @@ def _pinned_build(orig_build, cand):
     Pinning here rather than by collapsing param.tx_ffe_c*_values to one value
     each is deliberate: OptFom_Build_TXFFE treats a tap that is single-valued
     *and* zero as an absent leading tap and decrements the cursor position
-    (com.py:3503-3517). Collapsing the value arrays would therefore silently
+    (sicopr.py:3503-3517). Collapsing the value arrays would therefore silently
     move the cursor and change the TXFFE matrix shape. Slicing the built matrix
     leaves `cur`, precursor/postcursor indices and the cursor vector untouched.
     """
@@ -131,8 +131,8 @@ def probe(config, thru, fext=(), next_=(), sweep_dir='sweep_results',
     print(f'Probing top {len(cands)} of the {method} log '
           f'(max_ctle={max_ctle}, max_tap_vals={max_tap_vals})', flush=True)
 
-    orig_read = com.read_ParamConfigFile
-    orig_build = com.OptFom_Build_TXFFE
+    orig_read = sicopr.read_ParamConfigFile
+    orig_build = sicopr.OptFom_Build_TXFFE
     rows = []
     try:
         for rank, cand in enumerate(cands, 1):
@@ -147,8 +147,8 @@ def probe(config, thru, fext=(), next_=(), sweep_dir='sweep_results',
                 _pin_index(param, ('cursor_gain',), int(_c['gffe_index']))
                 return param, OP
 
-            com.read_ParamConfigFile = patched_read
-            com.OptFom_Build_TXFFE = _pinned_build(orig_build, cand)
+            sicopr.read_ParamConfigFile = patched_read
+            sicopr.OptFom_Build_TXFFE = _pinned_build(orig_build, cand)
 
             fom = float(cand['candidate_FOM'])
             print(f'\n=== rank {rank}/{len(cands)}: FOM={fom:.4f} dB  '
@@ -156,7 +156,7 @@ def probe(config, thru, fext=(), next_=(), sweep_dir='sweep_results',
                   f'gffe={cand["gffe_index"]} taps={cand["tx_taps"]} ===', flush=True)
 
             t0 = time.time()
-            results = com._run_com(config, len(fext), len(next_), files, export_mat=False)
+            results = sicopr._run_com(config, len(fext), len(next_), files, export_mat=False)
             dt = time.time() - t0
 
             r = _extract_case(results)
@@ -168,8 +168,8 @@ def probe(config, thru, fext=(), next_=(), sweep_dir='sweep_results',
                          'txffe_index': cand['txffe_index'], 'tx_taps': cand['tx_taps'],
                          'FOM_dB': fom, 'COM_dB': com_db, 'wall_s': round(dt, 1)})
     finally:
-        com.read_ParamConfigFile = orig_read
-        com.OptFom_Build_TXFFE = orig_build
+        sicopr.read_ParamConfigFile = orig_read
+        sicopr.OptFom_Build_TXFFE = orig_build
 
     fom1, com1 = rows[0]['FOM_dB'], rows[0]['COM_dB']
     for r in rows:

@@ -6,10 +6,10 @@ The three methods are selected through the two optimize_fom switches:
     legacy    : Local Search = N, NonZeroLSMethod = 0   (OptFom_Local_Search)
     adaptive  : Local Search = N, NonZeroLSMethod = 1   (OptFom_Adaptive_Local_Search)
 
-For each run the opt-in logger in optimize_fom (com.SWEEP_LOG_CSV) writes one row
+For each run the opt-in logger in optimize_fom (sicopr.SWEEP_LOG_CSV) writes one row
 per TX-FFE candidate considered (method, EQ indices, tap vector, candidate FOM,
 running best FOM, evaluated/skipped). The adaptive run additionally enables the
-ALS radius log (com.ALS_LOG_CSV) for the adaptive-radius diagnostic.
+ALS radius log (sicopr.ALS_LOG_CSV) for the adaptive-radius diagnostic.
 
 Outputs (in --out): full_grid_log.csv, legacy_log.csv, adaptive_log.csv,
 adaptive_radius_log.csv, summary.json.
@@ -54,7 +54,7 @@ def apply_grid_reduction(param, max_ctle=None, max_tap_vals=None):
     return param
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # repo root
-import com  # assembled COM module
+import sicopr  # assembled COM module
 
 
 def _extract_case(results):
@@ -89,7 +89,7 @@ def run_methods(config, thru, fext=(), next_=(), local_search=2,
     methods = [(m, local_search if METHOD_SWITCHES[m][0] else 0, METHOD_SWITCHES[m][1])
                for m in labels]
 
-    orig_read = com.read_ParamConfigFile
+    orig_read = sicopr.read_ParamConfigFile
     summary = {'config': os.path.basename(config), 'thru': os.path.basename(thru),
                'local_search': local_search, 'max_ctle': max_ctle,
                'max_tap_vals': max_tap_vals, 'methods': {}}
@@ -102,21 +102,21 @@ def run_methods(config, thru, fext=(), next_=(), local_search=2,
                 apply_grid_reduction(param, max_ctle, max_tap_vals)
                 return param, OP
 
-            com.read_ParamConfigFile = patched
-            com.SWEEP_LOG_CSV = os.path.join(out_dir, f'{label}_log.csv')
-            com.SWEEP_METHOD_LABEL = label
-            com.ALS_LOG_CSV = (os.path.join(out_dir, 'adaptive_radius_log.csv')
+            sicopr.read_ParamConfigFile = patched
+            sicopr.SWEEP_LOG_CSV = os.path.join(out_dir, f'{label}_log.csv')
+            sicopr.SWEEP_METHOD_LABEL = label
+            sicopr.ALS_LOG_CSV = (os.path.join(out_dir, 'adaptive_radius_log.csv')
                                if label == 'adaptive' else None)
             # fresh radius log each run (append_csv_row appends, so clear first)
-            if com.ALS_LOG_CSV and os.path.isfile(com.ALS_LOG_CSV):
-                os.remove(com.ALS_LOG_CSV)
+            if sicopr.ALS_LOG_CSV and os.path.isfile(sicopr.ALS_LOG_CSV):
+                os.remove(sicopr.ALS_LOG_CSV)
 
             print(f'\n=== {label}: Local Search={ls}, NonZeroLSMethod={nz} ===', flush=True)
             t0 = time.time()
-            results = com._run_com(config, len(fext), len(next_), files, export_mat=False)
+            results = sicopr._run_com(config, len(fext), len(next_), files, export_mat=False)
             dt = time.time() - t0
-            com.SWEEP_LOG_CSV = None
-            com.ALS_LOG_CSV = None
+            sicopr.SWEEP_LOG_CSV = None
+            sicopr.ALS_LOG_CSV = None
 
             r = _extract_case(results)
             com_db = float(getattr(r, 'COM_dB', float('nan'))) if r is not None else float('nan')
@@ -132,9 +132,9 @@ def run_methods(config, thru, fext=(), next_=(), local_search=2,
                   f'wall={dt:.1f}s', flush=True)
             print(f'  best_EQ={st["best_EQ"]}', flush=True)
     finally:
-        com.read_ParamConfigFile = orig_read
-        com.SWEEP_LOG_CSV = None
-        com.ALS_LOG_CSV = None
+        sicopr.read_ParamConfigFile = orig_read
+        sicopr.SWEEP_LOG_CSV = None
+        sicopr.ALS_LOG_CSV = None
 
     # speedups + grid coverage relative to full grid (based on candidates actually
     # evaluated — the real compute — not merely considered)
@@ -169,7 +169,7 @@ def _log_stats(csv_path):
 
     The winner is the first evaluated candidate attaining the maximum
     candidate_FOM. That matches optimize_fom's strict `THIS.FOM > BEST.FOM`
-    update (com.py:12922), which keeps the earliest member of any tie.
+    update (sicopr.py:12922), which keeps the earliest member of any tie.
 
     Capturing the EQ setting -- not just the score -- is what makes it possible
     to tell "the methods found the same operating point" from "the methods found

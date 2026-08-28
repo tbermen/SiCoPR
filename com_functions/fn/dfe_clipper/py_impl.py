@@ -9,7 +9,7 @@
 #   column (threshold reshaped to (-1,1)).
 # MATLAB `end` keyword: not used.
 # Output shape: same shape as input.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

@@ -1,13 +1,13 @@
 {
   "_comment": [
     "Single source of truth for which MATLAB release this port emulates.",
-    "assemble_com.py reads this to generate com.py's header, and",
+    "assemble_com.py reads this to generate sicopr.py's header, and",
     "tools/export_results.py reads it for the results.xlsx code_revision cell.",
-    "Edit here, re-run assemble_com.py -- do not edit com.py's header directly.",
+    "Edit here, re-run assemble_com.py -- do not edit sicopr.py's header directly.",
     "",
     "The header used to hardcode 4p14p0 and went stale twice: the port moved to",
     "4p15p0 for the correlation corpus, then gained 4p16p0 support, while every",
-    "generated com.py still announced 4p14p0."
+    "generated sicopr.py still announced 4p14p0."
   ],
   "default_matlab_version": "4p15p0",
   "supported_matlab_versions": [

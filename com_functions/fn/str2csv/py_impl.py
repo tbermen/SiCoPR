@@ -9,7 +9,7 @@
 #   This is exactly what str.join does.
 # strcat on cell arrays: no trailing-space trimming (unlike char arrays).
 # Output shape: scalar string.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 
 

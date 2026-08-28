@@ -12,7 +12,7 @@
 # find(..., 1, 'first'): np.argmax on boolean mask (returns 0 if no match;
 #   MATLAB returns [] — callers must ensure specBER is in range).
 # Output shape: two scalars (float).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

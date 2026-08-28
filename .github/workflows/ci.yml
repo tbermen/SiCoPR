@@ -30,20 +30,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: com.py must match its sources
-        # com.py is generated. If a contributor edited it directly, or edited a
+      - name: sicopr.py must match its sources
+        # sicopr.py is generated. If a contributor edited it directly, or edited a
         # py_impl.py and forgot to re-assemble, the committed engine and its
         # sources disagree -- and every test here would run the wrong one.
         run: |
-          cp com.py /tmp/com_committed.py
+          cp sicopr.py /tmp/sicopr_committed.py
           python assemble_com.py
-          if ! diff -q /tmp/com_committed.py com.py > /dev/null; then
-            echo "::error::com.py does not match com_functions/fn/*/py_impl.py."
+          if ! diff -q /tmp/sicopr_committed.py sicopr.py > /dev/null; then
+            echo "::error::sicopr.py does not match com_functions/fn/*/py_impl.py."
             echo "Run 'python assemble_com.py' and commit the result."
-            diff /tmp/com_committed.py com.py | head -40
+            diff /tmp/sicopr_committed.py sicopr.py | head -40
             exit 1
           fi
-          echo "com.py is in sync with its sources"
+          echo "sicopr.py is in sync with its sources"
 
       - name: Per-function unit tests
         run: python -m pytest com_functions/fn -q --tb=short
@@ -86,15 +86,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: BSD-3-Clause attribution must survive
         # Clause 1 requires the notice to travel with redistributed source, and
-        # com.py is the file most users actually receive. It is generated, so the
+        # sicopr.py is the file most users actually receive. It is generated, so the
         # notice can silently vanish if the header template is edited.
         run: |
           test -f LICENSE || { echo "::error::LICENSE is missing"; exit 1; }
           for pat in "802-COM Authors" "SPDX-License-Identifier: BSD-3-Clause"; do
             grep -q "$pat" LICENSE || { echo "::error::LICENSE lost: $pat"; exit 1; }
-            grep -q "$pat" com.py  || { echo "::error::com.py header lost: $pat"; exit 1; }
+            grep -q "$pat" sicopr.py  || { echo "::error::sicopr.py header lost: $pat"; exit 1; }
           done
-          echo "licence notice present in LICENSE and in com.py"
+          echo "licence notice present in LICENSE and in sicopr.py"
 
   hygiene:
     name: No correlation data committed

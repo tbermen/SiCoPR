@@ -9,7 +9,7 @@
 #   instead of NaN; the neighbour-copy workaround is still applied for
 #   fidelity, and is harmless when np.interp already returned a value.
 # Output shape: SimpleNamespace with same fields as input pdf.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import copy
 import numpy as np

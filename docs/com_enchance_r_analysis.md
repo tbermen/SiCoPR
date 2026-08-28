@@ -31,7 +31,7 @@ All new functionality must be optional.
 Example:
 
 ```python
-com.py config.xlsx 0 0 channel.s4p --export-mat
+sicopr.py config.xlsx 0 0 channel.s4p --export-mat
 ```
 
 or

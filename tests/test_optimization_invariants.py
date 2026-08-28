@@ -34,7 +34,7 @@ sys.path.insert(0, _HERE)
 sys.path.insert(0, _ROOT)
 
 from audit_check import check, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def _load(fn_name):
@@ -116,7 +116,7 @@ Nw, Nb, num = 12, 3, 200
 H = rng.standard_normal((num, Nw)) * 0.1
 H[40, :] += 1.0
 Rnn = np.eye(Nw) * 1e-3
-param = com.SimpleNamespace(RxFFE_cmx=4, RxFFE_cpx=7, N_bmax=Nb, N_bf=0,
+param = sicopr.SimpleNamespace(RxFFE_cmx=4, RxFFE_cpx=7, N_bmax=Nb, N_bf=0,
                             N_bg=0, bmax=np.full(Nb, 0.85),
                             bmin=np.full(Nb, -0.85), R_LM=1.0, levels=4)
 kw = dict(param=param, H=H, Nb=Nb, Rnn=Rnn, dw=4, d=40,

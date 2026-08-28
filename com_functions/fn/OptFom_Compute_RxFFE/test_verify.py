@@ -7,7 +7,7 @@
 # Legality check (only when not RxFFE_with_MMSE): RXFFE_Illegal(C) True -> skip_it=1.
 # On success the RxFFE taps are applied to the pulse via FFE().
 # get_PSDs / MMSE / force / RXFFE_Illegal / FFE / S_RN / S_IN / H_interp are
-# top-level fns in the assembled com.py; here they are injected as spies so the
+# top-level fns in the assembled sicopr.py; here they are injected as spies so the
 # dispatch/branching logic is unit-tested in isolation (each helper has its own
 # test directory, and the whole chain is exercised by the end-to-end run).
 # ============================================================

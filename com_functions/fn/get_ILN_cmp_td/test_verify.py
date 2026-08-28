@@ -5,8 +5,8 @@ model to sdd21, builds REF (raw) and FIT (fitted) pulse responses through the
 TX/Bessel-Thomson filters, and reports a FOM from their difference PDF.
 
 Bessel_Thomson_Filter / Butterworth_Filter / s21_to_impulse_DC are top-level fns
-in the assembled com.py, so this is an INTEGRATION test: the real dependencies
-are injected from `com`. Both the zero-input (degenerate) and a realistic lossy
+in the assembled sicopr.py, so this is an INTEGRATION test: the real dependencies
+are injected from `sicopr`. Both the zero-input (degenerate) and a realistic lossy
 channel are exercised.
 """
 import os
@@ -16,12 +16,12 @@ import pytest
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-import com
+import sicopr
 import com_functions.fn.get_ILN_cmp_td.py_impl as _mod
 from com_functions.fn.get_ILN_cmp_td.py_impl import get_ILN_cmp_td
 
-for _n in dir(com):
-    _v = getattr(com, _n)
+for _n in dir(sicopr):
+    _v = getattr(sicopr, _n)
     if callable(_v) and not _n.startswith('__') and not hasattr(_mod, _n):
         setattr(_mod, _n, _v)
 
@@ -99,8 +99,8 @@ def test_iln_shape_matches_input():
 
 
 def test_uses_real_s21_to_impulse_DC():
-    assert _mod.s21_to_impulse_DC is com.s21_to_impulse_DC
-    assert _mod.Bessel_Thomson_Filter is com.Bessel_Thomson_Filter
+    assert _mod.s21_to_impulse_DC is sicopr.s21_to_impulse_DC
+    assert _mod.Bessel_Thomson_Filter is sicopr.Bessel_Thomson_Filter
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 # ALS_LOG_CSV): compute the eye contour and timing bathtub for PLOTTING even
 # when MLSE is enabled.
 #
-#   import com; com.EYE_PLOT_UNDER_MLSE = True
+#   import sicopr; sicopr.EYE_PLOT_UNDER_MLSE = True
 #
 # MATLAB gates the eye on OP.MLSE == 0 (4p15p0 L620) and this port follows it,
 # so by default neither tool emits an eye or bathtub under MLSE. But MLSE is
@@ -331,7 +331,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                   and not getattr(OP, 'RX_CALIBRATION', False)
                   and getattr(OP, 'EW', 0) == 1
                   and getattr(OP, 'MLSE', 0) != 0):
-                # PLOTTING ONLY -- opt in with `com.EYE_PLOT_UNDER_MLSE = True`.
+                # PLOTTING ONLY -- opt in with `sicopr.EYE_PLOT_UNDER_MLSE = True`.
                 #
                 # MATLAB (4p15p0 L620) gates the eye on OP.MLSE == 0, so with MLSE
                 # enabled neither tool produces an eye contour or timing bathtub.

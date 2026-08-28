@@ -1,6 +1,6 @@
 """Audit batch B01: G1 unit conversions in noise integrals.
 
-Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
+Functions under audit (MATLAB com_ieee8023_4p15p0.m -> sicopr.py):
   S_RN                      ML 4479-4502  -> py 6594-6610
   N_s                       ML 2698-2738  -> py 3391-3415 (+ copy _S_IN__N_s py 6546-6566)
   get_sigma_noise           ML 7950-7973  -> py 11489-11521
@@ -9,8 +9,8 @@ Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
 
 Every oracle below is transcribed directly from the cited MATLAB lines with
 1-based indexing converted at the array-access boundary only. Oracles do NOT
-call the com.py code paths they are checking (exception: the ADC 'slow' clip
-oracle uses com.py's public get_pdf_from_sampled_signal / conv_fct / CDF_inv_ev
+call the sicopr.py code paths they are checking (exception: the ADC 'slow' clip
+oracle uses sicopr.py's public get_pdf_from_sampled_signal / conv_fct / CDF_inv_ev
 as the best available stand-ins for the MATLAB PDF machinery; those functions
 are audited separately in batches B07/B08).
 
@@ -28,7 +28,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def rel_err(a, b):
@@ -39,7 +39,7 @@ def rel_err(a, b):
 
 
 # ---------------------------------------------------------------------------
-# Shared MATLAB-transcribed helpers (from the cited lines, not from com.py)
+# Shared MATLAB-transcribed helpers (from the cited lines, not from sicopr.py)
 # ---------------------------------------------------------------------------
 
 def ml_double_sided(S):
@@ -83,7 +83,7 @@ par = SimpleNamespace(CTLE_fp1=1.2e10, CTLE_fz=4e9, CTLE_fp2=3.5e10,
 
 # DC gain: at f=0, H_CTF = 10^(G_DC/20)*10^(G_DC2/20) and H_R = 1, so
 # S_RN(0) = eta_0/2 * 10^((G_DC+G_DC2)/10). Pure closed form -> tol 1e-12.
-srn0 = float(com.S_RN(np.array([0.0]), -6.0, -1.0, par)[0])
+srn0 = float(sicopr.S_RN(np.array([0.0]), -6.0, -1.0, par)[0])
 expect0 = par.eta_0 / 2 * 10 ** ((-6.0 - 1.0) / 10)
 check("S_RN_dc_gain_closed_form", abs(srn0 - expect0) <= 1e-12 * expect0,
       "S_RN(0)=%g expected %g" % (srn0, expect0))
@@ -95,7 +95,7 @@ check("S_RN_dc_gain_closed_form", abs(srn0 - expect0) <= 1e-12 * expect0,
 # polynomial coefficients (they are 6-digit truncations of the exact ones).
 par_flat = SimpleNamespace(CTLE_fp1=1e10, CTLE_fz=1e10, CTLE_fp2=1e30,
                            f_HP=1e8, f_r=0.75, fb=2.5e10, eta_0=8.2e-9)
-sr = com.S_RN(np.array([0.0, par_flat.f_r * par_flat.fb]), 0.0, 0.0, par_flat)
+sr = sicopr.S_RN(np.array([0.0, par_flat.f_r * par_flat.fb]), 0.0, 0.0, par_flat)
 ratio = float(sr[1] / sr[0])
 check("S_RN_bessel_thomson_3dB", abs(ratio - 0.5) <= 1e-5,
       "S_RN(fr*fb)/S_RN(0)=%g expected ~0.5" % ratio)
@@ -104,7 +104,7 @@ check("S_RN_bessel_thomson_3dB", abs(ratio - 0.5) <= 1e-5,
 # evaluated in float64; only ordering differences allowed).
 fgrid = np.linspace(0, 1.5 * par.fb, 601)
 check("S_RN_matches_matlab_formula",
-      rel_err(com.S_RN(fgrid, -6.0, -1.0, par), ml_S_RN(fgrid, -6.0, -1.0, par)) <= 1e-13,
+      rel_err(sicopr.S_RN(fgrid, -6.0, -1.0, par), ml_S_RN(fgrid, -6.0, -1.0, par)) <= 1e-13,
       "S_RN transcription mismatch")
 
 # ===========================================================================
@@ -121,7 +121,7 @@ par_ns = SimpleNamespace(fb=fb, f_hp=1e9)
 OP_178 = SimpleNamespace(RIT_REF_PTR='Clause_178')   # mixed case exercises lower()
 OP_179 = SimpleNamespace(RIT_REF_PTR='clause_179')
 
-ns178 = com.N_s(f, par_ns, sig_ns, OP_178)
+ns178 = sicopr.N_s(f, par_ns, sig_ns, OP_178)
 # ML 2705: inq = find(f<=fb/2,1,'last') INCLUDES the point at exactly fb/2.
 check("N_s_178_edge_inclusive",
       ns178[i_half] > 0 and ns178[i_half + 1] == 0,
@@ -138,7 +138,7 @@ mass178 = float(np.sum(ns178) * df)
 check("N_s_178_mass_sigma2", abs(mass178 - sig_ns ** 2) <= 1e-3 * sig_ns ** 2,
       "mass=%g expected %g" % (mass178, sig_ns ** 2))
 
-ns179 = com.N_s(f, par_ns, sig_ns, OP_179)
+ns179 = sicopr.N_s(f, par_ns, sig_ns, OP_179)
 # ML 2715-2716 transcription at every kept point, tol 1e-15 (same algebra).
 beta = 1 - (2 * par_ns.f_hp / fb) * np.arctan(fb / (2 * par_ns.f_hp))
 ref179 = np.zeros(len(f))
@@ -156,7 +156,7 @@ check("N_s_179_mass_sigma2", abs(mass179 - sig_ns ** 2) <= 1e-3 * sig_ns ** 2,
 
 # ML 2712-2714: f_hp<=0 must raise for clause_179.
 try:
-    com.N_s(f, SimpleNamespace(fb=fb, f_hp=0.0), sig_ns, OP_179)
+    sicopr.N_s(f, SimpleNamespace(fb=fb, f_hp=0.0), sig_ns, OP_179)
     raised = False
 except Exception:
     raised = True
@@ -166,8 +166,8 @@ check("N_s_179_fhp_zero_raises", raised, "no error for f_hp=0")
 # with top-level N_s on shared inputs. Identical code -> tol 1e-15.
 for op, tag in ((OP_178, '178'), (OP_179, '179')):
     check("N_s_copy_SIN_agrees_%s" % tag,
-          rel_err(com._S_IN__N_s(f, par_ns, sig_ns, op),
-                  com.N_s(f, par_ns, sig_ns, op)) <= 1e-15,
+          rel_err(sicopr._S_IN__N_s(f, par_ns, sig_ns, op),
+                  sicopr.N_s(f, par_ns, sig_ns, op)) <= 1e-15,
           "_S_IN__N_s diverges from N_s")
 
 # ===========================================================================
@@ -184,7 +184,7 @@ def mk_chdata2(sdd21):
 # Flat channel, H_r ~ 1 (f_r tiny denominator scale -> huge corner), f_hp=0:
 # sigma_NE = sigma_bn*sqrt(mean(1)) = sigma_bn, sigma_HP = sigma_bn*mean(1).
 par_gs = SimpleNamespace(f_r=1e3, fb=fb, f_hp=0.0)
-s_ne, s_hp = com.get_sigma_noise(np.ones(len(fax)), par_gs,
+s_ne, s_hp = sicopr.get_sigma_noise(np.ones(len(fax)), par_gs,
                                  mk_chdata2(np.ones(len(fax))), sigma_bn)
 check("get_sigma_noise_flat_unity",
       abs(s_ne - sigma_bn) <= 1e-9 * sigma_bn and abs(s_hp - sigma_bn) <= 1e-12 * sigma_bn,
@@ -197,7 +197,7 @@ f_hp_q = 5e9
 H_hp_q = (-1j * fax / f_hp_q) / (1 + 1j * fax / f_hp_q)
 c_q = float(np.mean(np.abs(H_hp_q[:126]) ** 2))       # ML H_hp(1:idxfbby2), idx=126
 par_gsq = SimpleNamespace(f_r=1e3, fb=fb, f_hp=f_hp_q)
-_, s_hp_q = com.get_sigma_noise(np.ones(len(fax)), par_gsq,
+_, s_hp_q = sicopr.get_sigma_noise(np.ones(len(fax)), par_gsq,
                                 mk_chdata2(np.ones(len(fax))), sigma_bn)
 check("get_sigma_noise_hp_no_sqrt_quirk",
       abs(s_hp_q - sigma_bn * c_q) <= 1e-12 * sigma_bn
@@ -218,7 +218,7 @@ H_hp_ml = (-1j * fax / par_gr.f_hp) / (1 + 1j * fax / par_gr.f_hp)      # ML 796
 H_np_ml = sdd21_r * H_ctf_r * H_r_ml * H_hp_ml                          # ML 7969
 sne_ml = sigma_bn * np.sqrt(np.mean(np.abs(H_np_ml[:idxfbby2_ml] ** 2)))  # ML 7972
 shp_ml = sigma_bn * np.mean(np.abs(H_hp_ml[:idxfbby2_ml] ** 2))         # ML 7973
-sne_py, shp_py = com.get_sigma_noise(H_ctf_r, par_gr, mk_chdata2(sdd21_r), sigma_bn)
+sne_py, shp_py = sicopr.get_sigma_noise(H_ctf_r, par_gr, mk_chdata2(sdd21_r), sigma_bn)
 check("get_sigma_noise_matches_matlab_formula",
       abs(sne_py - sne_ml) <= 1e-13 * abs(sne_ml)
       and abs(shp_py - shp_ml) <= 1e-13 * abs(shp_ml),
@@ -228,8 +228,8 @@ check("get_sigma_noise_matches_matlab_formula",
 # FIRST index with f >= fb/2 (=126 1-based = 125 0-based, inclusive).
 sd_in = np.zeros(len(fax), dtype=complex); sd_in[125] = 1.0   # last included bin
 sd_out = np.zeros(len(fax), dtype=complex); sd_out[126] = 1.0  # first excluded bin
-ne_in, _ = com.get_sigma_noise(np.ones(len(fax)), par_gs, mk_chdata2(sd_in), sigma_bn)
-ne_out, _ = com.get_sigma_noise(np.ones(len(fax)), par_gs, mk_chdata2(sd_out), sigma_bn)
+ne_in, _ = sicopr.get_sigma_noise(np.ones(len(fax)), par_gs, mk_chdata2(sd_in), sigma_bn)
+ne_out, _ = sicopr.get_sigma_noise(np.ones(len(fax)), par_gs, mk_chdata2(sd_out), sigma_bn)
 check("get_sigma_noise_idx_window_inclusive",
       ne_in > 0 and ne_out == 0,
       "bin at fb/2 included=%g, bin above=%g (expected >0 and ==0)" % (ne_in, ne_out))
@@ -251,14 +251,14 @@ def mk_ch(faxis, sdc21_list):
 # = sqrt(eta_0 * 60e9/1e9) = sqrt(eta_0*60). Closed form, tol 1e-12.
 par_a = SimpleNamespace(eta_0=eta_0, AC_CM_RMS=0.0, AC_CM_RMS_TX=0.0,
                         ACCM_MAX_Freq=3.0e10)
-sN = com.get_sigma_eta_ACCM_noise(mk_ch(fax3, [ones3]), par_a, ones3, ones3, ones3)
+sN = sicopr.get_sigma_eta_ACCM_noise(mk_ch(fax3, [ones3]), par_a, ones3, ones3, ones3)
 expect_sN = np.sqrt(eta_0 * 60.0)
 check("ACCM_thermal_1e9_unit_factor", abs(sN - expect_sN) <= 1e-12 * expect_sN,
       "sigma_N=%g expected %g (eta_0 V^2/GHz => /1e9 on Hz axis)" % (sN, expect_sN))
 
 # ML 7936 uses H(2:end): a poison in element 1 (0-based 0) must not matter.
 poison_sy = ones3.copy(); poison_sy[0] = 1e6
-sN_p = com.get_sigma_eta_ACCM_noise(mk_ch(fax3, [ones3]), par_a, poison_sy, ones3, ones3)
+sN_p = sicopr.get_sigma_eta_ACCM_noise(mk_ch(fax3, [ones3]), par_a, poison_sy, ones3, ones3)
 check("ACCM_thermal_excludes_dc_bin", abs(sN_p - sN) <= 1e-14 * sN,
       "DC bin leaked into the integral: %g vs %g" % (sN_p, sN))
 
@@ -268,7 +268,7 @@ check("ACCM_thermal_excludes_dc_bin", abs(sN_p - sN) <= 1e-14 * sN,
 TX = 0.02
 par_b = SimpleNamespace(eta_0=eta_0, AC_CM_RMS=1.0, AC_CM_RMS_TX=TX,
                         ACCM_MAX_Freq=3.0e10)
-sN_cm = com.get_sigma_eta_ACCM_noise(mk_ch(fax3, [ones3, ones3]), par_b,
+sN_cm = sicopr.get_sigma_eta_ACCM_noise(mk_ch(fax3, [ones3, ones3]), par_b,
                                      ones3, ones3, ones3)
 expect_cm = float(np.hypot(expect_sN, 2 * TX))
 check("ACCM_cm_path_closed_form", abs(sN_cm - expect_cm) <= 1e-12 * expect_cm,
@@ -280,9 +280,9 @@ check("ACCM_cm_path_closed_form", abs(sN_cm - expect_cm) <= 1e-12 * expect_cm,
 # must not.
 sdc_in = ones3.copy(); sdc_in[150] = 100.0
 sdc_out = ones3.copy(); sdc_out[151] = 100.0
-sN_in = com.get_sigma_eta_ACCM_noise(mk_ch(fax3, [sdc_in, ones3]), par_b,
+sN_in = sicopr.get_sigma_eta_ACCM_noise(mk_ch(fax3, [sdc_in, ones3]), par_b,
                                      ones3, ones3, ones3)
-sN_out = com.get_sigma_eta_ACCM_noise(mk_ch(fax3, [sdc_out, ones3]), par_b,
+sN_out = sicopr.get_sigma_eta_ACCM_noise(mk_ch(fax3, [sdc_out, ones3]), par_b,
                                       ones3, ones3, ones3)
 check("ACCM_window_index_mapping",
       abs(sN_in - sN_cm) > 1e-6 and abs(sN_out - sN_cm) <= 1e-14 * sN_cm,
@@ -345,8 +345,8 @@ chdata = [SimpleNamespace(ctle_imp_response=ctle_imp,
 G_DC, G_DC2 = -6.0, -1.0
 
 # ---- call 1: WO_TXFFE=1, COMPUTE_COM=0 -> S_rn, S_in (ML 6550-6579) ----
-res = com.get_PSDs(None, [], [], [], G_DC, G_DC2, param, chdata, OP,
-                   _S_RN_fn=com.S_RN, _S_IN_fn=com.S_IN, _H_interp_fn=com.H_interp)
+res = sicopr.get_PSDs(None, [], [], [], G_DC, G_DC2, param, chdata, OP,
+                   _S_RN_fn=sicopr.S_RN, _S_IN_fn=sicopr.S_IN, _H_interp_fn=sicopr.H_interp)
 
 check("get_PSDs_fvec_grid",
       len(res.fvec) == n_fvec and rel_err(res.fvec, fvec) <= 1e-15
@@ -378,8 +378,8 @@ check("get_PSDs_S_in_zero_wo_psdrxcal",
 
 # ---- call 2: WO_TXFFE=0, COMPUTE_COM=0 -> S_xn,S_tn,S_jn,S_qn,S_n ----
 OP.WO_TXFFE = False
-res = com.get_PSDs(res, h, cursor_py, [], G_DC, G_DC2, param, chdata, OP,
-                   _S_RN_fn=com.S_RN, _S_IN_fn=com.S_IN, _H_interp_fn=com.H_interp)
+res = sicopr.get_PSDs(res, h, cursor_py, [], G_DC, G_DC2, param, chdata, OP,
+                   _S_RN_fn=sicopr.S_RN, _S_IN_fn=sicopr.S_IN, _H_interp_fn=sicopr.H_interp)
 
 # Oracle S_xn, ML 6600-6621 (single aggressor, xchan ML 2).
 k = agg_pulse.copy()
@@ -452,10 +452,10 @@ check("get_PSDs_S_n_total_matches_matlab", rel_err(res.S_n, S_n_ml) <= 1e-12,
 # ---- LIMIT_JITTER branch (ML 6676-6677): EXPECTED FAIL, +1 sample shift ----
 OP_lim = SimpleNamespace(**vars(OP))
 OP_lim.LIMIT_JITTER_CONTRIB_TO_DFE_SPAN = True
-res_lim = com.get_PSDs(SimpleNamespace(S_rn=res.S_rn.copy(), S_in=0,
+res_lim = sicopr.get_PSDs(SimpleNamespace(S_rn=res.S_rn.copy(), S_in=0,
                                        S_rn_rms=res.S_rn_rms, S_in_rms=0),
                        h, cursor_py, [], G_DC, G_DC2, param, chdata, OP_lim,
-                       _S_RN_fn=com.S_RN, _S_IN_fn=com.S_IN, _H_interp_fn=com.H_interp)
+                       _S_RN_fn=sicopr.S_RN, _S_IN_fn=sicopr.S_IN, _H_interp_fn=sicopr.H_interp)
 kvec = np.arange(-1, Nb + 1)
 early_lim = h[(cursor_ml - 1 + M * kvec) - 1]                             # ML 6676
 late_lim = h[(cursor_ml + 1 + M * kvec) - 1]                              # ML 6677
@@ -472,13 +472,13 @@ check("get_PSDs_S_jn_LIMIT_matches_matlab",
 # ---- ADC 'slow' clip path (ML 6716-6725): EXPECTED FAIL, not ported ----
 param_slow = SimpleNamespace(**vars(param))
 param_slow.clip_method = 'Slow'
-res_slow = com.get_PSDs(SimpleNamespace(S_rn=res.S_rn.copy(), S_in=0,
+res_slow = sicopr.get_PSDs(SimpleNamespace(S_rn=res.S_rn.copy(), S_in=0,
                                         S_rn_rms=res.S_rn_rms, S_in_rms=0),
                         h, cursor_py, [], G_DC, G_DC2, param_slow, chdata, OP,
-                        _S_RN_fn=com.S_RN, _S_IN_fn=com.S_IN, _H_interp_fn=com.H_interp)
-# Oracle: ML 6717-6724 using com.py's public PDF machinery as stand-in
+                        _S_RN_fn=sicopr.S_RN, _S_IN_fn=sicopr.S_IN, _H_interp_fn=sicopr.H_interp)
+# Oracle: ML 6717-6724 using sicopr.py's public PDF machinery as stand-in
 # (get_pdf_from_sampled_signal/conv_fct/CDF_inv_ev are audited in B07/B08).
-sig_pdf = com.get_pdf_from_sampled_signal(spr, L, OP.BinSize)             # ML 6717
+sig_pdf = sicopr.get_pdf_from_sampled_signal(spr, L, OP.BinSize)             # ML 6717
 sigma_noise_ml = float(np.sqrt(res_slow.S_in_rms ** 2 + res_slow.S_rn_rms ** 2
                                + res_slow.S_xn_rms ** 2 + res_slow.S_tn_rms ** 2
                                + res_slow.S_rj_rms ** 2))                 # ML 6719
@@ -486,9 +486,9 @@ noise_pdf = SimpleNamespace(**vars(sig_pdf))
 noise_pdf.y = (1 / (np.sqrt(2 * np.pi) * sigma_noise_ml)
                * np.exp(-np.asarray(sig_pdf.x) ** 2 / (2 * sigma_noise_ml ** 2))
                * OP.BinSize)                                              # ML 6720
-snp = com.conv_fct(sig_pdf, noise_pdf)                                    # ML 6721
+snp = sicopr.conv_fct(sig_pdf, noise_pdf)                                    # ML 6721
 snp_cdf = np.cumsum(snp.y)                                                # ML 6722
-adc_clip_slow_ml = -com.CDF_inv_ev(param.P_qc, snp, snp_cdf)              # ML 6724
+adc_clip_slow_ml = -sicopr.CDF_inv_ev(param.P_qc, snp, snp_cdf)              # ML 6724
 check("get_PSDs_adc_clip_slow_matches_matlab",
       abs(res_slow.adc_clip - adc_clip_slow_ml) <= 1e-6 * abs(adc_clip_slow_ml),
       "DIVERGENT: py 9721-9730 substitutes max(abs)+3*sigma (=%g) for the ML "
@@ -503,8 +503,8 @@ OP.WO_TXFFE = True
 w = np.array([-0.1, 0.85, 0.15, -0.05])
 res.w = w
 S_rn_before = np.array(res.S_rn, dtype=float).copy()
-res = com.get_PSDs(res, h, cursor_py, [], G_DC, G_DC2, param, chdata, OP,
-                   _S_RN_fn=com.S_RN, _S_IN_fn=com.S_IN, _H_interp_fn=com.H_interp)
+res = sicopr.get_PSDs(res, h, cursor_py, [], G_DC, G_DC2, param, chdata, OP,
+                   _S_RN_fn=sicopr.S_RN, _S_IN_fn=sicopr.S_IN, _H_interp_fn=sicopr.H_interp)
 
 # Oracle ML 6536-6542 with 1-based nn. The Python loop uses 0-based nn with
 # the same (nn-dw-1) exponent, a pure one-UI linear phase that cancels in
@@ -522,8 +522,8 @@ check("get_PSDs_S_rn_scaled_by_H2", rel_err(res.S_rn, S_rn_before * H2_ml) <= 1e
 
 # ---- call 4: COMPUTE_COM=1, WO_TXFFE=0 -> S_isi, S_G, Sn_rho (ML 6744-6783) ----
 OP.WO_TXFFE = False
-res = com.get_PSDs(res, h, cursor_py, [], G_DC, G_DC2, param, chdata, OP,
-                   _S_RN_fn=com.S_RN, _S_IN_fn=com.S_IN, _H_interp_fn=com.H_interp)
+res = sicopr.get_PSDs(res, h, cursor_py, [], G_DC, G_DC2, param, chdata, OP,
+                   _S_RN_fn=sicopr.S_RN, _S_IN_fn=sicopr.S_IN, _H_interp_fn=sicopr.H_interp)
 
 # Oracle ML 6755-6776.
 samp_idx_ml = np.arange((np.mod(cursor_ml - 1, M) + 1), len(h) + 1, M)    # ML 6755, 1-based
@@ -558,16 +558,16 @@ check("get_PSDs_Sn_rho_matches_matlab",
 # ---- Stub defaults (py 9443-9456): EXPECTED FAIL, API-level trap ----
 # When get_PSDs is called without injection (as MATLAB callers would), the
 # defaults are stubs: flat eta_0 (no /2, no CTLE/BT filter) and zero S_IN.
-stub_srn = com._get_PSDs__S_RN(fvec, G_DC, G_DC2, param)
-real_srn = com.S_RN(fvec, G_DC, G_DC2, param)
+stub_srn = sicopr._get_PSDs__S_RN(fvec, G_DC, G_DC2, param)
+real_srn = sicopr.S_RN(fvec, G_DC, G_DC2, param)
 xcheck("get_PSDs_stub_SRN_agrees_with_S_RN", rel_err(stub_srn, real_srn) <= 1e-6,
       "DIVERGENT default: _get_PSDs__S_RN is a flat-eta_0 stub, not ML S_RN "
       "(in-repo call sites inject the real S_RN, so mainline is unaffected)")
 par_sin = SimpleNamespace(**vars(param))
 par_sin.sigma_ns = 2e-3
 par_sin.f_hp = 1e9
-stub_sin = com._get_PSDs__S_IN(fvec, np.ones(n_fvec), G_DC, G_DC2, par_sin, OP_179)
-real_sin = com.S_IN(fvec, np.ones(n_fvec), G_DC, G_DC2, par_sin, OP_179)
+stub_sin = sicopr._get_PSDs__S_IN(fvec, np.ones(n_fvec), G_DC, G_DC2, par_sin, OP_179)
+real_sin = sicopr.S_IN(fvec, np.ones(n_fvec), G_DC, G_DC2, par_sin, OP_179)
 xcheck("get_PSDs_stub_SIN_agrees_with_S_IN", rel_err(stub_sin, real_sin) <= 1e-6,
       "DIVERGENT default: _get_PSDs__S_IN returns zeros, not ML S_IN "
       "(in-repo call sites inject the real S_IN, so mainline is unaffected)")

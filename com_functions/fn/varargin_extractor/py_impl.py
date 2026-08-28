@@ -9,7 +9,7 @@
 # varg_out={}: empty cell → empty list [].
 # varg_out(1)=[]: delete first element of cell array → args[1:].
 # Output: (first_arg_or_None, remaining_args_list).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 
 

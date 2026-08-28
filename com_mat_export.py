@@ -173,8 +173,8 @@ def export_case_mat(OP, param, chdata, fom_result, Noise_Struct, PDF, CDF,
     # Rx bandwidth-limiting filter (Butterworth x Bessel-Thomson x Raised-Cosine)
     # and CTLE cascaded with it. Genuine reference filter (OptFom_Calc_Hr).
     try:
-        import com
-        H_rx_filter = np.asarray(com.OptFom_Calc_Hr(f, param, OP)).ravel()
+        import sicopr
+        H_rx_filter = np.asarray(sicopr.OptFom_Calc_Hr(f, param, OP)).ravel()
         _add(d, "H_rx_filter", H_rx_filter)
         if H_ctle is not None and len(H_ctle) == len(H_rx_filter):
             _add(d, "H_ctle_rx", H_ctle * H_rx_filter)       # CTLE + Rx filter

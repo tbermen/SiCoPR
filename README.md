@@ -7,16 +7,16 @@ tool with R programming extensions for reports and visualizations. It computes C
 VEC and the supporting equalization and noise analysis for a serial channel described by
 Touchstone S-parameter files and an Excel configuration spreadsheet.
 
-The port is function-for-function: `com.py` follows the structure of the MATLAB source
+The port is function-for-function: `sicopr.py` follows the structure of the MATLAB source
 closely enough to navigate by MATLAB line number, takes the same `.xlsx` + `.s4p` inputs,
 and produces the same outputs.
 
-**Two MATLAB releases are supported.** `com.py` emulates **`com_ieee8023_4p15p0`** by
+**Two MATLAB releases are supported.** `sicopr.py` emulates **`com_ieee8023_4p15p0`** by
 default — that is the release the 208-case reference corpus was produced with, so it is the
 version the correlation result in §7 is evidence for — and **`com_ieee8023_4p16p0`** via
-`--matlab-version 4p16p0` (or `com.COM_MATLAB_VERSION`, or a `COM Version` config keyword).
+`--matlab-version 4p16p0` (or `sicopr.COM_MATLAB_VERSION`, or a `COM Version` config keyword).
 4p16p0 is a small delta, and its measured effect on all 208 cases is in §8. Which release a
-given `com.py` emulates is recorded in its header and in `VERSION.json`.
+given `sicopr.py` emulates is recorded in its header and in `VERSION.json`.
 
 **The R half of the name.** `R/` turns a run into something you can read: an
 interactive HTML dashboard for a single case — channel response, CTLE, equalization
@@ -67,7 +67,7 @@ this section says exactly which.
 
 | Present | Not present |
 |---|---|
-| the engine (`com.py` + `com_functions/`), tests, tooling, R reports | channel S-parameters (`tests/0_...`) |
+| the engine (`sicopr.py` + `com_functions/`), tests, tooling, R reports | channel S-parameters (`tests/0_...`) |
 | `matlab/` — the BSD-3-Clause MATLAB reference sources | COM configuration workbooks (`tests/1_...`) |
 | `docs/`, `VERSION.json`, `LICENSE`, `CONTRIBUTING.md` | MATLAB reference result workbooks (`tests/2_...`) |
 | the correlation harness itself (`tools/matlab_compare.py`) | `tests/oracles/`, `report_data/` — MATLAB reference **values**, distilled from those workbooks |
@@ -128,7 +128,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Nothing to build — the tool runs directly from `com.py`. Python 3.9+ (developed on 3.14).
+Nothing to build — the tool runs directly from `sicopr.py`. Python 3.9+ (developed on 3.14).
 
 The R reports additionally need, inside R:
 
@@ -139,7 +139,7 @@ install.packages(c("plotly", "htmltools", "jsonlite", "R.matlab"))
 ## 3. Run
 
 ```powershell
-python com.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...]
+python sicopr.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...]
               [--export-mat] [--matlab-version {4p15p0,4p16p0}] [--eye-under-mlse]
 ```
 
@@ -166,14 +166,14 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 
 | Path | What it is |
 |---|---|
-| `com.py` | **the engine** — assembled, runnable. *Do not edit by hand* |
+| `sicopr.py` | **the engine** — assembled, runnable. *Do not edit by hand* |
 | `com_functions/fn/<name>/py_impl.py` | per-function source (the editable code), 157 functions |
 | `com_functions/fn/<name>/test_verify.py` | per-function unit tests |
-| `assemble_com.py` | concatenates the `py_impl.py` files into `com.py` |
-| `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `com.py`, so they live beside it |
+| `assemble_com.py` | concatenates the `py_impl.py` files into `sicopr.py` |
+| `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `sicopr.py`, so they live beside it |
 | `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
-| `VERSION.json` | which MATLAB release the port emulates; `assemble_com.py` generates `com.py`'s header from it |
+| `VERSION.json` | which MATLAB release the port emulates; `assemble_com.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | audit and interface-check scripts, plus state ledgers. The development prompts under `dev/prompts/` are kept locally and not published |
@@ -223,7 +223,7 @@ Full numbers, caveats, and regeneration commands: [`corpus_results/RESULTS.md`](
 thru-only, and now spans 4.45–6.72 dB — so it contains no cases near the 3 dB threshold.
 Those are its main limitations and are documented alongside the results.
 
-### Running sweep commands for com.py
+### Running sweep commands for sicopr.py
 
 ```powershell
 # one channel, three methods -> sweep_results/{full_grid,legacy,adaptive}_log.csv + summary.json
@@ -247,10 +247,10 @@ A full 7-channel × 3-method corpus is ~7.5 h. Use `--dry-run` for the estimate,
 measurement. Runs are checkpointed per channel, so an interrupted corpus resumes.
 
 **Instrumentation.** `optimize_fom` carries an opt-in per-candidate logger — off by default,
-no effect on any COM result. Set `com.SWEEP_LOG_CSV` and `com.SWEEP_METHOD_LABEL` for one row
+no effect on any COM result. Set `sicopr.SWEEP_LOG_CSV` and `sicopr.SWEEP_METHOD_LABEL` for one row
 per TX-FFE candidate (method, EQ indices, tap vector, candidate/best FOM, winning sample
 phase, evaluated vs pruned). The adaptive method's per-iteration radius diagnostic is
-captured separately via `com.ALS_LOG_CSV`. These logs are what the study measures.
+captured separately via `sicopr.ALS_LOG_CSV`. These logs are what the study measures.
 
 `tools/hist_dep_repro.py` is a diagnostic harness: it solves the same operating point with
 different numbers of candidates evaluated and diffs the full engine state at the moment COM
@@ -258,11 +258,11 @@ computation begins. Reach for it if COM ever appears to depend on search history
 
 ## 6. Development workflow
 
-`com.py` is generated. To change behaviour, edit the per-function source and re-assemble:
+`sicopr.py` is generated. To change behaviour, edit the per-function source and re-assemble:
 
 ```powershell
 python -m pytest com_functions/fn/<name>/test_verify.py -q   # test the change
-python assemble_com.py                                        # regenerate com.py
+python assemble_com.py                                        # regenerate sicopr.py
 python -m pytest com_functions/fn -q                          # full suite
 ```
 
@@ -398,11 +398,11 @@ reference workbooks were produced by 4p15p0, so it is the version the correlatio
 above is evidence for. `4p16p0` behaviour is opt-in.
 
 ```powershell
-python com.py <config.xlsx> <thru.s4p> --matlab-version 4p16p0     # per run
+python sicopr.py <config.xlsx> <thru.s4p> --matlab-version 4p16p0     # per run
 python tools/matlab_compare.py --run --jobs 5 --matlab-version 4p16p0   # whole corpus
 ```
 
-`com.COM_MATLAB_VERSION = '4p16p0'` does the same from Python, and a `COM Version` keyword
+`sicopr.COM_MATLAB_VERSION = '4p16p0'` does the same from Python, and a `COM Version` keyword
 in the config wins over both.
 
 **4p16p0 is a small delta**: 146 of 152 function bodies are unchanged, 6 changed, 3 added,

@@ -7,7 +7,7 @@
 # Column-major vs row-major: output is a 1-D row vector of length n+1.
 # MATLAB `end` keyword: not used here.
 # Output shape: 1-D array of length n+1 (float64).
-# Known discrepancy from prior com.py attempt: none found (simple formula).
+# Known discrepancy from prior sicopr.py attempt: none found (simple formula).
 # ============================================================
 import math
 import numpy as np

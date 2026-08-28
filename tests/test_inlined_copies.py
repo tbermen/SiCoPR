@@ -37,9 +37,9 @@ sys.path.insert(0, _HERE)
 sys.path.insert(0, _ROOT)
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
-_src = io.open(os.path.join(_ROOT, 'com.py'), encoding='utf-8').read()
+_src = io.open(os.path.join(_ROOT, 'sicopr.py'), encoding='utf-8').read()
 _TOPS = {n.name: n for n in ast.parse(_src).body
          if isinstance(n, ast.FunctionDef)}
 with io.open(os.path.join(_ROOT, 'com_functions', 'registry.json'),
@@ -114,7 +114,7 @@ check("known_arity_mismatch_list_is_current",
 _rng = np.random.default_rng(12345)
 _F = np.linspace(0.0, 50e9, 256)
 _Z = _rng.standard_normal(256) + 1j * _rng.standard_normal(256)
-_PDF_A = com.normal_dist(0.01, 5, 1e-4)
+_PDF_A = sicopr.normal_dist(0.01, 5, 1e-4)
 # A decaying ISI tail with sign changes -- the shape findbankloc and the PDF
 # builders actually see, and one where ties in `ndiff` are reachable.
 _ISI_TAIL = (np.exp(-np.arange(48) / 9.0)
@@ -126,7 +126,7 @@ def _FILT_PARAM():
     return SimpleNamespace(fb=106.25e9, fb_BT_cutoff=0.75, fb_BW_cutoff=0.75,
                            BTorder=4, f_r=0.75, RC_Start=20e9, RC_end=40e9)
 
-_PDF_B = com.normal_dist(0.02, 5, 1e-4)
+_PDF_B = sicopr.normal_dist(0.02, 5, 1e-4)
 
 # Synthetic inputs, built once per comparison and deep-copied for each side so
 # neither copy can perturb the other's arguments.
@@ -141,7 +141,7 @@ FACTORY = {
     'get_center_of_UI':  lambda: (32,),
     'pdf2sgm':           lambda: (_PDF_A,),
     'scalePDF':          lambda: (_PDF_A, 0.5),
-    'Init_PDF_Fast':     lambda: (com.normal_dist(0.01, 5, 1e-4),
+    'Init_PDF_Fast':     lambda: (sicopr.normal_dist(0.01, 5, 1e-4),
                                   np.array([-2e-3, 0.0, 2e-3]),
                                   np.array([0.25, 0.5, 0.25])),
 
@@ -160,7 +160,7 @@ FACTORY = {
     'dfe_clipper':       lambda: (_ISI_TAIL.copy(),
                                   np.full(_ISI_TAIL.size, 0.05),
                                   np.full(_ISI_TAIL.size, -0.05)),
-    'CDF_inv_ev':        lambda: (1e-5, _PDF_A, com.pdf_to_cdf(_PDF_A).y),
+    'CDF_inv_ev':        lambda: (1e-5, _PDF_A, sicopr.pdf_to_cdf(_PDF_A).y),
     'FFE':               lambda: (np.array([0.0, 1.0, -0.1]), 1, 32,
                                   _rng.standard_normal(512)),
     'Bessel_Thomson_Filter':
@@ -174,15 +174,15 @@ FACTORY = {
 }
 
 # Copies known to differ behaviourally, reviewed 2026-08-18. Each is a FALLBACK
-# STUB reached only when dependency injection is skipped; com.py wires the real
-# function in production (see the _wired_* partials near the top of com.py).
+# STUB reached only when dependency injection is skipped; sicopr.py wires the real
+# function in production (see the _wired_* partials near the top of sicopr.py).
 # They are recorded rather than fixed because they are unreachable today -- but
 # they are a live trap if a new call path ever forgets to inject.
 KNOWN_BEHAVIOUR = {
     ('normal_dist', 'COM_eye_width'):
         'fallback stub spans +/-nsigma; ML 8542 uses -round(2*nsigma*sigma/'
         'binsize) to "capture more of the tails" -> 1000 bins vs 2001. '
-        'Dead in production: com.py injects _normal_dist_fn=normal_dist.',
+        'Dead in production: sicopr.py injects _normal_dist_fn=normal_dist.',
     ('normal_dist', 'get_RILN_cmp_td'):
         'same +/-nsigma truncation, and the stub omits the BinSize and Min '
         'fields entirely. get_RILN_cmp_td has no wired caller.',
@@ -194,7 +194,7 @@ KNOWN_BEHAVIOUR = {
         'faithful) where the canonical is M//2. See audit finding D12.',
 
     # --- surfaced 2026-08-22 when behavioural coverage rose 50 -> 113 copies.
-    # Every one was checked against com.py's _wired_* partials before being
+    # Every one was checked against sicopr.py's _wired_* partials before being
     # recorded; none is a live divergence. The filter stubs matter because they
     # are BADLY wrong, not subtly so -- the get_TDR Bessel stub hardcodes the
     # 4th-order coefficients without reversing them, giving DC gain 105 instead
@@ -203,22 +203,22 @@ KNOWN_BEHAVIOUR = {
     # holds.
     ('Bessel_Thomson_Filter', 'get_TDR'):
         'fallback stub: hardcoded coefficients, not reversed (DC gain 105 vs 1) '
-        'and magnitude-only. Dead in production: com.py:132 injects the real '
+        'and magnitude-only. Dead in production: sicopr.py:132 injects the real '
         'function into _wired_get_TDR.',
     ('Butterworth_Filter', 'get_TDR'):
-        'fallback stub alongside the Bessel one. Injected at com.py:133.',
+        'fallback stub alongside the Bessel one. Injected at sicopr.py:133.',
     ('Tukey_Window', 'get_TDR'):
         'fallback stub returning ones, matching the MATLAB override inside this '
-        'function (H_tw=ones). Injected at com.py:134.',
+        'function (H_tw=ones). Injected at sicopr.py:134.',
     ('get_pdf_from_sampled_signal', 'get_TDR'):
         'fallback stub: a Gaussian fitted to the sample RMS, not the successive '
-        'delta convolution. Injected at com.py:138 (_get_pdf_fn).',
+        'delta convolution. Injected at sicopr.py:138 (_get_pdf_fn).',
     ('Bessel_Thomson_Filter', 'COM_FD_to_TD'):
-        'fallback stub; injected at com.py:148.',
+        'fallback stub; injected at sicopr.py:148.',
     ('Butterworth_Filter', 'COM_FD_to_TD'):
-        'fallback stub; injected at com.py:149.',
+        'fallback stub; injected at sicopr.py:149.',
     ('get_pdf_from_sampled_signal', 'COM_eye_width'):
-        'fallback stub (Gaussian); injected at com.py:167 (_get_pdf_ss_fn).',
+        'fallback stub (Gaussian); injected at sicopr.py:167 (_get_pdf_ss_fn).',
     ('Bessel_Thomson_Filter', 'get_RILN_cmp_td'):
         'fallback stub. get_RILN_cmp_td has no wired caller, so dead by '
         'unreachability rather than by injection.',
@@ -283,8 +283,8 @@ for _name, _child, _parent in COPIES:
         # the same factory tuple, so the comparison stays like-for-like.
         _na = len(_TOPS[_name].args.args)
         _nb = len(_TOPS[_child].args.args)
-        _a = getattr(com, _name)(*_copy.deepcopy(_args[:_na]))
-        _b = getattr(com, _child)(*_copy.deepcopy(_args[:_nb]))
+        _a = getattr(sicopr, _name)(*_copy.deepcopy(_args[:_na]))
+        _b = getattr(sicopr, _child)(*_copy.deepcopy(_args[:_nb]))
     except Exception as _e:                                  # noqa: BLE001
         _skipped += 1
         if _key not in KNOWN_BEHAVIOUR:

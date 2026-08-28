@@ -8,7 +8,7 @@ Scope (audit prompt section 3 items 8 and 9):
       order-sensitive reshape uses order='F' and that the vector-coercion ravels
       are order-agnostic.
 
-Findings from the static scan (com.py):
+Findings from the static scan (sicopr.py):
   - 6 _mround helpers (half-away), used at the port-order quarter/three-quarter
     slice sites and the adaptive-search radius - where an off-by-one changes the
     selected S-parameter sub-band or search radius.
@@ -34,19 +34,19 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 # ===========================================================================
 # 1. G8: every _mround helper is half-away-from-zero (ML round semantics)
 # ===========================================================================
 mround_helpers = {
-    '_OptFom_Adaptive_Local_Search__mround': com._OptFom_Adaptive_Local_Search__mround,
-    '_auto_port_order__mround': com._auto_port_order__mround,
-    '_compute_hard_cap__mround': com._compute_hard_cap__mround,
-    '_read_Nport_touchstone__mround': com._read_Nport_touchstone__mround,
-    '_read_p4_s4params__mround': com._read_p4_s4params__mround,
-    '_read_s4p_files__mround': com._read_s4p_files__mround,
+    '_OptFom_Adaptive_Local_Search__mround': sicopr._OptFom_Adaptive_Local_Search__mround,
+    '_auto_port_order__mround': sicopr._auto_port_order__mround,
+    '_compute_hard_cap__mround': sicopr._compute_hard_cap__mround,
+    '_read_Nport_touchstone__mround': sicopr._read_Nport_touchstone__mround,
+    '_read_p4_s4params__mround': sicopr._read_p4_s4params__mround,
+    '_read_s4p_files__mround': sicopr._read_s4p_files__mround,
 }
 # MATLAB round: half away from zero.
 cases = [(0.5, 1), (1.5, 2), (2.5, 3), (3.5, 4),
@@ -69,7 +69,7 @@ check("python_round_is_bankers_reference",
 #    -> EXPECTED FAIL documenting B10-D14 at a concrete call site.
 # ===========================================================================
 # Choose 2*nsigma*sigma/binsize = 2.5 exactly: nsigma=1, sigma=1.25, binsize=1.
-nd = com.normal_dist(1.25, 1, 1.0)
+nd = sicopr.normal_dist(1.25, 1, 1.0)
 # MATLAB: Min = -round(2.5) = -3 (half away). Python: -round(2.5) = -2 (banker's).
 xcheck("normal_dist_Min_uses_matlab_half_away",
       nd.Min == -3,
@@ -98,7 +98,7 @@ v = np.arange(num_ui * M, dtype=float)            # 0..23
 ref = np.zeros(num_ui)
 for k in range(num_ui):
     ref[k] = sum(v[k + num_ui * m] for m in range(M))   # v[k], v[k+num_ui], ...
-py_fold = com._get_PSDs__fold_psd(v, num_ui, M)
+py_fold = sicopr._get_PSDs__fold_psd(v, num_ui, M)
 check("get_PSDs_fold_uses_column_major_orderF",
       np.max(np.abs(py_fold - ref)) <= 1e-12,
       "fold_psd (order='F') mismatch vs column-major reference")
@@ -122,7 +122,7 @@ check("reshape_col_row_vector_order_agnostic",
 # The get_pdf_full vs reshape equals MATLAB reshape(v,samp_UI,nrows).' (transpose).
 samp_UI, n_rows = 4, 5
 vv = np.arange(samp_UI * n_rows, dtype=float)
-py_vs = vv.reshape(n_rows, samp_UI)                       # com.py get_pdf_full path
+py_vs = vv.reshape(n_rows, samp_UI)                       # sicopr.py get_pdf_full path
 ml_vs = vv.reshape(samp_UI, n_rows, order='F').T          # MATLAB reshape+transpose
 check("get_pdf_full_reshape_equals_matlab_transpose",
       np.array_equal(py_vs, ml_vs),

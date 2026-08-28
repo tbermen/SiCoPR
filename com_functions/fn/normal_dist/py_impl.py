@@ -11,7 +11,7 @@
 # round() difference: MATLAB rounds 0.5 away from zero; Python rounds to
 #   even. Inputs to round() here are 2*nsigma*sigma/binsize — in practice
 #   these are integers or clearly non-half values, so the difference is moot.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 from types import SimpleNamespace
 import numpy as np

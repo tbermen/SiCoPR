@@ -44,7 +44,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def _mutate_in_place(obj, seen=None):
@@ -159,8 +159,8 @@ def _run(fn, label):
 
 
 def main():
-    _run(com.OptFom_Update_Best_Setttings, 'update_best')
-    _run(com.OptFom_Update_Best_Settings_EQ_Failed, 'update_best_eq_failed')
+    _run(sicopr.OptFom_Update_Best_Setttings, 'update_best')
+    _run(sicopr.OptFom_Update_Best_Settings_EQ_Failed, 'update_best_eq_failed')
     return finish()
 
 

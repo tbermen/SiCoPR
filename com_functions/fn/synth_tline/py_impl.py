@@ -8,7 +8,7 @@
 #   Use np.errstate to suppress the divide/invalid warnings.
 # sqrt(f_GHz): real for f≥0; no complex issues.
 # Output shape: four 1-D arrays (s11,s12,s21,s22) of length N.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

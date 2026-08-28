@@ -8,7 +8,7 @@
 # Formula: series resistor R with reference impedance zref.
 #   s11 = s22 = R / (R + 2*zref)
 #   s21 = s12 = 2*zref / (R + 2*zref)
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 from types import SimpleNamespace
 import numpy as np

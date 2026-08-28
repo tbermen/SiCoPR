@@ -12,7 +12,7 @@
 #   Butterworth_Filter, get_cm_noise (all are verified functions; stubbed here
 #   per protocol — no cross-py_impl imports)
 # Output shape: chdata is modified list of SimpleNamespace objects, returned
-# Known discrepancy from com.py: com.py missing raw/filtered variants and SCMR
+# Known discrepancy from sicopr.py: sicopr.py missing raw/filtered variants and SCMR
 # ============================================================
 
 import numpy as np

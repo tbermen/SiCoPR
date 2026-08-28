@@ -14,7 +14,7 @@
 # Therefore s_for_c4.Parameters is the block-diagonal 4-port of s_for_c2.
 # Assumption documented; callers in COM use .Parameters field.
 # Output struct: SimpleNamespace with Parameters shape (4,4,N).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 from types import SimpleNamespace
 import numpy as np

@@ -24,10 +24,10 @@ _FIXTURES_PRESENT = os.path.exists(REFERENCE_CONFIG) and os.path.exists(REFERENC
 
 @pytest.fixture(scope='session')
 def reference_chdata():
-    """Run com.py up through get_s4p_files on the reference channel."""
+    """Run sicopr.py up through get_s4p_files on the reference channel."""
     if not _FIXTURES_PRESENT:
         pytest.skip('Reference fixture files not present')
-    import com
+    import sicopr
     from types import SimpleNamespace
     OP = SimpleNamespace()
     OP.TDMODE = False
@@ -43,35 +43,35 @@ def reference_chdata():
     OP.WC_PORTZ = False
     OP.SNDR_REF = False
     OP.RESULT_DIR = ''
-    param, OP = com.read_ParamConfigFile(REFERENCE_CONFIG, OP)
-    chdata, param = com.get_s4p_files(param, OP, 0, 0, [REFERENCE_S4P])
+    param, OP = sicopr.read_ParamConfigFile(REFERENCE_CONFIG, OP)
+    chdata, param = sicopr.get_s4p_files(param, OP, 0, 0, [REFERENCE_S4P])
     return chdata, param, OP
 
 
 @pytest.fixture(scope='session')
 def reference_chdata_processed(reference_chdata):
     """Run process_sxp on the reference channel."""
-    import com
+    import sicopr
     chdata, param, OP = reference_chdata
     chdata_xt = []
-    chdata_out, param_out = com.process_sxp(param, OP, chdata, chdata_xt)
+    chdata_out, param_out = sicopr.process_sxp(param, OP, chdata, chdata_xt)
     return chdata_out, param_out, OP
 
 
 @pytest.fixture(scope='session')
 def reference_chdata_td(reference_chdata_processed):
     """Run COM_FD_to_TD on the reference channel."""
-    import com
+    import sicopr
     chdata, param, OP = reference_chdata_processed
-    chdata_out = com.COM_FD_to_TD(chdata, param, OP)
+    chdata_out = sicopr.COM_FD_to_TD(chdata, param, OP)
     return chdata_out, param, OP
 
 
 @pytest.fixture(scope='session')
 def reference_result(reference_chdata_td):
     """Run optimize_fom on the reference channel and return the best result."""
-    import com
+    import sicopr
     chdata, param, OP = reference_chdata_td
     sigma_bn = 0.0
-    result = com.optimize_fom(OP, param, chdata, sigma_bn, do_C2M=0)
+    result = sicopr.optimize_fom(OP, param, chdata, sigma_bn, do_C2M=0)
     return result

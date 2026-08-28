@@ -11,7 +11,7 @@
 # THIS fields set: C, floating_tap_locations, FOM, PSD_results, MMSE_results.
 # skip_it: 1 if RXFFE_Illegal and not RxFFE_with_MMSE.
 # Callees (get_PSDs, MMSE, force, RXFFE_Illegal, FFE, S_RN, S_IN, H_interp) are
-# top-level functions in the assembled com.py — integration-tested, not standalone.
+# top-level functions in the assembled sicopr.py — integration-tested, not standalone.
 # ============================================================
 
 import numpy as np

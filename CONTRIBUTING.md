@@ -2,11 +2,11 @@
 
 Thanks for looking at this. One rule matters more than all the others:
 
-> ## `com.py` is generated. Never edit it.
+> ## `sicopr.py` is generated. Never edit it.
 >
 > It is assembled from `com_functions/fn/<name>/py_impl.py` by `assemble_com.py`.
-> A change made directly to `com.py` is silently discarded the next time anyone
-> runs the assembler — including CI. If your diff touches `com.py` and nothing
+> A change made directly to `sicopr.py` is silently discarded the next time anyone
+> runs the assembler — including CI. If your diff touches `sicopr.py` and nothing
 > under `com_functions/fn/`, it will be rejected.
 
 ---
@@ -46,7 +46,7 @@ For a typo or an obvious bug, skip straight to the pull request.
 ### What happens to your pull request
 
 1. **CI runs automatically** on a clean clone with no correlation data: the unit
-   suite, the cross-check scripts, a check that `com.py` matches its sources, and
+   suite, the cross-check scripts, a check that `sicopr.py` matches its sources, and
    a check that the licence notice is intact. All of it must pass. You can run
    the same thing locally first — that is what `tests/run_all.ps1` is.
 2. **The maintainer reviews it.** Expect questions about which MATLAB lines the
@@ -144,7 +144,7 @@ so a fresh clone still runs the full suite.
 
 This is a derivative of the IEEE 802.3 COM MATLAB reference, which is
 BSD-3-Clause. Contributions are accepted under the same license. Keep the
-copyright notice in `LICENSE` and in the generated `com.py` header intact, and
+copyright notice in `LICENSE` and in the generated `sicopr.py` header intact, and
 do not describe the project — in code, docs, or commit messages — as endorsed by
 or affiliated with IEEE or the 802-COM Authors. Clause 3 forbids it.
 

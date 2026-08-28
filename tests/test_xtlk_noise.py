@@ -1,15 +1,15 @@
 """Audit batch B13 spot-check: get_xtlk_noise crosstalk-noise ICN integral
-(MATLAB lines 7974-8068 -> com.py 11553).
+(MATLAB lines 7974-8068 -> sicopr.py 11553).
 
 Found by spot-checking a "version-identical" (4p14==4p15) function whose fn
 test_verify.py passes: the upper bound of the ICN power sum is off by one.
 
   MATLAB 7976: index_f2 = find(faxis > fb, 1, 'first')   % 1-based
                ...  sum( ... PWF(1:index_f2) ... )        % INCLUDES first bin > fb
-  com.py:      index_f2 = argmax(f > fb)                  # 0-based
+  sicopr.py:      index_f2 = argmax(f > fb)                  # 0-based
                ...  PWF[:index_f2] ...                    # EXCLUDES first bin > fb
   MATLAB empty case: index_f2 = length(faxis)   (all bins)
-  com.py empty case: len(f) - 1                 (omits the last bin)
+  sicopr.py empty case: len(f) - 1                 (omits the last bin)
 
 Consequence: the crosstalk ICN sums (MDFEXT_ICN / MDNEXT_ICN, eq 93A-46/47)
 omit one frequency bin near fb, slightly UNDER-estimating crosstalk noise ->
@@ -28,13 +28,13 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 TOL = 1e-12
 
 
 def run_case(faxis, fb):
-    """Build a minimal 1-aggressor FEXT chdata and return com.py's MDFEXT_ICN
+    """Build a minimal 1-aggressor FEXT chdata and return sicopr.py's MDFEXT_ICN
     plus the MATLAB-correct reference (inclusive upper bound)."""
     f = np.asarray(faxis, dtype=float)
     n = len(f)
@@ -45,8 +45,8 @@ def run_case(faxis, fb):
     ch0 = SimpleNamespace(faxis=f)
     ch1 = SimpleNamespace(type='FEXT', sdd21ctf=sdd21, delta_f=(f[1] - f[0]), A=1.0)
     chdata = [ch0, ch1]
-    # com.py result (FEXT single-aggressor). upsampled_txffe=[0] -> PWF_tx=ones; C=None.
-    sigma_fext_py = com.get_xtlk_noise(np.array([0.0]), 'FEXT', param, chdata)
+    # sicopr.py result (FEXT single-aggressor). upsampled_txffe=[0] -> PWF_tx=ones; C=None.
+    sigma_fext_py = sicopr.get_xtlk_noise(np.array([0.0]), 'FEXT', param, chdata)
 
     # Independent MATLAB-correct reference: index_f2 is the 1-based find value,
     # used directly as the Python exclusive end (== inclusive MATLAB end).
@@ -67,17 +67,17 @@ def run_case(faxis, fb):
 
 # Case A: fb inside the band, so there IS a first bin above fb (index arithmetic
 # diverges by one). faxis 0..40 GHz step 1 GHz, fb = 20 GHz -> first bin > fb at
-# 0-based index 21; MATLAB includes it, com.py omits it.
+# 0-based index 21; MATLAB includes it, sicopr.py omits it.
 faxis = np.arange(0.0, 40e9 + 1e9, 1e9)
 py_a, ref_a, idx_a = run_case(faxis, 20e9)
 check("xtlk_index_f2_has_bin_above_fb", idx_a == 22,
       "expected MATLAB 1-based index_f2 == 22 (first bin >20GHz at 0-based 21)")
-# EXPECTED FAIL: com.py omits the first bin above fb -> differs from MATLAB ref.
+# EXPECTED FAIL: sicopr.py omits the first bin above fb -> differs from MATLAB ref.
 xcheck("xtlk_MDFEXT_ICN_matches_matlab_upper_bound",
       abs(py_a - ref_a) <= TOL,
-      "DIVERGENT (B13-D18, low-med): com.py FEXT sigma=%.9e but MATLAB-correct "
-      "(inclusive upper bound, index_f2=22) =%.9e. com.py index_f2=argmax(f>fb) "
-      "omits the first bin above fb in the ICN sum (com.py 11553; MATLAB 7976/8051)."
+      "DIVERGENT (B13-D18, low-med): sicopr.py FEXT sigma=%.9e but MATLAB-correct "
+      "(inclusive upper bound, index_f2=22) =%.9e. sicopr.py index_f2=argmax(f>fb) "
+      "omits the first bin above fb in the ICN sum (sicopr.py 11553; MATLAB 7976/8051)."
       % (py_a, ref_a))
 # Confirm the gap equals exactly the omitted index-21 term (mechanism).
 f = faxis
@@ -90,19 +90,19 @@ ref_sq = (ref_a / scale) ** 2
 py_sq = (py_a / scale) ** 2
 check("xtlk_gap_equals_first_bin_above_fb",
       abs((ref_sq - py_sq) - omitted_term) <= 1e-9 * max(1.0, ref_sq),
-      "the com.py/MATLAB ICN^2 gap (%.6e) does not equal the omitted first-bin "
+      "the sicopr.py/MATLAB ICN^2 gap (%.6e) does not equal the omitted first-bin "
       "term (%.6e)" % (ref_sq - py_sq, omitted_term))
 
 # Case B: no bin above fb (fb above the whole grid) -> MATLAB uses all N bins,
-# com.py uses len-1 (omits the last bin). Another off-by-one.
+# sicopr.py uses len-1 (omits the last bin). Another off-by-one.
 faxis_b = np.arange(0.0, 20e9 + 1e9, 1e9)   # 0..20 GHz
 py_b, ref_b, idx_b = run_case(faxis_b, 25e9)   # fb above grid -> no f>fb
 check("xtlk_index_f2_empty_case_uses_all_bins", idx_b == len(faxis_b),
       "empty case reference should use all %d bins" % len(faxis_b))
 xcheck("xtlk_MDFEXT_ICN_empty_case_matches_matlab",
       abs(py_b - ref_b) <= TOL,
-      "DIVERGENT (B13-D18, low-med): empty-case com.py FEXT sigma=%.9e but "
-      "MATLAB (all bins) =%.9e. com.py uses len(f)-1, omitting the last bin "
-      "(com.py 11553)." % (py_b, ref_b))
+      "DIVERGENT (B13-D18, low-med): empty-case sicopr.py FEXT sigma=%.9e but "
+      "MATLAB (all bins) =%.9e. sicopr.py uses len(f)-1, omitting the last bin "
+      "(sicopr.py 11553)." % (py_b, ref_b))
 
 finish()

@@ -12,7 +12,7 @@
 # Grey-coded PAM4 mapping:
 #   [-1,-1] → -1,  [-1, 1] → -1/3,  [1, 1] → 1/3,  [1,-1] → 1
 # Output shape: 1-D array of length floor(len(data)/2).
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

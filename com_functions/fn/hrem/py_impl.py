@@ -12,7 +12,7 @@
 #   If |x| <= bmaxg  → result is 0.
 #   If |x| >  bmaxg  → magnitude reduced by bmaxg, sign preserved.
 # Output shape: 1-D array, same length as h.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 

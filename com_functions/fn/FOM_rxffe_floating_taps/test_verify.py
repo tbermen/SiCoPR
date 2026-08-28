@@ -60,9 +60,9 @@ def test_idx_convention_and_no_overlap():
 
 # ---- 2. Integration with the assembled real MMSE_FOM ----------------------
 def test_integration_real_mmse_fom():
-    """End-to-end: real com.MMSE_FOM selects valid floating taps and accepts them."""
+    """End-to-end: real sicopr.MMSE_FOM selects valid floating taps and accepts them."""
     import importlib
-    com = importlib.import_module('com')
+    sicopr = importlib.import_module('sicopr')
 
     RxFFE_cmx, RxFFE_cpx = 2, 2
     N_bf, N_bg, N_bmax, ndfe = 1, 2, 6, 1
@@ -87,13 +87,13 @@ def test_integration_real_mmse_fom():
     wmin = -np.ones(20) * 10.0
     isi_start, isi_end = dh + 1, (dh - dw) + Nw   # 3, 9
 
-    idx = com.FOM_rxffe_floating_taps(param, h, H, ndfe, Rnn, dw, d, wmax, wmin,
+    idx = sicopr.FOM_rxffe_floating_taps(param, h, H, ndfe, Rnn, dw, d, wmax, wmin,
                                       param.bmin, param.bmax, sigma_X2, isi_start, isi_end)
     # valid: sorted, right count, columns within H
     assert list(idx) == sorted(idx) and len(idx) == N_bg * N_bf
     assert all(0 <= v + RxFFE_cmx < H.shape[1] for v in idx)
     # the real kernel must produce a finite FOM for the selected taps
-    sigma_e, FOM, w, idx_out, Nw_out, blim = com.MMSE_FOM(
+    sigma_e, FOM, w, idx_out, Nw_out, blim = sicopr.MMSE_FOM(
         param, H, ndfe, Rnn, dw, d, wmax, wmin, param.bmin, param.bmax, sigma_X2, idx)
     assert np.isfinite(FOM), FOM
     # the biggest ISI taps (h indices 5,6 -> trimmed positions 0,1) should be chosen

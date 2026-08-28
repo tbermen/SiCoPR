@@ -6,9 +6,9 @@ MATLAB GROUND TRUTH (lines 4933-5086):
   step 8 estimates the delay from the peak-index difference between the original
   and causality-enforced pulse responses. Returns (delay_sec, delay_idx).
 
-  interp_Sparam / lfilter are top-level fns in the assembled com.py, so this
+  interp_Sparam / lfilter are top-level fns in the assembled sicopr.py, so this
   function is exercised as an INTEGRATION test: the real dependencies are
-  injected from `com` and the delay is checked against a known group delay.
+  injected from `sicopr` and the delay is checked against a known group delay.
 """
 import os
 import sys
@@ -17,14 +17,14 @@ import pytest
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-import com  # assembled module (provides interp_Sparam, lfilter, ...)
+import sicopr  # assembled module (provides interp_Sparam, lfilter, ...)
 import com_functions.fn.calculate_delay_CausalityEnforcement.py_impl as _mod
 from com_functions.fn.calculate_delay_CausalityEnforcement.py_impl import (
     calculate_delay_CausalityEnforcement)
 
 # Inject the real top-level dependencies that the function calls as bare globals.
-for _n in dir(com):
-    _v = getattr(com, _n)
+for _n in dir(sicopr):
+    _v = getattr(sicopr, _n)
     if callable(_v) and not _n.startswith('__') and not hasattr(_mod, _n):
         setattr(_mod, _n, _v)
 
@@ -80,7 +80,7 @@ def test_runs_with_lossy_channel():
 
 def test_uses_real_interp_Sparam():
     """The injected dependency is the real assembled interp_Sparam (not a stub)."""
-    assert _mod.interp_Sparam is com.interp_Sparam
+    assert _mod.interp_Sparam is sicopr.interp_Sparam
 
 
 if __name__ == '__main__':

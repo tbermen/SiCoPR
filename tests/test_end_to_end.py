@@ -26,7 +26,7 @@ REFERENCE_S4P    = os.path.join(FIXTURE_DIR, 'ieee8023ck_compliant_host_channel.
 
 # MATLAB's COM for this exact channel+config. Still unset because no MATLAB run
 # exists for THIS 802.3ck pair -- all 208 correlated cases use the 802.3dj
-# channels instead. Set it if you obtain one; do not populate it from com.py's
+# channels instead. Set it if you obtain one; do not populate it from sicopr.py's
 # own output, which would make the check circular.
 EXPECTED_COM_DB  = None
 COM_TOLERANCE_DB = 0.5    # ±0.5 dB
@@ -43,8 +43,8 @@ def test_com_result_is_finite():
     Full end-to-end COM must produce a finite result.
     This test passes even without knowing the exact expected value.
     """
-    import com
-    results = com.com_ieee8023(REFERENCE_CONFIG, 0, 0, REFERENCE_S4P)
+    import sicopr
+    results = sicopr.com_ieee8023(REFERENCE_CONFIG, 0, 0, REFERENCE_S4P)
     assert results is not None and len(results) > 0, "com_ieee8023 returned empty results"
     r = results[0]
     assert r is not None, "com_ieee8023 returned None for case 1"
@@ -59,8 +59,8 @@ def test_com_result_matches_matlab():
     Full end-to-end COM must match the MATLAB reference within ±0.5 dB.
     Set EXPECTED_COM_DB to the value MATLAB produces for this exact input.
     """
-    import com
-    results = com.com_ieee8023(REFERENCE_CONFIG, 0, 0, REFERENCE_S4P)
+    import sicopr
+    results = sicopr.com_ieee8023(REFERENCE_CONFIG, 0, 0, REFERENCE_S4P)
     r = results[0]
     com_val = float(getattr(r, 'COM', np.nan))
     assert np.isfinite(com_val), f"COM result is not finite: {com_val}"
@@ -76,8 +76,8 @@ def test_com_standard_compliance():
     For a compliant 802.3ck host channel, COM must be ≥ 3.0 dB per the standard.
     This test validates the pass/fail decision, independent of exact MATLAB match.
     """
-    import com
-    results = com.com_ieee8023(REFERENCE_CONFIG, 0, 0, REFERENCE_S4P)
+    import sicopr
+    results = sicopr.com_ieee8023(REFERENCE_CONFIG, 0, 0, REFERENCE_S4P)
     r = results[0]
     com_val = float(getattr(r, 'COM', np.nan))
     assert np.isfinite(com_val), f"COM result is not finite: {com_val}"

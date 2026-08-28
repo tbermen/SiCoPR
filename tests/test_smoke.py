@@ -1,5 +1,5 @@
 """
-Smoke tests: does com.py import and do basic functions work?
+Smoke tests: does sicopr.py import and do basic functions work?
 Not checking numerical accuracy yet — just that nothing throws.
 """
 import pytest
@@ -7,7 +7,7 @@ import numpy as np
 from types import SimpleNamespace
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-import com
+import sicopr
 
 
 # ---------------------------------------------------------------------------
@@ -119,17 +119,17 @@ def _chdata(param):
 # ---------------------------------------------------------------------------
 
 def test_import_ok():
-    """com.py must import without error."""
-    import com
-    assert hasattr(com, 'normal_dist')
-    assert hasattr(com, 'pdf_to_cdf')
-    assert hasattr(com, 'Bessel_Thomson_Filter')
-    assert hasattr(com, 'optimize_fom')
+    """sicopr.py must import without error."""
+    import sicopr
+    assert hasattr(sicopr, 'normal_dist')
+    assert hasattr(sicopr, 'pdf_to_cdf')
+    assert hasattr(sicopr, 'Bessel_Thomson_Filter')
+    assert hasattr(sicopr, 'optimize_fom')
 
 
 def test_bessel_smoke():
     """bessel(4) returns a 5-element array."""
-    a = com.bessel(4)
+    a = sicopr.bessel(4)
     assert len(a) == 5
     assert np.all(np.isfinite(a))
 
@@ -138,7 +138,7 @@ def test_bessel_thomson_filter_smoke():
     """Bessel_Thomson_Filter: DC gain = 1, all finite."""
     param = _param()
     faxis = np.linspace(0, 2 * param.fb, 200)
-    H = com.Bessel_Thomson_Filter(param, faxis, True)
+    H = sicopr.Bessel_Thomson_Filter(param, faxis, True)
     assert H.shape == faxis.shape
     assert np.all(np.isfinite(H))
     assert abs(H[0]) == pytest.approx(1.0, abs=1e-6)
@@ -146,7 +146,7 @@ def test_bessel_thomson_filter_smoke():
 
 def test_normal_dist_smoke():
     """normal_dist returns a valid PDF (sums to ~1)."""
-    pdf = com.normal_dist(0.01, 7, 1e-4)
+    pdf = sicopr.normal_dist(0.01, 7, 1e-4)
     assert hasattr(pdf, 'x') and hasattr(pdf, 'y')
     assert abs(float(np.sum(pdf.y)) - 1.0) < 0.01
 
@@ -156,8 +156,8 @@ def test_pdf_to_cdf_smoke():
     cdf.yB is the left-to-right cumsum and must end near 1.
     cdf.y is the BER contour (minimum of yB and yT) — NOT a 0→1 CDF.
     """
-    pdf = com.normal_dist(0.01, 8, 1e-4)
-    cdf = com.pdf_to_cdf(pdf)
+    pdf = sicopr.normal_dist(0.01, 8, 1e-4)
+    cdf = sicopr.pdf_to_cdf(pdf)
     assert hasattr(cdf, 'yB') and hasattr(cdf, 'yT') and hasattr(cdf, 'y')
     assert float(cdf.yB[-1]) == pytest.approx(1.0, abs=1e-3), \
         f'yB[-1] should be 1.0, got {cdf.yB[-1]}'
@@ -167,7 +167,7 @@ def test_pdf_to_cdf_smoke():
 def test_optfom_build_txffe_smoke():
     """OptFom_Build_TXFFE returns 5 outputs with correct shapes."""
     param = _param()
-    txffe_matrix, cur, sweep_idx, full_idx, cursor_vec = com.OptFom_Build_TXFFE(param)
+    txffe_matrix, cur, sweep_idx, full_idx, cursor_vec = sicopr.OptFom_Build_TXFFE(param)
     assert isinstance(cur, (int, np.integer)), 'cur must be integer cursor position'
     assert txffe_matrix.ndim == 2, 'txffe_matrix must be 2D'
     assert txffe_matrix.shape[0] >= 1, 'must have at least one TXFFE combo'
@@ -178,6 +178,6 @@ def test_optfom_calc_fom_non_c2m():
     THIS = SimpleNamespace(A_s=1.0, total_noise_rms=0.1, sigma_N=0.05, sigma_TX=0.03, cursor_i=40)
     param = SimpleNamespace(Noise_Crest_Factor=0.0, specBER=1e-4, Min_VEO_Test=0)
     op = SimpleNamespace(force_pdf_bin_size=False, BinSize=1e-4)
-    FOM, skip = com.OptFom_Calc_FOM(None, False, THIS, param, op, None)
+    FOM, skip = sicopr.OptFom_Calc_FOM(None, False, THIS, param, op, None)
     assert FOM == pytest.approx(20 * np.log10(1.0 / 0.1), abs=1e-6)
     assert skip == 0

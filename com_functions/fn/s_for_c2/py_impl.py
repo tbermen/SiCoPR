@@ -11,7 +11,7 @@
 #   s21 = s12 = 2 / (2 + Y*zref)
 # Limits: f→0: s11→0, s21→1 (capacitor open at DC) ✓
 #         f→∞: s11→-1, s21→0 (capacitor shorted at high freq) ✓
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 from types import SimpleNamespace
 import numpy as np

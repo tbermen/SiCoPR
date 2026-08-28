@@ -1,7 +1,7 @@
 """
-assemble_com.py — Assemble com.py from individually verified py_impl.py files.
+assemble_com.py — Assemble sicopr.py from individually verified py_impl.py files.
 
-Do NOT edit com.py directly. Edit the relevant py_impl.py, re-run its test,
+Do NOT edit sicopr.py directly. Edit the relevant py_impl.py, re-run its test,
 then re-run this script.
 """
 import os
@@ -9,7 +9,7 @@ import json
 import re
 
 HEADER = '''"""
-com.py — the SiCoPR engine
+sicopr.py — the SiCoPR engine
 IEEE 802.3 Channel Operating Margin (COM), ported from the MATLAB reference
 @@VERSION_BANNER@@
 
@@ -242,14 +242,14 @@ def _run_com(config_file, num_fext, num_next, s4p_files, export_mat=False):
 # Kept in VERSION.json rather than in the literal above, because the literal
 # hardcoded "4p14p0" and stayed that way through two revision moves: the port
 # retargeted to 4p15p0 for the correlation corpus, then gained 4p16p0 support,
-# while every generated com.py still announced 4p14p0.
+# while every generated sicopr.py still announced 4p14p0.
 _VERSION = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                        'VERSION.json'), encoding='utf-8'))
 _REF = _VERSION['primary_reference']
 HEADER = HEADER.replace(
     '@@VERSION_BANNER@@',
     'Emulates com_ieee8023_%s by default; %s supported via --matlab-version\n'
-    '(or com.COM_MATLAB_VERSION, or a "COM Version" keyword in the config).'
+    '(or sicopr.COM_MATLAB_VERSION, or a "COM Version" keyword in the config).'
     % (_VERSION['default_matlab_version'],
        ' and '.join(_VERSION['supported_matlab_versions']))
 ).replace(
@@ -259,7 +259,7 @@ HEADER = HEADER.replace(
 ).replace(
     '@@LICENSE@@',
     # BSD-3-Clause requires the notice to travel with redistributed source, and
-    # com.py is the single file most users will actually receive.
+    # sicopr.py is the single file most users will actually receive.
     '%s\n%s\nSPDX-License-Identifier: %s\n\n%s'
     % (_VERSION['license']['original_copyright'],
        _VERSION['license']['port_copyright'],
@@ -434,10 +434,10 @@ if __name__ == '__main__':
 
 output = '\n'.join(collected_lines)
 
-with open('com.py', 'w', encoding='utf-8') as f:
+with open('sicopr.py', 'w', encoding='utf-8') as f:
     f.write(output)
 
-print(f'Assembled com.py from {fn_count} functions.')
+print(f'Assembled sicopr.py from {fn_count} functions.')
 if not_impl_count:
     print(f'WARNING: {not_impl_count} function(s) still contain NotImplementedError.')
 else:

@@ -27,7 +27,7 @@ function Run-Step {
 
 try {
     Run-Step "Pre-flight audit"        "python dev/audit_stage0.py"
-    Run-Step "Assemble com.py"         "python assemble_com.py"
+    Run-Step "Assemble sicopr.py"         "python assemble_com.py"
     Run-Step "Interface checks"        "python dev/check_interfaces.py"
     Run-Step "Unit tests (157 functions)" "python -m pytest com_functions/fn -q --tb=short"
 

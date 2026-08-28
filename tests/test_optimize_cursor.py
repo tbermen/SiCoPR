@@ -5,11 +5,11 @@ returned by OptFom_Find_Sample_Point as 1-based (subtracts 1), but that function
 (via the hoisted cursor_sample_index) returns 0-based indices - the same 0-based
 convention the main COM pipeline (get_PSDs B01, get_pdf B07) and OptFom_Compute_DFE
 use. Net effect: optimize_fom reads ONE SAMPLE BEFORE the true cursor/peak for
-    A_s  = R_LM * sbr[cursor_i - 1] / (L-1)      (com.py 12722/12724)
-    A_p  = sbr[sbr_peak_i - 1]                    (com.py 12723)
-    far_start = cursor_i - T_O + M*(ndfe+1) - 1   (com.py 12731)
-    pre_start = cursor_i - M - 1                   (com.py 12735)
-while OptFom_Compute_DFE (com.py 4514+) correctly uses sbr[cursor_i] (0-based).
+    A_s  = R_LM * sbr[cursor_i - 1] / (L-1)      (sicopr.py 12722/12724)
+    A_p  = sbr[sbr_peak_i - 1]                    (sicopr.py 12723)
+    far_start = cursor_i - T_O + M*(ndfe+1) - 1   (sicopr.py 12731)
+    pre_start = cursor_i - M - 1                   (sicopr.py 12735)
+while OptFom_Compute_DFE (sicopr.py 4514+) correctly uses sbr[cursor_i] (0-based).
 The two are anchored to different samples in the same loop iteration.
 
 MATLAB (com_ieee8023_4p15p0.m 8788-8801): cursor_i is 1-based there, so
@@ -40,7 +40,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 M = 32
 N = 20 * M
@@ -52,7 +52,7 @@ param = SimpleNamespace(samples_per_ui=M, ndfe=1, bmax=np.array([0.2]), ts_ancho
 OP = SimpleNamespace(CDR='MM')
 sr = np.arange(P0 - 4 * M, P0 + 4 * M)
 
-cursor_i, nzc, sbr_peak_i = com.OptFom_Find_Sample_Point(sbr, param, OP, sr)
+cursor_i, nzc, sbr_peak_i = sicopr.OptFom_Find_Sample_Point(sbr, param, OP, sr)
 
 # 1. OptFom_Find_Sample_Point returns 0-based indices (sbr[peak] is the max).
 check("find_sample_point_returns_0based_peak",
@@ -65,16 +65,16 @@ check("find_sample_point_returns_0based_peak",
 #    removing it made MATLAB agreement WORSE, so it was retained and this check
 #    was left documenting an "open question" -- but that trial was confounded:
 #    the -1 was compensating a second defect in the die-network path. Once both
-#    were fixed together (the 8-defect correlation commit) com.py adopted the MATLAB-faithful
+#    were fixed together (the 8-defect correlation commit) sicopr.py adopted the MATLAB-faithful
 #    sbr[sbr_peak_i] and FOM went bit-exact on 198/208 reference cases.
 #
 #    This check used to mirror the shipped expression as sbr[sbr_peak_i - 1] and
 #    assert it equalled the peak, so it failed by construction and could never
-#    see the fix. It now mirrors what com.py actually ships.
-A_p_optfom = float(sbr[int(sbr_peak_i)])           # as shipped in com.py
+#    see the fix. It now mirrors what sicopr.py actually ships.
+A_p_optfom = float(sbr[int(sbr_peak_i)])           # as shipped in sicopr.py
 check("optimize_fom_A_p_equals_peak",
       np.isclose(A_p_optfom, sbr.max()),
-      "A_p = %.5f but the true peak is %.5f. com.py should read sbr[sbr_peak_i] "
+      "A_p = %.5f but the true peak is %.5f. sicopr.py should read sbr[sbr_peak_i] "
       "with no offset (B16-D20); a reintroduced -1 would show up here."
       % (A_p_optfom, sbr.max()))
 

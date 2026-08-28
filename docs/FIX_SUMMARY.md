@@ -12,7 +12,7 @@ than reproducing it. Keep entries even when the underlying investigation doc is
 later deleted.
 
 > Scope: fixes to the engine (`com_functions/fn/*/py_impl.py`, from which
-> `com.py` is assembled) and to the settings the engine is run with. Tooling,
+> `sicopr.py` is assembled) and to the settings the engine is run with. Tooling,
 > reporting and documentation changes are not tracked here, with one exception
 > noted below.
 
@@ -239,7 +239,7 @@ Replayed against the historical versions in git: the version before the 8-defect
 `BEST.ctle` fix flags #14; HEAD is clean. The miss is #4,
 which is not a base error — a valid index applied to the wrong array frame.
 
-It runs over the assembled `com.py`, so it covers all inlined copies of a
+It runs over the assembled `sicopr.py`, so it covers all inlined copies of a
 function at once, and it sees paths no test executes.
 
 **A real finding came out of building the registry** — see #15 below, which also
@@ -270,7 +270,7 @@ Both consumers sit behind `if param.Floating_DFE`, so they read the
 
 > **Correction.** The first version of this entry, and the commit message that
 > introduced the checker, named the wrong line: they said the `DFE_taps_mV`
-> subscript at `com.py:5865` was defective. It was not — its producer is
+> subscript at `sicopr.py:5865` was defective. It was not — its producer is
 > 0-based, so the raw subscript was right. The time vector was the broken one.
 > The registry flagged the field correctly; the initial reading of *why* was wrong.
 
@@ -329,14 +329,14 @@ copies were never driven.
 Ten more factories, plus arity-adaptive driving (copies legitimately take fewer
 arguments than the canonical), took coverage to **113 of 178, 63%**.
 
-That surfaced **12 divergences**, every one checked against com.py's `_wired_*`
+That surfaced **12 divergences**, every one checked against sicopr.py's `_wired_*`
 partials before being recorded. None is live, but two findings are worth having:
 
 - The `get_TDR` Bessel fallback stub is not subtly wrong — it hardcodes the
   4th-order coefficients **without reversing them**, giving DC gain **105
   instead of 1**, and returns a magnitude where MATLAB returns a complex
   response (ML 1033-1040 uses `fliplr`). Harmless only for as long as the
-  injection at `com.py:132` holds.
+  injection at `sicopr.py:132` holds.
 - `findbankloc` has the **producer-dependent base** disease of #15: the
   canonical returns 0-based, the `MMSE` and `force` copies return 1-based
   because their callers mirror ML 2576 arithmetic verbatim. Each is locally
@@ -519,7 +519,7 @@ return for the effort.
 
 The stronger case is what would now be caught *automatically* if it were
 reintroduced — i.e. whether the next cycle needs the MATLAB corpus to find these
-classes again. Verified by replaying the rules against the historical `com.py`
+classes again. Verified by replaying the rules against the historical `sicopr.py`
 in git, or by reintroducing the defect and watching the test fail:
 
 | # | defect | caught today? | how verified |
@@ -584,7 +584,7 @@ by the 208-case correlation.
 
 
 Driven by `FIX_PROMPT_com_conversion_v2.md`. Fixes edit
-`com_functions/fn/<name>/py_impl.py` (never `com.py`, which is a generated build
+`com_functions/fn/<name>/py_impl.py` (never `sicopr.py`, which is a generated build
 artifact reassembled by `assemble_com.py`). One finding per gate.
 
 > **CLOSED 2026-08-17.** This gated fix pass was overtaken by the 208-case MATLAB
@@ -595,7 +595,7 @@ artifact reassembled by `assemble_com.py`). One finding per gate.
 > has since been removed, and the divergence ledger now uses `xcheck` so a
 > resolved divergence fails the run instead of lingering.
 
-## Status: GATE BATCH-2 ASSEMBLED_VERIFIED (com.py reassembled + integration-tested)
+## Status: GATE BATCH-2 ASSEMBLED_VERIFIED (sicopr.py reassembled + integration-tested)
 
 Batch 2 = B01-D2 (get_PSDs ADC 'slow' clip) + B06-D9 (get_TDR s2p RL) -
 ASSEMBLED_VERIFIED. assemble_com.py: 157 functions, 5 stubs (baseline match).
@@ -607,7 +607,7 @@ checks flipped FAIL->PASS; fn suite 874 pass / 0 fail; smoke + e2e exit 0.
 
 ---
 
-## Prior: GATE BATCH-1 ASSEMBLED_VERIFIED (com.py reassembled + integration-tested)
+## Prior: GATE BATCH-1 ASSEMBLED_VERIFIED (sicopr.py reassembled + integration-tested)
 
 Revision 4p15p0, dependency order. Batch 1 = B03-D6/D7, B02-D4/D5, B01-D1 -
 ASSEMBLED_VERIFIED. `assemble_com.py`: 157 functions, 5 stubs (baseline match).
@@ -619,7 +619,7 @@ to its own gate.
 
 Two audit divergence-documentation guards are now stale/invalid and flagged for
 replacement (NOT edited): `s21_grid_round_half_away_from_zero` (asserts Python's
-builtin `round`, not com.py) and `interp_Sparam_phase_extrap_is_flat` (asserts the
+builtin `round`, not sicopr.py) and `interp_Sparam_phase_extrap_is_flat` (asserts the
 old clamped phase). The real B03-D7/B02-D5 fixes are verified by the fn tests.
 
 Next: B01-D2 (own gate) then F4 get_TDR (B06-D9), or as you direct.
@@ -636,7 +636,7 @@ Next: B01-D2 (own gate) then F4 get_TDR (B06-D9), or as you direct.
    the line base is metadata only). **Recommendation: confirm 4p15p0 authoritative.**
 
 2. **Baseline build is not the prompt's literal "clean".** `python assemble_com.py`
-   → "Assembled com.py from 157 functions. WARNING: 5 function(s) still contain
+   → "Assembled sicopr.py from 157 functions. WARNING: 5 function(s) still contain
    NotImplementedError." The 5 are **deliberate stubs** for non-portable/undefined
    paths (`force` WIENER-HOPF [undefined in MATLAB], `get_s4p_files`/`get_TD_files`
    GUI file-picker, `read_package_parameters` cross-import, `RILN_TD` inlined
@@ -691,7 +691,7 @@ Reach: propagates to mainline via the shared `s21_to_impulse_DC` (`COM_FD_to_TD`
 - **B01-D3 (get_PSDs injection stub defaults) — KICKED_BACK** (human-approved).
   The `_S_RN_fn`/`_S_IN_fn`/`_H_interp_fn` stub defaults do diverge, but the
   assembled pipeline always injects the real functions via `_run_com`, so no
-  reachable `com.py` result is affected. It cannot be fixed in `get_PSDs`'s
+  reachable `sicopr.py` result is affected. It cannot be fixed in `get_PSDs`'s
   `py_impl` (no cross-`py_impl` sibling imports; the stubs exist for standalone
   testability). Recorded as a latent API-robustness caveat, not a conversion bug.
 - **B01-D2 (get_PSDs ADC 'slow' clip)** — deferred to its own later gate

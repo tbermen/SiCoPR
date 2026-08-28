@@ -1,6 +1,6 @@
 """Audit batch B03: G3 impulse and spectrum handling (FFT prime suspects).
 
-Functions under audit (MATLAB com_ieee8023_4p15p0.m -> com.py):
+Functions under audit (MATLAB com_ieee8023_4p15p0.m -> sicopr.py):
   s21_to_impulse_DC   ML 11218-11288 -> py 16992-17075
   COM_FD_to_TD        ML 1206-1366   -> py 1346-1482
 
@@ -31,7 +31,7 @@ sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
 from audit_check import check, xcheck, finish  # noqa: E402
-import com  # noqa: E402
+import sicopr  # noqa: E402
 
 
 def rel_err(a, b):
@@ -94,7 +94,7 @@ check("s21_fout_grid_endpoint_and_step",
 # ===========================================================================
 # 2. Core impulse path (ENFORCE_CAUSALITY=0): Hermitian + ifft + truncation
 # ===========================================================================
-volt, tb, ccdB, trdB = com.s21_to_impulse_DC(IL, freq_array, sample_dt, OP, param)
+volt, tb, ccdB, trdB = sicopr.s21_to_impulse_DC(IL, freq_array, sample_dt, OP, param)
 v_ml, tb_ml, IL_sym_ml, ir_full_ml = matlab_core(IL, freq_step_chk,
                                                  OP.impulse_response_truncation_threshold)
 
@@ -141,7 +141,7 @@ check("s21_small_precursor_energy",
       "pre-cursor energy fraction %.3g too large for a causal channel" % (pre / tot))
 
 # all-zero IL branch (ML 11233-11235): floor value is MATLAB eps (2.2e-16).
-volt_z, _, _, _ = com.s21_to_impulse_DC(np.zeros(51, dtype=complex),
+volt_z, _, _, _ = sicopr.s21_to_impulse_DC(np.zeros(51, dtype=complex),
                                         np.arange(51) * df, sample_dt, OP, param)
 check("s21_all_zero_uses_matlab_eps",
       np.max(np.abs(volt_z)) <= 1e-15,
@@ -198,7 +198,7 @@ mag2 = np.exp(-2.0 * np.sqrt(freq_array / 40e9)) * (1 + 0.4 * np.cos(2 * np.pi *
 IL2 = mag2 * np.exp(-1j * 2 * np.pi * freq_array * tau)
 
 volt_c, _, ccdB_c = None, None, None
-volt_c, _, ccdB_c, _ = com.s21_to_impulse_DC(IL2, freq_array, sample_dt, OPc, param)
+volt_c, _, ccdB_c, _ = sicopr.s21_to_impulse_DC(IL2, freq_array, sample_dt, OPc, param)
 v_apm_ml, _, ccdB_ml = matlab_apm(IL2, freq_step_chk, OPc)
 
 nlen = min(len(volt_c), len(v_apm_ml))
@@ -212,7 +212,7 @@ check("s21_causality_window_indexing_matches_matlab",
 
 # ENFORCE_CAUSALITY=0 default: the returned voltage IS the plain Hermitian-ifft
 # (original_impulse_response), unaffected by the APM off-by-one. Confirm.
-volt_off, _, _, _ = com.s21_to_impulse_DC(IL2, freq_array, sample_dt, OP, param)
+volt_off, _, _, _ = sicopr.s21_to_impulse_DC(IL2, freq_array, sample_dt, OP, param)
 v_off_ml, _, _, _ = matlab_core(IL2, freq_step_chk, OP.impulse_response_truncation_threshold)
 check("s21_default_path_unaffected_by_apm",
       len(volt_off) == len(v_off_ml) and rel_err(volt_off, v_off_ml) <= 1e-11,
@@ -259,17 +259,17 @@ OP2 = SimpleNamespace(
     EC_PULSE_TOL=0.01, EC_REL_TOL=1e-2, EC_DIFF_TOL=1e-3,
     impulse_response_truncation_threshold=1e-3)
 
-chdata = com.COM_FD_to_TD(chdata, param2, OP2,
-                          _s21_to_impulse_DC_fn=com.s21_to_impulse_DC,
-                          _Bessel_Thomson_Filter_fn=com.Bessel_Thomson_Filter,
-                          _Butterworth_Filter_fn=com.Butterworth_Filter,
-                          _get_cm_noise_fn=com.get_cm_noise)
+chdata = sicopr.COM_FD_to_TD(chdata, param2, OP2,
+                          _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+                          _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+                          _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+                          _get_cm_noise_fn=sicopr.get_cm_noise)
 
 ch = chdata[0]
 # Gaussian Tx filter H_t (ML 1217): exp(-(pi*f/1e9*ttr/1.6832)^2). Reconstruct and
 # verify the *_filtered impulse came from sdd21_raw*H_bt*H_bw*H_t (BT/BW off -> 1).
 H_t = np.exp(-(np.pi * faxis2 / 1e9 * ttr / 1.6832) ** 2)
-v_filt_ml, _, _, _ = com.s21_to_impulse_DC(sdd21 * H_t, faxis2, dt2, OP2, param2)
+v_filt_ml, _, _, _ = sicopr.s21_to_impulse_DC(sdd21 * H_t, faxis2, dt2, OP2, param2)
 check("FDTD_H_filters_gaussian_tx_applied",
       len(ch.uneq_imp_response_raw_filtered) == len(v_filt_ml)
       and rel_err(ch.uneq_imp_response_raw_filtered, v_filt_ml) <= 1e-10,
@@ -283,7 +283,7 @@ check("FDTD_pulse_is_running_sum",
       "uneq_pulse_response_raw != filter(ones(M),1,ir)")
 
 # Amplitude scaling (ML 1267-1269): uneq_imp_response *= A when USE_channel_amplitude.
-v_main_ml, _, _, _ = com.s21_to_impulse_DC(sdd21, faxis2, dt2, OP2, param2)
+v_main_ml, _, _, _ = sicopr.s21_to_impulse_DC(sdd21, faxis2, dt2, OP2, param2)
 check("FDTD_amplitude_scaling_applied",
       rel_err(ch.uneq_imp_response, v_main_ml * thru.A) <= 1e-10,
       "uneq_imp_response not scaled by channel amplitude A")

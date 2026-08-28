@@ -9,7 +9,7 @@
 # Range: MATLAB 0:1/N:1-1/N produces exactly N points.  np.arange(N)/N
 #   is equivalent and avoids floating-point accumulation errors.
 # Output shape: scalar int.
-# Known discrepancy from prior com.py attempt: none found.
+# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 import numpy as np
 
