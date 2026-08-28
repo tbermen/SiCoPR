@@ -138,8 +138,11 @@ def test_nothing_matlab_populates_is_left_blank():
     if not refs:
         pytest.skip('MATLAB reference workbooks not present')
 
-    exports = sorted(glob.glob(os.path.join(
-        _ROOT, 'sicopr_results', '*', '*.xlsx')))
+    # Workbooks sit directly in sicopr_results/ now that there is one result
+    # set; the '*/' level was the retired per-set subdirectory. Both shapes are
+    # matched so an older export tree still gets checked rather than skipped.
+    exports = sorted(glob.glob(os.path.join(_ROOT, 'sicopr_results', '*.xlsx'))
+                     + glob.glob(os.path.join(_ROOT, 'sicopr_results', '*', '*.xlsx')))
     if not exports:
         pytest.skip('no exported workbook to check')
 

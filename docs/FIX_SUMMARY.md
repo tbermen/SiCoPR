@@ -21,17 +21,17 @@ later deleted.
 ## Current correlation status
 
 208 MATLAB reference cases (`com_ieee8023_4p15p0`, 26 channels × 4 packages ×
-with/without crosstalk). The two reference workbooks were produced with
-different Tx FFE settings, so both readings are reported — see
-[`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md).
+with/without crosstalk), each condition run on the configuration its own
+MATLAB reference was produced with — the pairing the MATLAB author confirmed
+on 2026-08-24 ([`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md)).
 
-| | configs as supplied | settings aligned |
-|---|---|---|
-| FOM bit-exact | 198 / 208 | **208 / 208** |
-| COM bit-exact | 199 / 208 | **208 / 208** |
-| sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
-| max \|ΔCOM\| | 0.1852 dB | **3.3e-14 dB** |
-| pass/fail disagreements at 3 dB | 0 | **0** |
+| | |
+|---|---|
+| FOM bit-exact | **208 / 208** |
+| COM bit-exact | **208 / 208** |
+| sampling phase (`itick`) exact | **208 / 208** |
+| max \|ΔCOM\| | **3.29e-14 dB** |
+| pass/fail disagreements at 3 dB | **0** |
 
 Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 
@@ -56,7 +56,7 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 | 13 | 2026-08-21 | `TXLE_taps_1..4`, `Pre2Pmax`, mixed-mode ERL absent from results.xlsx | reporting | user review | columns claimed to agree were never exported | `git log --grep="Tx FFE tap columns were unpopulated"`, `git log --grep="refresh the as-supplied set"` |
 | 14 | 2026-08-21 | `BEST.ctle` / `BEST.G_high_pass` used 1-based as 0-based in `OptFom_Update_BEST_Post_Optimize` | **1- vs 0-based** | corpus sweep crash | reporting-only, but it **hard-crashed** any run whose winning CTLE was last in the list | (this commit) |
 | 15 | 2026-08-22 | `floating_tap_locations` had a **producer-dependent base** — 0-based from `floatingDFE`, 1-based from `MMSE`/`force` | **1- vs 0-based** | index registry | the FDFE cursor-time vector was one UI early under `Floating_DFE` | (this commit) |
-| 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — settings-aligned COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
+| 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
 | 17 | 2026-08-27 | adaptive-search radius floor forced to `1` on the 4p15p0 path, where the reference behaves as the 4p16p0 rule | **inferred setting** | the last open question | the `--min-radius 2` switch is **no longer needed** to reproduce the corpus | (this commit) |
 
 #17 is a settings deduction rather than a translation defect, and is written up in
@@ -356,7 +356,7 @@ regression.** Both halves of that are worth recording.
 
 ### What the shortfall is made of
 
-Measured per column across the settings-aligned set:
+Measured per column across the corpus:
 
 | column | inexact | median relative error | direction |
 |---|---|---|---|
@@ -476,12 +476,11 @@ has overturned.
 
 | | before | after |
 |---|---|---|
-| settings-aligned COM bit-exact | 207 / 208 | **208 / 208** |
-| settings-aligned max \|ΔCOM\| | 0.007623 dB | **3.3e-14 dB** |
-| as-supplied COM bit-exact | 198 / 208 | **199 / 208** |
+| COM bit-exact | 207 / 208 | **208 / 208** |
+| max \|ΔCOM\| | 0.007623 dB | **3.3e-14 dB** |
 | `wXtalk_T4_R10` output columns exact | 204 / 217 | **217 / 217** |
-| Noise-stage columns exact (aligned) | 95.1 % | **95.6 %** |
-| COM-stage columns exact (aligned) | 96.6 % | **100 %** |
+| Noise-stage columns exact | 95.1 % | **95.6 %** |
+| COM-stage columns exact | 96.6 % | **100 %** |
 
 FOM and `itick` are unchanged, as they must be — the defect is downstream of the
 equalizer and the sampling-point choice.

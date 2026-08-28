@@ -231,13 +231,11 @@ are walking differently-shaped grids.
 
 ### Consequence
 
-**The as-supplied run stays the headline correlation.** It is a faithful use of
-the configs we were given, the ten outliers are explained and independently
-verified (§3), and it is the better number besides. The sweep run is kept
-alongside as evidence, not as a replacement.
-
-Closing the last ten end to end needs the two answers in §5 — not more work on
-this side.
+*Written before the maintainer confirmed the sweep.* At the time, the run on
+the configs as received was kept as the headline, because the sweep grid was a
+reconstruction. That is no longer the position: the sweep workbooks were
+supplied on 2026-08-24, so the with-crosstalk cases run on them and there is a
+single correlation — 208/208 on FOM, COM and sampling phase (§12).
 
 
 ---
@@ -463,7 +461,7 @@ the package content agrees and the filename difference is cosmetic.)*
 ## 12. Final result — matched configuration
 
 Running each condition on the config its reference actually used
-(`python tools/compare_matched_config.py`):
+(reproduce with `python tools/matlab_compare.py --run --modal-erl --jobs 5`; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
 
 | | result |
 |---|---|

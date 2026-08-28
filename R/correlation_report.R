@@ -28,8 +28,8 @@ theme_com <- theme_minimal(base_size = 13) +
         legend.position = "top")
 
 # Optional 2nd/3rd args select an alternative input CSV and an output suffix, so
-# the same figures can be produced for the "settings aligned" configuration:
-#   Rscript R/correlation_report.R . compare_aligned.csv _aligned
+# the same figures can be produced for a variant run:
+#   Rscript R/correlation_report.R . compare_fullgrid.csv _fullgrid
 csv_in <- if (length(args) >= 2) args[2] else "compare.csv"
 sfx    <- if (length(args) >= 3) args[3] else ""
 fig    <- function(name) file.path(dout, paste0(name, sfx, ".png"))

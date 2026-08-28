@@ -35,12 +35,11 @@ Both engines ran **adaptive local search** — the reference workbooks are named
 `..._AdaptiveLS.xlsx`, and the configs set `Local Search = 2` with
 `Non-zero Local Search Method = 1`. This is an adaptive-vs-adaptive comparison.
 
-> **There is no longer an "as supplied" versus "settings aligned" split.** An
-> earlier revision of this document reported two readings because only one of the
-> two configuration workbooks had been shared, and the with-crosstalk settings had
-> to be reconstructed. The MATLAB author confirmed on 2026-08-24 that the
-> with-crosstalk run did sweep the Tx FFE and supplied the workbooks that capture
-> it. What is reported here is the like-for-like comparison, not an inference.
+> **One set of results.** An earlier revision of this document reported two
+> readings, because only one of the two configuration workbooks had been shared
+> and the with-crosstalk settings had to be reconstructed. That is over: the
+> MATLAB author confirmed the with-crosstalk sweep on 2026-08-24 and supplied the
+> workbooks, so there is one configuration and one comparison.
 >
 > The one setting that had to be deduced — the adaptive search's minimum radius
 > — is now settled, and needs no switch. The supplied workbooks set no radius
@@ -155,62 +154,43 @@ Defect 9 is the subtler form: the object *is* returned, and what was missing is 
 
 ## 4. What remains
 
-Everything in this section is reported under **both** readings, because the two
-differ in what is left over, not just by how much.
+**Nothing.** FOM, COM and sampling phase are bit-exact on all 208 cases.
 
-| | configs as supplied | settings aligned |
+| | |
+|---|---|
+| FOM bit-exact | **208 / 208** |
+| COM bit-exact | **208 / 208** |
+| sampling phase (`itick`) exact | **208 / 208** |
+| pass/fail disagreements at 3 dB | **0** |
+| max \|ΔCOM\| | **3.29e-14 dB** |
+| max \|ΔFOM\| | **3.38e-11 dB** |
+
+Full-column: 43,509 numeric values compared, 67 outside 1e-6 relative, all of them
+`DER_DFE` (41 cases) and `DER_MLSE` (26 cases). Those two are CDF bin lookups
+landing on an exact tie — `−A_s` falls exactly on a bin because `A_s/BinSize` is
+exactly 1000, so which side it lands on is decided by the 11th digit of `A_s`.
+Quantisation-limited, not wrong.
+
+### 4.1 How the divergences were closed
+
+Eight sampling-phase divergences and ten COM misses were open for most of this
+cycle. All are closed, and it is worth recording what closed them, because in
+every case the answer was a **settings** difference rather than an engine
+disagreement.
+
+| what was diverging | cause | where |
 |---|---|---|
-| sampling-phase (`itick`) divergences | **8** | **0** |
-| COM not bit-exact | **9** | **0** |
-| pass/fail disagreements at 3 dB | **0** | **0** |
+| 8 `itick`, and 9 of the 10 COM misses | the supplied configs pin Tx FFE `c(-1)` to a single zero, so Python searched one candidate where MATLAB searched 1584 | [`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md) |
+| 5 of those 10, again | the adaptive-search radius floor: the branch source forces 1, the reference behaves as 2 on a multi-candidate grid | [`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md) |
+| a +0.0018 dB mean COM bias, and 2 knife-edge pass/fail flips | an off-by-one in the sampling phase used to build the ADC-clip PDF | [`docs/COM_PDF_RESIDUAL.md`](docs/COM_PDF_RESIDUAL.md) |
+| the last COM miss, 4 case-instances | banker's rounding in `nui = round(len/M)` | §4.3 below |
 
-Under settings aligned, **nothing remains**: FOM, COM and sampling phase are
-bit-exact on all 208 cases, with max |ΔCOM| = 3.3e-14 dB. Everything else in this section describes the as-supplied run, and every
-item in it is explained by the Tx FFE settings difference
-([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md) §11) rather than by
-an engine disagreement.
+The eight `itick` cases were all DAC or BPK assemblies carrying crosstalk — the
+profile of a channel where Tx FFE pre-emphasis wins, which is the fingerprint of
+a missing search dimension rather than an independent risk profile. Two of the
+eight are among the ten cases where MATLAB selected a non-unity `c(-1)`; the rest
+moved because the sampling phase is chosen jointly with the equalizer.
 
-### 4.1 Sampling-phase divergences — 8 cases as supplied, 0 aligned
-
-**Root-caused.** These were an open question through most of this cycle and are
-not one any more: the supplied configs pin Tx FFE `c(-1)` to a single zero, so
-Python searched one candidate where MATLAB searched ~1584. Give both engines the
-same search space and all eight agree.
-
-| case | Δtick | ΔCOM (as supplied) | channel |
-|---|---|---|---|
-| wXtalk_T1_R07 | +1 | 0.000000 | HN_3in_DAC_X_1p0m |
-| wXtalk_T2_R15 | +1 | −0.007440 | HN_3in_DAC_Z_1p0m |
-| wXtalk_T1_R08 | +1 | −0.041814 | HN_3in_DAC_X_1p5m |
-| wXtalk_T2_R16 | +2 | −0.054311 | HN_3in_DAC_Z_1p5m |
-| wXtalk_T1_R15 | +1 | −0.061061 | HN_3in_DAC_Z_1p0m |
-| wXtalk_T3_R16 | +2 | −0.070361 | HN_3in_DAC_Z_1p5m |
-| wXtalk_T3_R17 | **−25** | +0.132145 | BPK twinax 100 mm |
-| wXtalk_T1_R16 | +5 | −0.185248 | HN_3in_DAC_Z_1p5m |
-
-All are DAC/BPK assemblies and all carry crosstalk — the profile of a channel
-where Tx FFE pre-emphasis wins (high FEXT, high residual ISI, a contested
-equalizer optimum). That clustering is the fingerprint of the missing search
-dimension, not an independent risk profile. Two of these eight are among the ten
-cases where MATLAB selected a non-unity `c(-1)`; the rest move because the
-sampling phase is chosen jointly with the equalizer.
-
-**Under settings aligned, `itick` is exact on 208 of 208.**
-
-### 4.2 COM differences — 10 cases as supplied, 1 aligned
-
-As supplied, the ten cases whose COM is not bit-exact are **exactly the eight
-above plus two more**, and every one of them carries a non-zero ΔFOM. That is
-the signature of a different equalizer answer, not of a difference in the COM
-computation: with the search spaces matched, nine of the ten go to zero.
-
-The residual that *was* in the COM PDF path — a mean +0.0018 dB bias over the
-cases with exact FOM and matching `itick`, which used to leave 135 of 198 exact
-and produced two knife-edge pass/fail disagreements — has been fixed. It was an
-off-by-one in the sampling phase used to build the ADC-clip PDF; see
-[`docs/COM_PDF_RESIDUAL.md`](docs/COM_PDF_RESIDUAL.md). On the cases whose FOM
-and sampling phase agree, COM is now bit-exact on 197 of 200 and max \|ΔCOM\|
-dropped from 0.028201 to 0.008778 dB.
 
 ### 4.3 The last COM miss, and how it was closed
 
@@ -248,7 +228,7 @@ appears in 8 cases and diverges in only 2.
 
 ### 4.4 Pass/fail disagreements: none
 
-There were two, then one, and now none under either reading. Both former cases
+There were two, then one, and now none. Both former cases
 (`wXtalk_T2_R06`, `wXtalk_T2_R24`) sat within 0.011 dB of the 3 dB threshold with
 bit-exact FOM and matching `itick`; they were knife-edge instances of the ADC-clip
 residual, and both resolved when it was fixed.
@@ -285,7 +265,7 @@ wiring.
 > performance work in this cycle sped full grid up more than it sped adaptive up, so the
 > honest figure is 13x, not 113x. Quote 13x.
 
-**Scope.** This is measured with the configs as supplied, i.e. a **single-point Tx FFE
+**Scope.** This is measured on a **single-point Tx FFE
 grid**, where the adaptive search has nothing to prune in that dimension. On a real Tx
 FFE grid the adaptive search finds the full-grid optimum on 15 of 16 cases, with a worst
 observed loss of 0.0093 dB — see `docs/TXFFE_SWEEP_ROOT_CAUSE.md` §9.
@@ -486,10 +466,8 @@ sicopr_results/
 
 **One set, not two.** Each crosstalk condition is run on the configuration its own
 MATLAB reference was produced with: the without-crosstalk cases on the base workbooks,
-the with-crosstalk cases on the `*_sweep_TxFFE` workbooks. That pairing was confirmed by
-the COM maintainer on 2026-08-24, so this is a like-for-like comparison and no longer a
-reconstruction — which is why the earlier "as-supplied" / "settings-aligned" split has
-been retired. The radius floor needs no switch either (§6.3).
+the with-crosstalk cases on the `*_sweep_TxFFE` workbooks — the pairing the COM
+maintainer confirmed on 2026-08-24. The radius floor needs no switch either (§6.3).
 
 Same four tabs, same 26 rows, same 262-column header in the same order as the MATLAB
 workbooks, so the two sets diff column-by-column with no remapping. A NOTES sheet in
@@ -511,8 +489,7 @@ python tools/matlab_compare.py --validate                 # resolve all 208 case
 python tools/matlab_compare.py --run --modal-erl --jobs 5  # ~3.4 h, checkpointed
 python tools/matlab_compare.py --run --modal-erl --txffe-sweep \
        --only-cond wXtalk --jobs 5                       # the aligned wXtalk half
-python tools/export_results.py --set as-supplied          # result workbooks
-python tools/export_results.py --set settings-aligned
+python tools/export_results.py                            # result workbooks
 python tools/export_compare_csv.py                        # tidy CSVs
 Rscript R/correlation_report.R                            # figures
 python tools/build_review_pptx.py                         # deck

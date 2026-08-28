@@ -318,88 +318,78 @@ python tools/compare_matlab_versions.py           # diff two version sweeps, fie
 ## 7. Verification status & caveats
 
 Every major feature is implemented and unit-tested against `matlab/com_ieee8023_4p15p0.m`
-plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating RxFFE
-taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
+plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating
+RxFFE taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
 processing (ICN/ILD), ERL/TDR, and TD-ILN/RILN. The `com_functions/fn` suite is green
-(**886 passed, 0 failed**), and the bundled 802.3ck C2M channel runs end-to-end.
+(**889 passed, 0 failed**).
 
-**Numeric parity with MATLAB has been established end to end.** 208 reference cases from
-Hansel D'silva's `com_ieee8023_4p15p0` runs were compared case by case:
+**Numeric parity with MATLAB is established end to end.** 208 reference cases from Hansel
+D'silva's `com_ieee8023_4p15p0` runs, compared case by case:
 
-| | result |
+| | |
 |---|---|
-| | as supplied | **matched config** |
-|---|---|---|
-| FOM bit-exact | 198 / 208 | **208 / 208** |
-| COM bit-exact | 199 / 208 | **208 / 208** |
-| sampling phase (`itick`) exact | 200 / 208 | **208 / 208** |
-| max \|ΔCOM\| | 0.185 dB | **3.3e-14 dB** |
-| rms ΔCOM | 0.018 dB | **0.00053 dB** |
-| pass/fail disagreements | 0 | **0** |
+| FOM bit-exact | **208 / 208** |
+| COM bit-exact | **208 / 208** |
+| sampling phase (`itick`) exact | **208 / 208** |
+| pass/fail disagreements at 3 dB | **0** |
+| max \|ΔCOM\| | **3.29e-14 dB** |
+| max \|ΔFOM\| | **3.38e-11 dB** |
 
-**Matched config** pairs each crosstalk condition with the settings its reference
-workbook was actually produced with. The two references differ: the
-without-crosstalk run used a single-point Tx FFE grid (the config we were given),
-the with-crosstalk run used a swept one. Reproduce with
-`python tools/compare_matched_config.py`; full analysis in
-[`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md).
+That is double-precision arithmetic noise, not agreement to a tolerance: the two
+implementations compute the same number. Of 43,509 numeric column-values compared, 67 sit
+outside 1e-6 relative and every one is `DER_DFE` or `DER_MLSE` — CDF bin lookups landing on
+an exact tie, quantisation-limited rather than wrong.
 
-The with-crosstalk grid is a **reconstruction** — supported by reproducing
-MATLAB's tap vector, sampling phase and FOM on all ten previously divergent
-cases, and by a 2×2 control in which each condition is near-exact on its own
-config and materially worse on the other's — but not yet confirmed against the
-real settings.
+Each crosstalk condition runs on the configuration its own MATLAB reference was produced
+with: the without-crosstalk cases on the base workbooks, the with-crosstalk cases on the
+workbooks that sweep the Tx FFE. **That pairing was confirmed by the COM maintainer on
+2026-08-24**, so it is the configuration, not one reading among several. Reproduce with:
 
-Fifteen engine-level defects were found and fixed in the process (the ledger,
-with what each one bought, is [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md)). Reproduce with
-`python tools/matlab_compare.py --validate --run --jobs 5`; the full write-up is
-[`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md).
+```powershell
+python tools/matlab_compare.py --validate --run --modal-erl --jobs 5
+python tools/export_compare_csv.py
+```
 
-**The 10 cases that did not agree were a configuration difference, not an engine
-defect, and are now resolved.** MATLAB's winning Tx FFE is non-unity on exactly
-those 10, and the supplied config defines a single-point Tx FFE grid. Two settings
-together reproduce MATLAB on all ten: the swept grid including
-`c(-2) = [0:.02:0.14]`, and an adaptive-search radius floor of 2. That floor is
-no longer a switch — the port applies the 4p16p0 mainline rule (`1` for a
-single Tx FFE candidate, `2` otherwise) on both version paths, so
-`--txffe-sweep` alone reproduces them. See
-[`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md).
+Getting there took **seventeen** engine-level and settings findings, each with what it
+bought recorded in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md); the full write-up is
+[`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md). Two are worth naming here
+because they were configuration rather than code, and both were the same failure — a
+supplied config snapshot that post-dated the run it came from:
 
-That result is against **4p15p0**, which is why it stays the default emulation target — see
-§8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical
-on all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
+- **The Tx FFE grid.** The supplied workbooks pin `c(-1)`, `c(-2)` and `c(1)` to a single
+  zero; the run that produced the reference results swept 1584 candidates. Confirmed by the
+  maintainer, who supplied the sweep workbooks.
+  ([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md))
+- **The adaptive-search radius floor.** The branch source forces `1`; the reference behaves
+  as the 4p16p0 mainline rule (`1` for a single Tx FFE candidate, `2` otherwise). The port
+  applies that rule on both version paths, so no switch is needed.
+  ([`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md))
+
+The result is against **4p15p0**, which is why it stays the default emulation target — see
+§8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical on
+all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
 
 Honest caveats for anyone relying on the numbers:
 
-- **The eight sampling-phase divergences are resolved** — a Tx FFE search-space
-  mismatch, not an engine defect. One question remains open with Hansel: the exact Tx
-  FFE tap ranges and `Overwrite Minimum Radius` used for the with-crosstalk run, since
-  the config supplied to us matches his without-crosstalk run. The search *method* is
-  not a mismatch — the reference workbooks are named `..._AdaptiveLS.xlsx` and the
-  port's `Non-zero Local Search Method = 1` matches them.
-- **The MATLAB-vs-Python runtime comparison is not like-for-like** and should not be
-  quoted until re-measured: Python searched one Tx FFE candidate per CTLE where MATLAB
-  swept a grid. The Python-vs-Python speed-up is unaffected.
-- **The COM PDF residual is fully closed.** Two separate defects: an off-by-one in the
-  ADC-clip sampling phase (`docs/COM_PDF_RESIDUAL.md`), which took COM bit-exact from
-  170 → 198 of 208 and cleared the last pass/fail disagreement; and a banker's-rounding
-  tie in `nui = round(len/M)` (`MATLAB_Correlation_Review.md` §4.3), which dropped one
-  ISI sample on 4 case-instances. With both fixed, the settings-aligned correlation is
-  **bit-exact on FOM, COM and sampling phase across all 208 cases**, max |ΔCOM| 3.3e-14.
-- **Results produced before August 2026 are not comparable to current output.** The nine
-  engine fixes changed COM materially — the largest single correction removed a systematic
-  FOM bias affecting 95.7% of cases. Regenerate rather than compare against archived numbers.
-- Only the C2M **TxFFE/CTLE/DFE** path is exercised end-to-end; the other features are
-  implemented and unit-tested but not covered by a bundled end-to-end config. See
+- **No MATLAB-vs-Python runtime comparison is offered.** The timings that exist were taken
+  on different machines and, at the time, on different search spaces. The Python-vs-Python
+  speed-up (5.4× on identical work, every output field bit-identical) is unaffected by that
+  and is the only speed claim made.
+- **Results produced before August 2026 are not comparable to current output.** The engine
+  fixes changed COM materially — the largest removed a systematic FOM bias affecting 95.7%
+  of cases. Regenerate rather than comparing against archived numbers.
+- Only the **TxFFE/CTLE/DFE** path is exercised end to end by a real configuration; the
+  other features are implemented and unit-tested but not covered by an end-to-end run. See
   [`docs/MISSING_FEATURES_PLAN.md`](docs/MISSING_FEATURES_PLAN.md) §D.
 - **`FFE_OPT_METHOD='WIENER-HOPF'`** is intentionally non-functional — its helper is
   undefined in the MATLAB reference itself. Use `'MMSE'`.
-- **`FAST_NOISE_CONV`** is a speed *approximation*; the default exact path is recommended for
-  reported results.
+- **`FAST_NOISE_CONV`** is a speed *approximation*; the default exact path is recommended
+  for reported results.
 - GUI file pickers are not ported — file lists are always passed on the command line.
 
-The conversion audit (146 EQUIVALENT / 11 DIVERGENT functions, findings D1–D20) is written up
-in [`docs/AUDIT_FINDINGS.md`](docs/AUDIT_FINDINGS.md), with the ledger in `dev/state/`.
+The conversion audit (146 EQUIVALENT / 11 DIVERGENT functions, findings D1-D20) is written
+up in [`docs/AUDIT_FINDINGS.md`](docs/AUDIT_FINDINGS.md).
+
 
 ## 8. MATLAB version support
 

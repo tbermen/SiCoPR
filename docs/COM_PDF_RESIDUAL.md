@@ -14,7 +14,7 @@ cycle large enough to move a case across the 3 dB pass/fail threshold.
 > producer-dependent index base in `floating_tap_locations`
 > (`docs/FIX_SUMMARY.md` #15), and a banker's-rounding tie in
 > `nui = round(len/M)` (#16) which turned out to be the last COM miss. With #16
-> fixed the settings-aligned correlation is bit-exact on FOM, COM and sampling
+> fixed the correlation is bit-exact on FOM, COM and sampling
 > phase across all 208 cases. Stating "last" while cases were still open was a
 > claim the evidence did not support at the time.
 
@@ -172,5 +172,5 @@ engines were given different search spaces, so their COM is not comparable.
 `round()` is banker's rounding where MATLAB's rounds half away from zero, and
 `nui = round(len(residual_response) / M)` in `get_pdf` landed on a tie, dropping
 one ISI sample. Fixed 2026-08-22; see `MATLAB_Correlation_Review.md` §4.3.
-With both fixes in, the settings-aligned correlation is bit-exact on FOM, COM and
+With both fixes in, the correlation is bit-exact on FOM, COM and
 sampling phase across all 208 cases (max |ΔCOM| 3.3e-14).

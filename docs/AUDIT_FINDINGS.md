@@ -571,7 +571,7 @@ Key points confirmed:
 > (`2360.500000`: MATLAB 2361, Python 2360). One row is lost from the `vs`
 > sampling matrix, one ISI sample is dropped from the residual-ISI PDF, and
 > `sgm_isi` comes out low. It was **the last COM miss**: fixing it took the
-> settings-aligned correlation from COM 207/208 to **208/208**, max \|ΔCOM\|
+> correlation from COM 207/208 to **208/208**, max \|ΔCOM\|
 > 0.0076 dB → 3.3e-14.
 >
 > Fixed in `get_pdf` and `get_pdf_full` via a local `_mround`. See
