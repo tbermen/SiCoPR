@@ -20,8 +20,8 @@ the whole sequence is:
 ```bash
 # 1. Fork on github.com (button, top right). You now own a copy.
 # 2. Clone YOUR fork
-git clone https://github.com/<you>/IEEE_COM_Python.git
-cd IEEE_COM_Python
+git clone https://github.com/<you>/SiCoPR.git
+cd SiCoPR
 
 # 3. Branch. Name it after the change, not after yourself.
 git checkout -b fix-ctle-index-base
