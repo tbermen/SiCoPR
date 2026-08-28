@@ -104,9 +104,31 @@ Point 3 is the load-bearing one, and it was verified rather than argued: see bel
 ## 5. Verification
 
 The full 208-case correlation was re-run with **no `--min-radius` flag** — the
-rule alone — on the confirmed per-condition configurations.
+rule alone — on the confirmed per-condition configurations, 2026-08-27:
 
-> **RESULT PENDING** — filled in when the run completes.
+```
+python tools/matlab_compare.py --run --modal-erl --jobs 5
+python tools/export_compare_csv.py
+```
+
+| | rule alone | previous run, `--min-radius 2` |
+|---|---|---|
+| COM bit-exact | **208 / 208** | 208 / 208 |
+| FOM bit-exact | **208 / 208** | 208 / 208 |
+| sampling phase `itick` exact | **208 / 208** | 208 / 208 |
+| pass/fail disagreements at 3 dB | **0** | 0 |
+| max \|ΔCOM\| | **3.286e-14 dB** | 3.3e-14 dB |
+| max \|ΔFOM\| | 3.379e-11 dB | — |
+
+Full-column: 43,509 numeric values compared, 67 outside 1e-6 relative, all of
+them `DER_DFE` (41 cases) and `DER_MLSE` (26 cases) — the two quantisation-limited
+columns that were already the only inexact ones. Nothing moved.
+
+So the claim in §4 point 3 is measured, not argued: the rule and a flat floor of
+2 give the same answer on every case, and the rule is the one that needs no
+switch. **The single-candidate cases confirm it directly** — those are the ones
+where the two settings differ (rule gives 1, flat gives 2), and their COM, FOM
+and `itick` are unchanged.
 
 ## 6. What this does not establish
 
