@@ -1,9 +1,11 @@
-# COM — Channel Operating Margin (Python)
+# SiCoPR
+
+*Pronounced si-copper.* **Si** (Signal Integrity) · **Co** (COM) · **P** (Python) · **R**
 
 A Python port of the IEEE 802.3ck/dj **COM** (Channel Operating Margin) MATLAB reference
-tool. It computes COM / VEO / VEC and the supporting equalization and noise analysis for a
-serial channel described by Touchstone S-parameter files and an Excel configuration
-spreadsheet.
+tool with R programming extensions for reports and visualizations. It computes COM / VEO /
+VEC and the supporting equalization and noise analysis for a serial channel described by
+Touchstone S-parameter files and an Excel configuration spreadsheet.
 
 The port is function-for-function: `com.py` follows the structure of the MATLAB source
 closely enough to navigate by MATLAB line number, takes the same `.xlsx` + `.s4p` inputs,
@@ -16,7 +18,13 @@ version the correlation result in §7 is evidence for — and **`com_ieee8023_4p
 4p16p0 is a small delta, and its measured effect on all 208 cases is in §8. Which release a
 given `com.py` emulates is recorded in its header and in `VERSION.json`.
 
-On top of the engine there is a study layer (`tools/`, `R/`) built to answer one question:
+**The R half of the name.** `R/` turns a run into something you can read: an
+interactive HTML dashboard for a single case — channel response, CTLE, equalization
+contributions, pulse, eye — and the correlation and study reports that produce the
+figures in §5 and §7. The engine writes the data; R renders it. Neither needs the
+other to run, and the Python side has no R dependency.
+
+On top of both there is a study layer (`tools/`, `R/`) built to answer one question:
 **does pruning the equalizer search grid change COM?** Results in §5.
 
 > **New to this project?** Start with **[`COM_Python_Tutorial.docx`](COM_Python_Tutorial.docx)**
@@ -164,7 +172,7 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | `assemble_com.py` | concatenates the `py_impl.py` files into `com.py` |
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `com.py`, so they live beside it |
 | `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
-| `R/` | interactive HTML reports |
+| `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_com.py` generates `com.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |

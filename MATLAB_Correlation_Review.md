@@ -1,4 +1,4 @@
-# COM Python — MATLAB Correlation and Adaptive Local Search
+# SiCoPR — MATLAB Correlation and Adaptive Local Search
 
 **Correlation status review — 21 August 2026**
 

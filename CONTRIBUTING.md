@@ -1,4 +1,4 @@
-# Contributing
+# Contributing to SiCoPR
 
 Thanks for looking at this. One rule matters more than all the others:
 

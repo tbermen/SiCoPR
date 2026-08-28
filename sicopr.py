@@ -1,5 +1,6 @@
 """
-com.py — IEEE 802.3 Channel Operating Margin (COM) Python Implementation
+com.py — the SiCoPR engine
+IEEE 802.3 Channel Operating Margin (COM), ported from the MATLAB reference
 Emulates com_ieee8023_4p15p0 by default; 4p15p0 and 4p16p0 supported via --matlab-version
 (or com.COM_MATLAB_VERSION, or a "COM Version" keyword in the config).
 

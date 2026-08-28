@@ -9,7 +9,8 @@ import json
 import re
 
 HEADER = '''"""
-com.py — IEEE 802.3 Channel Operating Margin (COM) Python Implementation
+com.py — the SiCoPR engine
+IEEE 802.3 Channel Operating Margin (COM), ported from the MATLAB reference
 @@VERSION_BANNER@@
 
 This file is machine-assembled from individually verified function translations

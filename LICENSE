@@ -2,8 +2,8 @@ BSD 3-Clause License
 
 SPDX-License-Identifier: BSD-3-Clause
 
-This project is a Python port of the IEEE 802.3 COM MATLAB reference tool
-(`com_ieee8023_*.m`). The original MATLAB source is distributed under the
+SiCoPR is a Python port of the IEEE 802.3 COM MATLAB reference tool
+(`com_ieee8023_*.m`), with R extensions for reports and visualizations. The original MATLAB source is distributed under the
 BSD 3-Clause License and carries the notice reproduced below; this port is a
 derivative work and is released under the same license, so that the terms
 travel with it.

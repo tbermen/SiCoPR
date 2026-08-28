@@ -1,4 +1,4 @@
-# Maintaining this repository
+# Maintaining SiCoPR
 
 The other side of [`CONTRIBUTING.md`](../CONTRIBUTING.md): what the maintainer
 does, and how the repository is configured so that the rules there are enforced
