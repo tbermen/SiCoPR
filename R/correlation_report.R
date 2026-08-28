@@ -39,8 +39,9 @@ cmp$cond   <- factor(cmp$cond, levels = c("wXtalk", "woXtalk"),
                      labels = c("with crosstalk", "no crosstalk"))
 
 rms <- function(x) sqrt(mean(x^2))
-lab <- sprintf("208 cases   max |ΔCOM| = %.4f dB   rms = %.4f dB   %d bit-exact",
-               max(abs(cmp$dcom)), rms(cmp$dcom), sum(abs(cmp$dcom) < 1e-9))
+lab <- sprintf("%d cases   max |ΔCOM| = %.4f dB   rms = %.4f dB   %d bit-exact",
+               nrow(cmp), max(abs(cmp$dcom)), rms(cmp$dcom),
+               sum(abs(cmp$dcom) < 1e-9))
 
 # ---- 1. correlation scatter --------------------------------------------------
 p1 <- ggplot(cmp, aes(com_mat, com_py, colour = cond)) +
@@ -90,10 +91,9 @@ p3 <- ggplot(both, aes(config, delta, fill = cond)) +
 ggsave(fig("fig_dcom_by_config"), p3, width = W, height = H, dpi = DPI)
 
 # ---- 3b. FOM correlation ----------------------------------------------------
-nlow <- sum(cmp$dfom < 0)
 flab <- sprintf(
-  "%d cases   max |ΔFOM| = %.4f dB   rms = %.4f dB   COM Python lower in %d of %d",
-  nrow(cmp), max(abs(cmp$dfom)), rms(cmp$dfom), nlow, nrow(cmp))
+  "%d cases   max |ΔFOM| = %.4f dB   rms = %.4f dB   %d bit-exact",
+  nrow(cmp), max(abs(cmp$dfom)), rms(cmp$dfom), sum(abs(cmp$dfom) < 1e-9))
 p3b <- ggplot(cmp, aes(fom_mat, fom_py, colour = cond)) +
   geom_abline(slope = 1, intercept = 0, colour = "grey55", linewidth = .4) +
   geom_point(size = 2, alpha = .8) +
