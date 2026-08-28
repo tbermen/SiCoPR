@@ -478,10 +478,10 @@ No further reference data is needed.
 ## Appendix A — deliverables
 
 ```
-com_python_results/
+sicopr_results/
     confirmed/
-        Results_COM_Python_confirmed_wXtalk.xlsx      104 cases
-        Results_COM_Python_confirmed_woXtalk.xlsx     104 cases
+        Results_SiCoPR_confirmed_wXtalk.xlsx      104 cases
+        Results_SiCoPR_confirmed_woXtalk.xlsx     104 cases
 ```
 
 **One set, not two.** Each crosstalk condition is run on the configuration its own

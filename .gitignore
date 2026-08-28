@@ -101,7 +101,7 @@ tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/5_Intel_Amphenol/lim_3dj_03_23062
 #
 # The port is open source; the data it was correlated against is not ours to
 # redistribute. All of it is obtainable from the IEEE 802.3 public areas or from
-# the contributions named in README.md and COM_Python_Tutorial.docx, so a
+# the contributions named in README.md and SiCoPR_Tutorial.docx, so a
 # reader can reproduce the correlation without us shipping 400 MB of it.
 #
 # Channel S-parameters (IEEE 802.3dj public-area contributions)
@@ -112,7 +112,7 @@ tests/1_IEEE_802p3dj_COM_Spreadsheets_fullgrid/
 # MATLAB reference result workbooks
 tests/2_Results_COM_Matlab/
 # Config workbooks anywhere -- per-user test inputs, not ours to publish.
-# Deliberately NOT a blanket *.xlsx: com_python_results/ holds the exported
+# Deliberately NOT a blanket *.xlsx: sicopr_results/ holds the exported
 # result workbooks, which are our own output and carry no third-party data.
 config*.xlsx
 # ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ report_data/
 # All reproducible from the code plus the correlation inputs. The repo carries
 # the code that makes them, not the artifacts.
 report_figs/
-com_python_results/
+sicopr_results/
 corpus_results/*.csv
 corpus_results/*.json
 corpus_results/*.html

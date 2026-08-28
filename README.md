@@ -1,6 +1,6 @@
 # SiCoPR
 
-*Pronounced si-copper.* **Si** (Signal Integrity) · **Co** (COM) · **P** (Python) · **R**
+*(pronounced si-copper)* — **Si** (Signal Integrity), **Co** (COM), **P** (Python), and **R**
 
 A Python port of the IEEE 802.3ck/dj **COM** (Channel Operating Margin) MATLAB reference
 tool with R programming extensions for reports and visualizations. It computes COM / VEO /
@@ -27,7 +27,7 @@ other to run, and the Python side has no R dependency.
 On top of both there is a study layer (`tools/`, `R/`) built to answer one question:
 **does pruning the equalizer search grid change COM?** Results in §5.
 
-> **New to this project?** Start with **[`COM_Python_Tutorial.docx`](COM_Python_Tutorial.docx)**
+> **New to this project?** Start with **[`SiCoPR_Tutorial.docx`](SiCoPR_Tutorial.docx)**
 > — a 40-page tutorial and reference covering installation, architecture, every feature,
 > the study layer, the R reports, a COM concepts primer, and a complete index of all 247
 > configuration keywords. This README is the quick version.
@@ -71,7 +71,7 @@ this section says exactly which.
 | `matlab/` — the BSD-3-Clause MATLAB reference sources | COM configuration workbooks (`tests/1_...`) |
 | `docs/`, `VERSION.json`, `LICENSE`, `CONTRIBUTING.md` | MATLAB reference result workbooks (`tests/2_...`) |
 | the correlation harness itself (`tools/matlab_compare.py`) | `tests/oracles/`, `report_data/` — MATLAB reference **values**, distilled from those workbooks |
-| the study write-ups (`RESULTS.md`, `STATE.md`) | every generated output: `results/`, `report_figs/`, `corpus_results/*.csv`, `com_python_results/`, `report_docs/` |
+| the study write-ups (`RESULTS.md`, `STATE.md`) | every generated output: `results/`, `report_figs/`, `corpus_results/*.csv`, `sicopr_results/`, `report_docs/` |
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
 passes — 886 per-function tests plus the cross-check scripts — and every test that

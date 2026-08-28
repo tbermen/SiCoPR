@@ -139,7 +139,7 @@ def test_nothing_matlab_populates_is_left_blank():
         pytest.skip('MATLAB reference workbooks not present')
 
     exports = sorted(glob.glob(os.path.join(
-        _ROOT, 'com_python_results', '*', '*.xlsx')))
+        _ROOT, 'sicopr_results', '*', '*.xlsx')))
     if not exports:
         pytest.skip('no exported workbook to check')
 
