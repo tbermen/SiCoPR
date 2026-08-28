@@ -58,6 +58,7 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 | 15 | 2026-08-22 | `floating_tap_locations` had a **producer-dependent base** — 0-based from `floatingDFE`, 1-based from `MMSE`/`force` | **1- vs 0-based** | index registry | the FDFE cursor-time vector was one UI early under `Floating_DFE` | (this commit) |
 | 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
 | 17 | 2026-08-27 | adaptive-search radius floor forced to `1` on the 4p15p0 path, where the reference behaves as the 4p16p0 rule | **inferred setting** | the last open question | the `--min-radius 2` switch is **no longer needed** to reproduce the corpus | (this commit) |
+| 18 | 2026-08-28 | `findbankloc` indexed `ndiff` with bank-member positions; MATLAB grows an array on out-of-range assignment, NumPy raises | **index space** | a flaky gate run | **IndexError on 4.4% of inputs** wherever floating DFE taps are used; inert on this corpus, real under other settings | (this commit) |
 
 #17 is a settings deduction rather than a translation defect, and is written up in
 [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) — including what it does
@@ -585,7 +586,7 @@ by the 208-case correlation.
 
 Driven by `FIX_PROMPT_com_conversion_v2.md`. Fixes edit
 `com_functions/fn/<name>/py_impl.py` (never `sicopr.py`, which is a generated build
-artifact reassembled by `assemble_com.py`). One finding per gate.
+artifact reassembled by `assemble_sicopr.py`). One finding per gate.
 
 > **CLOSED 2026-08-17.** This gated fix pass was overtaken by the 208-case MATLAB
 > correlation, which fixed eight engine defects in one commit (`git log --grep="Fix 8 engine defects"`) — see
@@ -598,7 +599,7 @@ artifact reassembled by `assemble_com.py`). One finding per gate.
 ## Status: GATE BATCH-2 ASSEMBLED_VERIFIED (sicopr.py reassembled + integration-tested)
 
 Batch 2 = B01-D2 (get_PSDs ADC 'slow' clip) + B06-D9 (get_TDR s2p RL) -
-ASSEMBLED_VERIFIED. assemble_com.py: 157 functions, 5 stubs (baseline match).
+ASSEMBLED_VERIFIED. assemble_sicopr.py: 157 functions, 5 stubs (baseline match).
 Integration: B01-D2 (adc_clip_slow + ctle_signal_sigma) and B06-D9 (s2p_RL) audit
 checks flipped FAIL->PASS; fn suite 874 pass / 0 fail; smoke + e2e exit 0.
 **get_PSDs fully resolved** (D1/D2 fixed, D3 kicked back). One stale guard flagged
@@ -610,7 +611,7 @@ checks flipped FAIL->PASS; fn suite 874 pass / 0 fail; smoke + e2e exit 0.
 ## Prior: GATE BATCH-1 ASSEMBLED_VERIFIED (sicopr.py reassembled + integration-tested)
 
 Revision 4p15p0, dependency order. Batch 1 = B03-D6/D7, B02-D4/D5, B01-D1 -
-ASSEMBLED_VERIFIED. `assemble_com.py`: 157 functions, 5 stubs (baseline match).
+ASSEMBLED_VERIFIED. `assemble_sicopr.py`: 157 functions, 5 stubs (baseline match).
 Integration: the audit "matches-MATLAB" checks for all three flipped FAIL->PASS
 (s21 causality, interp_Sparam phase+mag, get_PSDs S_jn LIMIT); com_functions/fn
 suite 872 pass / 0 fail (865 baseline + 7 new); tests/test_smoke.py and
@@ -635,7 +636,7 @@ Next: B01-D2 (own gate) then F4 get_TDR (B06-D9), or as you direct.
    citation consistency. `registry.json` will NOT be edited (dirs are name-keyed;
    the line base is metadata only). **Recommendation: confirm 4p15p0 authoritative.**
 
-2. **Baseline build is not the prompt's literal "clean".** `python assemble_com.py`
+2. **Baseline build is not the prompt's literal "clean".** `python assemble_sicopr.py`
    → "Assembled sicopr.py from 157 functions. WARNING: 5 function(s) still contain
    NotImplementedError." The 5 are **deliberate stubs** for non-portable/undefined
    paths (`force` WIENER-HOPF [undefined in MATLAB], `get_s4p_files`/`get_TD_files`

@@ -227,7 +227,7 @@ def _fmt(vs):
 def main():
     if not os.path.isfile(COM_PY):
         check('index_base_com_py_present', False,
-              'sicopr.py not found -- run python assemble_com.py first')
+              'sicopr.py not found -- run python assemble_sicopr.py first')
         return finish()
 
     a, b, undeclared = scan(COM_PY)

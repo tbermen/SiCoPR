@@ -36,10 +36,10 @@ jobs:
         # sources disagree -- and every test here would run the wrong one.
         run: |
           cp sicopr.py /tmp/sicopr_committed.py
-          python assemble_com.py
+          python assemble_sicopr.py
           if ! diff -q /tmp/sicopr_committed.py sicopr.py > /dev/null; then
             echo "::error::sicopr.py does not match com_functions/fn/*/py_impl.py."
-            echo "Run 'python assemble_com.py' and commit the result."
+            echo "Run 'python assemble_sicopr.py' and commit the result."
             diff /tmp/sicopr_committed.py sicopr.py | head -40
             exit 1
           fi

@@ -1,6 +1,26 @@
 import numpy as np
 
 
+def _fb_mask(ndiff, positions, value):
+    """ndiff[positions] = value, growing ndiff the way MATLAB would.
+
+    ML 6260/6296 assign `ndiff(new_bank)=min_energy` where new_bank can run
+    past the end of ndiff: ndiff is indexed by bank START position, so it is
+    tap_bk-1 shorter than h0. MATLAB grows on out-of-range assignment; NumPy
+    raises IndexError. The grown entries are -Inf, sort last, and are never
+    selected, so the growth is inert -- the divergence was a crash, not a wrong
+    answer. See com_functions/fn/findbankloc/py_impl.py.
+    """
+    positions = np.asarray(positions, dtype=int).ravel()
+    if positions.size == 0:
+        return ndiff
+    need = int(positions.max()) + 1
+    if need > ndiff.size:
+        ndiff = np.concatenate([ndiff, np.zeros(need - ndiff.size)])
+    ndiff[positions] = value
+    return ndiff
+
+
 def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     """Inlined findbankloc. Returns 0-based indices into hisi."""
     hisi = np.asarray(hisi, dtype=float).ravel()
@@ -32,7 +52,7 @@ def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
             new_bank = np.arange(set_next_bank, set_next_bank + tap_bk)
             idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
             set_next_bank = -1
-            ndiff[new_bank] = MIN_E
+            ndiff = _fb_mask(ndiff, new_bank, MIN_E)
             b_start = new_bank[0] - tap_bk + 1
             b_end = new_bank[0] - 1
             badV = _bv(b_start, b_end)
@@ -81,7 +101,7 @@ def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
                 if found_goodV:
                     set_next_bank = goodV_idx
             num_loops += 1
-        ndiff[new_bank] = MIN_E
+        ndiff = _fb_mask(ndiff, new_bank, MIN_E)
         idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
         if len(badV):
             ndiff[badV] = MIN_E

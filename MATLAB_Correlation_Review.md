@@ -523,9 +523,9 @@ plausibility before hypothesising an engine defect.
 
 ## Appendix D — notes on the port
 
-- `sicopr.py` is **generated** by `assemble_com.py` from 159 per-function
+- `sicopr.py` is **generated** by `assemble_sicopr.py` from 159 per-function
   `com_functions/fn/<name>/py_impl.py` files. Never edit `sicopr.py` directly, and note
-  that `assemble_com.py` does not carry per-function imports across.
+  that `assemble_sicopr.py` does not carry per-function imports across.
 - Several functions are **also inlined into their callers** — `MMSE`/`MMSE_FOM`,
   `interp_Sparam` (inside `s21_to_impulse_DC`), `make_full_pkg` (inside `read_s4p_files`
   and `s21_pkg`). Patching the standalone module does not affect the inlined copies.

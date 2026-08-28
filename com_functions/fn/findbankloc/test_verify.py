@@ -33,10 +33,44 @@ def test_single_peak_single_tap():
 
 
 def test_result_length():
-    """Result has N_bg * tap_bk elements."""
-    hisi = np.random.rand(20)
+    """Result has N_bg * tap_bk elements.
+
+    Seeded on purpose. This used an unseeded np.random.rand(20) and so was a
+    4.4% chance of a red run: on those draws the strongest bank start landed
+    within tap_bk-1 of the end of ndiff and the function raised IndexError.
+    It failed the gate once, passed on the next three runs, and was only
+    reproducible by sweeping seeds. An unseeded input is not extra coverage --
+    it is a test that reports a different verdict each time it is asked.
+    """
+    hisi = np.random.RandomState(0).rand(20)
     idx = findbankloc(hisi, 1, 20, 2, 0.5, 0.8, 2)
     assert len(idx) == 4
+
+
+def test_bank_start_near_the_end_does_not_raise():
+    """The overshoot case that made the seeded test above necessary.
+
+    ndiff is indexed by bank START position, so it is tap_bk-1 shorter than h0.
+    When the strongest start is one of those last tap_bk-1 positions, MATLAB's
+    `ndiff(new_bank)=min_energy` grows the array; NumPy raised IndexError.
+
+    Seed 29 is the first of 3000 that hits it. The sweep is kept small but wide
+    enough that a regression shows up as more than one failure.
+    """
+    for seed in (29, 51, 63):
+        hisi = np.random.RandomState(seed).rand(20)
+        idx = findbankloc(hisi, 1, 20, 2, 0.5, 0.8, 2)
+        assert len(idx) == 4, 'seed %d returned %d indices' % (seed, len(idx))
+        assert idx.min() >= 0 and idx.max() <= 19
+
+
+# A hand-built input was tried here -- hisi peaking on its last two samples --
+# on the assumption that it would force a bank start into the overshoot window.
+# It does not: the goodV / set_next_bank branch shifts the chosen bank one
+# position earlier, so the write stays in range and the test passed with the bug
+# reintroduced. It is left out rather than left in looking like coverage.
+# test_bank_start_near_the_end_does_not_raise is the one that actually fails
+# when the fix is reverted, confirmed by mutation.
 
 
 def test_indices_in_range():

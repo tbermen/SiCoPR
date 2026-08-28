@@ -353,7 +353,7 @@ So auditing against 4p15p0 is, for these, the same as auditing against the
 4p14p0 basis the port was written from.
 
 **2. Every function has green executable per-function coverage.** sicopr.py is
-machine-assembled (assemble_com.py) verbatim from com_functions/fn/*/py_impl.py,
+machine-assembled (assemble_sicopr.py) verbatim from com_functions/fn/*/py_impl.py,
 and the com_functions/fn test suite is green (865 passed / 0 failed), so those
 tests exercise the exact bodies that end up in sicopr.py.
 

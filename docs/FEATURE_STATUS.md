@@ -7,8 +7,8 @@
 >
 > **Reference: `com_ieee8023_4p15p0.m` + Hansel D'silva's
 > `com_ieee8023_4p15p0_adaptive_local_search.m` branch.**
-> Source-of-truth = `assemble_com.py` + `com_functions/fn/*/py_impl.py` (edit py_impl,
-> run its `test_verify.py`, re-run `assemble_com.py`).
+> Source-of-truth = `assemble_sicopr.py` + `com_functions/fn/*/py_impl.py` (edit py_impl,
+> run its `test_verify.py`, re-run `assemble_sicopr.py`).
 
 ## TL;DR
 **Feature-complete for the standard FD-based COM flow, and past the stub stage.** Every
@@ -106,7 +106,7 @@ and fixed:**
    arrays auto-grow when `pulse_struc(ii).field` is assigned. With `RxFFE_with_MMSE` and
    crosstalk (`ich = num_s4p_files > 1`) this raised `IndexError`. Fixed by extending
    `pulse_struc` to `ich` entries. Regression test: `test_multichannel_grows_pulse_struc`.
-2. CLI print loop (`assemble_com.py` HEADER) did `enumerate(_results)`, but `com_ieee8023_`
+2. CLI print loop (`assemble_sicopr.py` HEADER) did `enumerate(_results)`, but `com_ieee8023_`
    unwraps a single-package-case run to a bare struct (faithful to MATLAB
    `if length(results)==1, results = results{1}`). Single-case configs (e.g. this dj config,
    `pkg_len_select=[1]`) therefore crashed with `TypeError: SimpleNamespace not iterable`.

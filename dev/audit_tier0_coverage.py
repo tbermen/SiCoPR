@@ -72,7 +72,7 @@ def parse_python(path):
 
 # genuine citation = "MATLAB" adjacent to a line-number reference
 CITE_RE = re.compile(r"(?i)matlab[^\n]{0,60}?(?:lines?\s*\d{1,5}|L\d{3,5}\b)")
-# per-function block banner emitted by assemble_com.py, cites 4p14p0 lines
+# per-function block banner emitted by assemble_sicopr.py, cites 4p14p0 lines
 BANNER_RE = re.compile(
     r"^#\s*---\s*(\w+)\s*\(MATLAB lines\s*(\d+)\s*[–\-]\s*(\d+)\)")
 

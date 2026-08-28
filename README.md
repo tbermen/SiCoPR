@@ -169,11 +169,11 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | `sicopr.py` | **the engine** — assembled, runnable. *Do not edit by hand* |
 | `com_functions/fn/<name>/py_impl.py` | per-function source (the editable code), 157 functions |
 | `com_functions/fn/<name>/test_verify.py` | per-function unit tests |
-| `assemble_com.py` | concatenates the `py_impl.py` files into `sicopr.py` |
+| `assemble_sicopr.py` | concatenates the `py_impl.py` files into `sicopr.py` |
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `sicopr.py`, so they live beside it |
 | `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
-| `VERSION.json` | which MATLAB release the port emulates; `assemble_com.py` generates `sicopr.py`'s header from it |
+| `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | audit and interface-check scripts, plus state ledgers. The development prompts under `dev/prompts/` are kept locally and not published |
@@ -262,7 +262,7 @@ computation begins. Reach for it if COM ever appears to depend on search history
 
 ```powershell
 python -m pytest com_functions/fn/<name>/test_verify.py -q   # test the change
-python assemble_com.py                                        # regenerate sicopr.py
+python assemble_sicopr.py                                        # regenerate sicopr.py
 python -m pytest com_functions/fn -q                          # full suite
 ```
 

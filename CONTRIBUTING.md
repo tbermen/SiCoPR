@@ -4,7 +4,7 @@ Thanks for looking at this. One rule matters more than all the others:
 
 > ## `sicopr.py` is generated. Never edit it.
 >
-> It is assembled from `com_functions/fn/<name>/py_impl.py` by `assemble_com.py`.
+> It is assembled from `com_functions/fn/<name>/py_impl.py` by `assemble_sicopr.py`.
 > A change made directly to `sicopr.py` is silently discarded the next time anyone
 > runs the assembler — including CI. If your diff touches `sicopr.py` and nothing
 > under `com_functions/fn/`, it will be rejected.
@@ -83,7 +83,7 @@ problem is still worth having.
 python -m pytest com_functions/fn/<name>/test_verify.py -q
 
 # 3. regenerate the engine
-python assemble_com.py
+python assemble_sicopr.py
 
 # 4. run everything
 powershell -ExecutionPolicy Bypass -File tests/run_all.ps1     # Windows

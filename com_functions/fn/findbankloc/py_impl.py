@@ -47,7 +47,7 @@ def findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
             new_bank = np.arange(set_next_bank, set_next_bank + tap_bk)
             idx[tap_bk * k: tap_bk * (k + 1)] = new_bank
             set_next_bank = -1
-            ndiff[new_bank] = MIN_E
+            ndiff = _mask(ndiff, new_bank, MIN_E)
             b_start = new_bank[0] - tap_bk + 1
             b_end = new_bank[0] - 1
             badV = _make_badV(b_start, b_end)
@@ -105,13 +105,41 @@ def findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
                     set_next_bank = goodV_idx
             num_loops += 1
 
-        ndiff[new_bank] = MIN_E
+        ndiff = _mask(ndiff, new_bank, MIN_E)
         idx[tap_bk * k: tap_bk * (k + 1)] = new_bank
         if len(badV):
             ndiff[badV] = MIN_E
 
     # Convert 0-based ndiff positions → 0-based hisi positions
     return idx + (idx_st - 1)
+
+
+def _mask(ndiff, positions, value):
+    """ndiff[positions] = value, growing ndiff the way MATLAB would.
+
+    ML 6260/6296: `ndiff(new_bank)=min_energy` where new_bank is
+    `val_sort(1):val_sort(1)+tap_bk-1`. When the strongest bank start is within
+    tap_bk-1 of the end, that range runs past the end of ndiff -- ndiff is
+    indexed by bank START position and so is tap_bk-1 shorter than h0. MATLAB
+    grows an array on out-of-range assignment; NumPy raises IndexError.
+
+    On ~4.4% of random inputs the strongest start lands in that window, so the
+    Python version crashed where MATLAB did not. The grown entries are -Inf, so
+    they sort last and are never selected as a bank: the growth is inert, which
+    is why the divergence is a crash rather than a wrong answer.
+
+    Returns ndiff, which may be a new, longer array.
+    """
+    positions = np.asarray(positions, dtype=int).ravel()
+    if positions.size == 0:
+        return ndiff
+    need = int(positions.max()) + 1
+    if need > ndiff.size:
+        # MATLAB zero-fills any gap; assignments here are contiguous from an
+        # in-range start, so no gap arises, but fill for fidelity regardless.
+        ndiff = np.concatenate([ndiff, np.zeros(need - ndiff.size)])
+    ndiff[positions] = value
+    return ndiff
 
 
 def _make_badV(b_start, b_end):
