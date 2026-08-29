@@ -525,12 +525,12 @@ in git, or by reintroducing the defect and watching the test fail:
 
 | # | defect | caught today? | how verified |
 |---|---|---|---|
-| 1 | `z_p` transpose | ✗ | — |
-| 2 | `lstsq` rank truncation | ✗ | — |
-| 3 | RxFFE array count vs span | ✗ | — |
-| 4 | `get_TDR` `tfstart` frame | ✗ | not a base error; needs analytic recovery |
-| 5 | `get_TDR` `fctrx` init | ✗ | needs analytic recovery |
-| 6 | die network 1 of 3 sections | ✗ | would be covered by `make_pkg` / `make_full_pkg` factories (5 copies, currently undrivable) |
+| 1 | `z_p` transpose | **✓** | `test_structural_invariants` — non-square shape AND square-input values; mutation-verified |
+| 2 | `lstsq` rank truncation | **✓** | `test_analytic_recovery` — input built from the fit basis; mutation-verified |
+| 3 | RxFFE array count vs span | **✓** | `test_structural_invariants` — sizing rule swept, widening term asserted; mutation-verified |
+| 4 | `get_TDR` `tfstart` frame | **✓** | `test_analytic_recovery` — constructed impedance profile; mutation-verified |
+| 5 | `get_TDR` `fctrx` init | **✓** | `test_analytic_recovery` — known energy past the gate; mutation-verified |
+| 6 | die network 1 of 3 sections | **✓** | `test_structural_invariants` — 2x1 vs 2x3 `C_d` must differ; `make_full_pkg` is drivable after all; mutation-verified |
 | 7 | cursor index base | **✓** | replay: flags `cursor_i` in `optimize_fom` on the pre-8-defect version |
 | 8 | `process_sxp` leak | **✓** | `test_reference_leaks`, mutation-verified |
 | 9 | `BEST.PSD_results` aliasing | **✓** | reintroduced; snapshot test fails naming `PSD_results` |
@@ -543,9 +543,15 @@ in git, or by reintroducing the defect and watching the test fail:
 | 14 | `BEST.ctle` index base | **✓** | replay + mutation |
 | 15 | `floating_tap_locations` | **✓** | the test that found it |
 
-**8 of 15 caught automatically, 1 partial, 6 not.** Before this work the number
-was effectively 2 (`test_reference_leaks` and the config keyword check), and
-everything else required a MATLAB run to notice.
+**14 of 15 caught automatically, 1 partial, 0 not** (2026-08-28, after layers 3
+and 4). Before any of this work the number was effectively 2
+(`test_reference_leaks` and the config keyword check), and everything else
+required a MATLAB run to notice.
+
+The six that were uncovered are now covered by the two layers built for exactly
+them: `tests/test_analytic_recovery.py` (#2, #4, #5) and
+`tests/test_structural_invariants.py` (#1, #3, #6). Every one was verified by
+reintroducing the defect and watching the check fail, not by inspection.
 
 ### What the evidence does and does not support
 
@@ -568,13 +574,30 @@ require no knowledge of any particular defect and therefore generalise. That
 assumption is still unverified, and the way to verify it is whether the next
 correlation cycle finds anything in a class already guarded.
 
-### The measurable gap
+### The measurable gap — closed 2026-08-28
 
-Six ledger defects remain uncovered, and they cluster: #2, #4 and #5 all need
-**analytic recovery** (build the input from the known answer), #1, #3 and #6 all
-need **structural invariants** from the config. Those are layers 3 and 4 of the
-plan. The per-function suite's independent-oracle coverage — 18 of 156 files —
-is the number to watch.
+This section used to read: *"Six ledger defects remain uncovered, and they
+cluster: #2, #4 and #5 all need analytic recovery (build the input from the
+known answer), #1, #3 and #6 all need structural invariants from the config.
+Those are layers 3 and 4 of the plan."*
+
+Both layers are built and all six are covered. Two things are worth recording
+because they were not obvious in advance:
+
+**`make_full_pkg` turned out to be drivable.** The table above had recorded it
+as "currently undrivable", which is why #6 had no guard. It needs a fifteen-field
+`param` and nothing else; the existing per-function test already had two thirds
+of that factory. The barrier was assumed rather than measured.
+
+**A shape assertion would not have caught #1.** The z_p transpose is invisible
+to shape checks on a square matrix, which is what let it through the first time.
+The guard therefore uses a non-square input *and* asserts values on a square
+one — and the mutation test confirms the square case is the one that catches it.
+
+The number still worth watching is independent-oracle coverage of the
+per-function suite, 18 of 156 files. These two layers add oracle-free coverage
+at the `tests/` level rather than inside that suite, so they raise the ledger
+coverage without moving that ratio.
 
 ---
 
