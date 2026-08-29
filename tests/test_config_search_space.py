@@ -160,8 +160,70 @@ def _strip_matlab_comments(text):
     return '\n'.join(out)
 
 
+
+def _version_gated_keyword_check():
+    """No config keyword may be read only inside a MATLAB-version branch.
+
+    Ledger #12. A keyword read under `if _v416:` and nowhere else is honoured on
+    one emulation path and quietly ignored on the other -- which is how a config
+    that set `Overwrite Minimum Radius` under 4p15p0 had it discarded.
+    """
+    import ast
+    fn_root = os.path.join(_ROOT, 'com_functions', 'fn')
+    offenders = []
+    gated_fns = 0
+    for d in sorted(os.listdir(fn_root)):
+        p = os.path.join(fn_root, d, 'py_impl.py')
+        if not os.path.isfile(p):
+            continue
+        src = io.open(p, encoding='utf-8').read()
+        if '_v416' not in src:
+            continue
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        gated_fns += 1
+        gates = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.If) and '_v416' in ast.dump(n.test)]
+        gated_ids, inside = set(), set()
+        for g in gates:
+            for sub in ast.walk(g):
+                gated_ids.add(id(sub))
+                if isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name)                         and sub.value.id in ('param', 'OP')                         and isinstance(sub.ctx, ast.Load):
+                    inside.add('%s.%s' % (sub.value.id, sub.attr))
+        outside = set()
+        for sub in ast.walk(tree):
+            if id(sub) in gated_ids:
+                continue
+            if isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name)                     and sub.value.id in ('param', 'OP')                     and isinstance(sub.ctx, ast.Load):
+                outside.add('%s.%s' % (sub.value.id, sub.attr))
+        for nm in sorted(inside - outside):
+            offenders.append('%s reads %s only inside a version gate' % (d, nm))
+
+    check("version_gated_functions_were_scanned", gated_fns > 0,
+          "no version-gated function found; the check is looking in the wrong place")
+    check("no_config_keyword_is_read_on_only_one_version_path",
+          not offenders,
+          "a config keyword read under `if _v416:` and nowhere else is honoured "
+          "on one emulation path and silently discarded on the other. That is "
+          "ledger #12 exactly, and the keyword-parity check cannot see it "
+          "because the keyword IS read. Read it on both paths: "
+          + "; ".join(offenders))
+
+
 def main():
     configs = sorted(glob.glob(os.path.join(CONFIG_DIR, '*.xlsx')))
+    # ---- ledger #12: a keyword read on only ONE version path ----------------
+    # Overwrite_Min_Radius was read inside `if _v416:` and nowhere else, so a
+    # config that set it while emulating 4p15p0 had it SILENTLY DISCARDED. The
+    # keyword-parity check below cannot see this: the keyword IS read, just not
+    # on every path, so parity is satisfied.
+    #
+    # Static, so it runs before the config-workbook skip below and works on a
+    # clone with no correlation data.
+    _version_gated_keyword_check()
+
     if not configs:
         # The COM configuration workbooks are correlation INPUTS and are not
         # redistributed with the port (see README "What ships"). A clone without
