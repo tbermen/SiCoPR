@@ -7,6 +7,21 @@ import numpy as np
 from types import SimpleNamespace
 
 
+
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's.
+
+    Needed at the triple-transit-time site below because
+    `2*sbr_peak_i / samples_per_ui` is a ratio of two INTEGERS, so it lands on
+    .5 exactly whenever 2*sbr_peak_i is an odd multiple of samples_per_ui/2 --
+    not the measure-zero case the conversion audit dismissed. Ledger #16 is the
+    same shape (`nui = round(len/M)`) and was a live defect on 4 of 208 cases.
+    Guarded by tests/test_integer_ratio_rounding.py.
+    """
+    import math
+    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
+
+
 # ── Optional EQ-search trajectory logging (off by default; no effect on COM) ──
 # Set SWEEP_LOG_CSV to a path to capture one row per TX-FFE candidate considered
 # (for any method: full grid / legacy local search / adaptive). Rows are buffered
@@ -269,7 +284,7 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                         if no_zero_crossing:
                             continue
 
-                        triple_transit_time = round(int(sbr_peak_i) * 2 / int(param.samples_per_ui)) + 20
+                        triple_transit_time = _mround(int(sbr_peak_i) * 2 / int(param.samples_per_ui)) + 20
                         if SETTINGS.min_number_of_UI_in_response < triple_transit_time:
                             SETTINGS.min_number_of_UI_in_response = triple_transit_time
 

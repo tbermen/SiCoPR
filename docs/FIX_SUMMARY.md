@@ -542,7 +542,7 @@ in git, or by reintroducing the defect and watching the test fail:
 | 13 | results.xlsx columns | **✓** | mutation-verified |
 | 14 | `BEST.ctle` index base | **✓** | replay + mutation |
 | 15 | `floating_tap_locations` | **✓** | the test that found it |
-| 16 | `nui` banker's rounding | partial | the site itself is fixed and pinned; the *class* — bare `round()` on an integer ratio — has no lint yet |
+| 16 | `nui` banker's rounding | **✓** | `test_integer_ratio_rounding` — AST lint for `round()` on an int/int ratio; found and fixed a second live site (audit B11-D15); mutation-verified |
 | 17 | adaptive radius floor | **✓** | `OptFom_Adaptive_Local_Search/test_verify` — three tests incl. one that fails if the 4p15p0 path is 'corrected' back to a forced 1 |
 | 18 | `findbankloc` index space | **✓** | `findbankloc/test_verify` — seeded regression over three failing draws; mutation-verified |
 
@@ -564,9 +564,14 @@ Still open, and deliberately not claimed:
 - **12, per-version-path keyword reads.** Keyword parity sees keywords nothing
   reads; it does not see a keyword read on one version path and ignored on the
   other, which is what the defect was.
-- **16's class.** The `nui` site is fixed and pinned, but the generalisable half
-  — a lint for bare `round()` where the argument is a ratio of integers, and so
-  can land exactly on `.5` — is still not written. `AUDIT_FINDINGS.md` flags it.
+- ~~**16's class.**~~ Closed 2026-08-29. `tests/test_integer_ratio_rounding.py`
+  scans all 94 `round()`/`np.round()` calls and flags any whose argument is a
+  ratio of two integers. It found exactly one live site with no false positives:
+  `triple_transit_time = round(2*sbr_peak_i/samples_per_ui)`, which the audit had
+  recorded as B11-D15 and dismissed as "measure-zero" — the same reasoning the
+  `nui` correction had already shown to be wrong for integer ratios. Fixed to
+  half-away; `bench_com --against` reports ALL IDENTICAL, so it was inert on the
+  benchmark cases but is no longer a latent divergence.
 
 The six that were uncovered are now covered by the two layers built for exactly
 them: `tests/test_analytic_recovery.py` (#2, #4, #5) and

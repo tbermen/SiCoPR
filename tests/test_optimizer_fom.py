@@ -23,11 +23,11 @@ Verification strategy (no MATLAB, no golden data):
   3. OptFom_Adaptive_Local_Search: it is a pure predicate, so it is called
      directly and its skip/evaluate decisions are checked against the variant.
 
-One documented divergence (EXPECTED FAIL row):
-  B11-D15 (low): triple_transit_time = round(2*sbr_peak_i/samples_per_ui)+20 uses
-  Python's banker's round vs MATLAB half-away. Only bites exact half-integer
-  2*peak/spui, and only shifts a min-response-length lower bound by 1 UI. Same
-  class as B10-D14.
+B11-D15 was a documented divergence here and is RESOLVED as of 2026-08-29:
+  triple_transit_time = round(2*sbr_peak_i/samples_per_ui)+20 used banker's
+  rounding where MATLAB rounds half away from zero. Both operands are integers,
+  so the quotient really can land on .5 -- the same shape as ledger #16, whose
+  correction showed the "measure-zero" dismissal was wrong for integer ratios.
 
 Run: python tests/test_optimizer_fom.py
 """
@@ -197,22 +197,37 @@ check("optfom_post_t_grid",
       len(t_out) == length_sbr and np.max(np.abs(t_out - t_ref)) <= 1e-18,
       "post-optimize t grid != MATLAB colon reference")
 
-# --- B11-D15 (EXPECTED FAIL): triple_transit_time uses banker's round ---------
-# sicopr.py 12689: round(int(sbr_peak_i)*2/int(spui)) + 20  (Python builtin round).
-# Pick 2*peak/spui = 2.5 exactly (peak=5, spui=4): MATLAB half-away round=3 -> 23;
-# Python banker's round=2 -> 22.
-_peak, _spui = 5, 4
-py_ttt = round(int(_peak) * 2 / int(_spui)) + 20
-xcheck("optfom_triple_transit_uses_matlab_half_away",
-      py_ttt == 23,
-      "DIVERGENT (B11-D15, low): triple_transit_time=%d; MATLAB round(2.5)=3 -> 23, "
-      "Python banker's round(2.5)=2 -> 22. Site sicopr.py 12689. Only bites exact "
-      "half-integer 2*peak/spui; shifts min_number_of_UI_in_response by 1 UI. "
-      "Same class as B10-D14." % py_ttt)
-# Positive confirmation that it IS the banker's value (mechanism check).
-check("optfom_triple_transit_is_bankers",
-      py_ttt == 22,
-      "triple_transit_time is neither MATLAB nor banker's value: %d" % py_ttt)
+# --- B11-D15 (RESOLVED 2026-08-29): triple_transit_time rounds half-away ------
+# triple_transit_time = round(2*sbr_peak_i/samples_per_ui) + 20. Both operands
+# are integers, so the quotient lands on .5 exactly whenever 2*peak is an odd
+# multiple of spui/2 -- the same shape as ledger #16, not the measure-zero case
+# the audit dismissed it as. Now uses the half-away helper.
+#
+# These checks call the ENGINE's helper. The previous version of this test
+# recomputed `round(...)` inline in the test file, so it reported on Python's
+# builtin rather than on anything the engine does -- it would have gone on
+# passing as a "known divergence" after the divergence was fixed, and did.
+_peak, _spui = 5, 4                      # 2*peak/spui = 2.5 exactly
+_ttt = sicopr._optimize_fom__mround(int(_peak) * 2 / int(_spui)) + 20
+check("optfom_triple_transit_uses_matlab_half_away",
+      _ttt == 23,
+      "triple_transit_time = %d; MATLAB round(2.5) = 3 -> 23. Banker's rounding "
+      "gives 22 and shifts min_number_of_UI_in_response by 1 UI." % _ttt)
+
+check("optfom_triple_transit_is_not_the_bankers_value",
+      _ttt != 22,
+      "triple_transit_time is still the banker's value (%d); the half-away "
+      "helper is not being used at that site." % _ttt)
+
+# The site itself, so a future edit back to a bare round() is caught here as
+# well as by tests/test_integer_ratio_rounding.py.
+import inspect as _inspect
+_ttt_src = [l.strip() for l in _inspect.getsource(sicopr.optimize_fom).split('\n')
+            if 'triple_transit_time =' in l]
+check("optfom_triple_transit_site_uses_the_helper",
+      bool(_ttt_src) and 'mround' in _ttt_src[0],
+      "the triple_transit_time site must call the half-away helper; found: %s"
+      % (_ttt_src[0] if _ttt_src else '<not found>'))
 
 
 # ===========================================================================
