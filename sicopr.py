@@ -15369,12 +15369,20 @@ def _read_ParamConfigFile__load_excel(path):
     except ImportError:
         raise ImportError('openpyxl required for Excel files: pip install openpyxl')
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    ws = wb['COM_Settings'] if 'COM_Settings' in wb.sheetnames else wb.active
-    rows = []
-    for row in ws.iter_rows(values_only=True):
-        if all(c is None for c in row):
-            continue
-        rows.append([_read_ParamConfigFile__parse_cell(c) for c in row])
+    # read_only=True keeps the underlying zip handle open until the workbook is
+    # closed. On Windows that leaves the config file LOCKED for the rest of the
+    # process, so anything that reads a config and then tries to rewrite or
+    # delete it fails with WinError 32. Every row is materialised here, so
+    # there is nothing to lose by closing immediately.
+    try:
+        ws = wb['COM_Settings'] if 'COM_Settings' in wb.sheetnames else wb.active
+        rows = []
+        for row in ws.iter_rows(values_only=True):
+            if all(c is None for c in row):
+                continue
+            rows.append([_read_ParamConfigFile__parse_cell(c) for c in row])
+    finally:
+        wb.close()
     return rows
 
 

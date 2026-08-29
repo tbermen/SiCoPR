@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiCoPR config editor</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <strong>SiCoPR</strong>
+    <span class="sub">config editor</span>
+  </div>
+  <select id="dirPick" title="configuration directory"></select>
+  <select id="configPick" title="configuration workbook"></select>
+  <button id="btnNew" class="ghost">New&hellip;</button>
+  <span id="counts" class="counts"></span>
+  <span class="spacer"></span>
+  <button id="btnRun" class="ghost">Run&hellip;</button>
+  <button id="btnResults" class="ghost">Results</button>
+  <button id="btnSave" disabled>Save as&hellip;</button>
+</header>
+
+<section id="runView" hidden>
+  <div class="rhead">
+    <button id="btnRunBack" class="ghost">&larr; Editor</button>
+    <h2>Netlist and run</h2>
+  </div>
+
+  <div class="runGrid">
+    <div class="card">
+      <h3>Inputs</h3>
+      <label>Configuration
+        <input id="nlConfig" type="text" readonly>
+      </label>
+      <label>Channel directory
+        <select id="nlDir"></select>
+      </label>
+      <label>THRU (victim)
+        <select id="nlThru"></select>
+      </label>
+      <label>FEXT aggressors
+        <select id="nlFext" multiple size="5"></select>
+      </label>
+      <label>NEXT aggressors
+        <select id="nlNext" multiple size="5"></select>
+      </label>
+      <label class="row"><input id="nlFilter" type="checkbox" checked>
+        show only files whose name matches the role</label>
+      <p class="muted">Ctrl/Cmd-click to select several, or none. Roles come
+        from the filename — untick the filter to override.</p>
+      <div class="opts">
+        <label class="row"><input id="nlMat" type="checkbox"> <code>--export-mat</code></label>
+        <label class="row"><input id="nlEye" type="checkbox"> <code>--eye-under-mlse</code></label>
+        <label class="row">MATLAB version
+          <select id="nlVer">
+            <option value="">default (4p15p0)</option>
+            <option value="4p15p0">4p15p0</option>
+            <option value="4p16p0">4p16p0</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Command</h3>
+      <pre id="nlCmd" class="cmd">select a config and a THRU channel</pre>
+      <div id="nlProblems" class="problems"></div>
+      <div class="runbtns">
+        <button id="btnExec" disabled>Run sicopr.py</button>
+        <button id="btnKill" class="ghost" disabled>Stop</button>
+        <span id="execState" class="counts"></span>
+      </div>
+      <h3>Output</h3>
+      <pre id="term" class="term"></pre>
+      <label class="row"><input id="follow" type="checkbox" checked> follow output</label>
+    </div>
+  </div>
+</section>
+
+<section id="resultsView" hidden>
+  <div class="rhead">
+    <button id="btnBack" class="ghost">&larr; Editor</button>
+    <select id="runPick" title="results directory"></select>
+    <button id="btnRefresh" class="ghost">Refresh</button>
+    <span id="runMeta" class="counts"></span>
+  </div>
+  <div id="runBody"></div>
+</section>
+
+<main id="editorView">
+  <section id="schematic">
+    <svg id="svg" viewBox="0 0 1000 460" preserveAspectRatio="xMidYMin meet"
+         role="img" aria-label="channel schematic"></svg>
+    <p class="hint">Click a block to edit the settings it owns.</p>
+  </section>
+
+  <aside id="panel">
+    <div id="panelHead">
+      <h2 id="panelTitle">Select a block</h2>
+      <p id="panelSub" class="muted">
+        Every setting in the workbook belongs to exactly one block.
+      </p>
+    </div>
+    <div id="cells"></div>
+  </aside>
+</main>
+
+<div id="dirtyBar" hidden>
+  <span id="dirtyCount"></span>
+  <button id="btnRevert" class="ghost">Revert all</button>
+</div>
+
+<dialog id="saveDlg">
+  <form method="dialog">
+    <h3>Save as a new configuration</h3>
+    <p class="muted">Written as a copy of the source workbook with only the
+      changed cells replaced, so formulas, formatting and the keywords sheet
+      survive.</p>
+    <label>Destination path
+      <input id="savePath" type="text" spellcheck="false">
+    </label>
+    <label class="row"><input id="saveOverwrite" type="checkbox"> overwrite if it exists</label>
+    <div id="saveChanges" class="changes"></div>
+    <menu>
+      <button value="cancel" class="ghost">Cancel</button>
+      <button id="saveGo" value="save">Write file</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="newDlg">
+  <form method="dialog">
+    <h3>New configuration</h3>
+    <p class="muted">A config cannot be built from nothing — the engine needs
+      the <code>.START</code> package blocks and the workbook's own keywords
+      sheet. A new config is a copy of a known-good workbook, optionally with
+      every main-region setting put back to the default that workbook
+      declares.</p>
+    <label>Template
+      <select id="newTemplate"></select>
+    </label>
+    <label>New file
+      <input id="newPath" type="text" spellcheck="false">
+    </label>
+    <label class="row"><input id="newReset" type="checkbox" checked>
+      reset settings to the workbook's declared defaults</label>
+    <menu>
+      <button value="cancel" class="ghost">Cancel</button>
+      <button id="newGo" value="create">Create</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="figDlg">
+  <form method="dialog">
+    <h3 id="figTitle"></h3>
+    <img id="figImg" alt="">
+    <menu><button value="ok">Close</button></menu>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

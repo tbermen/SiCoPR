@@ -162,6 +162,27 @@ FEXT, `--next` for NEXT, each accepting multiple files.
 One result block per package test case. With `SAVE_FIGURES` / `CSV_REPORT` enabled in the
 config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 
+### Config editor (optional)
+
+```powershell
+python gui/app.py            # http://127.0.0.1:8765
+```
+
+A local, stdlib-only web app that shows a configuration workbook as a channel
+schematic — Tx die → package → channel → package → Rx die, plus the aggressors
+and the Tx FFE → CTLE → Rx FFE → DFE chain — and lets you edit the settings each
+block owns and save a new config.
+
+It writes by editing the sheet XML in place, so formulas, formatting and the
+`keywords_*` sheet survive, and it keeps a swept tap (`[ -0.34:.02:0]`, a
+~198-point search) distinct from a fixed one (`0`).
+
+It also runs the whole workflow without leaving the page: pick the THRU and
+crosstalk channels, review the exact `sicopr.py` command it assembles, run it
+with the terminal output streamed live, then refresh to see the new results —
+per case, the headline numbers from `results.csv` and the figures grouped by
+pipeline stage. See [gui/README.md](gui/README.md).
+
 ## 4. Repository layout
 
 | Path | What it is |
@@ -173,6 +194,7 @@ config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `sicopr.py`, so they live beside it |
 | `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
 | `report_figs/case_demo/` | example of a single run's figure set: `s<stage>_*.png` plus `STAGE_INDEX.md` |
+| `gui/` | the config editor — a local web app for building configs from a schematic view (§3) |
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
