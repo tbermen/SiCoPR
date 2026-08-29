@@ -871,7 +871,7 @@ def _Bathtub_Contribution_Wrapper__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -1113,7 +1113,7 @@ def _Burst_Probability_Calc__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -1162,7 +1162,7 @@ def _Burst_Probability_Calc__get_pdf_from_sampled_signal(input_vector, L, BinSiz
         return _Burst_Probability_Calc__d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -2119,7 +2119,7 @@ def _Create_Noise_PDF__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -2187,7 +2187,7 @@ def _Create_Noise_PDF__get_pdf_from_sampled_signal(input_vector, L, BinSize):
         return _Create_Noise_PDF__d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -3079,7 +3079,7 @@ def _MLSE_U1_c_178A__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -3979,7 +3979,7 @@ def OptFom_Build_TXFFE(param):
     # 1-based indices of taps with more than one value, sorted by descending length
     raw_sweep = np.where(txffe_lengths > 1)[0] + 1  # 1-based
     if len(raw_sweep) > 0:
-        length_sort = np.argsort(txffe_lengths[raw_sweep - 1])[::-1]
+        length_sort = np.argsort(txffe_lengths[raw_sweep - 1], kind='stable')[::-1]
         txffe_sweep_indices = raw_sweep[length_sort]
     else:
         txffe_sweep_indices = np.array([], dtype=int)
@@ -4733,7 +4733,7 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
         else:
             qual = np.zeros((len(g_DC_HP_values), len(gdc_values)))
             # sort g2qual descending
-            si = np.argsort(g2qual)[::-1]
+            si = np.argsort(g2qual, kind='stable')[::-1]
             g2qual_s = g2qual[si]
             gqual_s = gqual[si] if gqual.ndim == 1 else gqual[si, :]
 
@@ -6284,7 +6284,7 @@ def _Output_Arg_Fill__d_cpdf_b(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -6330,7 +6330,7 @@ def _Output_Arg_Fill__get_pdf_b(iv, L, BinSize):
         return _Output_Arg_Fill__d_cpdf_b(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -6834,7 +6834,7 @@ def _RILN_TD__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -6891,7 +6891,7 @@ def _RILN_TD__get_pdf_from_sampled_signal(input_vector, L, BinSize):
         return _RILN_TD__d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -8049,7 +8049,7 @@ def _adjust_Rx_noise_for_quantization__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -8095,7 +8095,7 @@ def _adjust_Rx_noise_for_quantization__get_pdf_from_sampled_signal(input_vector,
         return _adjust_Rx_noise_for_quantization__d_cpdf(BinSize, 0, 1)
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
-    sort_idx = np.argsort(np.abs(input_vector))[::-1]
+    sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -8988,7 +8988,7 @@ def d_cpdf(binsize, values, probs):
         return pdf
 
     if np.any(np.diff(values) < 0):     # ~issorted
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values = values[si]
         probs = probs[si]
 
@@ -10189,7 +10189,7 @@ def _get_ILN_cmp_td__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -10242,7 +10242,7 @@ def _get_ILN_cmp_td__get_pdf_from_sampled_signal(input_vector, L, BinSize):
         return _get_ILN_cmp_td__d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -10478,7 +10478,7 @@ def _get_PSDs__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -10588,7 +10588,7 @@ def _get_PSDs__get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FA
         return _get_PSDs__d_cpdf(BinSize, 0, 1)
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
-    sort_idx = np.argsort(np.abs(input_vector))[::-1]
+    sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
     res_pdf = None
     if FAST_NOISE_CONV:
@@ -11839,7 +11839,7 @@ def _get_cm_noise__d_cpdf(binsize, values, probs):
                             y=np.array([1.0]), x=np.array([0.0]))
         return p
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -11900,7 +11900,7 @@ def _get_cm_noise__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     input_vector = input_vector[np.abs(input_vector) > BinSize]
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
-    order = np.argsort(np.abs(input_vector))[::-1]
+    order = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector)[order] * b[order]
 
     values = 2 * np.arange(L) / (L - 1) - 1   # Eq. 93A-39
@@ -12038,7 +12038,7 @@ def _get_pdf__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -12095,7 +12095,7 @@ def _get_pdf__get_pdf_from_sampled_signal(input_vector, L, BinSize):
         return _get_pdf__d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -12245,7 +12245,7 @@ def _get_pdf_from_sampled_signal__d_cpdf(binsize, values, probs):
         p = SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
         return p
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -12328,7 +12328,7 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
 
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
-    sort_idx = np.argsort(np.abs(input_vector))[::-1]  # descending by |value|
+    sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]  # descending by |value|
     input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
 
     # ---- FAST_NOISE_CONV: split off small residual taps as one Gaussian (MATLAB L7498-7502) ----
@@ -12439,7 +12439,7 @@ def _get_pdf_full__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -12492,7 +12492,7 @@ def _get_pdf_full__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = iv[mask]
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
-    sort_idx = np.argsort(np.abs(iv))[::-1]
+    sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
@@ -14430,7 +14430,7 @@ def _plot_bathtub_curves__d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))

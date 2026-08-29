@@ -110,7 +110,7 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
         else:
             qual = np.zeros((len(g_DC_HP_values), len(gdc_values)))
             # sort g2qual descending
-            si = np.argsort(g2qual)[::-1]
+            si = np.argsort(g2qual, kind='stable')[::-1]
             g2qual_s = g2qual[si]
             gqual_s = gqual[si] if gqual.ndim == 1 else gqual[si, :]
 

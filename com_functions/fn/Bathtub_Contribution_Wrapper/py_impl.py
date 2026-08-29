@@ -49,7 +49,7 @@ def _d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))

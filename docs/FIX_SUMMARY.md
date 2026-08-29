@@ -534,7 +534,7 @@ in git, or by reintroducing the defect and watching the test fail:
 | 7 | cursor index base | **✓** | replay: flags `cursor_i` in `optimize_fom` on the pre-8-defect version |
 | 8 | `process_sxp` leak | **✓** | `test_reference_leaks`, mutation-verified |
 | 9 | `BEST.PSD_results` aliasing | **✓** | reintroduced; snapshot test fails naming `PSD_results` |
-| 10a | unstable sort | ✗ | needs the `argsort` lint |
+| 10a | unstable sort | **✓** | `test_sort_stability` — all 39 `argsort` calls made `kind='stable'`; lint fails on any new unstable site; mutation-verified |
 | 10b | abort-path leak | ✗ | different shape from the leak guard |
 | 10c | `_findbankloc` stubs | **✓** | now drivable; flags the `MMSE` and `force` copies |
 | 11 | ADC-clip sampling phase | **✓** | replay: Rule B flags `t_s` in `Apply_EQ` on the pre-ADC-clip version |
@@ -542,11 +542,31 @@ in git, or by reintroducing the defect and watching the test fail:
 | 13 | results.xlsx columns | **✓** | mutation-verified |
 | 14 | `BEST.ctle` index base | **✓** | replay + mutation |
 | 15 | `floating_tap_locations` | **✓** | the test that found it |
+| 16 | `nui` banker's rounding | partial | the site itself is fixed and pinned; the *class* — bare `round()` on an integer ratio — has no lint yet |
+| 17 | adaptive radius floor | **✓** | `OptFom_Adaptive_Local_Search/test_verify` — three tests incl. one that fails if the 4p15p0 path is 'corrected' back to a forced 1 |
+| 18 | `findbankloc` index space | **✓** | `findbankloc/test_verify` — seeded regression over three failing draws; mutation-verified |
 
-**14 of 15 caught automatically, 1 partial, 0 not** (2026-08-28, after layers 3
-and 4). Before any of this work the number was effectively 2
-(`test_reference_leaks` and the config keyword check), and everything else
-required a MATLAB run to notice.
+**17 of 20 rows caught automatically, 2 partial, 1 not** (2026-08-28). The table
+has 20 rows for 18 ledger entries because #10 bundled three separate defects and
+is split here. Before any of this work the number was effectively 2
+(`test_reference_leaks` and the config keyword check); everything else required a
+MATLAB run to notice.
+
+> **Correction.** An earlier revision of this line read "14 of 15, 1 partial, 0
+> not" while the table it summarised still showed 10a and 10b as ✗. The count was
+> wrong in the direction that flattered the work, which is the direction that
+> matters. 10a is now genuinely closed; 10b remains open and is listed as such.
+
+Still open, and deliberately not claimed:
+
+- **10b, abort-path leak.** A different shape from the `process_sxp` leak the
+  existing guard catches, and no guard has been written for it.
+- **12, per-version-path keyword reads.** Keyword parity sees keywords nothing
+  reads; it does not see a keyword read on one version path and ignored on the
+  other, which is what the defect was.
+- **16's class.** The `nui` site is fixed and pinned, but the generalisable half
+  — a lint for bare `round()` where the argument is a ratio of integers, and so
+  can land exactly on `.5` — is still not written. `AUDIT_FINDINGS.md` flags it.
 
 The six that were uncovered are now covered by the two layers built for exactly
 them: `tests/test_analytic_recovery.py` (#2, #4, #5) and

@@ -32,7 +32,7 @@ def _d_cpdf(binsize, values, probs):
                             y=np.array([1.0]), x=np.array([0.0]))
         return p
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -93,7 +93,7 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     input_vector = input_vector[np.abs(input_vector) > BinSize]
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
-    order = np.argsort(np.abs(input_vector))[::-1]
+    order = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector)[order] * b[order]
 
     values = 2 * np.arange(L) / (L - 1) - 1   # Eq. 93A-39

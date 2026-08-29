@@ -35,7 +35,7 @@ def d_cpdf(binsize, values, probs):
         return pdf
 
     if np.any(np.diff(values) < 0):     # ~issorted
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values = values[si]
         probs = probs[si]
 

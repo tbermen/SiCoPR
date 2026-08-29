@@ -107,7 +107,7 @@ def _d_cpdf(binsize, values, probs):
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
     if np.any(np.diff(values) < 0):
-        si = np.argsort(values)
+        si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * np.round(values / binsize)
     t_start = int(round(values[0] / binsize))
@@ -217,7 +217,7 @@ def _get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FAST_NOISE_C
         return _d_cpdf(BinSize, 0, 1)
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
-    sort_idx = np.argsort(np.abs(input_vector))[::-1]
+    sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
     res_pdf = None
     if FAST_NOISE_CONV:

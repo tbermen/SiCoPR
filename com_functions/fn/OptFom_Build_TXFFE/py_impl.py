@@ -61,7 +61,7 @@ def OptFom_Build_TXFFE(param):
     # 1-based indices of taps with more than one value, sorted by descending length
     raw_sweep = np.where(txffe_lengths > 1)[0] + 1  # 1-based
     if len(raw_sweep) > 0:
-        length_sort = np.argsort(txffe_lengths[raw_sweep - 1])[::-1]
+        length_sort = np.argsort(txffe_lengths[raw_sweep - 1], kind='stable')[::-1]
         txffe_sweep_indices = raw_sweep[length_sort]
     else:
         txffe_sweep_indices = np.array([], dtype=int)
