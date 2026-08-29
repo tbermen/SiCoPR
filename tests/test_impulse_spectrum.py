@@ -221,13 +221,27 @@ check("s21_default_path_unaffected_by_apm",
 # ===========================================================================
 # 4. fout grid round(): banker's vs MATLAB half-away (ML 11232, py 17009)
 # ===========================================================================
-# EXPECTED FAIL: at a half-integer ratio, py builtin round() rounds to even
-# (200) where MATLAB round() rounds half-away (201), changing the grid length.
-xcheck("s21_grid_round_half_away_from_zero",
-      round(200.5) == 201,
-      "DIVERGENT: py 17009 uses builtin round (banker's) -> round(200.5)=%d; "
-      "MATLAB round is half-away -> 201, changing fout length for half-integer "
-      "fmax/df ratios" % round(200.5))
+# RESOLVED. This was recorded as a known divergence, and the record outlived the
+# defect: the condition was `round(200.5) == 201`, computed with Python's builtin
+# INSIDE THE TEST FILE. That can never be true whatever the engine does, so the
+# xcheck reported "divergent" permanently -- including after the engine was fixed
+# (B03-D7). It said nothing about sicopr at any point.
+#
+# The engine now uses its half-away helper at the fout-grid site. Assert that,
+# through the engine, so this resolves if it regresses.
+_mr = sicopr._s21_to_impulse_DC__mround
+check("s21_grid_round_half_away_from_zero",
+      _mr(200.5) == 201 and _mr(-200.5) == -201,
+      "the fout grid must use MATLAB's half-away round; the helper gave "
+      "%d for 200.5 (MATLAB 201, banker's 200)" % _mr(200.5))
+
+import inspect as _inspect
+_fout_src = [l.strip() for l in _inspect.getsource(sicopr.s21_to_impulse_DC).splitlines()
+             if 'n_steps' in l and '=' in l]
+check("s21_fout_grid_site_uses_the_helper",
+      any('mround' in l for l in _fout_src),
+      "the n_steps site in s21_to_impulse_DC must call the half-away helper, "
+      "not builtin round(); found: %s" % (_fout_src[:1] or '<not found>'))
 
 # ===========================================================================
 # 5. COM_FD_to_TD driver (ML 1206-1366 vs py 1346-1482)

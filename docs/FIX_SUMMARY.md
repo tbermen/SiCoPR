@@ -562,6 +562,39 @@ to be false in 81% of calls.
 > wrong in the direction that flattered the work, which is the direction that
 > matters. 10a is now genuinely closed; 10b remains open and is listed as such.
 
+### Audit finding 2026-08-29: recorded divergences that never read the engine
+
+Three `xcheck` records computed BOTH sides of their comparison inside the test
+file and never called `sicopr`. They reported "divergent" unconditionally, so
+they said nothing about the engine at any point — and two of them were still
+reporting a divergence that had already been fixed.
+
+| record | state | what it actually was |
+|---|---|---|
+| `optfom_triple_transit_uses_matlab_half_away` | was reporting a live divergence | recomputed `round(...)` inline; the site was then genuinely fixed (B11-D15) |
+| `s21_grid_round_half_away_from_zero` | **stale** | condition was `round(200.5) == 201`, which is false for Python's builtin whatever the engine does. The engine had been fixed (B03-D7) and the record never noticed |
+| `mlse_gaussian_qfunc_arg_matches_matlab` | unsound | hand-wrote both forms from invented values (alpha=0.3, main=0.1, L=4, sigma=0.02) |
+
+All three now read the engine — its helper, or its own source line — so they
+resolve when the code does. Each was mutation-verified by reverting the site.
+Recorded divergences went from 28 to 25.
+
+**The MLSE one is left open rather than closed.** MATLAB 2331 reads
+`(1-2*alpha)*main/(L-1)*sigma_noise`, which by MATLAB's left-associative
+precedence multiplies by `sigma_noise` where the port divides. But the
+expression feeds `delta_COM`, and `delta_COM` matches the MATLAB reference to 15
+significant digits on all 208 cases (1.371137901447263 vs 1.37113790144726). So
+the divergence is not observable in any reported output on this corpus — which
+is evidence, not proof, since the corpus is one channel family. The form the
+engine uses is pinned instead, with a note to re-run the correlation and check
+`delta_COM` if anyone changes it.
+
+**The general lesson.** A test that computes its own expected value AND its own
+actual value tests arithmetic, not software. Three of twelve divergence records
+had that shape. `docs/FIX_SUMMARY.md` already recorded that defect #1's fixtures
+encoded the bug; this is the same failure at the level of the record rather than
+the fixture.
+
 What the guards do NOT claim:
 
 - They were designed knowing the defects. The generalisable ones — analytic

@@ -35,13 +35,37 @@ import sicopr  # noqa: E402
 alpha, main, L, sigma = 0.3, 0.1, 4, 0.02
 ml_arg = (1 - 2 * alpha) * main / (L - 1) * sigma          # MATLAB 2311 (left-assoc)
 py_arg = (1 - 2 * alpha) * main / ((L - 1) * sigma)         # sicopr.py form
-# EXPECTED FAIL: sicopr.py form != MATLAB form -> documents B15-D19.
-xcheck("mlse_gaussian_qfunc_arg_matches_matlab",
-      abs(ml_arg - py_arg) <= 1e-15,
-      "DIVERGENT (B15-D19, low, diagnostic-only): MATLAB arg=%.6e "
-      "((1-2a)*main*sigma/(L-1)) vs sicopr.py arg=%.6e ((1-2a)*main/((L-1)*sigma)); "
-      "ratio=%.4e == sigma^2=%.4e. sicopr.py 2749/MATLAB 2311." %
-      (ml_arg, py_arg, py_arg / ml_arg, sigma ** 2))
+# B15-D19. The two forms differ algebraically by sigma^2 -- that is the check
+# below, and it is a statement about arithmetic, not about the engine.
+#
+# The previous version of this file recorded the divergence with an xcheck on
+# `abs(ml_arg - py_arg) <= 1e-15`, where BOTH sides were hand-written here from
+# invented values (alpha=0.3, main=0.1, L=4, sigma=0.02). It never called
+# sicopr, so it reported "divergent" unconditionally and would have gone on
+# doing so after any fix -- the same fault as the s21 grid-round record in
+# tests/test_impulse_spectrum.py and the triple-transit record in
+# tests/test_optimizer_fom.py, both since corrected.
+#
+# What IS measurable: this expression feeds SNR_DFE_eqivalent -> delta_com ->
+# the reported delta_COM column, and delta_COM agrees with the MATLAB reference
+# to 15 significant digits on all 208 correlation cases (e.g. 1.371137901447263
+# vs 1.37113790144726). So whatever the precedence reading, the divergence is
+# not observable in any reported output on that corpus. It is NOT therefore
+# proven absent -- the corpus is one channel family and the agreement may not
+# generalise -- so the form the engine uses is pinned here instead of the
+# divergence being closed.
+import inspect as _inspect
+_mlse_src = _inspect.getsource(sicopr.MLSE)
+_arg_lines = [l.strip() for l in _mlse_src.splitlines()
+              if 'qfunc' in l and '1 - 2 * alpha' in l]
+check("mlse_gaussian_qfunc_arg_form_is_pinned",
+      any('((L - 1) * sigma_noise)' in l for l in _arg_lines),
+      "the engine's Gaussian q-function argument changed form. It divides by "
+      "((L-1)*sigma_noise); MATLAB 2331 reads "
+      "`(1-2*alpha)*main/(L-1)*sigma_noise`, which by MATLAB's left-associative "
+      "precedence MULTIPLIES by sigma_noise. If this site is being changed, "
+      "re-run the 208-case correlation and check delta_COM, which is where it "
+      "surfaces. Found: %s" % (_arg_lines or '<no matching line>'))
 check("mlse_gaussian_arg_ratio_is_sigma_squared",
       abs((ml_arg / py_arg) - sigma ** 2) <= 1e-12,
       "the MATLAB/sicopr.py arg ratio is not sigma^2 (mechanism check)")
