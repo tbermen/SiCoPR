@@ -14215,6 +14215,11 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
     # ── Create output ─────────────────────────────────────────────────────
     result = _OptFom_Create_Output_fn(result, BEST, t_out, chdata, param, OP)
     result.FOM_TRACKER = FOM_TRACKER  # full FOM landscape, for the convergence plot
+    # The itick values indexing FOM_TRACKER's last axis. FOM_TRACKER was already
+    # exported but the axis it is measured against was not, so a FOM-versus-
+    # sampling-phase plot could not be drawn from it. Carrying the axis costs a
+    # reference to an array the search already built and changes no result.
+    result.sample_range = np.asarray(full_sample_range)
     # EQ sweep dimensions (for the engineering-export run summary; no effect on COM)
     result.sweep_dims = SimpleNamespace(
         n_gffe=int(n_gffe), n_ctle=int(n_ctle), n_g_DC_HP=int(lf_indx),
