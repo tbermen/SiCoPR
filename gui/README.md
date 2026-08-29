@@ -159,6 +159,11 @@ defect it describes is reintroduced.
 | `app.py` | the HTTP server and JSON API |
 | `static/` | the page |
 
-`test_gui_static.py` notes a real limitation: there is no node/deno/bun on this
-machine, so `app.js` is delimiter-checked, not parsed. If a JS engine is ever
-installed the test uses `node --check` instead.
+`test_gui_static.py` **parses** `app.js` — with `node --check` if a JS engine is
+installed, otherwise with `esprima` (pure Python, listed in `requirements.txt`
+as test-only). This is not optional rigour: a syntax error in `app.js` breaks
+the entire page while every server-side test still passes, because the server is
+not the thing that is wrong. That happened once — literal newlines inside a
+quoted string left the editor with empty pickers and dead buttons — and the
+delimiter-balance check that preceded the parser did not see it. If neither
+parser is available the test says so loudly rather than passing quietly.

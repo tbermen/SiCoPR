@@ -28,6 +28,7 @@ _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 sys.path.insert(0, _ROOT)
 
+import re as _re                                   # noqa: E402
 from audit_check import check, finish              # noqa: E402
 from gui import app as gui_app                     # noqa: E402
 from gui import schematic                          # noqa: E402
@@ -95,6 +96,18 @@ try:
     check("every_cell_carries_the_fields_the_page_reads", not missing,
           "cells are missing %s, which the page would render as blanks"
           % sorted(missing))
+
+    # The header line reads CFG.counts.<key>. Renaming a key server-side while
+    # the page still reads the old one renders "undefined" -- quiet, and no
+    # other check here would notice. (It happened: `decoration` became
+    # `annotations`.)
+    js_src = get('/static/app.js')[1].decode('utf-8')
+    m = _re.search(r'const c = CFG\.counts;(.{0,400})', js_src, _re.S)
+    used = set(_re.findall(r'\bc\.([A-Za-z_][A-Za-z0-9_]*)', m.group(1))) if m else set()
+    check("the_page_reads_count_keys_that_exist",
+          m and used and used <= set(payload['counts']),
+          "app.js reads CFG.counts.%s but the payload has %s"
+          % (sorted(used - set(payload['counts'])), sorted(payload['counts'])))
 
     check("the_payload_is_json_serialisable_without_loss",
           all(c['value'] is None or isinstance(c['value'], (bool, int, float, str))
@@ -509,7 +522,6 @@ try:
     # this suite would notice: the server is perfectly happy. This caught a real
     # one while the results view was being built (`#resultsDlg` was renamed to
     # `#figDlg` and a handler kept pointing at the old id).
-    import re as _re
     html = get('/')[1].decode('utf-8')
     js = get('/static/app.js')[1].decode('utf-8')
     html_ids = set(_re.findall(r'id="([^"]+)"', html))

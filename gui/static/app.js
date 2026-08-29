@@ -284,7 +284,8 @@ async function loadConfig(path) {
   SEL = SEL && CFG.blocks.some((b) => b.id === SEL) ? SEL : 'channel';
   const c = CFG.counts;
   $('#counts').textContent =
-    `${c.settings} settings · ${c.decoration} non-settings · `
+    `${c.settings} settings · ${c.annotations} annotations `
+    + `(${c.annotations_folded} shown in context) · `
     + `${Object.keys(CFG.packages).length} package blocks`;
   refreshDirty();
   drawSchematic();
@@ -379,11 +380,7 @@ $('#newGo').addEventListener('click', (e) => {
     pick.value = r.dst;
     await loadConfig(r.dst);
     if (r.warnings && r.warnings.length) {
-      alert('Created, with warnings:
-
-' + r.warnings.join('
-
-'));
+      alert('Created, with warnings:\n\n' + r.warnings.join('\n\n'));
     }
   }).catch((err) => toast(err.message, true));
 });

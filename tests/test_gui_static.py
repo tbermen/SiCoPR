@@ -1,14 +1,20 @@
 """GUI — static sanity checks on the page assets.
 
-**This is not a JavaScript parser.** There is no node/deno/bun on the
-development machine, so `app.js` cannot be properly syntax-checked here; a real
-parse would be better and this is what is available. What it does catch is the
-realistic failure mode when the file is edited in place: an unbalanced brace,
-bracket or quote, which breaks the entire page silently -- the server keeps
-serving 200s and every endpoint test still passes while the UI does nothing.
+**`app.js` is parsed, not eyeballed.** A syntax error there breaks the entire
+page while every server-side test still passes: the endpoints keep returning
+200, the ids all still line up, and the UI simply does nothing. That is not
+hypothetical -- an editing slip put literal newlines inside a single-quoted
+string, and the result was a config editor with empty pickers and dead buttons
+that no other test in this repo could see.
 
-If a JS engine is ever installed, `node --check gui/static/app.js` supersedes
-the delimiter check below and this file should defer to it.
+Parser, in order of preference:
+
+  1. `node --check` if node/deno/bun is installed
+  2. the `esprima` package (pure Python, dev-only: `pip install esprima`)
+  3. a delimiter-balance fallback, which is NOT a parser and misses exactly the
+     defect described above -- it is a last resort, and it says so
+
+Install esprima if this ever reports that it fell through to the fallback.
 
     python tests/test_gui_static.py
 """
@@ -74,11 +80,36 @@ check("app_js_is_not_empty", len(src) > 1000,
 
 # Prefer a real parser whenever the machine has one.
 engine = next((e for e in ('node', 'deno', 'bun') if shutil.which(e)), None)
+try:
+    import esprima
+except ImportError:
+    esprima = None
+
+parsed = False
 if engine == 'node':
     p = subprocess.run([engine, '--check', JS], capture_output=True, text=True)
     check("app_js_parses", p.returncode == 0,
           "node --check failed:\n%s" % (p.stderr or p.stdout))
-else:
+    parsed = True
+elif esprima is not None:
+    err = ''
+    try:
+        esprima.parseScript(src)
+    except Exception as e:                                # noqa: BLE001
+        ln = getattr(e, 'lineNumber', None)
+        ctx = ''
+        if ln:
+            lines = src.split('\n')
+            ctx = '\n     '.join(
+                '%s%5d| %s' % ('>>' if i == ln - 1 else '  ', i + 1, lines[i])
+                for i in range(max(0, ln - 3), min(len(lines), ln + 2)))
+        err = '%s\n     %s' % (e, ctx)
+    check("app_js_parses", not err,
+          "app.js is not valid JavaScript, so the page will not run at all "
+          "and no server-side test can tell:\n     %s" % err)
+    parsed = True
+
+if not parsed:
     body = strip_js(src)
     stack, bad = [], []
     pairs = {')': '(', ']': '[', '}': '{'}
@@ -135,9 +166,14 @@ styled = set(re.findall(r'\.tag\.([a-z]+)', css))
 check("every_tag_style_exists", not (tags - styled),
       "app.js emits tag classes with no style rule: %s" % sorted(tags - styled))
 
-print("\napp.js %d bytes; %d ids used, %d defined; tags: %s"
-      % (len(src), len(js_ids), len(html_ids), sorted(tags)))
-if engine != 'node':
-    print("   NOTE: no JS engine installed; delimiters checked, not parsed.")
+how = ('node --check' if engine == 'node'
+       else 'esprima' if esprima is not None
+       else 'DELIMITER FALLBACK (not a parser)')
+print("\napp.js %d bytes, checked with %s; %d ids used, %d defined; tags: %s"
+      % (len(src), how, len(js_ids), len(html_ids), sorted(tags)))
+if not parsed:
+    print("   WARNING: app.js was NOT parsed. Install a JS engine, or "
+          "`pip install esprima` -- a syntax error here is invisible to every "
+          "other test in this repo.")
 
 finish()

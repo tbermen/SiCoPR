@@ -17,3 +17,9 @@ Pillow>=9.0
 # The R reports under R/ additionally need, inside R:
 #   install.packages(c("R.matlab", "ggplot2", "dplyr", "tidyr", "scales",
 #                      "plotly", "htmltools", "jsonlite"))
+
+# Test-only. tests/test_gui_static.py PARSES gui/static/app.js -- a syntax error
+# there breaks the whole config editor while every server-side test still
+# passes. Optional: the test prefers `node --check` if node is installed, and
+# warns loudly if it has neither and falls back to a delimiter check.
+esprima>=4.0       # JavaScript parser, tests only
