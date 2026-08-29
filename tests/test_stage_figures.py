@@ -66,6 +66,37 @@ check("index_reports_stages_with_no_figure",
       "_write_stage_index must mark empty stages explicitly rather than "
       "omitting them")
 
+# ---- the interactive report needs the same stages ------------------------
+# The PNG set and the R dashboard cover the same seven stages, but from
+# different data: the PNGs are drawn in-process from the live pipeline objects,
+# the dashboard from the .mat export. A stage can therefore be covered in one
+# and dark in the other -- which it was, until the exporter started carrying
+# tdr / fom_vs_phase / noise_terms. Those plots degrade to a placeholder when
+# their data is absent, so losing an export would not error the report, it would
+# quietly stop showing the stage. That is the failure mode this file exists for.
+EXPORT = io.open(os.path.join(_ROOT, 'com_mat_export.py'), encoding='utf-8').read()
+DASH = io.open(os.path.join(_ROOT, 'R', 'com_analysis.R'), encoding='utf-8').read()
+
+for group, stage in (('tdr', '2'), ('fom_vs_phase', '4'), ('noise_terms', '6')):
+    check("mat_export_carries_%s" % group,
+          '_add(d, "%s"' % group in EXPORT,
+          'com_mat_export.py no longer exports "%s"; the stage %s plot in the R '
+          'dashboard will silently render a placeholder instead of failing'
+          % (group, stage))
+
+for fn in ('plot_tdr_impedance', 'plot_erl', 'plot_fom_vs_phase',
+           'plot_eq_taps', 'plot_noise_terms'):
+    check("dashboard_has_%s" % fn,
+          ('%s <- function' % fn) in DASH and ('%s(dat)' % fn) in DASH,
+          'R/com_analysis.R must define %s AND call it from build_dashboard; '
+          'defining it without wiring it in is how a plot goes missing quietly'
+          % fn)
+
+check("dashboard_groups_by_stage",
+      all(('Stage %s' % n) in DASH for n in STAGE_NUMS),
+      'build_dashboard should carry a heading for each of stages 1-7 so the '
+      'report reads as stage evidence')
+
 print("\n%d figures across %d stages:" % (len(EMITTED), len(STAGE_NUMS)))
 for num, name, _m, _w in com_plots.STAGES:
     figs = [f for f in EMITTED if f.startswith('s%s_' % num)]

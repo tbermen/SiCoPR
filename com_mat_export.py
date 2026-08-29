@@ -289,6 +289,74 @@ def export_case_mat(OP, param, chdata, fom_result, Noise_Struct, PDF, CDF,
     if noise:
         _add(d, "noise_pdfs", noise)
 
+    # ── stage 2: TDR / ERL ──────────────────────────────────────────────────
+    # The PNG set has drawn these since 2026-08-28; the interactive report could
+    # not, because none of it was exported. chdata[0].TDR11[izt] carries .ZSR
+    # (the impedance profile), .t, .avgZport and the ERL scalars.
+    #
+    # Z_t is the TDR target and is SINGLE-ENDED (it defaults to R_0), while ZSR
+    # is differential -- so a reference line belongs at 2*Z_t. Exported as
+    # tdr_Z_ref already doubled, so no consumer has to rediscover that.
+    tdr = {}
+    for nm in ("TDR11", "TDR22"):
+        lst = getattr(ch, nm, None)
+        if not lst:
+            continue
+        e = lst[0] if isinstance(lst, (list, tuple)) else lst
+        zsr = np.asarray(getattr(e, "ZSR", []), dtype=float).ravel()
+        tt = np.asarray(getattr(e, "t", []), dtype=float).ravel()
+        if zsr.size and tt.size == zsr.size:
+            tdr[nm + "_t_ns"] = tt * 1e9
+            tdr[nm + "_Z_ohm"] = zsr
+            tdr[nm + "_avgZ_ohm"] = float(getattr(e, "avgZport", float("nan")))
+        for fld in ("ERL", "ERL_CD", "ERL_DC", "ERL_CC"):
+            v = getattr(e, fld, None)
+            v = np.asarray(v, dtype=float).ravel() if v is not None else np.array([])
+            if v.size == 1 and np.isfinite(v[0]):
+                tdr[nm.replace("TDR", "ERL") + fld[3:]] = float(v[0])
+    if tdr:
+        zt = np.asarray(getattr(param, "Z_t", getattr(param, "Z0", 50.0)),
+                        dtype=float).ravel()
+        if zt.size:
+            tdr["Z_ref_ohm"] = 2.0 * float(zt[0])
+        _add(d, "tdr", tdr)
+
+    # ── stage 4: FOM against sampling phase ─────────────────────────────────
+    # optimize_fom builds FOM_TRACKER indexed [gffe, ctle, g_DC_HP, txffe, itick]
+    # and exports it with its sample_range axis. Reduced here to the best FOM
+    # found at each phase: the full 5-D array would bloat the .mat for no gain,
+    # and best-per-phase is the question anyone actually asks of it -- how sharp
+    # is the sampling optimum.
+    ft = getattr(fom_result, "FOM_TRACKER", None)
+    rng = getattr(fom_result, "sample_range", None)
+    if ft is not None and rng is not None:
+        ft = np.asarray(ft, dtype=float)
+        rng = np.asarray(rng, dtype=float).ravel()
+        if ft.ndim == 5 and ft.shape[-1] == rng.size and rng.size > 1:
+            flat = ft.reshape(-1, ft.shape[-1]).copy()
+            flat[flat == 0.0] = np.nan          # 0 marks a phase never evaluated
+            if not np.all(np.isnan(flat)):
+                best = np.nanmax(flat, axis=0)
+                _add(d, "fom_vs_phase", {
+                    "itick": rng,
+                    "FOM_dB": best,
+                    "selected_itick": float(getattr(fom_result, "itick", float("nan"))),
+                })
+
+    # ── stage 6: the individual noise terms ─────────────────────────────────
+    # sigma_total_mV was the only noise scalar exported, which cannot say whether
+    # the transmitter or the channel dominates.
+    terms = {}
+    for attr in ("sigma_TX", "sigma_G", "sigma_N", "sigma_rjit", "sigma_Q",
+                 "sigma_hp", "cci_sigma", "sci_sigma", "sigma_before_clip",
+                 "peak_clip"):
+        v = getattr(Noise_Struct, attr, None)
+        v = np.asarray(v, dtype=float).ravel() if v is not None else np.array([])
+        if v.size == 1 and np.isfinite(v[0]):
+            terms[attr + "_mV"] = 1000.0 * float(v[0])
+    if terms:
+        _add(d, "noise_terms", terms)
+
     # COM results (headline + full self-describing output_args) -------------
     A_s = float(COM_SNR_Struct.A_s)
     A_ni = float(COM_SNR_Struct.A_ni)

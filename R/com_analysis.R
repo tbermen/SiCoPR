@@ -31,6 +31,17 @@ g0 <- function(dat, name) {
 }
 has0 <- function(dat, name) !is.null(g0(dat, name))
 
+# Wrap a plot that may be absent. A stage plot returns NULL when its data is not
+# in the .mat -- an export written before the stage plots existed, or a run with
+# TDR disabled -- and a NULL child would otherwise abort the whole report. The
+# note is deliberate: a silently missing stage is what this work set out to fix.
+optional <- function(p, height = 700) {
+  if (is.null(p))
+    return(tags$p(style = "color:#888;font-style:italic;",
+                  "(no data for this stage in the .mat export)"))
+  tags$div(style = sprintf("height:%dpx;", height), p)
+}
+
 # top-level vector (drops the Nx1 column shape R.matlab returns)
 v  <- function(dat, name) as.numeric(g0(dat, name))
 cv <- function(dat, name) as.complex(g0(dat, name))
@@ -479,6 +490,190 @@ plot_ctle_bank <- function(dat) {
 }
 
 # -- Plot 7: COM dashboard (single HTML report) -------------------------------
+# -- Stage 2: TDR impedance profile ------------------------------------------
+# The reference line is 2 * Z_t, not Z_t: the exporter has already doubled it
+# (Z_t is single-ended, the ZSR trace is differential). A first version of the
+# PNG equivalent drew the undoubled value and put the band at 46 ohm under a
+# trace at 97, which is worse than drawing no reference at all.
+# Min/max envelope decimation. The TDR trace is ~224k points per port; plotly
+# keeps every point as JSON, so plotting it raw produced a 95 MB report that was
+# slow to open. Naive stride-sampling would drop the connector and via
+# discontinuities, which are exactly the narrow spikes this plot exists to show,
+# so each output bucket keeps its own min AND max. Spikes survive; the point
+# count does not.
+.envelope <- function(x, y, n_out = 3000) {
+  n <- length(y)
+  if (n <= n_out * 2) return(list(x = x, y = y))
+  b <- ceiling(n / n_out)
+  idx <- split(seq_len(n), ceiling(seq_len(n) / b))
+  keep <- unlist(lapply(idx, function(i) {
+    if (length(i) == 1) return(i)
+    unique(c(i[which.min(y[i])], i[which.max(y[i])]))
+  }), use.names = FALSE)
+  keep <- sort(unique(keep))
+  list(x = x[keep], y = y[keep])
+}
+
+plot_tdr_impedance <- function(dat) {
+  td <- tryCatch(g0(dat, "tdr"), error = function(e) NULL)
+  if (is.null(td)) return(NULL)
+  p <- plot_ly(height = 700)
+  drew <- FALSE
+  for (nm in c("TDR11", "TDR22")) {
+    t_ns <- tryCatch(as.numeric(gf(td, paste0(nm, "_t_ns"))), error = function(e) NULL)
+    z <- tryCatch(as.numeric(gf(td, paste0(nm, "_Z_ohm"))), error = function(e) NULL)
+    if (is.null(t_ns) || is.null(z) || length(t_ns) != length(z) || !length(z)) next
+    az <- tryCatch(as.numeric(gf(td, paste0(nm, "_avgZ_ohm"))), error = function(e) NA)
+    e <- .envelope(t_ns, z)
+    p <- add_lines(p, x = e$x, y = e$y,
+                   name = sprintf("%s  (avgZ %.2f ohm, %d of %d pts)",
+                                  nm, az[1], length(e$y), length(z)))
+    drew <- TRUE
+  }
+  if (!drew) return(NULL)
+  zref <- tryCatch(as.numeric(gf(td, "Z_ref_ohm")), error = function(e) NA)
+  shp <- list()
+  if (length(zref) && is.finite(zref[1])) {
+    shp <- list(
+      list(type = "rect", xref = "paper", x0 = 0, x1 = 1, yref = "y",
+           y0 = zref[1] * 0.9, y1 = zref[1] * 1.1,
+           fillcolor = "rgba(128,128,128,0.12)", line = list(width = 0)),
+      list(type = "line", xref = "paper", x0 = 0, x1 = 1, yref = "y",
+           y0 = zref[1], y1 = zref[1],
+           line = list(color = "grey", dash = "dash", width = 1)))
+  }
+  layout(p,
+         title = if (length(zref) && is.finite(zref[1]))
+           sprintf("Stage 2 - TDR impedance profile (band = 2 x Z_t = %.1f ohm +/-10%%)", zref[1])
+         else "Stage 2 - TDR impedance profile",
+         xaxis = list(title = "Time [ns]"),
+         yaxis = list(title = "Impedance [ohm]"),
+         shapes = shp, hovermode = "x unified")
+}
+
+# -- Stage 2: effective return loss ------------------------------------------
+plot_erl <- function(dat) {
+  td <- tryCatch(g0(dat, "tdr"), error = function(e) NULL)
+  if (is.null(td)) return(NULL)
+  nms <- c("ERL11", "ERL11_CD", "ERL11_DC", "ERL11_CC",
+           "ERL22", "ERL22_CD", "ERL22_DC", "ERL22_CC")
+  lab <- c(); val <- c()
+  for (nm in nms) {
+    x <- tryCatch(as.numeric(gf(td, nm)), error = function(e) NULL)
+    if (!is.null(x) && length(x) && is.finite(x[1])) { lab <- c(lab, nm); val <- c(val, x[1]) }
+  }
+  if (!length(val)) return(NULL)
+  p <- plot_ly(height = 500, x = lab, y = val, type = "bar",
+               marker = list(color = "#1f77b4"),
+               text = sprintf("%.2f dB", val), textposition = "outside",
+               hovertemplate = "%{x}<br>%{y:.4f} dB<extra></extra>")
+  layout(p, title = "Stage 2 - Effective return loss (higher is better)",
+         xaxis = list(title = ""), yaxis = list(title = "ERL [dB]"))
+}
+
+# -- Stage 4: FOM against sampling phase -------------------------------------
+# Answers how sharp the sampling optimum is, which the reported itick alone
+# cannot. A flat top means the phase choice is uncritical.
+plot_fom_vs_phase <- function(dat) {
+  fp <- tryCatch(g0(dat, "fom_vs_phase"), error = function(e) NULL)
+  if (is.null(fp)) return(NULL)
+  it <- tryCatch(as.numeric(gf(fp, "itick")), error = function(e) NULL)
+  fm <- tryCatch(as.numeric(gf(fp, "FOM_dB")), error = function(e) NULL)
+  if (is.null(it) || is.null(fm) || length(it) != length(fm) || length(it) < 2)
+    return(NULL)
+  ok <- is.finite(fm)
+  if (sum(ok) < 2) return(NULL)
+  sel <- tryCatch(as.numeric(gf(fp, "selected_itick")), error = function(e) NA)
+  span <- max(fm[ok]) - min(fm[ok])
+  p <- plot_ly(height = 700)
+  p <- add_trace(p, x = it[ok], y = fm[ok], type = "scatter", mode = "lines+markers",
+                 name = "best FOM at this phase",
+                 marker = list(size = 5), line = list(width = 1.5),
+                 hovertemplate = "itick %{x}<br>FOM %{y:.6f} dB<extra></extra>")
+  shp <- list()
+  if (length(sel) && is.finite(sel[1]))
+    shp <- list(list(type = "line", x0 = sel[1], x1 = sel[1], yref = "paper",
+                     y0 = 0, y1 = 1, line = list(color = "red", width = 1.5)))
+  layout(p,
+         title = sprintf("Stage 4 - FOM vs sampling phase (selected itick %s, range %.3f dB)",
+                         if (length(sel) && is.finite(sel[1])) as.character(round(sel[1])) else "n/a",
+                         span),
+         xaxis = list(title = "Sampling phase itick [samples from the raw cursor]"),
+         yaxis = list(title = "FOM [dB]"),
+         shapes = shp, hovermode = "x unified")
+}
+
+# -- Stage 5: the equalizer taps actually selected ---------------------------
+# A COM value cannot say whether the setting that produced it is one the
+# silicon can produce. These are the vectors to read for that.
+plot_eq_taps <- function(dat) {
+  mk <- function(nm, key) {
+    x <- tryCatch(as.numeric(g0(dat, key)), error = function(e) numeric(0))
+    if (!length(x)) return(NULL)
+    list(name = nm, y = x, x = seq_along(x) - 1)
+  }
+  series <- Filter(Negate(is.null),
+                   list(mk("Tx FFE", "ffe_taps"),
+                        mk("Rx FFE", "rxffe_taps"),
+                        mk("DFE", "dfe_taps")))
+  if (!length(series)) return(NULL)
+  p <- plot_ly(height = 700)
+  for (s in series)
+    p <- add_trace(p, x = s$x, y = s$y, type = "scatter", mode = "markers",
+                   name = sprintf("%s (%d taps)", s$name, length(s$y)),
+                   marker = list(size = 7),
+                   hovertemplate = paste0(s$name, " tap %{x}<br>%{y:.6f}<extra></extra>"))
+  layout(p, title = "Stage 5 - Selected equalizer taps",
+         xaxis = list(title = "Tap index"),
+         yaxis = list(title = "Tap value"), hovermode = "closest")
+}
+
+# -- Stage 6: the individual noise terms -------------------------------------
+# sigma_total was the only noise scalar the report carried, and a total cannot
+# say whether the transmitter or the channel dominates.
+plot_noise_terms <- function(dat) {
+  nt <- tryCatch(g0(dat, "noise_terms"), error = function(e) NULL)
+  if (is.null(nt)) return(NULL)
+  keys <- c("sigma_TX_mV", "sigma_G_mV", "sigma_N_mV", "sigma_rjit_mV",
+            "sigma_Q_mV", "sigma_hp_mV", "cci_sigma_mV", "sci_sigma_mV")
+  desc <- c(sigma_TX_mV = "transmitter (SNR_TX, R_LM)",
+            sigma_G_mV = "jitter, via pulse slope",
+            sigma_N_mV = "receiver referred (eta_0)",
+            sigma_rjit_mV = "random jitter",
+            sigma_Q_mV = "quantisation",
+            sigma_hp_mV = "clause 162 broadband",
+            cci_sigma_mV = "co-channel interference",
+            sci_sigma_mV = "self-channel interference")
+  lab <- c(); val <- c()
+  for (k in keys) {
+    x <- tryCatch(as.numeric(gf(nt, k)), error = function(e) NULL)
+    if (!is.null(x) && length(x) && is.finite(x[1]) && x[1] > 0) {
+      lab <- c(lab, sprintf("%s - %s", sub("_mV$", "", k), desc[[k]]))
+      val <- c(val, x[1])
+    }
+  }
+  if (!length(val)) return(NULL)
+  o <- order(val)
+  lab <- lab[o]; val <- val[o]
+  extra <- c()
+  for (k in c("sigma_before_clip_mV", "peak_clip_mV")) {
+    x <- tryCatch(as.numeric(gf(nt, k)), error = function(e) NULL)
+    if (!is.null(x) && length(x) && is.finite(x[1]))
+      extra <- c(extra, sprintf("%s = %.4f mV", sub("_mV$", "", k), x[1]))
+  }
+  p <- plot_ly(height = 600, x = val, y = factor(lab, levels = lab), type = "bar",
+               orientation = "h", marker = list(color = "#1f77b4"),
+               text = sprintf("%.4f mV", val), textposition = "outside",
+               hovertemplate = "%{y}<br>%{x:.6f} mV<extra></extra>")
+  layout(p,
+         title = paste0("Stage 6 - Noise terms, largest first",
+                        if (length(extra)) paste0("  (", paste(extra, collapse = ";  "), ")") else ""),
+         xaxis = list(title = "sigma [mV]"),
+         yaxis = list(title = "", automargin = TRUE),
+         margin = list(l = 260))
+}
+
+
 build_dashboard <- function(matfile, out_html = NULL) {
   dat <- load_com(matfile)
   if (is.null(out_html))
@@ -588,15 +783,31 @@ build_dashboard <- function(matfile, out_html = NULL) {
 
   page <- browsable(tagList(
     header,
+    # Grouped by the seven pipeline stages the correlation harness localises a
+    # disagreement to, and in that order, so the report reads as stage evidence.
+    # A plot returns NULL when its data is absent (an older .mat, or a run with
+    # TDR off); optional() drops it rather than erroring the whole report.
+    tags$h3("Stage 1 - Channel / frequency domain"),
     tags$div(style="height:800px;", plot_channel_fd(dat)),
     tags$div(style="height:800px;", plot_ctle(dat)),
     tags$div(style="height:800px;", plot_ctle_bank(dat)),
+    tags$h3("Stage 2 - TDR / ERL"),
+    optional(plot_tdr_impedance(dat), 700),
+    optional(plot_erl(dat), 500),
+    tags$h3("Stage 3 - Pulse (time domain)"),
     tags$div(style="height:800px;", plot_impulse(dat)),
     tags$div(style="height:800px;", plot_pulse(dat)),
+    tags$h3("Stage 4 - Sampling"),
+    optional(plot_fom_vs_phase(dat), 700),
+    tags$h3("Stage 5 - Equalization"),
+    tags$div(style="height:800px;", plot_eq_contribution(dat)),
+    optional(plot_eq_taps(dat), 700),
+    tags$h3("Stage 6 - Noise"),
+    optional(plot_noise_terms(dat), 600),
+    tags$h3("Stage 7 - COM"),
     tags$div(style="height:1200px;", plot_eye(dat)),
     tags$div(style="height:800px;", plot_bathtub(dat)),
     tags$div(style="height:800px;", plot_voltage_bathtub(dat)),
-    tags$div(style="height:800px;", plot_eq_contribution(dat)),
     results_section,
     cfgmeta_section
   ))
