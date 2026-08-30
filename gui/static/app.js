@@ -1272,7 +1272,10 @@ async function dynLoad(path) {
 function dynOpen(c) {
   $('#dynTitle').textContent = c.name.replace(/\.mat$/, '');
   const fr = $('#dynFrame');
-  fr.src = '/report?path=' + encodeURIComponent(c.report);
+  // path-mapped, not a query parameter: the dashboard links Plotly and friends
+  // with RELATIVE paths (lib/...), which only resolve if the page is served
+  // from a URL that mirrors its directory.
+  fr.src = '/rpt/' + c.report.split('/').map(encodeURIComponent).join('/');
   fr.hidden = false;
   $('#dynEmpty').hidden = true;
 }

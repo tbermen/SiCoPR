@@ -33,7 +33,7 @@ Endpoints
     POST /api/new_config       create a config from a template
     GET  /api/dynamic?path=    .mat exports in a run and their dashboards
     POST /api/render           build the R dashboard for one .mat export
-    GET  /report?path=         a generated *_report.html dashboard
+    GET  /rpt/<path>           a generated dashboard and its lib/ assets
 
 Jobs run in named slots: 'com' for the COM run itself (one at a time, it is
 CPU-heavy) and 'render' for the R dashboard build, which is different work and
@@ -903,6 +903,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(st)
             if u.path == '/api/dynamic':
                 return self._json(dynamic_payload(q.get('path', [''])[0]))
+            if u.path.startswith('/rpt/'):
+                # path-mapped so the dashboard's relative lib/ links resolve
+                from urllib.parse import unquote
+                return self._report(unquote(u.path[len('/rpt/'):]))
             if u.path == '/report':
                 return self._report(q.get('path', [''])[0])
             if u.path == '/figure':
@@ -929,18 +933,59 @@ class Handler(BaseHTTPRequestHandler):
             return {'error': str(e)}
         return {'ok': True, 'command': _display_argv(r.argv)}
 
-    def _report(self, rel):
-        """Serve a generated R dashboard.
+    # Assets a dashboard is allowed to pull in, and how to label them. A .js
+    # served as text/plain is refused by the browser, so the type matters.
+    _ASSET_TYPES = {
+        '.js': 'application/javascript', '.css': 'text/css',
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.svg': 'image/svg+xml',
+        '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+        '.eot': 'application/vnd.ms-fontobject',
+        '.map': 'application/json', '.json': 'application/json',
+    }
 
-        Restricted to `*_report.html` inside the repo. The dashboard is a
-        self-contained page built by R from a .mat export; this endpoint exists
-        to show it in an iframe, not to serve arbitrary HTML from the tree.
+    def _report(self, rel):
+        """Serve a generated R dashboard, or one of its assets.
+
+        `htmltools::save_html` does NOT write a self-contained page: it puts
+        Plotly, jQuery, htmlwidgets and crosstalk in a `lib/` directory beside
+        the HTML and links them with RELATIVE paths. Serving only the .html
+        therefore gave a page with all of its text and none of its graphs --
+        every `lib/...` request 404s, so there is no Plotly to draw with.
+
+        The route is path-mapped (`/rpt/<repo-relative-path>`) rather than a
+        query parameter precisely so those relative links resolve to sibling
+        files under the same route, exactly as they do when the file is opened
+        from disk.
+
+        What may be served stays narrow: a `*_report.html`, or a whitelisted
+        static asset living under a directory that contains one. That is what
+        "belongs to a dashboard" means here, and it keeps the route from
+        becoming a way to read the repo's own JavaScript.
         """
         full = _safe_path(rel)
-        if not full or not full.lower().endswith('_report.html')                 or not os.path.isfile(full):
+        if not full or not os.path.isfile(full):
             return self._send(404, b'not found', 'text/plain')
+
+        if full.lower().endswith('_report.html'):
+            with open(full, 'rb') as f:
+                return self._send(200, f.read(), 'text/html; charset=utf-8')
+
+        ctype = self._ASSET_TYPES.get(os.path.splitext(full)[1].lower())
+        if not ctype:
+            return self._send(404, b'not found', 'text/plain')
+
+        d = os.path.dirname(full)
+        while True:
+            if glob.glob(os.path.join(d, '*_report.html')):
+                break
+            parent = os.path.dirname(d)
+            if parent == d or len(d) <= len(_ROOT):
+                return self._send(404, b'not found', 'text/plain')
+            d = parent
+
         with open(full, 'rb') as f:
-            return self._send(200, f.read(), 'text/html; charset=utf-8')
+            return self._send(200, f.read(), ctype)
 
     def _figure(self, rel):
         """Serve a generated figure. Restricted to .png inside the repo: this

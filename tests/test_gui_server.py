@@ -655,23 +655,62 @@ try:
 
         built = [c for c in d['cases'] if c['report']]
         if built:
-            code, body, ctype = get('/report?path='
-                                    + urllib.parse.quote(built[0]['report']))
+            rpt = built[0]['report']
+            mapped = '/rpt/' + '/'.join(urllib.parse.quote(p)
+                                        for p in rpt.split('/'))
+            code, body, ctype = get(mapped)
             check("a_built_dashboard_is_served_as_html",
                   code == 200 and b'<' in body[:200] and 'html' in ctype,
-                  "GET /report returned %s (%s), %d bytes"
-                  % (code, ctype, len(body)))
+                  "GET %s returned %s (%s), %d bytes"
+                  % (mapped, code, ctype, len(body)))
+
+            # `htmltools::save_html` links Plotly and friends from a sibling
+            # lib/ with RELATIVE paths -- it does not inline them. Serving only
+            # the .html gave a dashboard with all its text and none of its
+            # graphs. Every asset the page references must resolve, or the
+            # plots are blank and nothing else here would notice.
+            import posixpath
+            page = body.decode('utf-8', 'replace')
+            refs = sorted({m for m in _re.findall(
+                r'(?:src|href)="([^"]+)"', page)
+                if not m.startswith(('data:', '#', 'http'))})
+            check("the_dashboard_references_relative_assets", refs,
+                  "the page references no relative assets, so this check "
+                  "proves nothing about whether they would load")
+            base = posixpath.dirname(mapped)
+            missing = []
+            for ref in refs:
+                au = posixpath.normpath(
+                    posixpath.join(base, urllib.parse.quote(ref)))
+                c2, b2, t2 = get(au)
+                if c2 != 200 or not b2:
+                    missing.append(ref)
+                elif ref.endswith('.js') and 'javascript' not in t2:
+                    missing.append('%s (served as %s)' % (ref, t2))
+            check("every_asset_the_dashboard_needs_is_served",
+                  not missing,
+                  "these are referenced by the dashboard and do not load, so "
+                  "its graphs render blank: %s" % missing)
+
+            # The asset route must not become a way to read the repo's source.
+            for bad in ('gui/static/app.js', 'gui/app.py', 'VERSION.json'):
+                c3, _, _ = get('/rpt/' + urllib.parse.quote(bad))
+                check("the_asset_route_refuses_%s"
+                      % bad.replace('/', '_').replace('.', '_'),
+                      c3 == 404,
+                      "GET /rpt/%s returned %s; assets are only servable when "
+                      "they live under a directory containing a dashboard"
+                      % (bad, c3))
 
         # /report reads files by path, so it needs the same containment and
         # type restrictions as /figure.
         for bad in ('README.md', 'gui/app.py'):
-            code, _, _ = get('/report?path=' + urllib.parse.quote(bad))
-            check("the_report_endpoint_refuses_%s" % bad.replace('/', '_')
+            code, _, _ = get('/rpt/' + urllib.parse.quote(bad))
+            check("the_report_route_refuses_%s" % bad.replace('/', '_')
                   .replace('.', '_'),
                   code == 404,
-                  "GET /report?path=%s returned %s; this endpoint exists to "
-                  "show a generated dashboard, not to serve the repo"
-                  % (bad, code))
+                  "GET /rpt/%s returned %s; this route exists to show a "
+                  "generated dashboard, not to serve the repo" % (bad, code))
 
         # a render must not be blocked by, or block, a COM run
         held = _runner.start([sys.executable, '-c', 'import time;time.sleep(20)'],
