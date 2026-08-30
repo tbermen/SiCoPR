@@ -304,6 +304,40 @@ try:
               run.get('cases'),
               "/api/run for %s returned %r" % (with_cases[0]['path'], run))
 
+        # The run picker counts `case_NN` directories; this payload must agree.
+        # It used to treat EVERY subdirectory as a case, so the R dashboard's
+        # `lib/` asset folder became a phantom case reporting "no results.csv"
+        # and "no figures" -- both false of the run -- and the two counts
+        # disagreed.
+        check("the_case_count_matches_the_run_listing",
+              len(run['cases']) == with_cases[0]['cases']
+              or with_cases[0]['cases'] == 0,
+              "the picker says %d case(s) and the payload says %d: %s"
+              % (with_cases[0]['cases'], len(run['cases']),
+                 [c['name'] for c in run['cases']]))
+        check("only_case_directories_are_cases",
+              all(c['name'].lower().startswith('case_')
+                  or c['name'] == os.path.basename(with_cases[0]['path'])
+                  for c in run['cases']),
+              "these are reported as cases but are not case_NN directories: %s"
+              % [c['name'] for c in run['cases']
+                 if not c['name'].lower().startswith('case_')])
+
+        # A directory holding exports from more than one configuration has had
+        # its figures overwritten; that has to be reported, not discovered.
+        multi = None
+        for r in runs:
+            rp = get_json('/api/run?path=' + urllib.parse.quote(r['path']))
+            if len(rp.get('configs_here') or []) > 1:
+                multi = rp
+                break
+        if multi:
+            check("a_directory_with_two_configs_says_figures_were_overwritten",
+                  multi.get('overwritten'),
+                  "%s holds exports from %s but reports no warning; its PNG "
+                  "figures belong to whichever ran last"
+                  % (multi['path'], multi['configs_here']))
+
         case = run['cases'][0]
         check("a_case_carries_metrics_or_says_why_not",
               'metrics' in case and 'has_csv' in case,

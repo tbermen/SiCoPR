@@ -641,6 +641,7 @@ $('#btnExec').addEventListener('click', async () => {
     termReset('');
     NEXT_LINE = 0;
     POLL_FAILS = 0;
+    RUN_DONE = null;
     $('#btnExec').disabled = true;
     $('#btnKill').disabled = false;
     pollStatus();
@@ -664,6 +665,7 @@ $('#btnKill').addEventListener('click', () => {
 const TERM_MAX = 4000;
 let TERM = [];
 let POLL_FAILS = 0;
+let RUN_DONE = null;   // `started` of the run already announced
 
 function termReset(msg) {
   TERM = msg ? [msg] : [];
@@ -734,20 +736,27 @@ async function pollStatus() {
   if (st.running || st.behind) {
     // drain a backlog quickly; idle along when caught up
     POLL = setTimeout(pollStatus, st.behind ? 120 : 900);
-  } else {
-    refreshNetlist();
-    if (st.returncode === 0) {
-      if ($('#nlMat').checked) {
-        // the run was asked for dynamic results, so build them without making
-        // the user go and find the export
-        toast('run finished — building the dynamic dashboard');
-        autoBuildDynamic();
-      } else {
-        toast('run finished — see Results · static');
-      }
+    return;
+  }
+
+  refreshNetlist();
+
+  // Finishing is an EVENT, not a state. This used to fire whenever a poll saw
+  // a finished run -- and runEnter() polls -- so coming back to the Run tab
+  // re-launched the R build and threw the user out to the dynamic tab again,
+  // with no way back. `started` identifies the run; each one is announced once.
+  if (RUN_DONE === st.started) return;
+  RUN_DONE = st.started;
+
+  if (st.returncode === 0) {
+    if ($('#nlMat').checked) {
+      toast('run finished — building the dynamic dashboard');
+      autoBuildDynamic();
     } else {
-      toast('run exited with code ' + st.returncode, true);
+      toast('run finished — see Results · static');
     }
+  } else {
+    toast('run exited with code ' + st.returncode, true);
   }
 }
 
@@ -808,6 +817,16 @@ async function loadRun(path) {
   host.textContent = '';
   $('#runMeta').textContent =
     `${run.cases.length} case${run.cases.length === 1 ? '' : 's'}`;
+
+  // Two configs run on the same day share a dated RESULT_DIR. Their .mat
+  // exports both survive; the PNGs do not, because they are written under
+  // fixed names. Saying so beats letting it be discovered.
+  if (run.overwritten) {
+    const w = document.createElement('div');
+    w.className = 'problem';
+    w.textContent = run.overwritten;
+    host.appendChild(w);
+  }
 
   for (const c of run.cases) {
     const sec = document.createElement('section');
@@ -1346,6 +1365,10 @@ async function autoBuildDynamic() {
     }
     $('#dynPick').value = rows[0].path;
     show('dynamic');
-    await dynBuild(d.cases[0]);
+    // newest export, not cases[0]: two configs writing into one dated
+    // RESULT_DIR leave several .mat here, and the alphabetically first is not
+    // the one that just ran.
+    const newest = d.cases.slice().sort((a, b) => b.mat_mtime - a.mat_mtime)[0];
+    await dynBuild(newest);
   } catch (e) { toast(e.message, true); }
 }

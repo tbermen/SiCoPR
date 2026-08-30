@@ -185,6 +185,27 @@ if esprima is not None:
               "rest of the run while sicopr.py keeps going -- which is "
               "indistinguishable from a freeze.")
 
+    # 1b. finishing is an event, not a state.
+    #
+    # The completion branch used to fire on every poll that saw a finished run,
+    # and entering the Run tab polls -- so returning to that tab relaunched the
+    # R dashboard build and threw the user straight back out to the dynamic
+    # tab, with no way to get back. The branch must be guarded by which run has
+    # already been announced.
+    if fns:
+        check("run_completion_fires_once_per_run",
+              'RUN_DONE' in body and 'RUN_DONE = st.started' in body,
+              "pollStatus does not guard its completion branch by run "
+              "identity, so every poll of an already-finished run re-triggers "
+              "it -- including the poll that happens when the Run tab is "
+              "reopened.")
+        auto = body.find('autoBuildDynamic')
+        guard = body.find('RUN_DONE === st.started')
+        check("the_guard_precedes_the_completion_action",
+              guard != -1 and auto != -1 and guard < auto,
+              "the fire-once guard does not come before autoBuildDynamic(), "
+              "so it cannot prevent the re-trigger")
+
     # 2. the terminal must be bounded
     check("the_terminal_output_is_bounded",
           'TERM_MAX' in src and 'TERM.slice' in src,

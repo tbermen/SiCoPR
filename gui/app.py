@@ -803,9 +803,15 @@ def run_payload(rel):
         raise FileNotFoundError(rel)
 
     cases = []
+    # ONLY `case_NN` directories are cases. Taking every subdirectory turned
+    # the R dashboard's `lib/` asset folder into a phantom case that reported
+    # "no results.csv" and "no figures" -- both false of the run -- and made
+    # this count disagree with the one in the run picker, which had the rule
+    # right.
     names = sorted(d for d in os.listdir(full)
-                   if os.path.isdir(os.path.join(full, d)))
-    # a run with no case_NN subdirectories may itself be one case
+                   if d.lower().startswith('case_')
+                   and os.path.isdir(os.path.join(full, d)))
+    # a run with no case_NN subdirectories keeps its output at the top level
     if not names:
         names = ['']
 
@@ -838,7 +844,25 @@ def run_payload(rel):
                        for s in sorted(stages)],
         })
 
-    return {'path': rel, 'name': os.path.basename(full), 'cases': cases}
+    # Configs commonly template RESULT_DIR by date, so two DIFFERENT configs
+    # run on the same day land in the same directory. The .mat exports carry
+    # the config name and survive; the PNG figures do not -- they are written
+    # to case_NN/ under fixed names and the second run silently overwrites the
+    # first. The figures shown here then belong to whichever ran last, which is
+    # worth saying out loud rather than leaving to be discovered.
+    runs_here = sorted({os.path.basename(m).rsplit('_case', 1)[0]
+                        for m in glob.glob(os.path.join(full, '*.mat'))})
+    overwritten = None
+    if len(runs_here) > 1:
+        overwritten = (
+            'This directory holds output from %d different configurations (%s). '
+            'Their .mat exports are all here, but the PNG figures share fixed '
+            'names in case_NN/, so only the last run\'s figures survive. '
+            'Give each configuration its own RESULT_DIR to keep both.'
+            % (len(runs_here), ', '.join(runs_here)))
+
+    return {'path': rel, 'name': os.path.basename(full), 'cases': cases,
+            'configs_here': runs_here, 'overwritten': overwritten}
 
 
 class Handler(BaseHTTPRequestHandler):
