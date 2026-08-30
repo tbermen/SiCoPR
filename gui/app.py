@@ -26,8 +26,18 @@ Endpoints
     GET  /api/channels?dir=    the .s4p files in one, with a guessed role
     POST /api/netlist          a selection -> the exact argv, or the problems
     POST /api/exec/start       run sicopr.py with that argv
-    GET  /api/exec/status      streamed output from `since` onward
+    GET  /api/exec/status      streamed output from `since` onward (slot=)
     POST /api/exec/stop        terminate the current run
+    GET  /api/sparam?path=     mixed-mode response of one Touchstone file
+    GET  /api/config_dirs      directories containing configuration workbooks
+    POST /api/new_config       create a config from a template
+    GET  /api/dynamic?path=    .mat exports in a run and their dashboards
+    POST /api/render           build the R dashboard for one .mat export
+    GET  /report?path=         a generated *_report.html dashboard
+
+Jobs run in named slots: 'com' for the COM run itself (one at a time, it is
+CPU-heavy) and 'render' for the R dashboard build, which is different work and
+must neither block nor be blocked by a run.
 """
 import glob
 import json
@@ -528,6 +538,72 @@ def list_channels(rel_dir):
     return out
 
 
+def _rscript():
+    """Path to Rscript, or None."""
+    import shutil
+    for name in ('Rscript', 'Rscript.exe'):
+        p = shutil.which(name)
+        if p:
+            return p
+    # a default Windows install is not always on PATH
+    for pat in (r'C:\Program Files\R\R-*\bin\Rscript.exe',
+                r'C:\Program Files\R\R-*\bin\x64\Rscript.exe'):
+        hits = sorted(glob.glob(pat))
+        if hits:
+            return hits[-1]
+    return None
+
+
+def dynamic_payload(rel):
+    """The per-case `.mat` exports in a run, and whether each has a dashboard.
+
+    `--export-mat` writes `<run>_caseNN.mat`; `Rscript R/com_analysis.R` turns
+    one into `<run>_caseNN_report.html` beside it.
+    """
+    full = _safe_path(rel)
+    if not full or not os.path.isdir(full):
+        raise FileNotFoundError(rel)
+    cases = []
+    for mat in sorted(glob.glob(os.path.join(full, '**', '*.mat'), recursive=True)):
+        html = mat[:-4] + '_report.html'
+        cases.append({
+            'mat': os.path.relpath(mat, _ROOT).replace('\\', '/'),
+            'name': os.path.basename(mat),
+            'report': (os.path.relpath(html, _ROOT).replace('\\', '/')
+                       if os.path.isfile(html) else None),
+            'report_mtime': os.path.getmtime(html) if os.path.isfile(html) else None,
+            'mat_mtime': os.path.getmtime(mat),
+        })
+    return {'path': rel, 'cases': cases, 'rscript': _rscript() or ''}
+
+
+def render_dynamic(mat_rel):
+    """Build the R dashboard for one .mat export.
+
+    Runs in the shared job runner under its own slot, so it does not collide
+    with a COM run and its output can be streamed like any other job.
+    """
+    mat = _safe_path(mat_rel)
+    if not mat or not os.path.isfile(mat) or not mat.lower().endswith('.mat'):
+        return {'error': 'not a .mat export inside the repo: %r' % mat_rel}
+    rs = _rscript()
+    if not rs:
+        return {'error': 'Rscript was not found. The dynamic dashboard is built '
+                         'by R (R/com_analysis.R); install R, or add Rscript to '
+                         'PATH, and the button will work.'}
+    script = os.path.join(_ROOT, 'R', 'com_analysis.R')
+    if not os.path.isfile(script):
+        return {'error': 'R/com_analysis.R is missing'}
+    try:
+        job = runner.start([rs, script, mat], _ROOT,
+                           label=os.path.basename(mat), slot='render')
+    except RuntimeError as e:
+        return {'error': str(e)}
+    # _display_argv drops argv[0] and prefixes "python"; this job is Rscript
+    shown = 'Rscript' + _display_argv(job.argv)[len('python'):]
+    return {'ok': True, 'command': shown}
+
+
 class _SParamStub(object):
     """Minimal param for read_p4_s4params. `flim` is deliberately huge: COM
     truncates at param.flim (67 GHz in the stock configs), but that is a COM
@@ -698,6 +774,11 @@ HEADLINE = [
 STAGE_NAMES = {
     '1': 'Channel / FD', '2': 'TDR / ERL', '3': 'Pulse (TD)',
     '4': 'Sampling', '5': 'Equalization', '6': 'Noise', '7': 'COM',
+    # Runs made before figures were renamed to s<N>_ use an older numbering
+    # (02_insertion_loss.png and friends). They are still shown -- grouped
+    # here rather than guessed into a stage, because the old numbers are a
+    # different scheme, not stage indices.
+    '?': 'Other (older figure naming)',
 }
 
 
@@ -810,14 +891,20 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/channels':
                 return self._json(list_channels(q.get('dir', [''])[0]))
             if u.path == '/api/exec/status':
-                r = runner.current()
+                slot = q.get('slot', ['com'])[0] or 'com'
+                r = runner.current(slot)
                 if r is None:
                     return self._json({'idle': True, 'lines': [], 'next': 0})
                 since = int(q.get('since', ['0'])[0] or 0)
                 st = r.status(since)
                 st['idle'] = False
+                st['slot'] = slot
                 st['command'] = _display_argv(r.argv)
                 return self._json(st)
+            if u.path == '/api/dynamic':
+                return self._json(dynamic_payload(q.get('path', [''])[0]))
+            if u.path == '/report':
+                return self._report(q.get('path', [''])[0])
             if u.path == '/figure':
                 return self._figure(q.get('path', [''])[0])
             return self._send(404, b'not found', 'text/plain')
@@ -841,6 +928,19 @@ class Handler(BaseHTTPRequestHandler):
         except RuntimeError as e:
             return {'error': str(e)}
         return {'ok': True, 'command': _display_argv(r.argv)}
+
+    def _report(self, rel):
+        """Serve a generated R dashboard.
+
+        Restricted to `*_report.html` inside the repo. The dashboard is a
+        self-contained page built by R from a .mat export; this endpoint exists
+        to show it in an iframe, not to serve arbitrary HTML from the tree.
+        """
+        full = _safe_path(rel)
+        if not full or not full.lower().endswith('_report.html')                 or not os.path.isfile(full):
+            return self._send(404, b'not found', 'text/plain')
+        with open(full, 'rb') as f:
+            return self._send(200, f.read(), 'text/html; charset=utf-8')
 
     def _figure(self, rel):
         """Serve a generated figure. Restricted to .png inside the repo: this
@@ -871,7 +971,10 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/api/exec/start':
                 return self._json(self._start(body))
             if u.path == '/api/exec/stop':
-                return self._json({'stopped': runner.stop()})
+                return self._json(
+                    {'stopped': runner.stop(body.get('slot', 'com'))})
+            if u.path == '/api/render':
+                return self._json(render_dynamic(body.get('mat', '')))
             return self._send(404, b'not found', 'text/plain')
         except Exception as e:                            # noqa: BLE001
             import traceback

@@ -135,26 +135,31 @@ class Run:
         }
 
 
-_current = None
+# Jobs live in named slots. 'com' is the COM run itself -- still strictly one
+# at a time, because it is CPU-heavy. 'render' is the R dashboard build, which
+# is a different kind of work and must not be blocked by, or block, a run.
+_slots = {}
 _guard = threading.Lock()
 
 
-def current():
-    return _current
+def current(slot='com'):
+    return _slots.get(slot)
 
 
-def start(argv, cwd, label=''):
-    """Start a run, refusing if one is already going."""
-    global _current
+def start(argv, cwd, label='', slot='com'):
+    """Start a job in `slot`, refusing if that slot is already busy."""
     with _guard:
-        if _current is not None and _current.running:
+        live = _slots.get(slot)
+        if live is not None and live.running:
             raise RuntimeError(
-                'a run is already in progress (%s); stop it first'
-                % ' '.join(_current.argv[:3]))
-        _current = Run(argv, cwd, label).start()
-        return _current
+                'a %s job is already in progress (%s); stop it first'
+                % (slot, ' '.join(live.argv[:3])))
+        job = Run(argv, cwd, label).start()
+        _slots[slot] = job
+        return job
 
 
-def stop():
+def stop(slot='com'):
     with _guard:
-        return bool(_current and _current.stop())
+        job = _slots.get(slot)
+        return bool(job and job.stop())

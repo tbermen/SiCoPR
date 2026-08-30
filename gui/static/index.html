@@ -11,22 +11,50 @@
 <header>
   <div class="brand">
     <strong>SiCoPR</strong>
-    <span class="sub">config editor</span>
   </div>
-  <select id="dirPick" title="configuration directory"></select>
-  <select id="configPick" title="configuration workbook"></select>
-  <button id="btnNew" class="ghost">New&hellip;</button>
-  <span id="counts" class="counts"></span>
+  <nav id="tabs" role="tablist">
+    <button class="tab" data-view="config" role="tab">Config</button>
+    <button class="tab" data-view="sparam" role="tab">S-parameters</button>
+    <button class="tab" data-view="run" role="tab">Run</button>
+    <button class="tab" data-view="results" role="tab">Results &middot; static</button>
+    <button class="tab" data-view="dynamic" role="tab">Results &middot; dynamic</button>
+  </nav>
   <span class="spacer"></span>
-  <button id="btnSparam" class="ghost">S-parameters</button>
-  <button id="btnRun" class="ghost">Run&hellip;</button>
-  <button id="btnResults" class="ghost">Results</button>
-  <button id="btnSave" disabled>Save as&hellip;</button>
+  <span id="ctxConfig" class="counts"></span>
 </header>
 
-<section id="sparamView" hidden>
+<!-- ==================================================== Config ========= -->
+<section id="configView" class="view" hidden>
   <div class="rhead">
-    <button id="btnSpBack" class="ghost">&larr; Editor</button>
+    <select id="dirPick" title="configuration directory"></select>
+    <select id="configPick" title="configuration workbook"></select>
+    <button id="btnNew" class="ghost">New&hellip;</button>
+    <button id="btnSave" disabled>Save as&hellip;</button>
+    <span id="counts" class="counts"></span>
+  </div>
+
+  <div class="cfgGrid">
+    <section id="schematic">
+      <svg id="svg" viewBox="0 0 1000 460" preserveAspectRatio="xMidYMin meet"
+           role="img" aria-label="channel schematic"></svg>
+      <p class="hint">Click a block to edit the settings it owns.</p>
+    </section>
+
+    <aside id="panel">
+      <div id="panelHead">
+        <h2 id="panelTitle">Select a block</h2>
+        <p id="panelSub" class="muted">
+          Every setting in the workbook belongs to exactly one block.
+        </p>
+      </div>
+      <div id="cells"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================================================== S-parameters ===== -->
+<section id="sparamView" class="view" hidden>
+  <div class="rhead">
     <select id="spDir" title="channel directory"></select>
     <label class="row"><input id="spFilter" type="checkbox" checked> THRU only</label>
     <span id="spMeta" class="counts"></span>
@@ -34,7 +62,7 @@
   <div class="spGrid">
     <div class="card">
       <h3>Touchstone files</h3>
-      <select id="spFiles" multiple size="18"></select>
+      <select id="spFiles" multiple size="20"></select>
       <p class="muted">Select one or more to overlay. Mixed-mode conversion and
         port order come from the engine&rsquo;s own reader, so this is what COM
         consumes &mdash; not an approximation of it.</p>
@@ -53,18 +81,16 @@
   </div>
 </section>
 
-<section id="runView" hidden>
-  <div class="rhead">
-    <button id="btnRunBack" class="ghost">&larr; Editor</button>
-    <h2>Netlist and run</h2>
-  </div>
-
+<!-- ========================================================= Run ======== -->
+<section id="runView" class="view" hidden>
   <div class="runGrid">
     <div class="card">
       <h3>Inputs</h3>
-      <label>Configuration
-        <input id="nlConfig" type="text" readonly>
-      </label>
+      <div class="cfgline">
+        <span class="muted">Configuration</span>
+        <code id="nlConfig">(none)</code>
+        <button id="btnToConfig" class="link">change in Config</button>
+      </div>
       <label>Channel directory
         <select id="nlDir"></select>
       </label>
@@ -80,9 +106,10 @@
       <label class="row"><input id="nlFilter" type="checkbox" checked>
         show only files whose name matches the role</label>
       <p class="muted">Ctrl/Cmd-click to select several, or none. Roles come
-        from the filename — untick the filter to override.</p>
+        from the filename &mdash; untick the filter to override.</p>
       <div class="opts">
-        <label class="row"><input id="nlMat" type="checkbox"> <code>--export-mat</code></label>
+        <label class="row"><input id="nlMat" type="checkbox">
+          Output dynamic results</label>
         <label class="row"><input id="nlEye" type="checkbox"> <code>--eye-under-mlse</code></label>
         <label class="row">MATLAB version
           <select id="nlVer">
@@ -92,6 +119,10 @@
           </select>
         </label>
       </div>
+      <p class="muted">Dynamic results add <code>--export-mat</code> and, when
+        the run finishes, build the interactive R dashboard into the
+        Results&nbsp;&middot;&nbsp;dynamic tab. Static PNG figures are produced
+        either way.</p>
     </div>
 
     <div class="card">
@@ -110,9 +141,9 @@
   </div>
 </section>
 
-<section id="resultsView" hidden>
+<!-- ============================================== Results (static) ===== -->
+<section id="resultsView" class="view" hidden>
   <div class="rhead">
-    <button id="btnBack" class="ghost">&larr; Editor</button>
     <select id="runPick" title="results directory"></select>
     <button id="btnRefresh" class="ghost">Refresh</button>
     <span id="runMeta" class="counts"></span>
@@ -120,23 +151,29 @@
   <div id="runBody"></div>
 </section>
 
-<main id="editorView">
-  <section id="schematic">
-    <svg id="svg" viewBox="0 0 1000 460" preserveAspectRatio="xMidYMin meet"
-         role="img" aria-label="channel schematic"></svg>
-    <p class="hint">Click a block to edit the settings it owns.</p>
-  </section>
-
-  <aside id="panel">
-    <div id="panelHead">
-      <h2 id="panelTitle">Select a block</h2>
-      <p id="panelSub" class="muted">
-        Every setting in the workbook belongs to exactly one block.
-      </p>
+<!-- ============================================= Results (dynamic) ===== -->
+<section id="dynamicView" class="view" hidden>
+  <div class="rhead">
+    <select id="dynPick" title="results directory"></select>
+    <button id="btnDynRefresh" class="ghost">Refresh</button>
+    <span id="dynMeta" class="counts"></span>
+  </div>
+  <div class="dynGrid">
+    <div class="card">
+      <h3>Cases</h3>
+      <div id="dynList"></div>
+      <p class="muted">A dashboard is built from the <code>.mat</code> export by
+        <code>Rscript R/com_analysis.R</code>. Tick &ldquo;Output dynamic
+        results&rdquo; on the Run tab to produce the export.</p>
+      <pre id="dynLog" class="term" hidden></pre>
     </div>
-    <div id="cells"></div>
-  </aside>
-</main>
+    <div class="card grow">
+      <h3 id="dynTitle">Dashboard</h3>
+      <p id="dynEmpty" class="muted">Select a case with a built dashboard.</p>
+      <iframe id="dynFrame" title="R dashboard" hidden></iframe>
+    </div>
+  </div>
+</section>
 
 <div id="dirtyBar" hidden>
   <span id="dirtyCount"></span>
@@ -164,11 +201,11 @@
 <dialog id="newDlg">
   <form method="dialog">
     <h3>New configuration</h3>
-    <p class="muted">A config cannot be built from nothing — the engine needs
-      the <code>.START</code> package blocks and the workbook's own keywords
-      sheet. A new config is a copy of a known-good workbook, optionally with
-      every main-region setting put back to the default that workbook
-      declares.</p>
+    <p class="muted">A config cannot be built from nothing &mdash; the engine
+      needs the <code>.START</code> package blocks and the workbook's own
+      keywords sheet. A new config is a copy of a known-good workbook,
+      optionally with every main-region setting put back to the default that
+      workbook declares.</p>
     <label>Template
       <select id="newTemplate"></select>
     </label>

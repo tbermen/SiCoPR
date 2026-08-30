@@ -11,6 +11,7 @@ value that will not serialise.
 
     python tests/test_gui_server.py
 """
+import glob
 import json
 import os
 import shutil
@@ -307,9 +308,16 @@ try:
         check("a_case_carries_metrics_or_says_why_not",
               'metrics' in case and 'has_csv' in case,
               "case payload was %r" % case)
-        check("stage_figures_are_grouped_by_stage_id",
-              all(s['id'].isdigit() and s['figures'] for s in case['stages']),
-              "stages were %r" % case['stages'])
+        # Every group must carry figures and be labelled. Runs predating the
+        # s<N>_ figure naming land in the '?' group rather than being dropped,
+        # so a digit id is not required -- only that nothing is unlabelled or
+        # empty.
+        check("stage_figures_are_grouped_and_labelled",
+              all((s['id'].isdigit() or s['id'] == '?')
+                  and s['label'] and s['figures'] for s in case['stages']),
+              "stages were %r"
+              % [(s['id'], s['label'], len(s['figures']))
+                 for s in case['stages']])
 
         figs = [f for s in case['stages'] for f in s['figures']]
         if figs:
@@ -593,6 +601,103 @@ try:
                   "over." % r)
         finally:
             slow.stop()
+
+    # --------------------------------------------------- tabs and layout
+    #
+    # Each operation owns a tab. The point of the split is that the Run tab
+    # cannot quietly change which config is being run -- that belongs to
+    # Config -- so the structural check is that the picker lives in one place.
+    page = get('/')[1].decode('utf-8')
+    tabs = _re.findall(r'data-view="(\w+)"', page)
+    views = _re.findall(r'<section id="(\w+)View"', page)
+    check("the_page_has_the_five_tabs",
+          tabs == ['config', 'sparam', 'run', 'results', 'dynamic'],
+          "tabs are %s" % tabs)
+    check("every_tab_has_a_view", set(tabs) <= set(views),
+          "tabs %s but views %s" % (tabs, views))
+
+    def section(name):
+        i = page.index('id="%sView"' % name)
+        rest = [page.index('id="%sView"' % v) for v in views
+                if page.index('id="%sView"' % v) > i]
+        return page[i:min(rest) if rest else len(page)]
+
+    check("the_config_picker_lives_in_the_config_tab",
+          'id="configPick"' in section('config'),
+          "the configuration picker is not in the Config tab")
+    check("the_run_tab_does_not_pick_a_config",
+          'id="configPick"' not in section('run')
+          and 'id="dirPick"' not in section('run'),
+          "the Run tab contains a config picker. Separating the tabs is "
+          "pointless if the run can still change what it is running from "
+          "inside itself.")
+    check("the_run_tab_says_which_config_it_will_use",
+          'id="nlConfig"' in section('run'),
+          "the Run tab does not show the selected configuration, so the user "
+          "cannot tell what is about to run")
+
+    # ------------------------------------------------- dynamic results
+    dyn_runs = [r for r in runs
+                if glob.glob(os.path.join(_ROOT, r['path'], '**', '*.mat'),
+                             recursive=True)]
+    if not dyn_runs:
+        print('\nno .mat exports present; the dynamic-results endpoints were '
+              'not exercised.')
+    else:
+        d = get_json('/api/dynamic?path='
+                     + urllib.parse.quote(dyn_runs[0]['path']))
+        check("dynamic_results_list_the_mat_exports",
+              d.get('cases'),
+              "/api/dynamic for %s returned %r" % (dyn_runs[0]['path'], d))
+        check("each_export_says_whether_a_dashboard_exists",
+              all('report' in c and 'mat' in c for c in d['cases']),
+              "case rows were %r" % d['cases'][:1])
+
+        built = [c for c in d['cases'] if c['report']]
+        if built:
+            code, body, ctype = get('/report?path='
+                                    + urllib.parse.quote(built[0]['report']))
+            check("a_built_dashboard_is_served_as_html",
+                  code == 200 and b'<' in body[:200] and 'html' in ctype,
+                  "GET /report returned %s (%s), %d bytes"
+                  % (code, ctype, len(body)))
+
+        # /report reads files by path, so it needs the same containment and
+        # type restrictions as /figure.
+        for bad in ('README.md', 'gui/app.py'):
+            code, _, _ = get('/report?path=' + urllib.parse.quote(bad))
+            check("the_report_endpoint_refuses_%s" % bad.replace('/', '_')
+                  .replace('.', '_'),
+                  code == 404,
+                  "GET /report?path=%s returned %s; this endpoint exists to "
+                  "show a generated dashboard, not to serve the repo"
+                  % (bad, code))
+
+        # a render must not be blocked by, or block, a COM run
+        held = _runner.start([sys.executable, '-c', 'import time;time.sleep(20)'],
+                             _ROOT, slot='com')
+        try:
+            other = _runner.start(
+                [sys.executable, '-c', 'print("render slot")'],
+                _ROOT, slot='render')
+            check("a_dashboard_build_does_not_collide_with_a_com_run",
+                  other is not None,
+                  "starting a render while a COM run is live was refused; the "
+                  "two are different kinds of work and must not share a slot")
+            for _ in range(100):
+                if not other.running:
+                    break
+                time.sleep(0.05)
+            st = get_json('/api/exec/status?slot=render&since=0')
+            check("the_render_slot_reports_separately",
+                  'render slot' in '\n'.join(st.get('lines', [])),
+                  "the render slot's status returned %r" % st.get('lines'))
+            st_com = get_json('/api/exec/status?slot=com&since=0')
+            check("the_two_slots_do_not_share_output",
+                  'render slot' not in '\n'.join(st_com.get('lines', [])),
+                  "the COM slot is showing the render job's output")
+        finally:
+            held.stop()
 
     # ------------------------------------------ the page and the script agree
     #

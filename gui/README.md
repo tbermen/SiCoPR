@@ -12,6 +12,21 @@ It serves on `http://127.0.0.1:8765` and opens a browser. Use
 
 Stdlib only — nothing to install beyond what the engine already needs.
 
+## Five tabs, one operation each
+
+| tab | what it is for |
+| --- | --- |
+| **Config** | choose and edit a configuration workbook |
+| **S-parameters** | look at channel behaviour before running anything |
+| **Run** | choose channels, review the command, run, watch the output |
+| **Results · static** | the PNG figures and `results.csv` every run writes |
+| **Results · dynamic** | the interactive R dashboard, when the run exported one |
+
+The config is chosen in **Config** and nowhere else. The Run tab shows which
+configuration it will use and links back, but cannot change it — separating the
+tabs is pointless if a run can still quietly change what it is running from
+inside itself.
+
 ## What it does
 
 - Draws the channel as blocks: Tx die → Tx package → channel → Rx package →
@@ -39,7 +54,15 @@ Stdlib only — nothing to install beyond what the engine already needs.
   setting, not a property of the file.
 - **Run…** picks the input channels, shows the exact command that will be run,
   executes `sicopr.py`, and streams its terminal output live.
-- **Results** browses the run directories: per case, the headline numbers
+- **Results · dynamic** builds and shows the interactive R dashboard. Ticking
+  *Output dynamic results* on the Run tab passes `--export-mat`; when the run
+  finishes, `Rscript R/com_analysis.R <case>.mat` turns the export into a
+  self-contained HTML page, shown here in an iframe. Dashboards can also be
+  built or rebuilt by hand per case, and one older than its export is marked
+  as such. The build runs in its own job slot, so it neither blocks nor is
+  blocked by a COM run. Without Rscript the tab says so and still displays
+  dashboards that already exist.
+- **Results · static** browses the run directories: per case, the headline numbers
   (COM, VEO, VEC, ERL, FOM, itick, the chosen EQ point) read from
   `results.csv`, and the generated figures grouped by the seven pipeline
   stages. Click a figure to enlarge it. **Refresh** reloads after a run.

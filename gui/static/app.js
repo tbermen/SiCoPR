@@ -447,11 +447,33 @@ $('#btnRevert').addEventListener('click', () => {
 
 /* ------------------------------------------------------------ navigation */
 
+/* One tab is visible at a time. Each operation owns its own tab: the config is
+ * chosen and edited in Config only, so the Run tab is about running and cannot
+ * quietly change what is being run. */
+const VIEWS = {
+  config: '#configView',
+  sparam: '#sparamView',
+  run: '#runView',
+  results: '#resultsView',
+  dynamic: '#dynamicView',
+};
+let VIEW = 'config';
+
 function show(which) {
-  $('#editorView').hidden = which !== 'editor';
-  $('#resultsView').hidden = which !== 'results';
-  $('#runView').hidden = which !== 'run';
-  $('#sparamView').hidden = which !== 'sparam';
+  if (!VIEWS[which]) return;
+  VIEW = which;
+  for (const [name, sel] of Object.entries(VIEWS)) {
+    $(sel).hidden = name !== which;
+  }
+  for (const b of document.querySelectorAll('#tabs .tab')) {
+    const on = b.dataset.view === which;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  if (which === 'sparam') spEnter();
+  if (which === 'run') runEnter();
+  if (which === 'results') resultsEnter();
+  if (which === 'dynamic') dynEnter();
 }
 
 /* The full figure set com_plots can produce, so a run that made fewer can say
@@ -466,11 +488,13 @@ const EXPECTED_FIGS = [
   's7_eye_contour.png', 's7_timing_bathtub.png', 's7_voltage_bathtub.png',
 ];
 
-const showEditor = () => show('editor');
+const showEditor = () => show('config');
 const showResults = () => show('results');
 
-$('#btnBack').addEventListener('click', showEditor);
-$('#btnRunBack').addEventListener('click', showEditor);
+for (const b of document.querySelectorAll('#tabs .tab')) {
+  b.addEventListener('click', () => show(b.dataset.view));
+}
+$('#btnToConfig').addEventListener('click', () => show('config'));
 
 /* ------------------------------------------------------------ run: netlist */
 
@@ -567,9 +591,9 @@ function fillChannelSelects(files) {
   refreshNetlist();
 }
 
-$('#btnRun').addEventListener('click', async () => {
+async function runEnter() {
   try {
-    $('#nlConfig').value = CFG ? CFG.path : '(none)';
+    $('#nlConfig').textContent = CFG ? CFG.path : '(none)';
     const dirs = await api('/api/channel_dirs');
     const dsel = $('#nlDir');
     if (!dsel.options.length) {
@@ -587,10 +611,10 @@ $('#btnRun').addEventListener('click', async () => {
       if (dirs.length) fillChannelSelects(await api('/api/channels?dir='
         + encodeURIComponent(dirs[0].dir)));
     }
-    show('run');
+    refreshNetlist();
     pollStatus();          // pick up a run already in progress
   } catch (e) { toast(e.message, true); }
-});
+}
 
 $('#nlDir').addEventListener('change', async () => {
   try {
@@ -713,23 +737,31 @@ async function pollStatus() {
   } else {
     refreshNetlist();
     if (st.returncode === 0) {
-      toast('run finished — open Results and press Refresh');
+      if ($('#nlMat').checked) {
+        // the run was asked for dynamic results, so build them without making
+        // the user go and find the export
+        toast('run finished — building the dynamic dashboard');
+        autoBuildDynamic();
+      } else {
+        toast('run finished — see Results · static');
+      }
     } else {
       toast('run exited with code ' + st.returncode, true);
     }
   }
 }
 
-$('#btnResults').addEventListener('click', () => {
+function resultsEnter() {
   api('/api/results').then((rows) => {
     const pick = $('#runPick');
+    const keepSel = pick.value;
     pick.textContent = '';
     if (!rows.length) {
       $('#runBody').textContent = 'No result directories found. '
         + 'Run sicopr.py with SAVE_FIGURES / CSV_REPORT enabled in the config.';
-      showResults();
       return;
     }
+    const keep = pick.value;
     for (const r of rows) {
       const o = document.createElement('option');
       o.value = r.path;
@@ -737,10 +769,10 @@ $('#btnResults').addEventListener('click', () => {
         + `${r.png} figures)`;
       pick.appendChild(o);
     }
-    showResults();
-    return loadRun(rows[0].path);
+    pick.value = rows.some((r) => r.path === keep) ? keep : rows[0].path;
+    return loadRun(pick.value);
   }).catch((e) => toast(e.message, true));
-});
+}
 
 $('#runPick').addEventListener('change', () => {
   loadRun($('#runPick').value).catch((e) => toast(e.message, true));
@@ -918,6 +950,7 @@ window.addEventListener('beforeunload', (e) => {
   if (Object.keys(EDITS).length) { e.preventDefault(); e.returnValue = ''; }
 });
 
+show('config');
 boot().catch((e) => toast(e.message, true));
 
 /* ---------------------------------------------------------- S-parameters */
@@ -929,11 +962,8 @@ const SP_COLOURS = ['#1e5fbf', '#c2410c', '#0d7a4a', '#6a3fb5',
 let SP_LOADED = [];      // [{payload, colour}]
 let SP_ALL = [];         // every file in the current directory
 
-function spShow() { show('sparam'); }
 
-$('#btnSpBack').addEventListener('click', showEditor);
-
-$('#btnSparam').addEventListener('click', async () => {
+async function spEnter() {
   try {
     const dsel = $('#spDir');
     if (!dsel.options.length) {
@@ -950,9 +980,8 @@ $('#btnSparam').addEventListener('click', async () => {
       }
       await spLoadDir(dirs[0].dir);
     }
-    spShow();
   } catch (e) { toast(e.message, true); }
-});
+}
 
 async function spLoadDir(dir) {
   SP_ALL = await api('/api/channels?dir=' + encodeURIComponent(dir));
@@ -1135,4 +1164,185 @@ function spDraw() {
       `${p.name}  ·  ports ${p.ports.join(' ')}  ·  ${p.n_points} pts`));
     legend.appendChild(item);
   }
+}
+
+
+/* ------------------------------------------------------ dynamic results */
+
+/* The static tab shows the PNGs every run writes. This one shows the
+ * interactive R dashboard, which exists only when the run was given
+ * --export-mat: `Rscript R/com_analysis.R <case>.mat` turns the export into a
+ * self-contained HTML page, served here in an iframe. */
+let DYN_POLL = null;
+let DYN_SINCE = 0;
+
+async function dynEnter() {
+  try {
+    const rows = await api('/api/results');
+    const pick = $('#dynPick');
+    const keep = pick.value;
+    pick.textContent = '';
+    for (const r of rows) {
+      const o = document.createElement('option');
+      o.value = r.path;
+      o.textContent = r.path;
+      pick.appendChild(o);
+    }
+    if (!rows.length) {
+      $('#dynList').textContent = 'No result directories found.';
+      return;
+    }
+    pick.value = rows.some((r) => r.path === keep) ? keep : rows[0].path;
+    await dynLoad(pick.value);
+  } catch (e) { toast(e.message, true); }
+}
+
+$('#dynPick').addEventListener('change', () => {
+  dynLoad($('#dynPick').value).catch((e) => toast(e.message, true));
+});
+$('#btnDynRefresh').addEventListener('click', () => {
+  dynLoad($('#dynPick').value).catch((e) => toast(e.message, true));
+});
+
+async function dynLoad(path) {
+  const d = await api('/api/dynamic?path=' + encodeURIComponent(path));
+  const host = $('#dynList');
+  host.textContent = '';
+  $('#dynMeta').textContent = d.cases.length
+    ? `${d.cases.length} export(s)`
+    : 'no .mat exports in this run';
+
+  if (!d.rscript) {
+    const w = document.createElement('div');
+    w.className = 'problem';
+    w.textContent = 'Rscript was not found, so dashboards cannot be built here. '
+      + 'Existing ones still display.';
+    host.appendChild(w);
+  }
+
+  if (!d.cases.length) {
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = 'This run has no .mat export. Tick "Output dynamic results" '
+      + 'on the Run tab and run again.';
+    host.appendChild(p);
+    return;
+  }
+
+  for (const c of d.cases) {
+    const row = document.createElement('div');
+    row.className = 'dyncase';
+    const nm = document.createElement('div');
+    nm.className = 'dynname';
+    nm.textContent = c.name;
+    row.appendChild(nm);
+
+    const bar = document.createElement('div');
+    bar.className = 'dynbtns';
+    if (c.report) {
+      const open = document.createElement('button');
+      open.className = 'ghost';
+      open.textContent = 'Open';
+      open.addEventListener('click', () => dynOpen(c));
+      bar.appendChild(open);
+    }
+    const build = document.createElement('button');
+    build.className = c.report ? 'ghost' : '';
+    build.textContent = c.report ? 'Rebuild' : 'Build dashboard';
+    build.disabled = !d.rscript;
+    build.addEventListener('click', () => dynBuild(c));
+    bar.appendChild(build);
+
+    // A dashboard older than its export is stale: the run was repeated and
+    // this page is showing the previous one.
+    if (c.report && c.report_mtime < c.mat_mtime) {
+      const s = document.createElement('span');
+      s.className = 'tag ref';
+      s.textContent = 'older than the export';
+      bar.appendChild(s);
+    }
+    row.appendChild(bar);
+    host.appendChild(row);
+  }
+
+  const first = d.cases.find((c) => c.report);
+  if (first) dynOpen(first);
+}
+
+function dynOpen(c) {
+  $('#dynTitle').textContent = c.name.replace(/\.mat$/, '');
+  const fr = $('#dynFrame');
+  fr.src = '/report?path=' + encodeURIComponent(c.report);
+  fr.hidden = false;
+  $('#dynEmpty').hidden = true;
+}
+
+async function dynBuild(c) {
+  try {
+    const r = await api('/api/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mat: c.mat }),
+    });
+    toast('building: ' + r.command);
+    $('#dynLog').hidden = false;
+    $('#dynLog').textContent = '';
+    DYN_SINCE = 0;
+    dynPoll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function dynPoll() {
+  clearTimeout(DYN_POLL);
+  let st;
+  try {
+    st = await api('/api/exec/status?slot=render&since=' + DYN_SINCE);
+  } catch (e) {
+    // same rule as the run poller: a failed poll must not end the loop
+    $('#dynMeta').textContent = 'status unavailable: ' + e.message;
+    DYN_POLL = setTimeout(dynPoll, 3000);
+    return;
+  }
+  if (st.idle) return;
+  if (st.lines.length) {
+    const el = $('#dynLog');
+    const keep = (el.textContent + st.lines.join('\n') + '\n').split('\n');
+    el.textContent = keep.slice(-400).join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+  DYN_SINCE = st.next;
+  $('#dynMeta').textContent = st.running
+    ? `building — ${st.elapsed.toFixed(0)}s`
+    : `build finished (exit ${st.returncode}) in ${st.elapsed.toFixed(1)}s`;
+  if (st.running || st.behind) {
+    DYN_POLL = setTimeout(dynPoll, st.behind ? 150 : 1000);
+  } else if (st.returncode === 0) {
+    toast('dashboard built');
+    dynLoad($('#dynPick').value).catch((e) => toast(e.message, true));
+  } else {
+    toast('R exited with code ' + st.returncode, true);
+  }
+}
+
+
+/* After a run with "Output dynamic results", find the newest export and build
+ * its dashboard, so the user does not have to go looking for it. */
+async function autoBuildDynamic() {
+  try {
+    const rows = await api('/api/results');
+    if (!rows.length) return;
+    const d = await api('/api/dynamic?path=' + encodeURIComponent(rows[0].path));
+    if (!d.cases.length) {
+      toast('the run produced no .mat export', true);
+      return;
+    }
+    if (!d.rscript) {
+      toast('run finished, but Rscript was not found so no dashboard was built',
+            true);
+      return;
+    }
+    $('#dynPick').value = rows[0].path;
+    show('dynamic');
+    await dynBuild(d.cases[0]);
+  } catch (e) { toast(e.message, true); }
 }
