@@ -18,10 +18,40 @@
   <button id="btnNew" class="ghost">New&hellip;</button>
   <span id="counts" class="counts"></span>
   <span class="spacer"></span>
+  <button id="btnSparam" class="ghost">S-parameters</button>
   <button id="btnRun" class="ghost">Run&hellip;</button>
   <button id="btnResults" class="ghost">Results</button>
   <button id="btnSave" disabled>Save as&hellip;</button>
 </header>
+
+<section id="sparamView" hidden>
+  <div class="rhead">
+    <button id="btnSpBack" class="ghost">&larr; Editor</button>
+    <select id="spDir" title="channel directory"></select>
+    <label class="row"><input id="spFilter" type="checkbox" checked> THRU only</label>
+    <span id="spMeta" class="counts"></span>
+  </div>
+  <div class="spGrid">
+    <div class="card">
+      <h3>Touchstone files</h3>
+      <select id="spFiles" multiple size="18"></select>
+      <p class="muted">Select one or more to overlay. Mixed-mode conversion and
+        port order come from the engine&rsquo;s own reader, so this is what COM
+        consumes &mdash; not an approximation of it.</p>
+      <div class="opts">
+        <label class="row"><input id="spIL" type="checkbox" checked> SDD21 (insertion loss)</label>
+        <label class="row"><input id="spRL" type="checkbox" checked> SDD11 / SDD22 (return loss)</label>
+        <label class="row"><input id="spLog" type="checkbox" checked> log frequency</label>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Frequency response</h3>
+      <svg id="spChart" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="S-parameter frequency response"></svg>
+      <div id="spLegend" class="splegend"></div>
+    </div>
+  </div>
+</section>
 
 <section id="runView" hidden>
   <div class="rhead">

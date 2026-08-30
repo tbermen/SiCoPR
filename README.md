@@ -181,7 +181,9 @@ It also runs the whole workflow without leaving the page: pick the THRU and
 crosstalk channels, review the exact `sicopr.py` command it assembles, run it
 with the terminal output streamed live, then refresh to see the new results —
 per case, the headline numbers from `results.csv` and the figures grouped by
-pipeline stage. See [gui/README.md](gui/README.md).
+pipeline stage. An S-parameter tab plots the mixed-mode response of any
+Touchstone file in the repo, using the engine's own reader. See
+[gui/README.md](gui/README.md).
 
 ## 4. Repository layout
 

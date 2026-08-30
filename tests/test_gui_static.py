@@ -140,6 +140,100 @@ if not parsed:
           "the string-stripping pass produced an implausible result; a quote "
           "is probably unterminated")
 
+# ---------------------------------------------------------- freeze guards
+#
+# Three shapes in the status loop each present to the user as "the GUI froze"
+# while the run itself is perfectly healthy. All three were real.
+if esprima is not None:
+    tree = esprima.parseScript(src, {'range': True})
+
+    def find_fn(node, name, out=None):
+        out = [] if out is None else out
+        if isinstance(node, list):
+            for n in node:
+                find_fn(n, name, out)
+            return out
+        if not hasattr(node, 'type'):
+            return out
+        if getattr(node, 'type', '') in ('FunctionDeclaration',) \
+                and getattr(getattr(node, 'id', None), 'name', '') == name:
+            out.append(node)
+        for key in dir(node):
+            if key.startswith('_') or key in ('type', 'range'):
+                continue
+            try:
+                v = getattr(node, key)
+            except Exception:                          # noqa: BLE001
+                continue
+            if isinstance(v, list) or hasattr(v, 'type'):
+                find_fn(v, name, out)
+        return out
+
+    fns = find_fn(tree.body, 'pollStatus')
+    check("pollStatus_exists", fns, "no pollStatus function found in app.js")
+    if fns:
+        a, b = fns[0].range
+        body = src[a:b]
+        # 1. a failed poll must retry, not end the loop
+        catch_at = body.find('catch')
+        nxt = body.find('if (st.idle', catch_at)
+        catch_body = body[catch_at:nxt if nxt > 0 else len(body)]
+        check("a_failed_status_poll_reschedules_itself",
+              'setTimeout' in catch_body,
+              "pollStatus's catch block does not schedule another poll. One "
+              "transient failure then leaves the status window dead for the "
+              "rest of the run while sicopr.py keeps going -- which is "
+              "indistinguishable from a freeze.")
+
+    # 2. the terminal must be bounded
+    check("the_terminal_output_is_bounded",
+          'TERM_MAX' in src and 'TERM.slice' in src,
+          "app.js does not trim the terminal. An unbounded <pre> on a long, "
+          "chatty run grows into megabytes and every update re-lays it out.")
+
+    # 3. and must not be built by repeated string concatenation.
+    #
+    # Checked against ANY `textContent +=`, not the one spelling this bug
+    # happened to have. The first version of this check looked for
+    # `#term').textContent +=` literally and passed happily when the same
+    # defect was reintroduced through a local variable.
+    def code_lines(text):
+        """(lineno, code) with comments removed, line numbers preserved.
+
+        Needed because this very file's explanatory comment quotes the defect
+        it forbids, and a naive scan flagged the comment as the bug.
+        """
+        out, in_block = [], False
+        for n, line in enumerate(text.split('\n'), 1):
+            buf, i = [], 0
+            while i < len(line):
+                two = line[i:i + 2]
+                if in_block:
+                    if two == '*/':
+                        in_block = False
+                        i += 2
+                    else:
+                        i += 1
+                    continue
+                if two == '/*':
+                    in_block = True
+                    i += 2
+                    continue
+                if two == '//':
+                    break
+                buf.append(line[i])
+                i += 1
+            out.append((n, ''.join(buf)))
+        return out
+
+    concat = [n for n, l in code_lines(src)
+              if 'textContent +=' in l or 'innerHTML +=' in l]
+    check("no_dom_node_is_grown_by_concatenation",
+          not concat,
+          "app.js appends to a DOM node with `+=` at line(s) %s. That re-reads "
+          "and re-renders the whole node on every update -- O(n) per poll, and "
+          "on a long chatty run the tab locks up." % concat)
+
 # 'use strict' at the top means a stray assignment to an undeclared name is a
 # runtime error rather than a silent global.
 check("app_js_is_strict_mode", src.lstrip().startswith("'use strict'"),

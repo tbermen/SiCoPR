@@ -528,6 +528,86 @@ def list_channels(rel_dir):
     return out
 
 
+class _SParamStub(object):
+    """Minimal param for read_p4_s4params. `flim` is deliberately huge: COM
+    truncates at param.flim (67 GHz in the stock configs), but that is a COM
+    setting, not a property of the file, and this view is about the file."""
+    Z0 = 100.0
+    flim = 1e13
+
+
+class _SParamOP(object):
+    RX_CALIBRATION = 0
+    DEBUG = 0
+
+
+_SPARAM_CACHE = {}
+
+
+def sparam_payload(rel, points=900):
+    """Mixed-mode response of one Touchstone file, ready to plot.
+
+    Uses the engine's own `read_p4_s4params` -- port auto-detection and mixed-
+    mode conversion included -- rather than a hand-rolled
+    0.5*(S21-S23-S41+S43), so what the page draws is what COM actually consumes.
+
+    Decimated to `points` samples for the browser. Insertion loss is decimated
+    by taking the WORST (most negative) value in each bin rather than a
+    sample, so a narrow suck-out cannot disappear between pixels; return loss
+    takes the worst (least negative) for the same reason.
+    """
+    import numpy as np
+
+    full = _safe_path(rel)
+    if not full or not os.path.isfile(full):
+        raise FileNotFoundError(rel)
+    if not full.lower().endswith(('.s4p', '.s2p')):
+        raise ValueError('not a Touchstone file: %r' % rel)
+
+    key = (full, os.path.getmtime(full), points)
+    if key in _SPARAM_CACHE:
+        return _SPARAM_CACHE[key]
+
+    import sicopr
+    data, SDD, _sdc, _scc, _scd, ports = sicopr.read_p4_s4params(
+        full, 0, 0, [], _SParamOP(), _SParamStub())
+    f = np.asarray(data.freq, dtype=float)
+    SDD = np.asarray(SDD)
+
+    def db(x):
+        return 20.0 * np.log10(np.maximum(np.abs(x), 1e-15))
+
+    il, rl1, rl2 = db(SDD[:, 1, 0]), db(SDD[:, 0, 0]), db(SDD[:, 1, 1])
+
+    n = len(f)
+    step = max(1, int(np.ceil(n / float(points))))
+    idx = list(range(0, n, step))
+
+    def worst(arr, want_min):
+        out = []
+        for i in idx:
+            seg = arr[i:i + step]
+            out.append(float(seg.min() if want_min else seg.max()))
+        return out
+
+    payload = {
+        'path': rel,
+        'name': os.path.basename(full),
+        'ports': [int(p) for p in np.asarray(ports).ravel().tolist()],
+        'n_points': int(n),
+        'decimated_to': len(idx),
+        'f_ghz': [float(f[i]) / 1e9 for i in idx],
+        'il_db': worst(il, True),        # worst-case loss in each bin
+        'rl1_db': worst(rl1, False),     # worst-case (highest) return loss
+        'rl2_db': worst(rl2, False),
+        'f_max_ghz': float(f[-1]) / 1e9,
+    }
+    if len(_SPARAM_CACHE) > 24:
+        _SPARAM_CACHE.clear()
+    _SPARAM_CACHE[key] = payload
+    return payload
+
+
 def build_netlist(body):
     """Resolve a GUI selection into the exact argv `sicopr.py` will be given.
 
@@ -725,6 +805,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(run_payload(q.get('path', [''])[0]))
             if u.path == '/api/channel_dirs':
                 return self._json(list_channel_dirs())
+            if u.path == '/api/sparam':
+                return self._json(sparam_payload(q.get('path', [''])[0]))
             if u.path == '/api/channels':
                 return self._json(list_channels(q.get('dir', [''])[0]))
             if u.path == '/api/exec/status':
@@ -741,6 +823,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b'not found', 'text/plain')
         except FileNotFoundError as e:
             return self._json({'error': 'not found: %s' % e}, 404)
+        except ValueError as e:
+            # a bad path or wrong file type is the caller's mistake, not a
+            # server fault; no stack trace needed
+            return self._json({'error': str(e)}, 400)
         except Exception as e:                            # noqa: BLE001
             import traceback
             traceback.print_exc()

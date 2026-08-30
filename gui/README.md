@@ -30,6 +30,13 @@ Stdlib only — nothing to install beyond what the engine already needs.
   each edit their own half and the halves are recombined on save, in the shape
   the original literal had.
 - Edits are tracked, shown on the schematic, and written to a **new** workbook.
+- **S-parameters** plots the mixed-mode response of any Touchstone file in the
+  repo — SDD21 solid, SDD11/SDD22 dashed — overlaying several at once. The
+  conversion and port order come from the engine's own `read_p4_s4params`, so
+  what is drawn is what COM consumes, not an approximation. Decimation keeps
+  the *worst* value in each bin, so a narrow suck-out cannot vanish between
+  pixels, and `flim` is deliberately not applied: truncating at 67 GHz is a COM
+  setting, not a property of the file.
 - **Run…** picks the input channels, shows the exact command that will be run,
   executes `sicopr.py`, and streams its terminal output live.
 - **Results** browses the run directories: per case, the headline numbers
@@ -59,6 +66,31 @@ Stdlib only — nothing to install beyond what the engine already needs.
 Only one run at a time — a COM run is CPU-heavy and a browser that could stack
 them up is a way to fall over, not a feature. The command is assembled as an
 argv list from validated repo-relative paths and never goes through a shell.
+
+### Long runs
+
+`Local Search = 0` searches the full grid: hours, and loud. Three things in the
+first version of the status window each looked exactly like a freeze, and all
+three are fixed:
+
+- **A failed poll ended the loop.** One transient error and the status window
+  was dead for the rest of the run while `sicopr.py` carried on. It now retries
+  with backoff and never gives up while a run may be live.
+- **The terminal grew without bound**, appended with `textContent +=` — O(n)
+  per update on a buffer heading for megabytes, plus a forced reflow to scroll.
+  It now keeps the last 4000 lines in an array and writes once.
+- **One response could carry the whole 20 000-line buffer.** Responses are
+  capped at 2000 lines, report how many are still buffered, and the client
+  drains fast until caught up.
+
+A quiet run is the fourth thing that looks like a freeze — a full-grid search
+can go minutes between progress lines — so the status line now reports how long
+it has been since any output.
+
+Measured on a simulated full-grid run: 54 000 lines in 18 bursts with 6-second
+silences and a 25-second pause standing in for a backgrounded tab. All 54 000
+arrived, contiguous, with nothing lost, despite 34 000 being evicted from the
+server-side buffer along the way.
 
 ## "New from defaults" is narrower than it sounds
 

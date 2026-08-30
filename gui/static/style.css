@@ -231,3 +231,23 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px;
 .alltable td:last-child { word-break: break-word; }
 .alltable tr:last-child td { border-bottom: 0; }
 .missing { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+
+/* -------------------------------------------------------- S-parameters */
+#sparamView { padding: 14px 16px 60px; }
+.spGrid { display: grid; gap: 16px;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); }
+@media (max-width: 980px) { .spGrid { grid-template-columns: 1fr; } }
+#spFiles { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
+#spChart { width: 100%; height: auto; display: block;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.spgrid { stroke: var(--line); stroke-width: 1; }
+.spaxis { fill: var(--muted); font-size: 11px;
+  font-family: ui-sans-serif, system-ui, sans-serif; }
+.spempty { fill: var(--muted); font-size: 13px;
+  font-family: ui-sans-serif, system-ui, sans-serif; }
+.spline { fill: none; stroke-width: 1.4; }
+.spline.rl { stroke-width: 1; stroke-dasharray: 4 3; opacity: .55; }
+.splegend { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+.spitem { display: flex; align-items: center; gap: 7px; font-size: 11.5px;
+  color: var(--muted); font-family: ui-monospace, monospace; }
+.spitem i { width: 16px; height: 3px; border-radius: 2px; flex: none; }

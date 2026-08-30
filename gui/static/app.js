@@ -451,6 +451,7 @@ function show(which) {
   $('#editorView').hidden = which !== 'editor';
   $('#resultsView').hidden = which !== 'results';
   $('#runView').hidden = which !== 'run';
+  $('#sparamView').hidden = which !== 'sparam';
 }
 
 /* The full figure set com_plots can produce, so a run that made fewer can say
@@ -613,8 +614,9 @@ $('#btnExec').addEventListener('click', async () => {
       body: JSON.stringify(netlistBody()),
     });
     if (r.problems) { toast(r.problems.join('; '), true); return; }
-    $('#term').textContent = '';
+    termReset('');
     NEXT_LINE = 0;
+    POLL_FAILS = 0;
     $('#btnExec').disabled = true;
     $('#btnKill').disabled = false;
     pollStatus();
@@ -627,16 +629,59 @@ $('#btnKill').addEventListener('click', () => {
     .catch((e) => toast(e.message, true));
 });
 
+/* The terminal keeps only the last TERM_MAX lines.
+ *
+ * The first version appended with `#term.textContent += ...` and never
+ * trimmed. On a full-grid run — long AND loud — that means re-reading,
+ * re-concatenating and re-laying-out a string that grows into megabytes, on
+ * every poll, while also forcing a reflow to scroll. The tab locks up, and the
+ * run looks frozen when it is fine. Keeping a bounded array and writing it once
+ * makes the cost independent of how long the run has been going. */
+const TERM_MAX = 4000;
+let TERM = [];
+let POLL_FAILS = 0;
+
+function termReset(msg) {
+  TERM = msg ? [msg] : [];
+  $('#term').textContent = TERM.join('\n');
+}
+
+function termAppend(lines) {
+  if (!lines.length) return;
+  TERM = TERM.concat(lines);
+  let dropped = 0;
+  if (TERM.length > TERM_MAX) {
+    dropped = TERM.length - TERM_MAX;
+    TERM = TERM.slice(dropped);
+  }
+  const el = $('#term');
+  el.textContent = TERM.join('\n') + '\n';
+  if ($('#follow').checked) el.scrollTop = el.scrollHeight;
+  return dropped;
+}
+
 async function pollStatus() {
   clearTimeout(POLL);
   let st;
   try {
     st = await api('/api/exec/status?since=' + NEXT_LINE);
+    POLL_FAILS = 0;
   } catch (e) {
-    $('#execState').textContent = 'status unavailable: ' + e.message;
+    // A failed poll must never end the loop. The original version returned
+    // here, so one hiccup left the status window dead for the rest of the run
+    // while sicopr.py carried on — indistinguishable from a freeze.
+    POLL_FAILS += 1;
+    const wait = Math.min(30000, 900 * Math.pow(2, POLL_FAILS));
+    $('#execState').textContent =
+      `status unavailable (${POLL_FAILS}x): ${e.message} — retrying in `
+      + `${Math.round(wait / 1000)}s`;
+    POLL = setTimeout(pollStatus, wait);
     return;
   }
+
   if (st.idle) {
+    // No run on the server. If we were watching one, it is over; otherwise
+    // this is just an idle page. Either way, stop cleanly rather than spin.
     $('#execState').textContent = 'idle';
     $('#btnKill').disabled = true;
     refreshNetlist();
@@ -644,23 +689,27 @@ async function pollStatus() {
   }
 
   if (st.resync) {
-    // the buffer dropped lines we never read; say so rather than splice
-    // unrelated output into the middle of the window
-    $('#term').textContent = '[gui] output truncated; showing the tail\n';
+    termReset('[gui] output truncated — showing the tail');
   }
-  if (st.lines.length) {
-    $('#term').textContent += st.lines.join('\n') + '\n';
-    if ($('#follow').checked) $('#term').scrollTop = $('#term').scrollHeight;
-  }
+  termAppend(st.lines);
   NEXT_LINE = st.next;
 
+  const behind = st.behind
+    ? `  ·  ${st.behind} line${st.behind === 1 ? '' : 's'} buffered` : '';
+  // A quiet run is the other thing that looks like a freeze: a full-grid
+  // search can spend minutes between progress lines. Say how long it has been
+  // silent, so "nothing is happening" and "nothing is being printed" are
+  // distinguishable.
+  const quiet = st.running && st.quiet > 20
+    ? `  ·  no output for ${Math.round(st.quiet)}s` : '';
   $('#execState').textContent = st.running
-    ? `running — ${st.elapsed.toFixed(0)}s`
+    ? `running — ${st.elapsed.toFixed(0)}s${behind}${quiet}`
     : `finished (exit ${st.returncode}) in ${st.elapsed.toFixed(1)}s`;
   $('#btnKill').disabled = !st.running;
 
-  if (st.running) {
-    POLL = setTimeout(pollStatus, 900);
+  if (st.running || st.behind) {
+    // drain a backlog quickly; idle along when caught up
+    POLL = setTimeout(pollStatus, st.behind ? 120 : 900);
   } else {
     refreshNetlist();
     if (st.returncode === 0) {
@@ -870,3 +919,220 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 boot().catch((e) => toast(e.message, true));
+
+/* ---------------------------------------------------------- S-parameters */
+
+/* Colours cycle per file; IL is drawn solid, RL dashed and dimmer, so an
+ * overlay of several channels stays readable without a legend lookup. */
+const SP_COLOURS = ['#1e5fbf', '#c2410c', '#0d7a4a', '#6a3fb5',
+                    '#b45309', '#0e7490', '#9d174d', '#4d7c0f'];
+let SP_LOADED = [];      // [{payload, colour}]
+let SP_ALL = [];         // every file in the current directory
+
+function spShow() { show('sparam'); }
+
+$('#btnSpBack').addEventListener('click', showEditor);
+
+$('#btnSparam').addEventListener('click', async () => {
+  try {
+    const dsel = $('#spDir');
+    if (!dsel.options.length) {
+      const dirs = await api('/api/channel_dirs');
+      if (!dirs.length) {
+        toast('no .s4p files found in the repository', true);
+        return;
+      }
+      for (const d of dirs) {
+        const o = document.createElement('option');
+        o.value = d.dir;
+        o.textContent = `${d.dir}  (${d.count})`;
+        dsel.appendChild(o);
+      }
+      await spLoadDir(dirs[0].dir);
+    }
+    spShow();
+  } catch (e) { toast(e.message, true); }
+});
+
+async function spLoadDir(dir) {
+  SP_ALL = await api('/api/channels?dir=' + encodeURIComponent(dir));
+  spFillFiles();
+}
+
+function spFillFiles() {
+  const sel = $('#spFiles');
+  const keep = new Set(selected(sel));
+  sel.textContent = '';
+  const thruOnly = $('#spFilter').checked;
+  let shown = 0;
+  for (const f of SP_ALL) {
+    if (thruOnly && f.role !== 'thru' && !keep.has(f.path)) continue;
+    const o = document.createElement('option');
+    o.value = f.path;
+    o.textContent = f.name + (f.role === 'thru' ? '' : `   (${f.role})`);
+    if (keep.has(f.path)) o.selected = true;
+    sel.appendChild(o);
+    shown++;
+  }
+  $('#spMeta').textContent = `${shown} of ${SP_ALL.length} file(s)`;
+  if (!sel.value && sel.options.length) sel.options[0].selected = true;
+  spRefresh();
+}
+
+$('#spDir').addEventListener('change', () => {
+  spLoadDir($('#spDir').value).catch((e) => toast(e.message, true));
+});
+$('#spFilter').addEventListener('change', spFillFiles);
+$('#spFiles').addEventListener('change', spRefresh);
+for (const id of ['#spIL', '#spRL', '#spLog']) {
+  $(id).addEventListener('change', () => spDraw());
+}
+
+async function spRefresh() {
+  const want = selected($('#spFiles'));
+  if (!want.length) { SP_LOADED = []; spDraw(); return; }
+  $('#spMeta').textContent = `reading ${want.length} file(s)...`;
+  const out = [];
+  for (let i = 0; i < want.length; i++) {
+    try {
+      // Sequential, not parallel: each file is a real Touchstone read through
+      // the engine (~1.5 s cold), and firing twenty at once would stall the
+      // single-threaded reader and the UI with it.
+      const p = await api('/api/sparam?path=' + encodeURIComponent(want[i]));
+      out.push({ p, colour: SP_COLOURS[i % SP_COLOURS.length] });
+    } catch (e) {
+      toast(`${want[i].split('/').pop()}: ${e.message}`, true);
+    }
+  }
+  SP_LOADED = out;
+  const pts = out.reduce((a, x) => a + x.p.n_points, 0);
+  $('#spMeta').textContent =
+    `${out.length} file(s) · ${pts} points · to ${
+      Math.max(...out.map((x) => x.p.f_max_ghz)).toFixed(0)} GHz`;
+  spDraw();
+}
+
+function spDraw() {
+  const svg = $('#spChart');
+  svg.textContent = '';
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (n, a, t) => {
+    const e = document.createElementNS(NS, n);
+    for (const k in a) e.setAttribute(k, a[k]);
+    if (t !== undefined) e.textContent = t;
+    return e;
+  };
+  const legend = $('#spLegend');
+  legend.textContent = '';
+
+  const W = 900, H = 520, L = 62, R = 16, T = 16, B = 44;
+  if (!SP_LOADED.length) {
+    svg.appendChild(el('text', {
+      x: W / 2, y: H / 2, 'text-anchor': 'middle', class: 'spempty',
+    }, 'select one or more Touchstone files'));
+    return;
+  }
+
+  const showIL = $('#spIL').checked;
+  const showRL = $('#spRL').checked;
+  const logx = $('#spLog').checked;
+
+  // extents
+  let fmin = Infinity, fmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (const { p } of SP_LOADED) {
+    for (let i = 0; i < p.f_ghz.length; i++) {
+      const f = p.f_ghz[i];
+      if (logx && f <= 0) continue;
+      if (f < fmin) fmin = f;
+      if (f > fmax) fmax = f;
+    }
+    const series = [];
+    if (showIL) series.push(p.il_db);
+    if (showRL) series.push(p.rl1_db, p.rl2_db);
+    for (const s of series) {
+      for (const v of s) {
+        if (!isFinite(v)) continue;
+        if (v < ymin) ymin = v;
+        if (v > ymax) ymax = v;
+      }
+    }
+  }
+  if (!isFinite(fmin) || !isFinite(ymin)) return;
+  // a floor keeps a -140 dB tail from flattening the useful range
+  ymin = Math.max(ymin, -80);
+  ymax = Math.min(ymax + 2, 5);
+
+  const fx = (f) => {
+    const a = logx ? Math.log10(Math.max(f, fmin)) : f;
+    const lo = logx ? Math.log10(fmin) : fmin;
+    const hi = logx ? Math.log10(fmax) : fmax;
+    return L + (a - lo) / (hi - lo) * (W - L - R);
+  };
+  const fy = (v) => T + (ymax - v) / (ymax - ymin) * (H - T - B);
+
+  // grid
+  const yticks = [];
+  const stepY = (ymax - ymin) > 60 ? 20 : 10;
+  for (let v = Math.ceil(ymax / stepY) * stepY; v >= ymin; v -= stepY) yticks.push(v);
+  for (const v of yticks) {
+    svg.appendChild(el('line', {
+      x1: L, x2: W - R, y1: fy(v), y2: fy(v), class: 'spgrid',
+    }));
+    svg.appendChild(el('text', {
+      x: L - 8, y: fy(v) + 4, 'text-anchor': 'end', class: 'spaxis',
+    }, String(v)));
+  }
+  const xticks = logx
+    ? [0.01, 0.1, 1, 10, 100].filter((f) => f >= fmin && f <= fmax)
+    : Array.from({ length: 6 }, (_, i) => fmin + (fmax - fmin) * i / 5);
+  for (const f of xticks) {
+    svg.appendChild(el('line', {
+      x1: fx(f), x2: fx(f), y1: T, y2: H - B, class: 'spgrid',
+    }));
+    svg.appendChild(el('text', {
+      x: fx(f), y: H - B + 18, 'text-anchor': 'middle', class: 'spaxis',
+    }, f >= 1 ? String(Math.round(f)) : String(f)));
+  }
+  svg.appendChild(el('text', {
+    x: (L + W - R) / 2, y: H - 8, 'text-anchor': 'middle', class: 'spaxis',
+  }, 'frequency (GHz)'));
+  svg.appendChild(el('text', {
+    x: 14, y: (T + H - B) / 2, class: 'spaxis',
+    transform: `rotate(-90 14 ${(T + H - B) / 2})`, 'text-anchor': 'middle',
+  }, 'dB'));
+
+  const path = (xs, ys) => {
+    let d = '', pen = false;
+    for (let i = 0; i < xs.length; i++) {
+      const f = xs[i], v = ys[i];
+      if ((logx && f <= 0) || !isFinite(v)) { pen = false; continue; }
+      const X = fx(f).toFixed(1), Y = fy(Math.max(ymin, Math.min(ymax, v))).toFixed(1);
+      d += (pen ? 'L' : 'M') + X + ' ' + Y + ' ';
+      pen = true;
+    }
+    return d;
+  };
+
+  for (const { p, colour } of SP_LOADED) {
+    if (showIL) {
+      svg.appendChild(el('path', {
+        d: path(p.f_ghz, p.il_db), stroke: colour, class: 'spline',
+      }));
+    }
+    if (showRL) {
+      for (const s of [p.rl1_db, p.rl2_db]) {
+        svg.appendChild(el('path', {
+          d: path(p.f_ghz, s), stroke: colour, class: 'spline rl',
+        }));
+      }
+    }
+    const item = document.createElement('span');
+    item.className = 'spitem';
+    const sw = document.createElement('i');
+    sw.style.background = colour;
+    item.appendChild(sw);
+    item.appendChild(document.createTextNode(
+      `${p.name}  ·  ports ${p.ports.join(' ')}  ·  ${p.n_points} pts`));
+    legend.appendChild(item);
+  }
+}

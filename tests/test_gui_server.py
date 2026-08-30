@@ -468,6 +468,39 @@ try:
         check("the_netlist_refuses_a_non_s4p_channel",
               not r.get('ok'), "netlist accepted README.md as a channel: %r" % r)
 
+        # -------------------------------------------------- S-parameters
+        sp = get_json('/api/sparam?path=' + urllib.parse.quote(thru['path']))
+        check("a_touchstone_file_can_be_read_for_plotting",
+              sp.get('f_ghz') and sp.get('il_db'),
+              "/api/sparam returned %r" % {k: v for k, v in sp.items()
+                                           if not isinstance(v, list)})
+        check("every_sparam_trace_has_one_point_per_frequency",
+              len({len(sp['f_ghz']), len(sp['il_db']),
+                   len(sp['rl1_db']), len(sp['rl2_db'])}) == 1,
+              "trace lengths differ (f=%d il=%d rl1=%d rl2=%d); the chart would "
+              "pair a value with the wrong frequency"
+              % (len(sp['f_ghz']), len(sp['il_db']),
+                 len(sp['rl1_db']), len(sp['rl2_db'])))
+        check("the_sparam_response_is_decimated_for_the_browser",
+              sp['decimated_to'] <= 1000 < sp['n_points'],
+              "a %d-point file came back as %d points; sending every point of "
+              "several overlaid files is how the chart gets slow"
+              % (sp['n_points'], sp['decimated_to']))
+        check("insertion_loss_is_negative_and_falls_with_frequency",
+              sp['il_db'][0] > sp['il_db'][-1] and sp['il_db'][-1] < 0,
+              "SDD21 starts at %.2f dB and ends at %.2f dB, which is not the "
+              "shape of a channel -- the mixed-mode conversion or the port "
+              "order is wrong" % (sp['il_db'][0], sp['il_db'][-1]))
+        check("the_engine_resolved_the_port_order",
+              len(sp.get('ports') or []) == 4,
+              "ports came back as %r; the plot would be of the wrong pairs"
+              % (sp.get('ports'),))
+
+        code, body, _ = get('/api/sparam?path=' + urllib.parse.quote(rel))
+        check("the_sparam_endpoint_refuses_a_non_touchstone_file",
+              b'error' in body,
+              "asking for S-parameters of an .xlsx returned %r" % body[:120])
+
         # ------------------------------------------------------ execution
         # Run something real but instant, rather than a COM run: this proves
         # the spawn, the streaming and the exit reporting, which is what the
@@ -500,6 +533,52 @@ try:
               st2.get('lines') == [],
               "re-polling from offset %d returned %r; the page would print the "
               "same lines again" % (since, st2.get('lines')))
+
+        # ------------------------------------------- long, loud runs
+        #
+        # A full-grid search is long AND chatty. Two things have to hold or the
+        # UI looks frozen while the engine is fine: one response must not carry
+        # the whole buffer, and draining it in chunks must not lose a line.
+        loud = _runner.start(
+            [sys.executable, '-c',
+             'for i in range(9000): print("line %d" % i)'],
+            _ROOT, label='loadtest')
+        for _ in range(400):
+            if not loud.running:
+                break
+            time.sleep(0.05)
+
+        first = get_json('/api/exec/status?since=0')
+        check("one_status_response_is_capped",
+              0 < len(first['lines']) <= _runner._MAX_CHUNK,
+              "a single response carried %d lines. Handing the browser the "
+              "whole buffer at once, repeatedly, is what makes a long run lock "
+              "the tab." % len(first['lines']))
+        check("a_capped_response_says_how_far_behind_it_is",
+              first.get('behind', 0) > 0,
+              "the response was capped but reports behind=%r, so the client "
+              "has no way to know it should keep draining"
+              % first.get('behind'))
+
+        got, since2, polls = [], 0, 0
+        while polls < 60:
+            s = get_json('/api/exec/status?since=%d' % since2)
+            got += s['lines']
+            polls += 1
+            if s['next'] == since2:
+                break
+            since2 = s['next']
+        nums = [int(l.split()[1]) for l in got if l.startswith('line ')]
+        check("draining_in_chunks_loses_no_output",
+              nums and nums == list(range(nums[0], nums[0] + len(nums))),
+              "the lines received across %d polls are not contiguous; the "
+              "offset accounting drops output. got %d numbered lines, "
+              "first=%r last=%r"
+              % (polls, len(nums), nums[:1], nums[-1:]))
+        check("draining_terminates",
+              polls < 60,
+              "the client polled 60 times without the offset settling, so it "
+              "would poll forever")
 
         # a second run must not be able to start on top of a live one
         slow = _runner.start([sys.executable, '-c',

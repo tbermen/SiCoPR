@@ -13,6 +13,7 @@ injection waiting to happen, even bound to localhost.
 stdout when it is a pipe, and the status window would sit empty for minutes and
 then dump everything at once -- which defeats the point of having one.
 """
+import collections
 import os
 import subprocess
 import sys
@@ -20,6 +21,12 @@ import threading
 import time
 
 _MAX_LINES = 20000        # a long corpus run must not grow the buffer forever
+
+# Most lines one status response may carry. A full-grid search is not just long,
+# it is loud, and without a cap a single poll could hand the browser the whole
+# 20 000-line buffer (~1 MB of JSON) and then do it again a second later. The
+# client keeps its offset and drains the backlog over successive polls.
+_MAX_CHUNK = 2000
 
 
 class Run:
@@ -29,11 +36,16 @@ class Run:
         self.argv = list(argv)
         self.cwd = cwd
         self.label = label
-        self.lines = []
+        # deque with maxlen: appending past the cap drops the oldest in O(1).
+        # A plain list needed `del lines[:1]` per line once full, which moves
+        # every remaining element and gets slower exactly when output is
+        # heaviest.
+        self.lines = collections.deque(maxlen=_MAX_LINES)
         self.started = time.time()
         self.finished = None
         self.returncode = None
         self.truncated = 0
+        self.last_output = self.started
         self._proc = None
         self._lock = threading.Lock()
 
@@ -63,11 +75,10 @@ class Run:
 
     def _append(self, text):
         with self._lock:
+            if len(self.lines) == _MAX_LINES:
+                self.truncated += 1      # deque is about to evict the oldest
             self.lines.append(text)
-            if len(self.lines) > _MAX_LINES:
-                drop = len(self.lines) - _MAX_LINES
-                del self.lines[:drop]
-                self.truncated += drop
+            self.last_output = time.time()
 
     def stop(self):
         if self._proc and self._proc.poll() is None:
@@ -94,15 +105,23 @@ class Run:
         silently shown the wrong window of output.
         """
         with self._lock:
-            total = self.truncated + len(self.lines)
             if since < self.truncated:
                 start = 0
                 resync = True
             else:
                 start = since - self.truncated
                 resync = False
-            chunk = self.lines[start:]
+            buf = list(self.lines)
+            chunk = buf[start:start + _MAX_CHUNK]
+            behind = max(0, len(buf) - start - len(chunk))
+            quiet = time.time() - self.last_output
+            # How far the client has actually consumed -- NOT the total. With a
+            # capped chunk those differ, and returning the total would make the
+            # client skip every line it was not sent.
+            consumed = self.truncated + start + len(chunk)
         return {
+            'behind': behind,
+            'quiet': quiet,
             'running': self.running,
             'returncode': self.returncode,
             'argv': self.argv,
@@ -110,7 +129,7 @@ class Run:
             'started': self.started,
             'elapsed': (self.finished or time.time()) - self.started,
             'lines': chunk,
-            'next': total,
+            'next': consumed,
             'resync': resync,
             'truncated': self.truncated,
         }
