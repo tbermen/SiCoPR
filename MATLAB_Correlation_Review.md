@@ -37,6 +37,14 @@ confirmed: without-crosstalk on the base workbooks, with-crosstalk on the
 | rms ΔCOM | **1.1e-14 dB** |
 | pass/fail disagreements at 3 dB | **0** |
 
+**Re-verified 2026-08-31** on the engine at `bf41d64`: all 208 cases re-run from
+scratch, 208 ok / 0 errored, every figure in this table reproduced, and every
+per-case COM, FOM and `itick` **bit-identical to the previous run** rather than
+merely within tolerance. Five engine commits had landed since the previous
+comparison, two of them able to move a number (all 39 `argsort` calls made stable;
+a `round()` on an integer ratio); neither moved anything here. The full-grid
+comparison in §5 was **not** part of that re-run and still carries its own date.
+
 3.3e-14 dB is double-precision arithmetic noise, not agreement to a tolerance.
 The reference COM values span −4.82 to +6.68 dB, so the agreement holds across
 passing and failing channels alike and across all four package configurations.
