@@ -560,7 +560,13 @@ to be false in 81% of calls.
 > **Correction.** An earlier revision of this line read "14 of 15, 1 partial, 0
 > not" while the table it summarised still showed 10a and 10b as ✗. The count was
 > wrong in the direction that flattered the work, which is the direction that
-> matters. 10a is now genuinely closed; 10b remains open and is listed as such.
+> matters.
+>
+> **Both are now closed.** 10a first; 10b since — `OptFom_Calc_Noise` returns on
+> the abort path with `THIS` untouched (py_impl L101) and commits `h_J`,
+> `sigma_TX`, `ISI_N`, `sigma_N` and `total_noise_rms` only at the end
+> (L153–157), which is where MATLAB commits them. `test_abort_path_leaks.py`
+> holds the line.
 
 ### Audit finding 2026-08-29: recorded divergences that never read the engine
 

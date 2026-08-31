@@ -73,6 +73,13 @@ request runs code the author wrote. Specifically check:
 - **Can it move a number?** If yes, the correlation set has to be re-run before
   merge, and only you can do that — the data is not public. Say so in the thread
   and give a rough timescale rather than leaving it silent.
+- **Does it touch `gui/`?** Different rules apply there: it is hand-written
+  rather than generated, so editing it directly is correct. Two things are worth
+  checking by eye. Any new endpoint taking a path must be containment-checked
+  against the repo *and* type-restricted — this server reads files and spawns
+  processes. And `gui/static/app.js` must parse: `tests/test_gui_static.py`
+  does that, but only if a JS parser is installed, so confirm its output does
+  not say it fell through to the delimiter fallback.
 
 ## 4. Releasing
 

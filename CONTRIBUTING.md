@@ -120,6 +120,45 @@ there are ~178 inlined copies of ~70 functions. A fix applied to one
 `py_impl.py` reaches the canonical copy only. `tests/test_inlined_copies.py`
 compares copies behaviourally and will tell you which ones you missed.
 
+## Changing the config editor (`gui/`)
+
+The GUI plays by different rules from the engine. It is **not** generated, it is
+**not** a port of anything, and `assemble_sicopr.py` does not touch it — edit
+`gui/` files directly.
+
+```powershell
+python gui/app.py --no-browser     # http://127.0.0.1:8765
+python tests/test_config_roundtrip.py
+python tests/test_gui_server.py
+python tests/test_gui_static.py
+```
+
+Three things to know before changing it:
+
+**`gui/config_io.py` writes spreadsheets, and that is the risky part.** Nine
+value cells in a stock config are spreadsheet *formulas*, and the engine reads
+cached values — openpyxl can preserve one or the other, never both, so the
+writer edits the sheet XML directly. `.START` package blocks are separate
+namespaces. A value's type is semantics: `0` is a fixed tap, `[ -0.34:.02:0]` is
+a ~198-point sweep. `tests/test_config_roundtrip.py` gates all of it by handing
+source and rewrite to the real `read_ParamConfigFile` and requiring identical
+`param` and `OP`. See [`gui/README.md`](gui/README.md) for the details.
+
+**`gui/static/app.js` must parse.** A syntax error there breaks the entire page
+while every server-side test still passes, because the server is not the thing
+that is wrong. `tests/test_gui_static.py` parses it — with `node --check` if you
+have node, otherwise with `esprima` (`pip install esprima`, already in
+`requirements.txt` as test-only). It warns loudly rather than passing quietly if
+it has neither. This is not belt-and-braces: a mangled escape sequence shipped
+exactly that failure once.
+
+**The server reads and writes files by path and spawns processes.** Every path
+parameter is containment-checked against the repo, file types are whitelisted,
+and commands are built as argv lists without a shell. If you add an endpoint
+that takes a path, add the guard and a test that plants a real file outside the
+repo — a test that asks for a *non-existent* outside path passes whether or not
+the guard exists, which is a mistake this suite has made and corrected twice.
+
 ## Tests
 
 New behaviour needs a test that fails without your change. Prove it: reintroduce

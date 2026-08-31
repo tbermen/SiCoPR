@@ -29,7 +29,7 @@ On top of both there is a study layer (`tools/`, `R/`) built to answer one quest
 
 > **New to this project?** Start with **[`SiCoPR_Tutorial.docx`](SiCoPR_Tutorial.docx)**
 > — a 40-page tutorial and reference covering installation, architecture, every feature,
-> the study layer, the R reports, a COM concepts primer, and a complete index of all 247
+> the study layer, the R reports, a COM concepts primer, and a complete index of all 249
 > configuration keywords. This README is the quick version.
 
 ---
@@ -74,7 +74,7 @@ this section says exactly which.
 | the study write-ups (`RESULTS.md`, `STATE.md`) | every generated output: `results/`, `report_figs/`, `corpus_results/*.csv`, `sicopr_results/`, `report_docs/` |
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
-passes — 886 per-function tests plus the cross-check scripts — and every test that
+passes — 890 per-function tests plus the cross-check scripts — and every test that
 needs correlation data skips cleanly and says what is missing. You only need the
 data to reproduce the 208-case correlation.
 
@@ -219,7 +219,7 @@ which maps every stage to its figures and the result columns it owns. A stage wi
 figure is listed as **no figure** rather than omitted, so a gap is visible instead of
 silent. `tests/test_stage_figures.py` fails if any of the seven stages stops emitting one.
 
-**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. Channel S-parameters and configuration workbooks are IEEE contributions (§1); result tables, figures, decks, the per-stage MATLAB oracles under `tests/oracles/` and the comparison tables under `report_data/` are all either generated locally or distillations of the MATLAB reference workbooks, which are not ours to redistribute. Every test that needs one of those skips and says so, so a fresh clone runs green: 886 per-function tests plus the cross-check scripts.
+**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. Channel S-parameters and configuration workbooks are IEEE contributions (§1); result tables, figures, decks, the per-stage MATLAB oracles under `tests/oracles/` and the comparison tables under `report_data/` are all either generated locally or distillations of the MATLAB reference workbooks, which are not ours to redistribute. Every test that needs one of those skips and says so, so a fresh clone runs green: 890 per-function tests plus the cross-check scripts.
 
 ## 5. The EQ-search study
 
@@ -315,8 +315,12 @@ powershell -ExecutionPolicy Bypass -File tests/run_all.ps1
 
 | | how to run |
 |---|---|
-| `test_smoke.py`, `test_checkpoints.py`, `test_end_to_end.py` | pytest modules |
+| `test_smoke.py`, `test_checkpoints.py`, `test_end_to_end.py`, `test_export_columns.py` | pytest modules |
 | every other `test_*.py` | standalone scripts — `python tests/test_x.py` |
+
+The configuration editor under `gui/` is **not** generated and does not go
+through the assembler — edit it directly, and see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for what is different about it.
 
 Do **not** run `pytest tests` over the whole directory. The audit scripts call
 `sys.exit()` at import, which aborts collection: pytest reports `no tests ran`
@@ -328,14 +332,14 @@ Those scripts record two outcomes. `check()` is behaviour that must match MATLAB
 persists and **fails the run if it starts passing** — so a divergence that gets
 fixed cannot leave a stale entry behind in the ledger.
 
-Current state: **886** per-function tests, and **359 checks across 19 audit scripts**
-with 16 accepted divergences.
+Current state: **890** per-function tests, and **656 checks across 31 audit scripts**
+with 25 accepted divergences.
 
 ### Cross-cutting guards
 
-Four of those scripts exist because the per-function tests structurally cannot catch the
+Most of those scripts exist because the per-function tests structurally cannot catch the
 defect classes that actually got through. Each was built from a real failure and verified
-by re-introducing it:
+by re-introducing it — a check that has never failed for the right reason is not evidence:
 
 | script | guards against | why |
 |---|---|---|
@@ -343,6 +347,18 @@ by re-introducing it:
 | `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **178 copies of 70 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
 | `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the hoisted Gram matrix, FFT/direct convolution agreement, shared buffers. Found a live cache-aliasing defect. |
 | `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks — the only tests in the repo that assert against MATLAB rather than against Python. The oracle file itself is not tracked (it *is* reference data); the test skips without it. |
+| `test_abort_path_leaks.py` | writing into a caller's struct before an early return | the sibling of the leak above that the leak guard cannot see: the function *does* return the struct, but commits values on a path MATLAB never commits on. Ledger #10b. |
+| `test_sort_stability.py` | `np.argsort` reordering ties | MATLAB's `sort` is stable, NumPy's default is not. Ties were measured in **81% of argsort calls** rather than assumed rare. |
+| `test_integer_ratio_rounding.py` | banker's rounding on a ratio of integers | MATLAB rounds half away from zero. The audit dismissed this as measure-zero, which is true for continuous data and false for `a/b` with both integral — ledger #16. |
+| `test_structural_invariants.py` | properties no single function owns | shapes, index bases and struct field sets that only go wrong between functions. |
+
+The configuration editor under `gui/` has its own three:
+
+| script | guards against |
+|---|---|
+| `test_config_roundtrip.py` | the config writer damaging a workbook — reads, rewrites, and requires the **engine** to parse both to identical `param`/`OP` |
+| `test_gui_server.py` | the HTTP layer: payload shape, path containment, process control, and the results/dashboard views |
+| `test_gui_static.py` | `app.js` failing to parse at all — a syntax error there breaks the whole page while every server-side test still passes |
 
 ### Tooling for a new MATLAB release
 

@@ -2,8 +2,11 @@
 
 > **Status as of 2026-07-01 — feature inventory only; the verification claims below
 > are superseded by [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md)
-> (2026-08-19). Unit-test count is now 886, and end-to-end parity is established
-> against 208 MATLAB reference cases rather than the single bundled config.**
+> (2026-08-19). As of 2026-08-30 the unit-test count is 890, with 656 checks
+> across 31 audit scripts, and end-to-end parity is established against 208
+> MATLAB reference cases rather than the single bundled config. The "886 unit
+> tests" figure below is left as written — this document is a dated snapshot,
+> and the current numbers live in the main [`README`](../README.md) §7.**
 >
 > **Reference: `com_ieee8023_4p15p0.m` + Hansel D'silva's
 > `com_ieee8023_4p15p0_adaptive_local_search.m` branch.**

@@ -1,5 +1,13 @@
 # COM Python Enhancement for R Analysis and Visualization
 
+> **Design document.** The export and the R dashboard it describes are
+> implemented. Since 2026-08-30 the configuration editor drives this path
+> end to end: ticking *Output dynamic results* on its Run tab passes
+> `--export-mat`, and when the run finishes it builds the dashboard with
+> `Rscript R/com_analysis.R` and displays it. See [`gui/README.md`](../gui/README.md).
+> Nothing here changes — this records why the export exists and what it
+> contains.
+
 ## Objective
 
 The existing Python implementation must continue to reproduce IEEE COM behavior and outputs exactly.

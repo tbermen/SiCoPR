@@ -79,8 +79,19 @@ try:
 
     # ------------------------------------------------------------- configs
     configs = get_json('/api/configs')
-    check("configs_are_listed", isinstance(configs, list) and configs,
+    check("the_configs_endpoint_answers", isinstance(configs, list),
           "/api/configs returned %r" % (configs,))
+
+    if not configs:
+        # Configuration workbooks are IEEE contributions and are not shipped
+        # with the repository. A fresh clone has none, and the contract CI
+        # enforces is that this SKIPS rather than fails -- otherwise every
+        # public clone is red for want of data it cannot have. The static
+        # checks above still ran; everything below needs a real config.
+        print('\nSKIP: no configuration workbooks present, so the config, '
+              'netlist, run and results checks cannot run. See README '
+              'section 1 for where they come from.')
+        finish()
 
     rel = configs[0]['path']
     payload = get_json('/api/config?path=' + rel)
