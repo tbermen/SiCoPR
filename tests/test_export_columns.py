@@ -30,15 +30,25 @@ sys.path.insert(0, os.path.join(_ROOT, 'tools'))
 try:
     from export_results import _txffe_canonical, build_row  # noqa: E402
     from matlab_compare import OUTDIR  # noqa: E402
+    _MISSING = ''
 except ImportError as _e:                                   # pragma: no cover
     # The correlation harness and result exporter are kept local with the data
     # they operate on, so they are not in a published clone. This test asserts
     # a property OF that tooling, so without it there is nothing to assert --
     # skip, do not fail. CI runs on a fresh clone and enforces that
     # distinction.
-    pytest.skip('tools/export_results.py and tools/matlab_compare.py are not '
+    #
+    # Deliberately NOT pytest.skip(allow_module_level=True): that collects zero
+    # tests, pytest then exits 5 ("no tests collected"), and tests/run_all.ps1
+    # reports the step as FAILED on every fresh clone -- turning the skip back
+    # into the failure it was meant to avoid. A module-level marker skips the
+    # tests while still collecting them, which exits 0.
+    _MISSING = ('tools/export_results.py and tools/matlab_compare.py are not '
                 'part of the published repository (%s); see README section 1'
-                % _e, allow_module_level=True)
+                % _e)
+    _txffe_canonical = build_row = OUTDIR = None
+
+pytestmark = pytest.mark.skipif(bool(_MISSING), reason=_MISSING or 'present')
 
 # Columns the correlation review makes a claim about. If a column is listed here
 # it must be populated on a real row -- adding a claim to the document without
