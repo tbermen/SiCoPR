@@ -202,3 +202,46 @@ dev/debug_error_messages_*.txt
 # duplicated history -- and old, buggy code sitting beside the fixed code is a
 # trap for a new contributor.
 com_functions/fn/*/py_impl.*.bak
+
+# ---------------------------------------------------------------------------
+# Document builders (2026-08-31)
+# Their entire product is a deliverable under report_docs/, which is ignored.
+# The deck or document is the artifact; the builder that emits it is of no use
+# to anyone who does not have report_data/ and report_figs/ to build it from,
+# and both of those are ignored too.
+#
+# NOT ignored: the correlation harness and the study layer, even though they
+# also write into ignored directories. README section 1 lists
+# tools/matlab_compare.py under "Present", and sections 1, 5 and 7 tell the
+# reader to run export_compare_csv.py, plot_channel_sparams.py and
+# bench_com.py. Ignoring those would remove the tooling the documentation
+# points at and make the correlation claim less reproducible, not more.
+tools/build_adhoc_pptx.py
+tools/build_com_primer.py
+tools/build_pptx.py
+tools/build_review_pptx.py
+
+# ---------------------------------------------------------------------------
+# Correlation harness, exporters and study probes (2026-08-31)
+#
+# Same rule: every output these produce lands in an ignored directory
+# (matlab_compare_results/, report_data/, report_figs/, sicopr_results/,
+# benchmarks/, tests/oracles/, results/). Without those inputs and outputs the
+# scripts have nothing to act on, so they are kept local with the data.
+#
+# Consequence, recorded deliberately: the 208-case correlation is no longer
+# reproducible from a public clone even by someone who obtains the IEEE channel
+# data, because the harness that drives it is not published either. README
+# section 7 says so.
+tools/matlab_compare.py
+tools/export_compare_csv.py
+tools/plot_channel_sparams.py
+tools/bench_com.py
+tools/compare_matlab_versions.py
+tools/compare_txffe_sweep.py
+tools/extract_matlab_oracles.py
+tools/export_results.py
+tools/fom_surface_probe.py
+tools/itick_subset_report.py
+tools/txffe_census.py
+tools/_run_case.py
