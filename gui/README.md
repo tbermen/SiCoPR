@@ -106,6 +106,12 @@ three are fixed:
   capped at 2000 lines, report how many are still buffered, and the client
   drains fast until caught up.
 
+Returning to the Run tab used to relaunch the dashboard build and bounce you
+straight back out to Results · dynamic, with no way back: the completion branch
+fired on every poll that observed a finished run, and entering the tab polls.
+Finishing is an *event*, so it is now guarded by which run has already been
+announced and happens once.
+
 A quiet run is the fourth thing that looks like a freeze — a full-grid search
 can go minutes between progress lines — so the status line now reports how long
 it has been since any output.
@@ -135,6 +141,19 @@ replaces (number for number, bracketed literal for bracketed literal), and the
 result is then handed to the real `read_ParamConfigFile` before you get it. A
 config that fails that check is deleted rather than returned. On the stock
 config this resets 43 settings and skips 26.
+
+**The R dashboard is not self-contained.** `htmltools::save_html` links Plotly,
+jQuery, htmlwidgets and crosstalk from a `lib/` directory beside the HTML using
+*relative* paths — the tens of megabytes inside a report are embedded plot data,
+not libraries. The viewer is therefore served from a path-mapped route
+(`/rpt/<repo-relative-path>`) so those links resolve to sibling files, and
+assets are served with correct MIME types. Serving only the `.html` gives a page
+with all of its text and none of its graphs.
+
+**Only `case_NN` directories are cases.** Results · static once treated every
+subdirectory of a run as one, which turned the dashboard's `lib/` folder into a
+phantom case reporting "no results.csv" and "no figures" — both false of the
+run — and made its count disagree with the run picker.
 
 **A re-run may overwrite.** Configs commonly set a date-templated
 `RESULT_DIR` (`.\results\CAKR_{date}\`), so two runs on the same day land in

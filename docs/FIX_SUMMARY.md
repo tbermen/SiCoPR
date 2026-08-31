@@ -568,6 +568,33 @@ to be false in 81% of calls.
 > (L153–157), which is where MATLAB commits them. `test_abort_path_leaks.py`
 > holds the line.
 
+### Engine fix 2026-08-29: the config file stayed locked after being read
+
+Not a correctness defect — no number moves — but an engine change, so it belongs
+in this ledger rather than only in a commit message.
+
+`read_ParamConfigFile`'s Excel loader (`__load_excel`) opened the workbook with
+`openpyxl.load_workbook(..., read_only=True)` and never closed it. `read_only`
+keeps the underlying zip handle open, so on Windows the configuration file
+remained **locked for the life of the process**: anything that read a config and
+then tried to rewrite or delete it failed with `WinError 32`. Found while
+building the configuration editor, which validates a generated config by parsing
+it and then has to be able to replace the file.
+
+Every row is materialised before the close, so there is nothing to lose by
+closing immediately; the reader now does so in a `finally`.
+
+**Verified inert.** `tools/bench_com.py --against` reported **ALL IDENTICAL**
+across all three benchmark cases, and the generated diff in `sicopr.py` was 20
+lines, all inside `__load_excel`. The symptom itself was checked directly: a
+config can now be deleted immediately after being read, where before that
+raised.
+
+> Timing in that comparison is not usable — the full test suite was running
+> concurrently on the first case (0.71x). The other two, run clean, were 0.99x
+> and 1.02x. The accuracy verdict is unaffected by CPU contention; the speed
+> numbers are.
+
 ### Audit finding 2026-08-29: recorded divergences that never read the engine
 
 Three `xcheck` records computed BOTH sides of their comparison inside the test
