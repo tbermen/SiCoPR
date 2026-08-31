@@ -116,9 +116,11 @@ the goal; making it better is a different project.
 | MATLAB `round()` is **half away from zero**, Python's is **banker's** | they differ on exact ties, and ties are not rare when the input is a ratio of integers |
 
 **One function can exist as many copies.** The assembler inlines helpers, so
-there are ~178 inlined copies of ~70 functions. A fix applied to one
-`py_impl.py` reaches the canonical copy only. `tests/test_inlined_copies.py`
-compares copies behaviourally and will tell you which ones you missed.
+there are 177 inlined copies of 70 functions. A fix applied to one `py_impl.py`
+reaches the canonical copy only. `tests/test_inlined_copies.py` compares copies
+behaviourally and will tell you which ones you missed — but it can only drive
+136 of the 177, so check `com_functions/inlined_copies.json` for the rest rather
+than assuming the harness has you covered.
 
 ## Changing the config editor (`gui/`)
 

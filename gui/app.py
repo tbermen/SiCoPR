@@ -311,12 +311,14 @@ print('OK')
 def _engine_accepts(path):
     """(True, '') if `read_ParamConfigFile` parses this workbook.
 
-    Run in a subprocess for two reasons. It keeps the GUI independent of the
-    engine -- no heavy import at startup, and the editor still runs while the
-    engine is mid-edit. And it avoids a file lock: the engine's Excel loader
-    opens the workbook with `read_only=True` and never closes it
-    (`__load_excel`), so on Windows a config validated in-process cannot then
-    be deleted or replaced.
+    Run in a subprocess to keep the GUI independent of the engine: no heavy
+    import at startup, and the editor still runs while the engine is mid-edit.
+
+    It also used to be the only way to avoid a file lock -- `__load_excel`
+    opened the workbook `read_only=True` and never closed it, which on Windows
+    left a validated config undeletable. That is fixed (the loader now closes in
+    a `finally`), so the lock is no longer a reason to stay out of process; the
+    independence is.
     """
     engine = os.path.join(_ROOT, 'sicopr.py')
     if not os.path.isfile(engine):

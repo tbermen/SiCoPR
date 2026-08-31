@@ -39,6 +39,26 @@ from gui import app as gui_app                     # noqa: E402
 from gui import schematic                          # noqa: E402
 from gui.config_io import read_config, is_setting, engine_keywords  # noqa: E402
 
+# --------------------------------------------------- engine coupling guard
+#
+# gui/app.py validates a config by running the ENGINE's own read_ParamConfigFile,
+# which is the right call -- one parser, no second source of truth. To do that it
+# scrapes the OP bootstrap block out of sicopr.py by matching two exact source
+# lines. sicopr.py is GENERATED, so those lines can move without anyone touching
+# gui/, and when they do the scrape raises StopIteration inside the subprocess and
+# _engine_accepts reports EVERY config as invalid -- the editor looks broken while
+# the engine is perfectly fine. Nothing else in the suite would notice.
+with open(os.path.join(_ROOT, 'sicopr.py'), encoding='utf-8') as _f:
+    _engine_src = _f.read()
+for _anchor in ('OP = SimpleNamespace()', 'param, OP = read_ParamConfigFile'):
+    check("gui_config_validation_anchor__%s"
+          % _re.sub(r'\W+', '_', _anchor).strip('_'),
+          _engine_src.count(_anchor) >= 1,
+          "gui/app.py's _VALIDATE_SRC looks for the line %r in sicopr.py to lift "
+          "the OP bootstrap out of _run_com, and it is no longer there. Config "
+          "validation in the GUI will reject every workbook with a StopIteration. "
+          "Re-anchor _VALIDATE_SRC in gui/app.py." % _anchor)
+
 srv = ThreadingHTTPServer(('127.0.0.1', 0), gui_app.Handler)
 PORT = srv.server_address[1]
 threading.Thread(target=srv.serve_forever, daemon=True).start()
