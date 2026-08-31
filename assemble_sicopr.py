@@ -4,6 +4,10 @@ assemble_sicopr.py — Assemble sicopr.py from individually verified py_impl.py 
 Do NOT edit sicopr.py directly. Edit the relevant py_impl.py, re-run its test,
 then re-run this script.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import json
 import re
@@ -321,13 +325,17 @@ deferred_aliases = []  # (alias_name, target_name) pairs emitted after all funct
 _PRIVATE_DEF_RE = re.compile(r'^(def )(_\w+)(\s*\()', re.MULTILINE)
 
 
-def _namespace_private_helpers(src, module_name):
+def _namespace_private_helpers(src, module_name, renames=None):
     """Rename all top-level private helper functions to _MODULE__original_name.
 
     This prevents collisions when multiple py_impl.py files define helpers
     with the same private name (e.g. _conv_fct, _s21_to_impulse_DC).
     Only top-level (unindented) 'def _name(' definitions are renamed;
     their call-sites in the same file are renamed via whole-word substitution.
+
+    Appends (copy_name, helper, module_name) to `renames` if given -- this is
+    the only place the mangled names are minted, so it is the only place that
+    can record where each inlined copy came from.
     """
     # Collect all top-level private helper names in this file
     private_names = set(_PRIVATE_DEF_RE.findall(src))  # returns (prefix, name, suffix) tuples
@@ -337,9 +345,18 @@ def _namespace_private_helpers(src, module_name):
     # Sort longest-first to avoid partial replacements (e.g. _foo before _foobar)
     for pname in sorted(private_names, key=len, reverse=True):
         new_name = f'_{module_name}__{pname[1:]}'
+        if renames is not None:
+            renames.append((new_name, pname[1:], module_name))
         src = re.sub(r'\b' + re.escape(pname) + r'\b', new_name, src)
     return src
 
+
+# Provenance of every inlined helper copy, recorded as the mangled names are
+# minted. Emitted as a manifest rather than as comments in sicopr.py: ~180
+# inserted comment lines would shift every line number after the first one,
+# and roughly fifty `sicopr.py:NNNN` citations in tests and docs would go
+# silently stale.
+_renames = []
 
 for fn in fns_sorted:
     name = fn['name']
@@ -351,7 +368,7 @@ for fn in fns_sorted:
         src = f.read()
 
     # Namespace private helpers before any other processing
-    src = _namespace_private_helpers(src, name)
+    src = _namespace_private_helpers(src, name, _renames)
 
     src_lines = src.splitlines()
     body_lines = []
@@ -477,7 +494,39 @@ output = '\n'.join(collected_lines)
 with open('sicopr.py', 'w', encoding='utf-8') as f:
     f.write(output)
 
+_reg_lines = {f['name']: f['matlab_lines'] for f in fns}
+_manifest = {
+    'generated_by': 'assemble_sicopr.py',
+    'what': ('Every inlined helper copy in sicopr.py, and where it came from. '
+             'A py_impl.py may define a private helper `_foo`; the assembler '
+             'renames it to `_<module>__foo` so copies in different modules do '
+             'not collide. Each copy is therefore a SEPARATE function that a '
+             'fix to the canonical `foo` does NOT reach -- see '
+             'tests/test_inlined_copies.py, which compares them behaviourally.'),
+    'copies': [],
+}
+for _copy_name, _helper, _into in sorted(set(_renames)):
+    _entry = {
+        'copy': _copy_name,
+        'helper': _helper,
+        'inlined_into': _into,
+        'inlined_into_matlab_lines': _reg_lines.get(_into),
+    }
+    if _helper in _reg_lines:
+        _entry['canonical'] = _helper
+        _entry['canonical_matlab_lines'] = _reg_lines[_helper]
+    _manifest['copies'].append(_entry)
+
+with open(os.path.join('com_functions', 'inlined_copies.json'), 'w',
+          encoding='utf-8') as f:
+    json.dump(_manifest, f, indent=1)
+    f.write('\n')
+
 print(f'Assembled sicopr.py from {fn_count} functions.')
+_with_canon = sum(1 for c in _manifest['copies'] if 'canonical' in c)
+print(f'Wrote com_functions/inlined_copies.json: {len(_manifest["copies"])} '
+      f'inlined helper copies, {_with_canon} of which duplicate a translated '
+      f'function.')
 
 undocumented = [(n, ln) for n, ln in not_impl_sites
                 if n not in DOCUMENTED_NOT_IMPLEMENTED]

@@ -18,6 +18,10 @@ Usage:
     python sweep_compare.py <config.xlsx> <thru.s4p> [--fext a.s4p ...] [--next n.s4p ...]
                             [--local-search 2] [--max-ctle 6] [--out sweep_results]
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import argparse
 import csv
 import json

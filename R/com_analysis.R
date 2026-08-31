@@ -1,3 +1,6 @@
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 # com_analysis.R -- interactive R/Plotly visualisation of a COM engineering .mat
 # snapshot produced by `python sicopr.py ... --export-mat`.
 #

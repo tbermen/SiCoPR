@@ -1,3 +1,6 @@
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 # sweep_compare.R -- interactive R/Plotly visualisation of the EQ-search method
 # comparison (full grid / legacy local search / adaptive local search) from the
 # per-candidate trajectory logs written by sweep_compare.py.

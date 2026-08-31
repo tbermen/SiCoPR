@@ -256,9 +256,19 @@ if esprima is not None:
           "on a long chatty run the tab locks up." % concat)
 
 # 'use strict' at the top means a stray assignment to an undeclared name is a
-# runtime error rather than a silent global.
-check("app_js_is_strict_mode", src.lstrip().startswith("'use strict'"),
-      "app.js does not start with 'use strict'")
+# runtime error rather than a silent global. The directive must be the first
+# *statement*; leading comments (the licence header) do not displace it, so this
+# asks the parser rather than matching raw text.
+if esprima is not None:
+    body = tree.body if not isinstance(tree, dict) else tree['body']
+    first = body[0] if body else None
+    directive = getattr(first, 'directive', None) if first is not None else None
+    check("app_js_is_strict_mode", directive == 'use strict',
+          "the first statement of app.js is not the 'use strict' directive "
+          "(got %r)" % (directive,))
+else:
+    check("app_js_is_strict_mode", src.lstrip().startswith("'use strict'"),
+          "app.js does not start with 'use strict'")
 
 # Every id the stylesheet targets and every id the script looks up must exist.
 # (The script/page agreement is also checked in test_gui_server.py against the

@@ -13,6 +13,10 @@ Figures written to <dir>:
 
 Usage:  python plot_sweep_compare.py [sweep_results_dir]
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import csv
 import json
 import os

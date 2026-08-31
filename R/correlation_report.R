@@ -1,3 +1,6 @@
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 # correlation_report.R — figures for the COM Python vs COM MATLAB review
 #
 # Reads the tidy CSVs written by tools/export_compare_csv.py and emits PNGs sized

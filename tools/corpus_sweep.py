@@ -30,6 +30,10 @@ Usage:
 
     python corpus_sweep.py --aggregate-only --out corpus_results
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import argparse
 import csv
 import glob

@@ -9,6 +9,10 @@ NOT tied to any checkpoint/debug system.
 
 Mirrors MATLAB's per-case figure output (eye, bathtubs, IL, SBR, PDFs).
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 
 import numpy as np

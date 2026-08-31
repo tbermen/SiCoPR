@@ -110,6 +110,36 @@ check("known_arity_mismatch_list_is_current",
       "these copies no longer differ in arity: %s -- remove them from "
       "KNOWN_ARITY" % sorted(KNOWN_ARITY - _arity_bad))
 
+# ------------------------------------------------- the provenance manifest
+#
+# assemble_sicopr.py writes com_functions/inlined_copies.json as it mints the
+# mangled names, so it is the record of which upstream helper each copy came
+# from. It is generated, so it can only go stale by someone editing sicopr.py
+# by hand -- which is exactly the thing CONTRIBUTING.md forbids. Checking it
+# against what is actually in the engine catches that.
+_MANIFEST = os.path.join(_ROOT, 'com_functions', 'inlined_copies.json')
+if os.path.exists(_MANIFEST):
+    with io.open(_MANIFEST, encoding='utf-8') as _f:
+        _man = json.load(_f)
+    _man_pairs = {(c['helper'], c['inlined_into']) for c in _man['copies']
+                  if 'canonical' in c}
+    _found_pairs = {(child, parent) for _, child, parent in COPIES}
+    check("manifest_covers_every_inlined_copy",
+          not (_found_pairs - _man_pairs),
+          "sicopr.py contains inlined copies that com_functions/"
+          "inlined_copies.json does not record: %s -- re-run "
+          "assemble_sicopr.py"
+          % sorted(_found_pairs - _man_pairs)[:8])
+    check("manifest_records_no_phantom_copies",
+          not (_man_pairs - _found_pairs),
+          "the manifest records copies that are not in sicopr.py: %s -- the "
+          "manifest is ahead of the engine, so one of them was not "
+          "regenerated" % sorted(_man_pairs - _found_pairs)[:8])
+else:
+    check("manifest_covers_every_inlined_copy", False,
+          "com_functions/inlined_copies.json is missing -- run "
+          "assemble_sicopr.py")
+
 # ---------------------------------------------------------------- layer B
 _rng = np.random.default_rng(12345)
 _F = np.linspace(0.0, 50e9, 256)
@@ -127,6 +157,25 @@ def _FILT_PARAM():
                            BTorder=4, f_r=0.75, RC_Start=20e9, RC_end=40e9)
 
 _PDF_B = sicopr.normal_dist(0.02, 5, 1e-4)
+
+# A short frequency axis for the lumped-element S-parameter builders, which
+# allocate per-frequency arrays and choke on the 256-point _F.
+_FR = np.linspace(0.0, 40e9, 16)
+_F4 = np.linspace(0.0, 50e9, 64)
+# An eye contour: rows are sampling phase, columns voltage.
+_EYE = np.abs(np.outer(np.linspace(0, 1, 33), np.linspace(-0.3, 0.3, 65)))
+
+
+def _PORT_CUBE():
+    """A 4-port cube with unambiguous through paths on 1-2 and 3-4."""
+    s = np.full((_F4.size, 4, 4), 0.005 + 0j)
+    att = 0.9 * np.exp(-_F4 / 120e9) * np.exp(-2j * np.pi * _F4 * 3e-10)
+    for a, b in ((0, 1), (2, 3)):
+        s[:, a, b] = att
+        s[:, b, a] = att
+    for i in range(4):
+        s[:, i, i] = 0.02
+    return s
 
 # Synthetic inputs, built once per comparison and deep-copied for each side so
 # neither copy can perturb the other's arguments.
@@ -171,6 +220,47 @@ FACTORY = {
     'synth_tline':       lambda: (_F.copy(), 100.0, 100.0,
                                   np.array([0.0, 1.1e-9, 1.0e-4, 0.0]),
                                   6.5e-12, 0.15),
+
+    # --- added 2026-08-31 -------------------------------------------------
+    # Second sweep over the undrivable set: 64 copies had no factory, so the
+    # only thing checked about them was arity. These are the ones drivable
+    # from pure synthetic inputs, without a param/OP struct or a Touchstone
+    # file. Four of them turned out to differ -- see KNOWN_BEHAVIOUR; the
+    # rest agree, which is what the count in the summary line is worth.
+    'PRBS13Q':           lambda: (),
+    'conv_fct_MeanNotZero': lambda: (_PDF_A, _PDF_B),
+    'CDF_ev':            lambda: (1e-5, _PDF_A, sicopr.pdf_to_cdf(_PDF_A).y),
+    'scaleCDF':          lambda: (_PDF_A, 0.02, 1e-5, 0.5),
+    'combine_pdf_same_voltage_axis': lambda: (_PDF_A, _PDF_B),
+    'cdf_to_ber_contour': lambda: (sicopr.pdf_to_cdf(_PDF_A), 1e-5),
+    'Full_Grid_Matrix':  lambda: ([[1.0, 2.0], [3.0, 4.0], [5.0]],),
+    'compute_hard_cap':  lambda: (1, 2.0, 0.5, 3),
+    'vma':               lambda: (_ISI_TAIL.copy(), 4),
+    'hrem':              lambda: (_ISI_TAIL.copy(), 5, 4, 0.2),
+    'H_interp':          lambda: (_Z.copy(), _F.copy(),
+                                  np.linspace(0.0, 40e9, 128), 106.25e9),
+    'TD_CTLE':           lambda: (_ISI_TAIL.copy(), 106.25e9, 20e9, 25e9,
+                                  40e9, -6.0, 32),
+    'FD_CTLE':           lambda: (_F.copy(), 20e9, 25e9, 40e9, -6.0),
+    'FFE_Fast':          lambda: (np.array([0.0, 1.0, -0.1]),
+                                  _rng.standard_normal((3, 128))),
+    'find_eye_width':    lambda: (_EYE.copy(), 16, 32, 0.05),
+    'floatingDFE':       lambda: (_ISI_TAIL.copy(), 3, 2, 20, 24, 0.2,
+                                  1.0, 0.02),
+    # NOT R_series2 / r_parrelell2 / SL. Their add_pkg_with_die copies are
+    # reimplementations with a DIFFERENT SIGNATURE, not translations of the
+    # same one: the copies take nfreq (an int) where the canonical takes the
+    # frequency axis, return a bare (s11, s12, s21, s22) tuple instead of an
+    # sparameters object, and _add_pkg_with_die__SL is (S, R, zref) against
+    # the canonical (S, f, R, R_0). No single argument tuple drives both
+    # sides, so a behavioural comparison here would be meaningless rather
+    # than reassuring. The formulas themselves are transcribed identically
+    # and are checked directly in tests/test_tline_tdr_erl.py.
+    #
+    # A random cube is rejected as "Ambiguous connections" by design, so this
+    # is a plausible channel: low-loss through paths on 1-2 and 3-4, weak
+    # crosstalk elsewhere. Answer is [1, 3, 2, 4], not the identity.
+    'auto_port_order':   lambda: (_PORT_CUBE(), _F4.copy(), 0),
 }
 
 # Copies known to differ behaviourally, reviewed 2026-08-18. Each is a FALLBACK
@@ -213,6 +303,40 @@ KNOWN_BEHAVIOUR = {
     ('get_pdf_from_sampled_signal', 'get_TDR'):
         'fallback stub: a Gaussian fitted to the sample RMS, not the successive '
         'delta convolution. Injected at sicopr.py:138 (_get_pdf_fn).',
+
+    # --- surfaced 2026-08-31 by the second factory sweep (113 -> 127 copies).
+    # Three more injection stubs and one deliberate index-base split. Each was
+    # read against its caller before being recorded here.
+    ('H_interp', 'get_PSDs'):
+        'fallback stub: np.interp on the MAGNITUDE only, so it drops the phase '
+        'the canonical carries through unwrap/pchip, and never applies the '
+        'fb/2 cutoff. Dead in production: sicopr.py:5211 passes '
+        '_H_interp_fn=H_interp into get_PSDs.',
+    ('find_eye_width', 'COM_eye_width'):
+        'fallback stub returning samp_UI//4 on both sides regardless of the '
+        'contour. Dead in production: sicopr.py:177 injects '
+        '_find_eye_width_fn=find_eye_width.',
+    ('combine_pdf_same_voltage_axis', 'COM_eye_width'):
+        'fallback stub adds y elementwise and keeps pdf_a.x, where the '
+        'canonical resamples onto a common axis -- so the two disagree in '
+        'LENGTH (4002 vs 8002) whenever the inputs differ in span. Dead in '
+        'production: injected alongside the other COM_eye_width helpers.',
+    ('cdf_to_ber_contour', 'COM_eye_width'):
+        'fallback stub, and badly wrong rather than subtly so: it returns '
+        '(top, bottom) where the canonical returns (bottom, top), and finds '
+        'the top edge with searchsorted(1 - specBER) instead of the flipped '
+        'argmax(y > specBER) of ML 5254-5257. Dead in production: sicopr.py:176 '
+        'injects _cdf_to_ber_fn=cdf_to_ber_contour, and sicopr.py:1810 falls '
+        'back to this only if that injection is ever dropped.',
+    ('hrem', 'floating_taps_1sttest'):
+        'INTENTIONAL index-base split, the same shape as the get_center_of_UI '
+        'entry above: the canonical takes a 1-BASED index and subtracts 1 '
+        '(sicopr.py "convert 1-based -> 0-based"), the copy takes the index '
+        '0-based and slices directly. Correct as wired -- floating_taps_1sttest '
+        'passes ig1/ig2/ig3 from range(N_b, ...), which the comment at '
+        'sicopr.py:9605 documents as the 0-based form of MATLAB ig1 = N_b+1:end1. '
+        'Driving both with the same integer therefore shifts the window by one '
+        'on purpose.',
     ('Bessel_Thomson_Filter', 'COM_FD_to_TD'):
         'fallback stub; injected at sicopr.py:148.',
     ('Butterworth_Filter', 'COM_FD_to_TD'):

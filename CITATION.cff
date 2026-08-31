@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+title: "SiCoPR — a Python port of the IEEE 802.3 COM MATLAB reference"
+message: >-
+  If you refer to this software, please cite it using the metadata below. It is
+  an independent port and is not an IEEE deliverable; when the subject is the
+  COM methodology itself rather than this implementation, cite the IEEE 802.3
+  standard and the MATLAB reference instead.
+type: software
+authors:
+  - family-names: Bermensolo
+    given-names: Todd
+repository-code: "https://github.com/tbermen/SiCoPR"
+abstract: >-
+  A function-for-function Python translation of the IEEE 802.3ck/dj Channel
+  Operating Margin (COM) MATLAB reference tool, with R extensions for reports
+  and visualisations. It computes COM, VEO and VEC and the supporting
+  equalisation and noise analysis for a serial channel described by Touchstone
+  S-parameter files and an Excel configuration spreadsheet. Against a 208-case
+  reference set it reproduces the MATLAB results bit-for-bit on COM, figure of
+  merit and sampling phase; the scope and limits of that measurement are stated
+  in the project README.
+keywords:
+  - channel operating margin
+  - COM
+  - IEEE 802.3
+  - signal integrity
+  - SerDes
+  - equalization
+license: BSD-3-Clause
+references:
+  - type: software
+    title: "IEEE 802.3 Channel Operating Margin MATLAB reference implementation"
+    authors:
+      - name: "802-COM Authors"
+    year: 2025
+    license: BSD-3-Clause
+    notes: >-
+      The upstream this project translates. Redistributed unmodified under
+      matlab/ with notices intact; exact versions and SHA-256 checksums are
+      recorded in NOTICE. The MATLAB reference remains the normative
+      implementation.

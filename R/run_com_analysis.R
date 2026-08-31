@@ -1,3 +1,6 @@
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 
 # Remove all variables currently loaded into memory
 rm(list=ls()) 

@@ -187,6 +187,43 @@ copyright notice in `LICENSE` and in the generated `sicopr.py` header intact, an
 do not describe the project — in code, docs, or commit messages — as endorsed by
 or affiliated with IEEE or the 802-COM Authors. Clause 3 forbids it.
 
+Provenance of the upstream — exact versions, SHA-256 checksums, and what is and
+is not covered by its licence — is recorded in [`NOTICE`](NOTICE).
+
+### Sign your commits off (DCO)
+
+Every commit must carry a `Signed-off-by:` line. Git adds it for you:
+
+```bash
+git commit -s -m "your message"
+```
+
+which appends
+
+```
+Signed-off-by: Your Name <your@email>
+```
+
+That line means you agree to the [Developer Certificate of Origin
+1.1](https://developercertificate.org/) — in short: that you wrote the change, or have
+the right to submit it, and that you are contributing it under this project's
+licence.
+
+**Why this is asked for.** BSD-3-Clause, unlike Apache-2.0, contains no clause
+covering *inbound* contributions. Without a sign-off there is no record that a
+contributor agreed to the licence their code is being distributed under. The DCO
+is the lightweight way to have that record: no paperwork, no CLA to sign, one
+line per commit.
+
+Use your real name and an email you control. **Please use a personal address
+rather than an employer one** — a corporate address in the commit record invites
+the question of whether the work was done within the scope of employment, and
+that is a question worth not raising.
+
+CI checks this on every pull request. If you forget, `git commit --amend -s` on
+the last commit, or `git rebase --signoff origin/master` for a series, then
+force-push your branch.
+
 ## Commit messages
 
 Say what changed and **what it bought**, with the evidence. "Fixed rounding" is

@@ -346,6 +346,36 @@ fixed cannot leave a stale entry behind in the ledger.
 Current state: **890** per-function tests, and **656 checks across 31 audit scripts**
 with 25 accepted divergences.
 
+### What the coverage does *not* reach
+
+The assembler inlines each helper separately into every caller, so the engine contains
+**177 inlined copies of 70 functions**. `tests/test_inlined_copies.py` compares each copy
+against its canonical top-level version and reports plainly how far it gets:
+
+```
+177 inlined copies of 70 functions; 136 compared behaviourally, 41 not drivable synthetically
+```
+
+**41 of those 177 copies — 23% — have no behavioural verification.** They are not skipped
+by choice: the harness drives both sides from synthetic inputs, and for these it cannot build
+any without a populated `param`/`OP` struct or a real Touchstone file. For them the only
+check is that the copy still accepts the same arguments as the canonical.
+
+The bit-exact result above says nothing about those 41. Those 208 cases exercise the
+*canonical* implementations, which `_run_com` injects; the inlined copies are `or`-fallbacks
+that a normal run never reaches. Several are deliberately narrow — a Gaussian fitted to the
+sample RMS where the canonical builds an exact PDF, for instance — and 21 such divergences
+are catalogued with reasons in `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. Five of those
+21 were found only when coverage was raised from 113 copies to 136, which is the honest
+argument for treating the remaining 41 as unverified rather than as probably-fine: every
+time this harness has been pointed at more copies, it has found more divergences.
+
+`com_functions/inlined_copies.json`, written by the assembler, records where every copy came
+from — which helper, which caller, and the upstream MATLAB line range of each.
+
+The practical risk is not in what runs today. It is that a future caller which forgets to
+inject would silently get the approximation, with no error and a plausible number.
+
 ### Cross-cutting guards
 
 Most of those scripts exist because the per-function tests structurally cannot catch the
@@ -386,7 +416,7 @@ Every major feature is implemented and unit-tested against `matlab/com_ieee8023_
 plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating
 RxFFE taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
 processing (ICN/ILD), ERL/TDR, and TD-ILN/RILN. The `com_functions/fn` suite is green
-(**889 passed, 0 failed**).
+(**890 passed, 0 failed**).
 
 **Numeric parity with MATLAB is established end to end.** 208 reference cases from Hansel
 D'silva's `com_ieee8023_4p15p0` runs, compared case by case:

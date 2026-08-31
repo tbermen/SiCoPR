@@ -19,6 +19,10 @@ Nothing here needs anything from the MATLAB author beyond the .m file itself.
 
 Exit status is 0 always: this is a report, not a gate.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import argparse
 import difflib
 import io

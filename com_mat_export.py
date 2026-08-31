@@ -21,6 +21,10 @@ Time-domain stage responses (h_*, pulse_*) are the genuine per-stage arrays COM
 attaches to chdata / fom_result; pulse_ctle is the boxcar (1-UI moving average)
 of the genuine channel+CTLE impulse response, exactly as Apply_EQ forms it.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 import datetime

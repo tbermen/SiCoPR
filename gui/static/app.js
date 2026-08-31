@@ -1,3 +1,5 @@
+/* Copyright 2026 Todd Bermensolo
+ * SPDX-License-Identifier: BSD-3-Clause */
 'use strict';
 /* SiCoPR config editor.
  *

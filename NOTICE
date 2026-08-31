@@ -1,0 +1,110 @@
+SiCoPR — third-party material and upstream provenance
+=====================================================
+
+SiCoPR is a Python translation of the IEEE 802.3 Channel Operating Margin (COM)
+MATLAB reference implementation. This file records exactly what it was
+translated from, so that a reader can confirm they hold the same upstream bytes.
+
+Licence terms are in LICENSE. This file is the provenance record, not a second
+licence.
+
+
+1. Upstream MATLAB reference
+----------------------------
+
+Copyright 2025 802-COM Authors
+SPDX-License-Identifier: BSD-3-Clause
+
+Redistributed unmodified under matlab/, with their licence notices intact. Each
+file carries the full BSD-3-Clause text in its own header.
+
+  matlab/com_ieee8023_4p15p0_adaptive_local_search.m
+    sha256  56c11a4aa24597620f0affe9d8442f930e0964967ed9d4a53c0a287221c0f73e
+    size    509,397 bytes / 12,199 lines / 157 functions
+    role    PRIMARY REFERENCE. 4p15p0 with the adaptive local search
+            backported. This is the build the 208-case reference results in
+            README section 7 were produced with.
+
+  matlab/com_ieee8023_4p15p0.m
+    sha256  e5b630ab1c13186998a5307d7d993bcfbf25b385b585b4fad03f29aa5af7f691
+    size    498,414 bytes / 11,884 lines / 154 functions
+    role    The release sicopr.py emulates by default. As distributed it
+            contains only OptFom_Local_Search.
+
+  matlab/com_ieee8023_4p16p0.m
+    sha256  172913a72dabde12b9bfdec2d8496923f3ed6e6f817ab025a726c29cdf9a962f
+    size    511,909 bytes / 12,233 lines / 157 functions
+    role    Supported via --matlab-version 4p16p0. Adaptive local search
+            adopted into the mainline. Delta documented in
+            docs/MATLAB_4p16p0_CHANGES.md; measured effect in
+            docs/MATLAB_4p16p0_IMPACT.md.
+
+  matlab/com_ieee8023_4p14p0.m
+    sha256  ee5fd5ec1323f5779a818ef234d9fd32222348da43281a3e6ec4758c567c2f21
+    size    493,151 bytes / 11,742 lines / 153 functions
+    role    The original translation source. Retained for history; no longer
+            emulated.
+
+Verify any of these with:
+
+    python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" matlab/<file>.m
+
+or  sha256sum matlab/<file>.m       (Linux/macOS)
+or  Get-FileHash matlab\<file>.m    (PowerShell)
+
+**Where these came from.** They are the COM reference implementation as
+circulated by the IEEE 802.3 COM ad hoc. This repository does not record the
+retrieval URL or date; if you need to establish that you hold the same file, the
+SHA-256 above is the authoritative check, and it is what a future upstream
+release should be diffed against.
+
+
+2. Derived material inside this repository
+------------------------------------------
+
+Two kinds of file are derived from the upstream above and carry its licence:
+
+  com_functions/fn/*/py_impl.py        (157 files)
+      The Python translation, function by function. Each corresponds to a named
+      MATLAB function and a line range recorded in com_functions/registry.json.
+
+  com_functions/fn/*/matlab_source.m   (49 files)
+      Verbatim excerpts of the upstream MATLAB, kept beside their translations
+      so a reviewer can compare them without opening the full reference. These
+      are literal copies of BSD-3-Clause material, Copyright 2025 802-COM
+      Authors, and are covered by LICENSE.
+
+  sicopr.py
+      Generated from the py_impl.py files by assemble_sicopr.py. Carries both
+      copyright notices and the SPDX identifier in its header.
+
+
+3. Correspondence to the upstream
+---------------------------------
+
+com_functions/registry.json maps every translated function to the upstream lines
+it derives from — 157 entries, each carrying "matlab_lines": [start, end]. That
+is the machine-readable record; tools/matlab_version_diff.py uses it to map an
+upstream diff onto the translations needing re-check.
+
+
+4. What is NOT covered by the upstream licence
+----------------------------------------------
+
+The BSD-3-Clause grant on the MATLAB source does not extend to the channel
+S-parameters, configuration workbooks or MATLAB result workbooks used to
+correlate this port. Those are IEEE 802.3 contributions with their own terms and
+are not redistributed here. See README section 1.
+
+
+5. Port copyright
+-----------------
+
+Copyright 2026 Todd Bermensolo
+SPDX-License-Identifier: BSD-3-Clause
+
+Released under the same terms as the work it derives from, so that the licence
+travels with it.
+
+This project is not endorsed by, affiliated with, or approved by IEEE, the IEEE
+802.3 working group, or the 802-COM Authors.

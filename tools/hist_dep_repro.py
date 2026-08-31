@@ -7,6 +7,10 @@ Strategy: run the SAME winning EQ point two ways --
 Both must select txffe row 8. If COM(A) != COM(B) we have a fast repro, and the
 captured state diff at the moment COM computation begins names the leak.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import hashlib
 import os
 import sys

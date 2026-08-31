@@ -1,3 +1,6 @@
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 # corpus_report.R -- corpus-wide aggregation of the EQ-search method comparison.
 #
 # Consumes what corpus_sweep.py writes:

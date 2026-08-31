@@ -13,6 +13,10 @@ injection waiting to happen, even bound to localhost.
 stdout when it is a pipe, and the status window would sit empty for minutes and
 then dump everything at once -- which defeats the point of having one.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import collections
 import os
 import subprocess

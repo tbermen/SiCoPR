@@ -7,12 +7,16 @@ scipy>=1.9         # signal, interpolate, special, linalg, io
 openpyxl>=3.0      # read the .xlsx configuration spreadsheet
 matplotlib>=3.5    # figures (only needed when SAVE_FIGURES is enabled)
 
-# Study tooling in tools/ only — the COM engine itself does not need these.
-python-pptx>=1.0   # tools/build_pptx.py, builds the review deck from corpus_results/
-
-# Optional: figure fitting in tools/build_*_pptx.py. python-pptx already pulls it
-# in, so it is normally present without asking.
-Pillow>=9.0
+# NOT required by anything in this repository.
+#
+# python-pptx and Pillow were needed by the deck builders (tools/build_*_pptx.py),
+# which are kept local with the data they render and are not published here. They
+# are listed only so a maintainer working from a full local tree installs the same
+# set; a published clone never imports them. Left commented rather than deleted so
+# the reason survives.
+#
+#   python-pptx>=1.0   # deck builders (local tooling)
+#   Pillow>=9.0        # figure fitting for the deck builders (local tooling)
 
 # The R reports under R/ additionally need, inside R:
 #   install.packages(c("R.matlab", "ggplot2", "dplyr", "tidyr", "scales",
