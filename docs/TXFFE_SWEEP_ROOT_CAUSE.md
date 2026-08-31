@@ -461,7 +461,7 @@ the package content agrees and the filename difference is cosmetic.)*
 ## 12. Final result — matched configuration
 
 Running each condition on the config its reference actually used
-(reproduce with `python tools/matlab_compare.py --run --modal-erl --jobs 5`; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
+(produced with `tools/matlab_compare.py --run --modal-erl --jobs 5`, local tooling that is not in the repository — README §1; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
 
 | | result |
 |---|---|

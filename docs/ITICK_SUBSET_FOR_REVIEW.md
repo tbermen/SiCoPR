@@ -17,9 +17,9 @@ model is not at fault (§3b), and `itick` is an offset from an origin that moves
 with the equalizer (§5) — so several of the eight may not be sampling at
 different instants at all.
 
-Regenerate with `python tools/itick_subset_report.py`.
+Produced with `tools/itick_subset_report.py` (local tooling, not in the repository — README §1).
 Machine-readable tables: `report_data/itick_subset.csv` (8 rows, 34 columns) and
-`report_data/fom_surface_<case>.csv` (`python tools/fom_surface_probe.py <case>`).
+`report_data/fom_surface_<case>.csv`, produced with `tools/fom_surface_probe.py` (local tooling).
 
 ---
 

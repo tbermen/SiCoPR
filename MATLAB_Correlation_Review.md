@@ -6,6 +6,16 @@
 reference results this port is measured against. Published here because the
 evidence for the correctness claim belongs with the code that makes it.*
 
+> **This is a record of what was done and what it found — not a procedure you can
+> run.** The channel S-parameters, the configuration workbooks and the MATLAB
+> result workbooks are IEEE 802.3 contributions that this project does not
+> redistribute, and the harness that drove the comparison is kept with them. The
+> `tools/matlab_compare.py` commands quoted throughout are how these numbers were
+> produced; they are not in the repository. Checking this result independently
+> means supplying your own channels and configs, running your own MATLAB, and
+> writing your own comparison against SiCoPR's output — which is why the figures
+> below are given at full precision and per case rather than as summaries.
+
 Reference data: `Results_Matlab_COM_v4p15_*_ClipMethodSlow_AdaptiveLS.xlsx` (supplied
 12 Aug 2026), 26 IEEE 802.3dj CR/KR channels × 4 package configs × with/without
 crosstalk = **208 cases**. MATLAB `code_revision = com_ieee8023_4p15p0.m`.
@@ -477,12 +487,16 @@ rather than from a fixed list.
 ```
 report_docs/SiCoPR_MATLAB_Review.pptx    review deck (built, not tracked)
 MATLAB_Correlation_Review.md    this document
-tools/matlab_compare.py         --validate / --run / --report, checkpointed, --jobs N
-tools/export_results.py         result workbooks in the reference format
+tools/matlab_compare.py         --validate / --run / --report (local, not in the repo)
+tools/export_results.py         result workbooks in the reference format (local)
 R/correlation_report.R          the figures in the deck
 ```
 
-## Appendix B — reproducing
+## Appendix B — how these numbers were produced
+
+Recorded so the method is inspectable, not as a procedure to follow: none of
+the `tools/` scripts below are in the repository, and neither are the inputs
+they read (see the note at the top of this document).
 
 ```bash
 python tools/matlab_compare.py --validate                 # resolve all 208 cases

@@ -76,8 +76,18 @@ this section says exactly which.
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
 passes — 890 per-function tests plus the cross-check scripts — and every test that
-needs correlation data skips cleanly and says what is missing. You only need the
-data to reproduce the 208-case correlation.
+needs correlation data skips cleanly and says what is missing.
+
+**This repository documents the verification; it does not offer to reproduce it.**
+The 208-case comparison against MATLAB was run, and what it found is written up in
+§7 and in [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md). Repeating
+it here is not on offer, and not promised: the channel S-parameters, the
+configuration workbooks and the MATLAB result workbooks are IEEE 802.3 contributions
+that are not ours to redistribute, and the harness that drives the comparison is kept
+with them. Anyone wanting to check the result independently would supply their own
+channels and configs, run their own MATLAB, and write their own comparison against
+this engine's output — which is a reasonable thing to do, and is what the numbers in
+§7 are stated precisely enough to support.
 
 Note the second row of "not present": removing the reference *workbooks* is not
 enough on its own, because the same numbers had been extracted into a per-stage
@@ -102,9 +112,13 @@ unpack it into the directory shown.
 The **COM configuration workbooks** (`config_com_dj_200G_CAKR_178_PKGA/B_*.xlsx`,
 including the `_sweep_TxFFE` variants) and the **MATLAB reference result workbooks**
 (`Results_Matlab_COM_v4p15_With/WithoutXtalk_ClipMethodSlow_AdaptiveLS.xlsx`) come
-from the COM ad hoc rather than from a numbered contribution. Ask on the reflector, or
-substitute your own configuration and your own MATLAB run — the harness only needs a
-config per package case and a MATLAB result workbook in the standard column layout.
+from the COM ad hoc rather than from a numbered contribution, and are likewise not
+redistributed here.
+
+The channels above are worth having for a different reason: they are the ones §7's
+numbers were measured on, so running SiCoPR against them puts you on the same inputs
+the comparison used — even though the comparison itself is not something this
+repository performs.
 
 > **The correlation harness is not published.** `tools/matlab_compare.py` and
 > the exporters around it are kept local with the data they drive, because every
@@ -394,7 +408,8 @@ an exact tie, quantisation-limited rather than wrong.
 Each crosstalk condition runs on the configuration its own MATLAB reference was produced
 with: the without-crosstalk cases on the base workbooks, the with-crosstalk cases on the
 workbooks that sweep the Tx FFE. **That pairing was confirmed by the COM maintainer on
-2026-08-24**, so it is the configuration, not one reading among several. Reproduce with:
+2026-08-24**, so it is the configuration, not one reading among several. Produced with
+(local tooling, not part of this repository — §1):
 
 ```powershell
 # local tools, not published with the repo -- see section 1
@@ -475,7 +490,8 @@ Every change has been measured; full detail in
 | common-mode / TDR degenerate guards | never fired on any input tested |
 | `OptFom_Create_Output`, `get_PSDs` edits | numerically neutral |
 
-Reproduce the comparison with:
+Produced with (`matlab_version_diff.py` ships; `compare_matlab_versions.py` is local
+tooling — §1):
 
 ```powershell
 python tools/matlab_version_diff.py matlab/com_ieee8023_4p15p0.m matlab/com_ieee8023_4p16p0.m

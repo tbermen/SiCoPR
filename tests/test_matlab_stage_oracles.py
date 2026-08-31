@@ -11,8 +11,8 @@ there from data already committed: the two reference workbooks under
 tests/2_Results_COM_Matlab/ carry ~260 columns of genuine MATLAB output per
 case, and many are the output of one identifiable stage.
 
-tools/extract_matlab_oracles.py distils those into
-tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 scalar
+tools/extract_matlab_oracles.py -- local tooling, not part of the published
+repository -- distils those into tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 scalar
 quantities plus 14 VECTOR families, ~800 KB, committed. This file checks it.
 
 The vectors matter more than the scalars: a tap set is wrong in ways a gain is
@@ -75,8 +75,9 @@ REGISTRY = os.path.join(_ROOT, 'com_functions', 'registry.json')
 # Present-but-wrong is still a failure, which is what everything below tests.
 if not os.path.exists(ORACLE):
     print("SKIP matlab_stage_oracles: %s not present. It is generated from the "
-          "MATLAB reference workbooks, which are not redistributable; run "
-          "`python tools/extract_matlab_oracles.py` once you have them."
+          "MATLAB reference workbooks, which are not redistributable, by tooling that "
+          "is likewise kept local (README section 1). This project documents its "
+          "verification rather than offering to reproduce it."
           % os.path.relpath(ORACLE, _ROOT))
     finish()
 

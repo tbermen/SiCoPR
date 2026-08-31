@@ -107,6 +107,7 @@ The full 208-case correlation was re-run with **no `--min-radius` flag** — the
 rule alone — on the confirmed per-condition configurations, 2026-08-27:
 
 ```
+# local tooling, not in the repository -- see README section 1
 python tools/matlab_compare.py --run --modal-erl --jobs 5
 python tools/export_compare_csv.py
 ```
