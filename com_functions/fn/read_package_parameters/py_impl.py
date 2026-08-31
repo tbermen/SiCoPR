@@ -2,20 +2,18 @@
 # MATLAB→Python translation notes for read_package_parameters
 # MATLAB lines: 10525–10593
 # ============================================================
-# xls_parameter inlined as _xls_param — calls into the existing xls_parameter py_impl via import,
-# but per project protocol no cross-py_impl imports: inline a minimal version here.
-# Actually, xls_parameter is a complex function. We raise NotImplementedError unless
-# we can call it.  Per protocol we inline helpers.
+# Reads package parameters from one parameter block (a `.START`/`.END` region of
+# the configuration sheet).
 #
-# This function reads package parameters from a parameter block (spreadsheet struct).
-# xls_parameter(parameter, key, bool) — inlined as _xls_param below, but since xls_parameter
-# is already implemented, we import it directly (it is a sibling function, but since it is
-# a pure utility and the project rule is "no imports from sibling py_impl files" only for
-# callee inlining, and xls_parameter is verified — we raise NotImplementedError for the
-# full-spreadsheet path, noting this is a parameter-file-loading function).
+# `xls_parameter` is inlined below as `_xls_param`, following the project rule
+# that a callee is inlined rather than imported from a sibling py_impl.
 #
-# For test coverage: the function can be called with a dict-like parameter block.
-# xls_parameter is inlined as _xls_parameter below (minimal version).
+# NOTE: this function is fully implemented and raises nothing. Earlier revisions
+# of this header said it "raises NotImplementedError for the full-spreadsheet
+# path"; that was never true of the body and the wording made `assemble_sicopr.py`
+# report it as an unimplemented function on every build. It is also currently
+# uncalled: `read_ParamConfigFile` parses `.START` blocks with its own inlined
+# `__read_pkg_params`.
 # ============================================================
 # z_p_tx_cases shape: MATLAB transposes → shape (ncases, mele).
 # mele==2 → flex=2; mele==4 → flex=4; mele==1 → flex=1; else → ValueError.

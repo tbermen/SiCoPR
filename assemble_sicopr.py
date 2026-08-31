@@ -274,8 +274,48 @@ fns = reg['functions']
 fns_sorted = sorted(fns, key=lambda x: x['matlab_lines'][0])
 
 collected_lines = [HEADER]
+def _live_not_implemented(source):
+    """Line numbers of real `raise NotImplementedError` statements.
+
+    AST-based on purpose: a comment explaining why something is not implemented
+    is not itself an unimplemented path, and the previous substring check could
+    not tell the difference.
+    """
+    import ast
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Raise) or node.exc is None:
+            continue
+        exc = node.exc
+        if isinstance(exc, ast.Call):
+            exc = exc.func
+        if isinstance(exc, ast.Name) and exc.id == 'NotImplementedError':
+            out.append(node.lineno)
+    return out
+
+
 fn_count = 0
-not_impl_count = 0
+not_impl_sites = []
+
+# Paths that raise NotImplementedError on purpose, with the reason. A raise NOT
+# listed here is a genuine gap and is reported loudly; these are reported as a
+# note, because a blanket "5 functions still contain NotImplementedError" on
+# every build is noise that trains you to ignore the line that matters.
+#
+# Detection is on a real `raise` statement, not the presence of the words: the
+# old substring test also matched explanatory comments, which is why a function
+# with no raise at all (read_package_parameters) was counted for months.
+DOCUMENTED_NOT_IMPLEMENTED = {
+    'get_s4p_files': 'GUI file-picker path; the CLI always supplies file_list',
+    'get_TD_files': 'GUI file-picker path; the CLI always supplies file_list',
+    'force': "FFE_OPT_METHOD='WIENER-HOPF' -- WIENER_HOPF_MMSE is called but "
+             'never defined in the reference MATLAB, so that path errors there '
+             "too; use 'MMSE'",
+}
 deferred_aliases = []  # (alias_name, target_name) pairs emitted after all functions
 
 _PRIVATE_DEF_RE = re.compile(r'^(def )(_\w+)(\s*\()', re.MULTILINE)
@@ -356,8 +396,8 @@ for fn in fns_sorted:
         collected_lines.append('\n')
         fn_count += 1
 
-    if 'NotImplementedError' in src:
-        not_impl_count += 1
+    for site in _live_not_implemented(src):
+        not_impl_sites.append((name, site))
 
 # Emit deferred aliases after all functions are defined
 if deferred_aliases:
@@ -438,7 +478,20 @@ with open('sicopr.py', 'w', encoding='utf-8') as f:
     f.write(output)
 
 print(f'Assembled sicopr.py from {fn_count} functions.')
-if not_impl_count:
-    print(f'WARNING: {not_impl_count} function(s) still contain NotImplementedError.')
-else:
-    print('OK: No NotImplementedError stubs remain.')
+
+undocumented = [(n, ln) for n, ln in not_impl_sites
+                if n not in DOCUMENTED_NOT_IMPLEMENTED]
+if undocumented:
+    print(f'WARNING: {len(undocumented)} UNDOCUMENTED NotImplementedError '
+          f'path(s) -- a genuine gap, or an entry missing from '
+          f'DOCUMENTED_NOT_IMPLEMENTED in this file:')
+    for n, ln in undocumented:
+        print(f'    {n} (line {ln})')
+if not_impl_sites and not undocumented:
+    names = sorted({n for n, _ in not_impl_sites})
+    print(f'note: {len(not_impl_sites)} documented NotImplementedError path(s) '
+          f'in {len(names)} function(s), all deliberate:')
+    for n in names:
+        print(f'    {n}: {DOCUMENTED_NOT_IMPLEMENTED[n]}')
+elif not not_impl_sites:
+    print('OK: no NotImplementedError paths remain.')

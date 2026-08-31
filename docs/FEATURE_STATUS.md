@@ -47,7 +47,7 @@ TD-ILN, COM pie plot) are **now implemented and wired** — see §A/§B.
 | B3 | `MMSE` floating sub-branch | ✅ `MMSE` (218 lines) + `FOM_rxffe_floating_taps` implemented + tested. |
 | B4 | `force` WIENER-HOPF sub-path | ⛔ **Intentional non-gap.** Raises `NotImplementedError` — `WIENER_HOPF_MMSE` is *undefined in the reference MATLAB itself*. Use `FFE_OPT_METHOD='MMSE'`. |
 | B5 | `get_ILN_cmp_td` TD-ILN | ✅ WIRED — calls the real `s21_to_impulse_DC` for non-zero sdd21 (py_impl L180-192). *(Its "raises NotImplementedError" docstring is stale.)* |
-| B6 | `RILN_TD` s21→impulse (non-zero IL) | ⚠️ **Only remaining incomplete code.** `_RILN_TD__s21_to_impulse_DC` still raises for non-zero IL (interp_Sparam not wired into this copy). **But `RILN_TD`/`get_RILN_cmp_td` are translated-but-unwired** — the live `COMPUTE_RILN` path in `FD_Processing` uses `capture_RIL_RILN`, so this raise is unreachable from a normal CLI run. Fix = point it at the real top-level `s21_to_impulse_DC` (as `get_ILN_cmp_td` already does), *if* that RILN route is ever needed. |
+| B6 | `RILN_TD` s21→impulse (non-zero IL) | ✅ **CLOSED (2026-08-30).** `RILN_TD` calls the real top-level `s21_to_impulse_DC`, which handles non-zero IL. The private `_RILN_TD__s21_to_impulse_DC` that raised had been left behind with no callers once the real one was wired; it was dead code and has been removed. `RILN_TD`/`get_RILN_cmp_td` remain translated-but-unwired — the live `COMPUTE_RILN` path in `FD_Processing` uses `capture_RIL_RILN` — but there is no longer any incomplete code here. |
 | B7 | `plot_pie_com` | ✅ Implemented + test; wired into `Bathtub_Contribution_Wrapper`. |
 | B8 | `get_pdf_from_sampled_signal` FAST path | ⏸ `FAST_NOISE_CONV` speed *approximation* only (default exact path recommended). Perf, not correctness. |
 
@@ -94,9 +94,7 @@ bundled config → converts "self-consistent" into "verified." Unblocks everythi
 crosstalk (needs aggressor `.s4p`), MLSE, RxFFE, floating DFE, GET_FD ICN/ILD, ERL,
 calibration, modal masks, N_qb, TD-ILN/RILN.
 
-**Phase 3 — Loose ends.** B6 `RILN_TD` interp_Sparam corner (only if that RILN route is
-needed); TDMODE input path; B8 `FAST_NOISE_CONV` perf path. B4 Wiener-Hopf only if the
-MATLAB reference ever defines `WIENER_HOPF_MMSE`.
+**Phase 3 — Loose ends.** TDMODE input path; B8 `FAST_NOISE_CONV` perf path. B4 Wiener-Hopf only if the MATLAB reference ever defines `WIENER_HOPF_MMSE` — it currently calls that function without defining it, so the reference itself errors on that path. (B6 closed 2026-08-30.)
 
 ## Historical note
 The initial (2026-06-07) audit logged 7 candidate bugs (BUG-01…07) in `audit_state.json`.

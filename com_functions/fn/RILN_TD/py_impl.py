@@ -2,7 +2,11 @@
 # MATLAB→Python translation notes for RILN_TD
 # MATLAB lines: 4226–4305
 # ============================================================
-# s21_to_impulse_DC inlined: raises NotImplementedError for non-zero IL.
+# s21_to_impulse_DC: calls the real top-level function (L230/L241), which
+# handles non-zero IL. A private inlined copy that raised
+# NotImplementedError for non-zero IL used to sit here; it had no callers
+# once the real one was wired, and its raise was the last thing making the
+# assembler report this function as unimplemented. Removed 2026-08-30.
 # All filter helpers (Bessel_Thomson, Butterworth, Tukey) inlined.
 # H_tw: MATLAB overrides Tukey with ones (H_tw=ones(1,length(f))) after computing it.
 # filter(ones(1,M), 1, FIR) → scipy.signal.lfilter(np.ones(M), [1.0], FIR).
@@ -65,63 +69,6 @@ def _Bessel_Thomson_Filter(param, f, use_BT):
     acoef = a[::-1]
     s = 1j * np.asarray(f, dtype=float) / (param.fb_BT_cutoff * param.fb)
     return a[0] / np.polyval(acoef, s)
-
-
-def _s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
-    freq_array = np.asarray(freq_array, dtype=float)
-    IL = np.asarray(IL, dtype=complex)
-    fmax = 1.0 / time_step / 2.0
-    freq_step = float(freq_array[2] - freq_array[1])
-    n_steps = round(fmax / freq_step)
-    fout = np.arange(0, n_steps + 1) * (fmax / n_steps)
-    if np.all(IL == 0):
-        IL_interp = np.full(len(fout), np.finfo(float).eps, dtype=complex)
-    else:
-        raise NotImplementedError(
-            's21_to_impulse_DC: interp_Sparam not yet implemented')
-    IL_col = IL_interp.ravel()
-    IL_symmetric = np.concatenate([
-        [np.real(IL_col[0])],
-        IL_col[1:-1],
-        [np.real(IL_col[-1])],
-        np.conj(IL_col[1:-1])[::-1]
-    ])
-    impulse_response = np.real(np.fft.ifft(IL_symmetric))
-    L = len(impulse_response)
-    t_base = np.arange(L) / (freq_step * L)
-    original_ir = impulse_response.copy()
-    abs_ir = np.abs(impulse_response)
-    half = L // 2
-    cands = np.where(abs_ir[:half] > np.max(abs_ir[:half]) * OP.EC_PULSE_TOL)[0]
-    start_ind = int(cands[0]) if len(cands) > 0 else 0
-    err = np.inf
-    while not np.all(impulse_response == 0):
-        impulse_response[:start_ind] = 0
-        impulse_response[half:] = 0
-        IL_mod = np.abs(IL_symmetric) * np.exp(1j * np.angle(np.fft.fft(impulse_response)))
-        ir_mod = np.real(np.fft.ifft(IL_mod))
-        delta = np.abs(impulse_response - ir_mod)
-        err_prev = err
-        peak = np.max(np.abs(impulse_response))
-        err = np.max(delta) / peak if peak != 0 else 0.0
-        if err < OP.EC_REL_TOL or abs(err_prev - err) < OP.EC_DIFF_TOL:
-            break
-        impulse_response = ir_mod
-    ir_norm = np.linalg.norm(impulse_response)
-    causality_correction_dB = (20 * np.log10(
-        np.linalg.norm(impulse_response - original_ir) / ir_norm)
-        if ir_norm > 0 else 0.0)
-    if not OP.ENFORCE_CAUSALITY:
-        impulse_response = original_ir
-    ir_peak = np.max(np.abs(impulse_response))
-    last_arr = np.where(np.abs(impulse_response) > ir_peak * OP.impulse_response_truncation_threshold)[0]
-    ir_last = int(last_arr[-1]) if len(last_arr) > 0 else L - 1
-    voltage = impulse_response[:ir_last + 1]
-    t_out = t_base[:ir_last + 1]
-    tail_norm = np.linalg.norm(impulse_response[ir_last + 1:])
-    v_norm = np.linalg.norm(voltage)
-    truncation_dB = 20 * np.log10(tail_norm / v_norm) if v_norm > 0 and tail_norm > 0 else -np.inf
-    return voltage, t_out, causality_correction_dB, truncation_dB
 
 
 def _d_cpdf(binsize, values, probs):
