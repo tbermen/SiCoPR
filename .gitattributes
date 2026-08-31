@@ -1,0 +1,14 @@
+# The MATLAB reference files have a SHA-256 recorded in NOTICE, and that digest
+# is over the bytes on disk. Git's autocrlf is on by default on Windows, so
+# without this line a fresh Windows clone would check them out with CRLF, every
+# recorded checksum would fail to reproduce, and the provenance claim in NOTICE
+# would look false. -text means: store and check out these bytes unchanged,
+# on every platform.
+matlab/*.m -text
+
+# Same reasoning, lesser stakes: the generated engine and the provenance
+# manifest are diffed byte-for-byte by CI against a fresh `python
+# assemble_sicopr.py`. Leaving their line endings to the platform makes that
+# diff depend on who ran it.
+sicopr.py -text
+com_functions/inlined_copies.json -text
