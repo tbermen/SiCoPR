@@ -19,6 +19,10 @@ compares two configurations that must differ.
 
     python tests/test_structural_invariants.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

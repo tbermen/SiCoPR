@@ -17,6 +17,10 @@ are audited separately in batches B07/B08).
 Checks that are EXPECTED to FAIL document divergences; the FAIL rows in
 tests/results.csv are the ledger evidence. Run: python tests/test_noise_units.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

@@ -10,6 +10,10 @@ com_functions/registry.json, and emits:
 
 Run: python audit_tier0_coverage.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import json
 import os
 import re

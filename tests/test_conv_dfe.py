@@ -18,6 +18,10 @@ Oracles are transcribed from the cited MATLAB lines; tap placement, cross-path
 FFE/FFE_Fast agreement, and the CTLE DC-gain invariant are independent semantic
 checks (not just transcription echoes). Run: python tests/test_conv_dfe.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 

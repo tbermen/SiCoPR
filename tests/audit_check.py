@@ -17,6 +17,10 @@ where result is PASS / FAIL / XFAIL / XPASS.
 Not a pytest module. Runnable audit scripts import it when executed as
 `python tests/test_<area>.py` from the repo root or from tests/.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import csv
 import datetime
 import os

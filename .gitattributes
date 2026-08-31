@@ -1,14 +1,21 @@
+# -text means: store and check out these bytes unchanged, on every platform.
+# Git's autocrlf is on by default on Windows, and for these files a converted
+# checkout is not cosmetic -- it changes what the file IS.
+
 # The MATLAB reference files have a SHA-256 recorded in NOTICE, and that digest
-# is over the bytes on disk. Git's autocrlf is on by default on Windows, so
-# without this line a fresh Windows clone would check them out with CRLF, every
-# recorded checksum would fail to reproduce, and the provenance claim in NOTICE
-# would look false. -text means: store and check out these bytes unchanged,
-# on every platform.
+# is over the bytes on disk. A CRLF checkout would fail every recorded checksum
+# and make the provenance claim in NOTICE look false. (Measured: git's binary
+# heuristic happens to spare these files today, so nothing was broken -- but
+# nothing was guaranteeing it either. This states the requirement.)
 matlab/*.m -text
 
-# Same reasoning, lesser stakes: the generated engine and the provenance
-# manifest are diffed byte-for-byte by CI against a fresh `python
-# assemble_sicopr.py`. Leaving their line endings to the platform makes that
-# diff depend on who ran it.
+# The generated engine and its provenance manifest. assemble_sicopr.py writes
+# both with newline='\n' explicitly so that a Windows run and a Linux run
+# produce identical bytes -- which is what lets CI diff them byte-for-byte
+# against a fresh assembler run. That only holds if the checkout does not
+# convert them back: without -text, autocrlf hands Windows a CRLF working copy,
+# the assembler regenerates LF, and every regeneration shows as a whole-file
+# diff. The two settings are a pair; changing one without the other breaks the
+# generated-file check.
 sicopr.py -text
 com_functions/inlined_copies.json -text

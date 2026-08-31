@@ -491,7 +491,11 @@ if __name__ == '__main__':
 
 output = '\n'.join(collected_lines)
 
-with open('sicopr.py', 'w', encoding='utf-8') as f:
+# Write LF on every platform. Without an explicit newline, Python translates
+# "\n" to the host line ending, so a Windows run emits CRLF and a Linux run
+# emits LF -- and CI's byte-for-byte diff of the generated engine would then
+# depend on who ran the assembler rather than on what the sources say.
+with open('sicopr.py', 'w', encoding='utf-8', newline='\n') as f:
     f.write(output)
 
 _reg_lines = {f['name']: f['matlab_lines'] for f in fns}
@@ -518,7 +522,7 @@ for _copy_name, _helper, _into in sorted(set(_renames)):
     _manifest['copies'].append(_entry)
 
 with open(os.path.join('com_functions', 'inlined_copies.json'), 'w',
-          encoding='utf-8') as f:
+          encoding='utf-8', newline='\n') as f:
     json.dump(_manifest, f, indent=1)
     f.write('\n')
 

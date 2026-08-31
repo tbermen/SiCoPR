@@ -16,6 +16,10 @@ while a document asserts something about it. These tests fail when that happens:
 The second test needs a completed run; it skips when there is none, rather than
 passing vacuously.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import glob
 import json
 import os

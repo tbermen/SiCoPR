@@ -19,6 +19,10 @@ Invariants (audit prompt section 3 item 6, section 5 Tier 2/3):
 
 Run: python tests/test_noise_pdf_composite.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

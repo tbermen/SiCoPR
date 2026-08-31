@@ -50,6 +50,10 @@ Three layers, cheapest first:
 Run: python tests/test_matlab_stage_oracles.py
      COM_ORACLE_LIVE=1 python tests/test_matlab_stage_oracles.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import collections as _collections
 import csv
 import io

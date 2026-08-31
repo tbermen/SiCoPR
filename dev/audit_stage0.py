@@ -1,3 +1,6 @@
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 import json, os, sys
 
 with open('com_functions/registry.json', encoding='utf-8-sig') as f:

@@ -3,6 +3,9 @@ Session-scoped fixtures for integration tests.
 These fixtures run the real COM pipeline on the reference channel.
 All fixtures skip if the reference fixture files are not present.
 """
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 import pytest
 import numpy as np
 import os

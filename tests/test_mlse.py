@@ -17,6 +17,10 @@ does the same (2778-2779). So no COM value changes.
 
 Run: python tests/test_mlse.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

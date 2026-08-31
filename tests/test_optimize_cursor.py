@@ -29,6 +29,10 @@ cursor_i and so did not exercise the real 0-based return of cursor_sample_index)
 
 Run: python tests/test_optimize_cursor.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

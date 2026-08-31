@@ -12,6 +12,9 @@ correlation data.
 
     python tests/test_stage_figures.py
 """
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 import io
 import os
 import re

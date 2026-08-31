@@ -18,6 +18,9 @@ Install esprima if this ever reports that it fell through to the fallback.
 
     python tests/test_gui_static.py
 """
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 import io
 import os
 import re

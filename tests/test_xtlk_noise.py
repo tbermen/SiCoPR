@@ -17,6 +17,10 @@ slightly optimistic COM whenever FEXT/NEXT aggressors are present.
 
 This is B13-D18 (low-medium). Run: python tests/test_xtlk_noise.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

@@ -22,6 +22,10 @@ Oracles transcribed from the cited MATLAB lines. Cascade identity, S<->T round
 trip, and passivity are analytic invariants (not transcription echoes). FAIL
 rows document divergences. Run: python tests/test_sparam_cascade.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 import copy

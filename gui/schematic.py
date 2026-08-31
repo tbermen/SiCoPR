@@ -17,8 +17,7 @@ Two rules this file exists to enforce:
 configs, so a new keyword in a future config shows up as a test failure rather
 than as a setting nobody can find.
 """
-# Copyright 2025 802-COM Authors (upstream MATLAB reference)
-# Copyright 2026 Todd Bermensolo (Python port)
+# Copyright 2026 Todd Bermensolo
 # SPDX-License-Identifier: BSD-3-Clause
 
 

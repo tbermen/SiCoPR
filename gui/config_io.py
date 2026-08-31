@@ -51,8 +51,7 @@ disagree with its own arithmetic.
     doc.keywords['f_b'].value                 # 106.25
     warnings = write_config('config.xlsx', 'new.xlsx', {'f_b': 112.5})
 """
-# Copyright 2025 802-COM Authors (upstream MATLAB reference)
-# Copyright 2026 Todd Bermensolo (Python port)
+# Copyright 2026 Todd Bermensolo
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os

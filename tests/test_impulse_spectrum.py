@@ -20,6 +20,10 @@ input on the exact fout grid, so the FFT machinery is isolated from the B02
 interp_Sparam divergences. FAIL rows document divergences. Run:
 python tests/test_impulse_spectrum.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

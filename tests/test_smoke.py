@@ -2,6 +2,9 @@
 Smoke tests: does sicopr.py import and do basic functions work?
 Not checking numerical accuracy yet — just that nothing throws.
 """
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 import pytest
 import numpy as np
 from types import SimpleNamespace

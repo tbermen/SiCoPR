@@ -16,6 +16,10 @@ Traps checked (audit prompt section 3 item 7, section 4 item 1):
 Oracles transcribed from the cited MATLAB lines; cursor / eye bounds are physics
 invariants. Run: python tests/test_cursor_indexing.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 import copy

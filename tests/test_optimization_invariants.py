@@ -21,6 +21,9 @@ with one set of inputs and never call it twice.
 
 Run: python tests/test_optimization_invariants.py
 """
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
 import copy
 import importlib.util
 import os

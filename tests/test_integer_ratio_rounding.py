@@ -26,6 +26,10 @@ signal.
 
     python tests/test_integer_ratio_rounding.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import ast
 import io
 import os

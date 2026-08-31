@@ -17,6 +17,10 @@ Oracles transcribed from the cited MATLAB lines. Matched-load reflection and
 passivity/reciprocity are analytic invariants. FAIL rows document divergences.
 Run: python tests/test_tline_tdr_erl.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace

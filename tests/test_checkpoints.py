@@ -9,6 +9,10 @@ tests/fixtures/README.md for how to supply them.
 Reference values are approximate targets for the 802.3ck standard
 compliant host channel at 53.125 GBaud, PAM-4.
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import pytest
 import numpy as np
 import os

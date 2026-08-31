@@ -39,8 +39,7 @@ Jobs run in named slots: 'com' for the COM run itself (one at a time, it is
 CPU-heavy) and 'render' for the R dashboard build, which is different work and
 must neither block nor be blocked by a run.
 """
-# Copyright 2025 802-COM Authors (upstream MATLAB reference)
-# Copyright 2026 Todd Bermensolo (Python port)
+# Copyright 2026 Todd Bermensolo
 # SPDX-License-Identifier: BSD-3-Clause
 
 import glob

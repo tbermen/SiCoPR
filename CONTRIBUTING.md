@@ -190,6 +190,36 @@ or affiliated with IEEE or the 802-COM Authors. Clause 3 forbids it.
 Provenance of the upstream — exact versions, SHA-256 checksums, and what is and
 is not covered by its licence — is recorded in [`NOTICE`](NOTICE).
 
+### Which header a new file gets
+
+Two forms, and the choice is about accuracy, not preference. Naming the 802-COM
+Authors on a file they had no hand in attributes copyright to the wrong people,
+which is the same mistake as omitting them from a file they wrote.
+
+**Derived from the upstream MATLAB** — a translation, a transcribed formula, or a
+test whose expected values come from the reference:
+
+```python
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+```
+
+**Original work** — the GUI, the R analysis, the test harness plumbing. The GUI is
+not a port of anything, and its files say so:
+
+```python
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+```
+
+The header goes *after* the module docstring, so the docstring stays first for
+`help()`. Two exceptions: empty `__init__.py` markers get nothing, and the 157
+`com_functions/fn/*/py_impl.py` files get nothing — the assembler inlines their
+leading comments, so a header there would appear 157 times inside the generated
+engine. [`com_functions/fn/README.md`](com_functions/fn/README.md) covers that
+tree collectively.
+
 ### Sign your commits off (DCO)
 
 Every commit must carry a `Signed-off-by:` line. Git adds it for you:

@@ -22,6 +22,10 @@ Two layers:
 
 Run: python tests/test_inlined_copies.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import ast
 import copy as _copy
 import io

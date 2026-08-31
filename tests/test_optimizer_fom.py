@@ -31,6 +31,10 @@ B11-D15 was a documented divergence here and is RESOLVED as of 2026-08-29:
 
 Run: python tests/test_optimizer_fom.py
 """
+# Copyright 2025 802-COM Authors (upstream MATLAB reference)
+# Copyright 2026 Todd Bermensolo (Python port)
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import sys
 from types import SimpleNamespace
