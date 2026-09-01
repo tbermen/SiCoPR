@@ -13,7 +13,9 @@
 > Read the phrases below with that in mind. "Status:", "pending reassembly",
 > "Fix queue", "Next:" and "Recommendation:" are all frozen as they stood on
 > 2026-08-17 and describe a process that no longer runs. Two files it names,
-> `FIX_PROMPT_com_conversion_v2.md` and `py_impl.B03-D6-D7.bak`, no longer exist.
+> `FIX_PROMPT_com_conversion_v2.md` and `py_impl.B03-D6-D7.bak`, are not in this
+> repository — the prompt was development scaffolding and the .bak was a scratch
+> backup, neither of which is shipped.
 
 ---
 

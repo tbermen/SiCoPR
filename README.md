@@ -206,7 +206,6 @@ Touchstone file in the repo, using the engine's own reader. See
 | `assemble_sicopr.py` | concatenates the `py_impl.py` files into `sicopr.py` |
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `sicopr.py`, so they live beside it |
 | `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
-| `report_figs/case_demo/` | example of a single run's figure set: `s<stage>_*.png` plus `STAGE_INDEX.md` |
 | `gui/` | the config editor — a local web app for building configs from a schematic view (§3) |
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
@@ -477,7 +476,7 @@ Honest caveats for anyone relying on the numbers:
   of cases. Regenerate rather than comparing against archived numbers.
 - Only the **TxFFE/CTLE/DFE** path is exercised end to end by a real configuration; the
   other features are implemented and unit-tested but not covered by an end-to-end run. See
-  [`docs/MISSING_FEATURES_PLAN.md`](docs/MISSING_FEATURES_PLAN.md) §D.
+  [`docs/FEATURE_STATUS.md`](docs/FEATURE_STATUS.md) §D.
 - **`FFE_OPT_METHOD='WIENER-HOPF'`** is intentionally non-functional — its helper is
   undefined in the MATLAB reference itself. Use `'MMSE'`.
 - **`FAST_NOISE_CONV`** is a speed *approximation*; the default exact path is recommended

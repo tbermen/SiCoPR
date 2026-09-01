@@ -17,7 +17,7 @@
 > remain open and accepted; they are marked `xcheck` in `tests/` and print as
 > `XFAIL`.
 
-Status: AUDIT COVERAGE COMPLETE (batches B01-B21), waiting at the final gate.
+Status: AUDIT COVERAGE COMPLETE (batches B01-B21). The gate this once waited at never ran -- the pass was overtaken by the 208-case correlation, as the banner above says. Nothing here is outstanding work.
 All 157 MATLAB functions + 2 cross-cutting scans are now classified: 0
 NOT_YET_AUDITED. B01-B12 covered the risk-ordered work queue (section 3, groups
 G1-G10) with bespoke multi-angle tests; B13 resolved the 4p14p0->4p15p0 version

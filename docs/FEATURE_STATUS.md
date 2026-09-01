@@ -2,7 +2,7 @@
 
 > **Status as of 2026-07-01 — feature inventory only; the verification claims below
 > are superseded by [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md)
-> (2026-08-19). As of 2026-08-30 the unit-test count is 890, with 656 checks
+> (2026-08-19). As of 2026-09-01 the unit-test count is 890, with 678 checks
 > across 31 audit scripts, and end-to-end parity is established against 208
 > MATLAB reference cases rather than the single bundled config. The "886 unit
 > tests" figure below is left as written — this document is a dated snapshot,
@@ -42,7 +42,7 @@ TD-ILN, COM pie plot) are **now implemented and wired** — see §A/§B.
 ## B. Former "wiring gaps" — NOW WIRED (or intentional non-gaps)
 | # | Site | Status |
 |---|---|---|
-| B1 | `Apply_EQ` Rx-FFE branch | ✅ WIRED — calls real `force(eq_pulse, param, OP, t_s, fom_result.RxFFE)` (py_impl L112). *(Header docstring saying "force() not yet implemented" is stale.)* |
+| B1 | `Apply_EQ` Rx-FFE branch | ✅ WIRED — calls real `force(eq_pulse, param, OP, t_s, fom_result.RxFFE)` (py_impl L112). |
 | B2 | `Create_Noise_PDF` N_qb branch | ✅ WIRED — calls `adjust_Rx_noise_for_quantization` when `param.N_qb != 0` (py_impl L267-270). |
 | B3 | `MMSE` floating sub-branch | ✅ `MMSE` (218 lines) + `FOM_rxffe_floating_taps` implemented + tested. |
 | B4 | `force` WIENER-HOPF sub-path | ⛔ **Intentional non-gap.** Raises `NotImplementedError` — `WIENER_HOPF_MMSE` is *undefined in the reference MATLAB itself*. Use `FFE_OPT_METHOD='MMSE'`. |
