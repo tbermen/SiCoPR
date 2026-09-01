@@ -157,17 +157,13 @@ report_data/
 # the code that makes them, not the artifacts.
 report_figs/
 sicopr_results/
-corpus_results/*.csv
-corpus_results/*.json
-corpus_results/*.html
-corpus_results/Tx_*/
-sweep_results/*.csv
-sweep_results/*.json
-sweep_results/*.html
-sweep_results/*.png
-sweep_results/*.log
-sweep_results/archive_*/
-sweep_results/prefix_*/
+
+# The two EQ-search study directories, in full (2026-09-01). The per-file rules
+# here previously kept the write-ups while excluding their data; but a results
+# write-up is a result, and the inputs it was measured on are not distributed
+# either, so the whole directory stays local.
+corpus_results/
+sweep_results/
 sweep_results/lib/
 # append-only log of every check ever run; grows without bound
 tests/results.csv

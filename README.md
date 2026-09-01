@@ -171,7 +171,6 @@ Touchstone file in the repo, using the engine's own reader. See
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | audit and interface-check scripts, plus state ledgers |
 | `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |
-| `sweep_results/`, `corpus_results/` | the write-ups of the two EQ-search studies (`STATE.md`, `RESULTS.md`). The data files they describe are generated locally, not tracked |
 
 **Per-run stage artifacts.** The interactive R dashboard (`build_dashboard()` in `R/com_analysis.R`) is grouped by pipeline stage, with a
 heading and plots for each of the seven — including TDR impedance and ERL, FOM
@@ -219,10 +218,7 @@ FOM-driven search uses.
 > engine defects found by the MATLAB correlation and its COM values were materially
 > wrong (100 mm moved 3.217 → 6.720 dB). Two of its conclusions changed as a result — most
 > notably "FOM is not a faithful proxy", which was substantially an artifact of those
-> defects. Both changes are documented in
-> [`corpus_results/RESULTS.md`](corpus_results/RESULTS.md).
-
-Full numbers, caveats, and regeneration commands: [`corpus_results/RESULTS.md`](corpus_results/RESULTS.md).
+> defects.
 
 **The corpus is one channel family** (same topology, varying only cable length), one config,
 thru-only, and now spans 4.45–6.72 dB — so it contains no cases near the 3 dB threshold.
@@ -231,19 +227,19 @@ Those are its main limitations and are documented alongside the results.
 ### Running sweep commands for sicopr.py
 
 ```powershell
-# one channel, three methods -> sweep_results/{full_grid,legacy,adaptive}_log.csv + summary.json
+# one channel, three methods -> per-method logs plus a summary, in the output directory
 python tools/sweep_compare.py <config.xlsx> <thru.s4p> --local-search 2 --max-ctle 3 --max-tap-vals 3
 
 # true COM for the top-K FOM candidates (the FOM-as-proxy measurement)
-python tools/fom_com_probe.py <config.xlsx> <thru.s4p> --sweep-dir sweep_results --top-k 20
+python tools/fom_com_probe.py <config.xlsx> <thru.s4p> --sweep-dir <sweep-out> --top-k 20
 
-# N channels, checkpointed and resumable -> corpus_results/{runs,probe}.csv + corpus_summary.json
+# N channels, checkpointed and resumable -> per-run and per-probe tables plus a summary
 python tools/corpus_sweep.py <config.xlsx> --channel-dir <channel-dir> --dry-run
 python tools/corpus_sweep.py <config.xlsx> --channel-dir <channel-dir>
 
 # reports
-Rscript R/sweep_compare.R sweep_results          # single channel
-Rscript R/corpus_report.R corpus_results         # corpus-wide
+Rscript R/sweep_compare.R <sweep-out>            # single channel
+Rscript R/corpus_report.R <corpus-out>           # corpus-wide
 ```
 
 A full 7-channel × 3-method corpus is ~7.5 h. Use `--dry-run` for the estimate,
