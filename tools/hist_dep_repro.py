@@ -11,6 +11,7 @@ captured state diff at the moment COM computation begins names the leak.
 # Copyright 2026 Todd Bermensolo (Python port)
 # SPDX-License-Identifier: BSD-3-Clause
 
+import glob
 import hashlib
 import os
 import sys
@@ -26,7 +27,13 @@ import sicopr
 from sweep_compare import apply_grid_reduction, _extract_case
 import fom_com_probe as p
 
-CONFIG = 'tests/ALS_test_configs/config_com_dj_200G_CAKR_178_PKGA_06_2_2025__Case1_TXLEOn.xlsx'
+# Resolved by glob rather than hardcoded: the local copy of this workbook has a
+# suffix that is not worth carrying in the repository, and the study only needs
+# "the CAKR Case1 TXLEOn config, whatever it is called here". Set
+# SICOPR_HIST_DEP_CONFIG to override.
+_CONFIG_GLOB = 'tests/ALS_test_configs/config_com_dj_200G_CAKR_178_PKGA_*Case1_TXLEOn*.xlsx'
+CONFIG = os.environ.get('SICOPR_HIST_DEP_CONFIG') or next(
+    iter(sorted(glob.glob(_CONFIG_GLOB))), _CONFIG_GLOB)
 THRU = 'akinwale_3dj_01_2310/Tx_NPC_250mm_32AWG_BPK_500mm_27AWG_BPK_250mm_32AWG_NPC_Rx_thru1.s4p'
 MAX_CTLE, MAX_TAP = 3, 3
 WIN = {'ctle_index': '0', 'lp_index': '3', 'gffe_index': '0',
