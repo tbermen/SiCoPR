@@ -150,9 +150,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Reject re-added inputs and stray large files
-        # These were purged from history deliberately; re-adding one would put
-        # hundreds of MB back into every clone and redistribute material that is
-        # not ours to redistribute.
+        # Inputs and outputs are not distributed with this repository. Committing
+        # one would put hundreds of MB into every clone and redistribute material
+        # that is not ours to redistribute.
         run: |
           bad=$(git ls-files \
             'tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/*' \
@@ -161,9 +161,9 @@ jobs:
             'tests/ALS_test_configs/*' \
             'dev/prompts/*' \
             '*.s4p' 'config*.xlsx' || true)
-          # MATLAB reference VALUES, not just the workbooks they came from. The
-          # first purge took the workbooks and left two distillations of the same
-          # numbers behind (per-stage oracles, and the com_mat/fom_mat columns).
+          # Reference VALUES, not just the workbooks they came from: a distillation
+          # of the reference numbers is the reference data too, and is excluded on
+          # the same grounds.
           derived=$(git ls-files 'tests/oracles/*' 'report_data/*' || true)
           if [ -n "$derived" ]; then
             echo "::error::MATLAB-derived reference values must not be committed:"

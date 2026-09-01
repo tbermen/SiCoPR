@@ -65,7 +65,7 @@ that exercises it **plus** a MATLAB reference comparison (§E).
 
 | Feature | Function(s) | How to exercise |
 |---|---|---|
-| **Crosstalk (FEXT/NEXT), ICN** | `get_xtlk_noise`, FD_Processing | Run with aggressor `.s4p` files (`--fext`/`--next`). ✅ Now **runs end-to-end** (dj KR config + akinwale_3dj aggressors; 2 bugs fixed 2026-07-02, see below). Numeric parity still unverified. |
+| **Crosstalk (FEXT/NEXT), ICN** | `get_xtlk_noise`, FD_Processing | Run with aggressor `.s4p` files (`--fext`/`--next`). ✅ Now **runs end-to-end** (dj KR config with crosstalk aggressors; 2 bugs fixed 2026-07-02, see below). Numeric parity still unverified. |
 | **FD ICN / ILD / FOM_ILD** | `FD_Processing` | Config with `GET_FD=1` (bundled config → `FOM_ILD=[]`) |
 | **MLSE** | `MLSE_U1_c_178A` | Config with `OP.MLSE=1` (exercised by the dj crosstalk run above) |
 | **Rx FFE (+ floating taps)** | `OptFom_Compute_RxFFE`, `MMSE`, `force` | Config with `OP.RxFFE=1` + `FFE_OPT_METHOD='MMSE'`. ✅ Ran end-to-end in the dj crosstalk run (`RxFFE_with_MMSE` path). Numeric parity still unverified. |
@@ -114,5 +114,5 @@ and fixed:**
    Fixed by normalizing `_results` to a list before the per-case print. *(This also affected
    thru-only on any single-case config, not just crosstalk.)*
 
-Both fixed; the dj KR config + akinwale_3dj aggressors now runs end-to-end and prints COM /
+Both fixed; the dj KR config with crosstalk aggressors now runs end-to-end and prints COM /
 VEO / VEC / ICN. This is a crash/soundness fix — numeric parity vs MATLAB is still unverified.

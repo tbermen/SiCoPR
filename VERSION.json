@@ -2,7 +2,7 @@
   "_comment": [
     "Single source of truth for which MATLAB release this port emulates.",
     "assemble_sicopr.py reads this to generate sicopr.py's header, and",
-    "tools/export_results.py reads it for the results.xlsx code_revision cell.",
+    "the result exporter reads it for the results.xlsx code_revision cell.",
     "Edit here, re-run assemble_sicopr.py -- do not edit sicopr.py's header directly.",
     "",
     "The header used to hardcode 4p14p0 and went stale twice: the port moved to",

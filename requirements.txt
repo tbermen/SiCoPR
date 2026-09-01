@@ -9,7 +9,7 @@ matplotlib>=3.5    # figures (only needed when SAVE_FIGURES is enabled)
 
 # NOT required by anything in this repository.
 #
-# python-pptx and Pillow were needed by the deck builders (tools/build_*_pptx.py),
+# python-pptx and Pillow were needed by the deck builders (local tooling),
 # which are kept local with the data they render and are not published here. They
 # are listed only so a maintainer working from a full local tree installs the same
 # set; a published clone never imports them. Left commented rather than deleted so

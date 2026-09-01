@@ -32,8 +32,7 @@ particular 802.3ck pair, and filling it in from sicopr.py's own output would mak
 the assertion circular.
 
 Numeric parity with MATLAB is established elsewhere, and much more thoroughly —
-208 reference cases via `tools/matlab_compare.py`. FOM, COM and sampling phase
+208 reference cases via the local comparison harness. FOM, COM and sampling phase
 are bit-exact on 208/208, max |ΔCOM| 3.29e-14 dB. See
 [`MATLAB_Correlation_Review.md`](../../MATLAB_Correlation_Review.md).
-Those cases use the 802.3dj channel set (`akinwale_3dj_01_2310/`, 210 MB, also
-not committed — see `.gitignore`).
+Those cases use an 802.3dj channel set, which is likewise not committed.

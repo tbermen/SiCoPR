@@ -59,75 +59,33 @@ pushes to `master` directly, including the maintainer.
 
 ## 1. What ships in this repository — and what doesn't
 
-**The port ships. The correlation data does not.** The engine, its tests, the tooling
-and the MATLAB reference sources are all here. The channel S-parameters and
-configuration workbooks used to correlate against MATLAB are IEEE 802.3 contributions
-and are not ours to redistribute — but every one of them is publicly available, and
-this section says exactly which.
-
-| Present | Not present |
-|---|---|
-| the engine (`sicopr.py` + `com_functions/`), tests, tooling, R reports | channel S-parameters (`tests/0_...`) |
-| `matlab/` — the BSD-3-Clause MATLAB reference sources | COM configuration workbooks (`tests/1_...`) |
-| `docs/`, `VERSION.json`, `LICENSE`, `CONTRIBUTING.md` | MATLAB reference result workbooks (`tests/2_...`) |
-| the study layer (`tools/sweep_compare.py`, `corpus_sweep.py`, `fom_com_probe.py`) and the config editor (`gui/`) | `tests/oracles/`, `report_data/` — MATLAB reference **values**, distilled from those workbooks |
-| `matlab_version_diff.py`, `plot_sweep_compare.py`, `audit_search_space.py` | the correlation harness, exporters and deck builders (`tools/matlab_compare.py`, `export_compare_csv.py`, `export_results.py`, `build_*_pptx.py`) |
-| the study write-ups (`RESULTS.md`, `STATE.md`) | every generated output: `results/`, `report_figs/`, `corpus_results/*.csv`, `sicopr_results/`, `report_docs/` |
+**The port ships. The data it was verified against does not.** The engine, its
+tests, the tooling, the MATLAB reference sources and the documentation are all
+here. What is not here is the data: the channel S-parameters and COM
+configuration workbooks the port was correlated against are IEEE 802.3
+contributions and are not ours to redistribute, and neither are the outputs —
+reference values, comparison tables, generated figures and result files are
+either derived from that data or produced by running on it, and are excluded on
+the same grounds. CI enforces the exclusion so none of it drifts back in.
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
 passes — 890 per-function tests plus the cross-check scripts — and every test that
-needs correlation data skips cleanly and says what is missing.
+needs data of its own skips cleanly and says what it wanted.
 
 **This repository documents the verification; it does not offer to reproduce it.**
 The 208-case comparison against MATLAB was run, and what it found is written up in
 §7 and in [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md). Repeating
-it here is not on offer, and not promised: the channel S-parameters, the
-configuration workbooks and the MATLAB result workbooks are IEEE 802.3 contributions
-that are not ours to redistribute, and the harness that drives the comparison is kept
-with them. Anyone wanting to check the result independently would supply their own
-channels and configs, run their own MATLAB, and write their own comparison against
-this engine's output — which is a reasonable thing to do, and is what the numbers in
-§7 are stated precisely enough to support.
+it is neither on offer nor promised: the inputs are not ours to redistribute, and
+the harness that drives the comparison is kept with them. Anyone wanting to check
+the result independently would supply their own channels and configs, run their own
+MATLAB, and write their own comparison against this engine's output — which is a
+reasonable thing to do, and is what the numbers in §7 are stated precisely enough
+to support.
 
-Note the second row of "not present": removing the reference *workbooks* is not
-enough on its own, because the same numbers had been extracted into a per-stage
-oracle (`tests/oracles/`) and a comparison table (`report_data/`). Those are as
-much the reference data as the workbooks are, and they are excluded too. CI
-enforces it, so neither can drift back in.
-
-### Obtaining the correlation data
-
-All of it comes from the IEEE 802.3dj public area. Download each contribution and
-unpack it into the directory shown.
-
-| Contribution | Contents | Unpack into |
-|---|---|---|
-| `weaver_3dj_02_2311` | Arista CR channels | `tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/1_Arista/` |
-| `akinwale_3dj_01_2310` | Intel cable-assembly channels | `tests/0_.../2_Intel/` and `akinwale_3dj_01_2310/` |
-| `akinwale_3dj_02_2311` | Intel channels | `tests/0_.../0_Intel/` |
-| `lim_3dj_07_2309` | Intel + Molex channels | `tests/0_.../3_Intel_Molex/` |
-| `lim_3dj_04_230629` | Intel + TE Connectivity channels | `tests/0_.../4_Intel_TEConnectivity/` |
-| `lim_3dj_03_230629` | Intel + Amphenol channels | `tests/0_.../5_Intel_Amphenol/` |
-
-The **COM configuration workbooks** (`config_com_dj_200G_CAKR_178_PKGA/B_*.xlsx`,
-including the `_sweep_TxFFE` variants) and the **MATLAB reference result workbooks**
-(`Results_Matlab_COM_v4p15_With/WithoutXtalk_ClipMethodSlow_AdaptiveLS.xlsx`) come
-from the COM ad hoc rather than from a numbered contribution, and are likewise not
-redistributed here.
-
-The channels above are worth having for a different reason: they are the ones §7's
-numbers were measured on, so running SiCoPR against them puts you on the same inputs
-the comparison used — even though the comparison itself is not something this
-repository performs.
-
-> **The correlation harness is not published.** `tools/matlab_compare.py` and
-> the exporters around it are kept local with the data they drive, because every
-> file they read and write is data this repository does not redistribute (§7).
-> Obtaining the channel contributions above therefore does **not** let you re-run
-> the 208-case comparison — it lets you run SiCoPR on the same channels.
->
-> What *is* here: the engine, its tests, the study layer (§5), and the per-stage
-> oracle test, which asserts against MATLAB values when you supply them.
+The channels themselves are public: the sets used come from the IEEE 802.3dj public
+area, and the configuration workbooks from the COM ad hoc. To run SiCoPR you need a
+COM configuration workbook and at least one Touchstone channel; §4 shows the command
+and §3 the editor for building a config.
 
 ## 2. Install
 
@@ -211,10 +169,9 @@ Touchstone file in the repo, using the engine's own reader. See
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
-| `dev/` | audit and interface-check scripts, plus state ledgers. The development prompts under `dev/prompts/` are kept locally and not published |
+| `dev/` | audit and interface-check scripts, plus state ledgers |
 | `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |
 | `sweep_results/`, `corpus_results/` | the write-ups of the two EQ-search studies (`STATE.md`, `RESULTS.md`). The data files they describe are generated locally, not tracked |
-| `report_docs/` | built decks and their PDF snapshots. Generated by `tools/build_*_pptx.py`; neither the decks nor their builders are tracked (§1) |
 
 **Per-run stage artifacts.** The interactive R dashboard (`build_dashboard()` in `R/com_analysis.R`) is grouped by pipeline stage, with a
 heading and plots for each of the seven — including TDR impedance and ERL, FOM
@@ -229,7 +186,7 @@ which maps every stage to its figures and the result columns it owns. A stage wi
 figure is listed as **no figure** rather than omitted, so a gap is visible instead of
 silent. `tests/test_stage_figures.py` fails if any of the seven stages stops emitting one.
 
-**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. Channel S-parameters and configuration workbooks are IEEE contributions (§1); result tables, figures, decks, the per-stage MATLAB oracles under `tests/oracles/` and the comparison tables under `report_data/` are all either generated locally or distillations of the MATLAB reference workbooks, which are not ours to redistribute. Every test that needs one of those skips and says so, so a fresh clone runs green: 890 per-function tests plus the cross-check scripts.
+**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. The input data is IEEE contributions and not ours to redistribute (§1), and the outputs are either produced by running on that data or distilled from the MATLAB reference, so they are excluded on the same grounds. Every test that needs data of its own skips and says so, and a fresh clone runs green: 890 per-function tests plus the cross-check scripts.
 
 ## 5. The EQ-search study
 
@@ -281,13 +238,12 @@ python tools/sweep_compare.py <config.xlsx> <thru.s4p> --local-search 2 --max-ct
 python tools/fom_com_probe.py <config.xlsx> <thru.s4p> --sweep-dir sweep_results --top-k 20
 
 # N channels, checkpointed and resumable -> corpus_results/{runs,probe}.csv + corpus_summary.json
-python tools/corpus_sweep.py <config.xlsx> --channel-dir akinwale_3dj_01_2310 --dry-run
-python tools/corpus_sweep.py <config.xlsx> --channel-dir akinwale_3dj_01_2310
+python tools/corpus_sweep.py <config.xlsx> --channel-dir <channel-dir> --dry-run
+python tools/corpus_sweep.py <config.xlsx> --channel-dir <channel-dir>
 
 # reports
 Rscript R/sweep_compare.R sweep_results          # single channel
 Rscript R/corpus_report.R corpus_results         # corpus-wide
-python tools/build_pptx.py                       # deck -> report_docs/ (local tool, not published)
 ```
 
 A full 7-channel × 3-method corpus is ~7.5 h. Use `--dry-run` for the estimate,
@@ -405,8 +361,6 @@ The configuration editor under `gui/` has its own three:
 ```powershell
 python tools/matlab_version_diff.py OLD.m NEW.m   # -> which py_impl files to re-check
 python tools/matlab_version_diff.py --self-check  # validates the differ itself
-python tools/bench_com.py --against <ref>         # speed + fingerprint (local tool, not published)
-python tools/compare_matlab_versions.py           # diff two version sweeps (local tool, not published)
 ```
 
 ## 7. Verification status & caveats
@@ -440,11 +394,8 @@ workbooks that sweep the Tx FFE. **That pairing was confirmed by the COM maintai
 2026-08-24**, so it is the configuration, not one reading among several. Produced with
 (local tooling, not part of this repository — §1):
 
-```powershell
-# local tools, not published with the repo -- see section 1
-python tools/matlab_compare.py --validate --run --modal-erl --jobs 5
-python tools/export_compare_csv.py
-```
+Run with the local comparison harness (§1): resolve the case set, run all 208
+with modal ERL across five workers, then export the comparison table.
 
 Getting there took **seventeen** engine-level and settings findings, each with what it
 bought recorded in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md); the full write-up is
@@ -495,7 +446,6 @@ above is evidence for. `4p16p0` behaviour is opt-in.
 
 ```powershell
 python sicopr.py <config.xlsx> <thru.s4p> --matlab-version 4p16p0     # per run
-python tools/matlab_compare.py --run --jobs 5 --matlab-version 4p16p0   # local tool, not published
 ```
 
 `sicopr.COM_MATLAB_VERSION = '4p16p0'` does the same from Python, and a `COM Version` keyword
@@ -519,12 +469,11 @@ Every change has been measured; full detail in
 | common-mode / TDR degenerate guards | never fired on any input tested |
 | `OptFom_Create_Output`, `get_PSDs` edits | numerically neutral |
 
-Produced with (`matlab_version_diff.py` ships; `compare_matlab_versions.py` is local
-tooling — §1):
+Produced with the version differ, which ships, plus a local sweep-comparison
+step that does not (§1):
 
 ```powershell
 python tools/matlab_version_diff.py matlab/com_ieee8023_4p15p0.m matlab/com_ieee8023_4p16p0.m
-python tools/compare_matlab_versions.py       # local tool, not published
 ```
 
 ## 9. r4p15p0 deltas + adaptive local search

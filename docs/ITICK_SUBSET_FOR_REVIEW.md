@@ -17,9 +17,9 @@ model is not at fault (§3b), and `itick` is an offset from an origin that moves
 with the equalizer (§5) — so several of the eight may not be sampling at
 different instants at all.
 
-Produced with `tools/itick_subset_report.py` (local tooling, not in the repository — README §1).
-Machine-readable tables: `report_data/itick_subset.csv` (8 rows, 34 columns) and
-`report_data/fom_surface_<case>.csv`, produced with `tools/fom_surface_probe.py` (local tooling).
+Produced with local tooling that is not in the repository (README §1).
+Machine-readable tables backing this section (8 rows, 34 columns, plus a per-case
+FOM surface) are produced by local tooling and are not distributed with the repository.
 
 ---
 
@@ -207,7 +207,7 @@ THIS.cursor_i = raw_cursor_i + THIS.itick          (ML 8766)
 
 recomputed **for every EQ candidate**, on that candidate's own equalized pulse.
 The peak of the equalized pulse moves as the equalizer changes, so the anchor
-moves with it. Measured (`tools/fom_surface_probe.py`):
+moves with it. Measured with a local FOM-surface probe:
 
 | case | EQ candidates | distinct anchors | anchor spread |
 |---|---|---|---|
@@ -260,7 +260,7 @@ re-derived per candidate, and both engines re-derive it the same way.
 
 ## 6. What the FOM surfaces actually look like
 
-`tools/fom_surface_probe.py` dumps FOM vs tick for every EQ candidate. Best
+That probe dumps FOM vs tick for every EQ candidate. Best
 Python FOM at MATLAB's reported tick, maximised over **all** EQ candidates:
 
 | case | Python peak | at tick | MATLAB peak | at tick | Python at MATLAB's tick | short by |

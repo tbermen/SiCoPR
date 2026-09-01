@@ -52,8 +52,8 @@ on 2026-08-24 ([`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md)).
 Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 
 **Last re-verified 2026-08-31** against the engine at commit `bf41d64`: all 208
-cases re-run from scratch (3.2 h, `tools/matlab_compare.py --run --force --jobs 5`,
-local tooling — README §1), 208 ok / 0 errored. Every figure above reproduced, and
+cases re-run from scratch (3.2 h on five workers with the local comparison
+harness — README §1), 208 ok / 0 errored. Every figure above reproduced, and
 **every per-case COM, FOM and `itick` was bit-identical to the previous run** — not
 merely within tolerance of MATLAB, but the same float.
 
@@ -624,7 +624,7 @@ it and then has to be able to replace the file.
 Every row is materialised before the close, so there is nothing to lose by
 closing immediately; the reader now does so in a `finally`.
 
-**Verified inert.** `tools/bench_com.py --against` reported **ALL IDENTICAL**
+**Verified inert.** The local benchmark harness reported **ALL IDENTICAL**
 across all three benchmark cases, and the generated diff in `sicopr.py` was 20
 lines, all inside `__load_excel`. The symptom itself was checked directly: a
 config can now be deleted immediately after being read, where before that
@@ -684,7 +684,7 @@ What the guards do NOT claim:
   `triple_transit_time = round(2*sbr_peak_i/samples_per_ui)`, which the audit had
   recorded as B11-D15 and dismissed as "measure-zero" — the same reasoning the
   `nui` correction had already shown to be wrong for integer ratios. Fixed to
-  half-away; `bench_com --against` reports ALL IDENTICAL, so it was inert on the
+  half-away; the local benchmark harness reports ALL IDENTICAL, so it was inert on the
   benchmark cases but is no longer a latent divergence.
 
 The six that were uncovered are now covered by the two layers built for exactly

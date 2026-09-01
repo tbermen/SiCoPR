@@ -4,12 +4,9 @@ Both sweeps run on the same 208 reference cases, same channels, same configs,
 same engine build; the only difference is `--matlab-version`. 4p16p0 completed
 208 ok / 0 failed in 0.6 h at `--jobs 5`.
 
-```
-# local tooling, not in the repository -- see README section 1
-python tools/matlab_compare.py --run --jobs 5                          # 4p15p0
-python tools/matlab_compare.py --run --jobs 5 --matlab-version 4p16p0
-python tools/compare_matlab_versions.py
-```
+Both versions were run over the full case set with the local comparison harness,
+then diffed column by column. That tooling is not in the repository (README
+section 1).
 
 ---
 
@@ -183,5 +180,5 @@ When that reference data arrives, the same harness handles it:
 
 ## Per-field detail
 
-`report_data/version_compare.csv` — one row per numeric column: cases compared,
+A version-comparison table is written locally — one row per numeric column: cases compared,
 cases changed, max absolute delta, and the new/old ratio range.

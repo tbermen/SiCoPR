@@ -11,8 +11,7 @@ there from data already committed: the two reference workbooks under
 tests/2_Results_COM_Matlab/ carry ~260 columns of genuine MATLAB output per
 case, and many are the output of one identifiable stage.
 
-tools/extract_matlab_oracles.py -- local tooling, not part of the published
-repository -- distils those into tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 scalar
+A local extractor -- not part of the published repository -- distils those into tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 scalar
 quantities plus 14 VECTOR families, ~800 KB, committed. This file checks it.
 
 The vectors matter more than the scalars: a tap set is wrong in ways a gain is
@@ -100,7 +99,7 @@ check("oracle_covers_the_whole_reference_set",
       len(CASES) >= 208,
       "only %d oracle cases; the reference corpus has 208 and the oracle is "
       "meant to mirror it. Regenerate with "
-      "`python tools/extract_matlab_oracles.py`" % len(CASES))
+      "the local oracle extractor" % len(CASES))
 
 _unresolved = [c['sheet'] + ':' + str(c['row'])
                for c in CASES if not c['case_id']]
@@ -131,7 +130,7 @@ check("oracle_has_vector_families",
       len(VMAP) >= 14,
       "only %d vector families; the tap sets and package vectors are the "
       "quantities a scalar cannot anchor. Regenerate with "
-      "`python tools/extract_matlab_oracles.py`" % len(VMAP))
+      "the local oracle extractor" % len(VMAP))
 
 _missing_vec = sorted({v['function'] for v in VMAP.values()} - _REG_PRE)
 check("oracle_vector_functions_all_exist",
@@ -261,7 +260,7 @@ if not _live:
     print("\nlive stage comparison SKIPPED (set COM_ORACLE_LIVE=1 to enable).")
     print("It needs the gitignored channel set and runs the engine per case;")
     print("the standing full-corpus equivalent is:")
-    print("   python tools/matlab_compare.py --validate --run --jobs 5")
+    print("   run the local comparison harness to build it")
 else:
     import sicopr  # noqa: F401  (imported only when actually running the engine)
 
@@ -269,7 +268,7 @@ else:
     if not os.path.exists(_manifest):
         check("live_run_inputs_available", False,
               "COM_ORACLE_LIVE=1 but matlab_compare_results/manifest.json is "
-              "absent; build it with `python tools/matlab_compare.py --validate`")
+              "absent; build it with the local comparison harness")
     else:
         with io.open(_manifest, encoding='utf-8') as _f:
             _MAN = {c['case_id']: c for c in json.load(_f)['cases']}

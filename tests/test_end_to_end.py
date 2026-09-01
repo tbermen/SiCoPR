@@ -7,8 +7,8 @@ See tests/fixtures/README.md.
 
 NOTE ON SCOPE: this is a single-channel smoke check, not the project's numeric
 parity evidence. End-to-end agreement with MATLAB is established by the 208-case
-correlation in `tools/matlab_compare.py` (FOM bit-exact on 198/208), written up
-in MATLAB_Correlation_Review.md. Prefer that harness for parity questions.
+correlation described in MATLAB_Correlation_Review.md, where FOM, COM and the
+sampling phase are all bit-exact on 208/208. Prefer that for parity questions.
 
 802.3ck standard: compliant host channel COM must be ≥ 3.0 dB.
 """

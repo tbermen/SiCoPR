@@ -609,7 +609,7 @@ def save_case_figures(case_dir, param, OP, chdata, fom_result, Noise_Struct, PDF
 
 
 # The seven stages the correlation harness localises a disagreement to
-# (tools/export_compare_csv.py STAGES). Keeping one list means a figure and a
+# (the STAGES list in the local CSV exporter). Keeping one list means a figure and a
 # reported column agree about which stage they belong to.
 STAGES = [
     ("1", "Channel / FD",

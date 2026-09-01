@@ -10,8 +10,8 @@ evidence for the correctness claim belongs with the code that makes it.*
 > run.** The channel S-parameters, the configuration workbooks and the MATLAB
 > result workbooks are IEEE 802.3 contributions that this project does not
 > redistribute, and the harness that drove the comparison is kept with them. The
-> `tools/matlab_compare.py` commands quoted throughout are how these numbers were
-> produced; they are not in the repository. Checking this result independently
+> commands quoted throughout are how these numbers were
+> produced; that tooling is not in the repository. Checking this result independently
 > means supplying your own channels and configs, running your own MATLAB, and
 > writing your own comparison against SiCoPR's output — which is why the figures
 > below are given at full precision and per case rather than as summaries.
@@ -475,12 +475,8 @@ No further reference data is needed.
 
 ## Appendix A — deliverables
 
-```
-sicopr_results/
-    confirmed/
-        Results_SiCoPR_confirmed_wXtalk.xlsx      104 cases
-        Results_SiCoPR_confirmed_woXtalk.xlsx     104 cases
-```
+Two result workbooks are produced locally, one per crosstalk condition, 104 cases
+each. They are not distributed with this repository.
 
 **One set, not two.** Each crosstalk condition is run on the configuration its own
 MATLAB reference was produced with: the without-crosstalk cases on the base workbooks,
@@ -493,33 +489,30 @@ each workbook lists the columns blank on every row, derived from the exported da
 rather than from a fixed list.
 
 ```
-report_docs/SiCoPR_MATLAB_Review.pptx    review deck (built, not tracked)
 MATLAB_Correlation_Review.md    this document
-tools/matlab_compare.py         --validate / --run / --report (local, not in the repo)
-tools/export_results.py         result workbooks in the reference format (local)
-R/correlation_report.R          the figures in the deck
+R/correlation_report.R          the figures in the review deck
 ```
 
 ## Appendix B — how these numbers were produced
 
-Recorded so the method is inspectable, not as a procedure to follow: none of
-the `tools/` scripts below are in the repository, and neither are the inputs
-they read (see the note at the top of this document).
+Recorded so the method is inspectable, not as a procedure to follow. The
+harness described below is not in the repository, and neither are the inputs
+it reads (see the note at the top of this document).
 
-```bash
-python tools/matlab_compare.py --validate                 # resolve all 208 cases
-python tools/matlab_compare.py --run --modal-erl --jobs 5  # ~3.4 h, checkpointed
-python tools/matlab_compare.py --run --modal-erl --txffe-sweep \
-       --only-cond wXtalk --jobs 5                       # the aligned wXtalk half
-python tools/export_results.py                            # result workbooks
-python tools/export_compare_csv.py                        # tidy CSVs
-Rscript R/correlation_report.R                            # figures
-python tools/build_review_pptx.py                         # deck
+1. Resolve all 208 cases against the available inputs, and report any that
+   cannot be matched, before running anything.
+2. Run the full set with modal ERL enabled, checkpointed and parallel across
+   five workers — about 3.4 hours.
+3. Re-run the with-crosstalk half against the Tx FFE sweep configurations, which
+   is the pairing those references were produced with.
+4. Export the result workbooks in the reference column layout, and a tidy CSV
+   for analysis.
+5. `Rscript R/correlation_report.R` builds the figures — that script *is* in the
+   repository.
+6. Build the review deck.
 
-# adaptive-vs-full-grid study (slow: 7-9 h per case)
-python tools/matlab_compare.py --run --variant fullgrid --only-cond wXtalk \
-       --only-test 1 --rows 16,17,7,15,8,10,24,5,1 --jobs 5
-```
+The adaptive-vs-full-grid study in §5 repeats step 2 with the search forced to
+full grid on a nine-channel subset, which costs 7–9 hours per case.
 
 `--jobs N` runs N cases in parallel; CPU sits at ~38 % with 5 on a 16-thread machine.
 
@@ -556,6 +549,6 @@ plausibility before hypothesising an engine defect.
   flat PSD or a dummy TDR.
 - `flim` truncates the data at 67 GHz while `fout` extends to 1.7 THz, so ≈ 96 % of the
   analysis grid is extrapolated.
-- The full-grid configs in `tests/1_IEEE_802p3dj_COM_Spreadsheets_fullgrid/` differ from
+- The full-grid configuration workbooks differ from
   the originals only in `Local Search` (2 → 0), plus a 1-ULP round-trip on `f_v`
   (relative 1.2e-16) from rewriting cached formula values with openpyxl.

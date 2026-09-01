@@ -141,7 +141,7 @@ this is cosmetic, and Python already compares `.lower() == 'slow'`
 ## 2. Verification problem to settle first
 
 **We have no 4p16p0 reference results.** The 208-case corpus in
-`tests/2_Results_COM_Matlab/` was produced by 4p15p0. Porting these changes
+The MATLAB reference results were produced by 4p15p0. Porting these changes
 without new reference data means giving up the correlation that currently backs
 the port (FOM bit-exact 198/208).
 
@@ -162,7 +162,7 @@ Option 1 or 2. Option 3 discards the project's main asset.
 ## 3. Suggested order
 
 1. Zero-risk additions first: `get_TDR` guard, `COM_FD_to_TD` step responses and
-   CM guards, `OptFom_Create_Output` cleanup. Verify with `tools/bench_com.py`
+   CM guards, `OptFom_Create_Output` cleanup. Verify with the local benchmark harness
    that no reported field moves.
 2. `Overwrite_Min_Radius` end to end: config read → `optimize_fom` → ALS, plus
    the `min_radius` 1-vs-2 rule. Re-run the adaptive-vs-full-grid study; adaptive

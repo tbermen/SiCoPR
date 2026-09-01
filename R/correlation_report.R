@@ -3,7 +3,7 @@
 
 # correlation_report.R — figures for the COM Python vs COM MATLAB review
 #
-# Reads the tidy CSVs written by tools/export_compare_csv.py and emits PNGs sized
+# Reads the tidy comparison CSVs written by the local exporter and emits PNGs sized
 # for 16:9 slides. Run:
 #   Rscript R/correlation_report.R
 #

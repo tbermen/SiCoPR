@@ -494,8 +494,8 @@ def read_ParamConfigFile(paramFile, OP):
     param.N_qb = _xls_param(parameter, 'N_qb', True, 0)
     param.P_qc = _xls_param(parameter, 'P_qc', True, 2 * param.specBER)
     # ---- MATLAB version switch --------------------------------------------
-    # 4p15p0 is the baseline: it is what the 208-case reference corpus in
-    # tests/2_Results_COM_Matlab/ was produced with, and what the correlation
+    # 4p15p0 is the baseline: it is what the 208-case MATLAB reference corpus
+    # was produced with, and what the correlation
     # (FOM bit-exact 198/208) is evidence for. 4p16p0 behaviour is opt-in so
     # that evidence is not silently invalidated.
     #

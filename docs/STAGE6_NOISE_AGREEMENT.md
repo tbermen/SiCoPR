@@ -24,8 +24,8 @@ relative, over all 208 cases. Stage 6 reads 55% where every other stage is 77%
 or better.
 
 Reproduce: the scripts used are in the session scratchpad; the inputs are
-`matlab_compare_results/cases/*.result.json` (Python) joined to
-`tests/2_Results_COM_Matlab/*.xlsx` (MATLAB) via `report_data/compare.csv`.
+the per-case Python results joined to the MATLAB reference workbooks through the
+comparison table. All three are produced or held locally and are not in the repository.
 
 ---
 

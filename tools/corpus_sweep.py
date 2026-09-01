@@ -23,7 +23,7 @@ Runs are checkpointed per channel and skipped if already complete, so an interru
 corpus resumes where it left off rather than starting over.
 
 Usage:
-    python corpus_sweep.py <config.xlsx> --channel-dir akinwale_3dj_01_2310 [--crosstalk]
+    python corpus_sweep.py <config.xlsx> --channel-dir <channel-dir> [--crosstalk]
                            [--methods full_grid,legacy,adaptive] [--local-search 2]
                            [--max-ctle 3] [--max-tap-vals 3] [--probe-top-k 10]
                            [--threshold 3.0] [--out corpus_results] [--dry-run] [--force]

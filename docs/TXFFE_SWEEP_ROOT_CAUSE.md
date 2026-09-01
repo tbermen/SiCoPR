@@ -177,7 +177,7 @@ corrected full-corpus run is affordable.
 ## 7. Re-running the corpus on a *guessed* grid makes correlation worse
 
 The obvious next step is to re-run all 208 with the sweep on. Done
-(`--txffe-sweep`, results in `matlab_compare_results/cases_txffesweep/`):
+(`--txffe-sweep`, results written locally):
 
 | | FOM bit-exact | COM bit-exact | itick exact | max \|ΔCOM\| | flips |
 |---|---|---|---|---|---|
@@ -461,7 +461,7 @@ the package content agrees and the filename difference is cosmetic.)*
 ## 12. Final result — matched configuration
 
 Running each condition on the config its reference actually used
-(produced with `tools/matlab_compare.py --run --modal-erl --jobs 5`, local tooling that is not in the repository — README §1; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
+(produced with the local comparison harness, which is not in the repository — README §1; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
 
 | | result |
 |---|---|
@@ -510,7 +510,7 @@ so a tap that survives the trim was multi-valued.
 
 That is a fact about the **search space**. It is easy to slide from there to "so
 `c(-2)` is the tap that differs" — which the data does not support. Measuring
-the winners separates the two (`tools/txffe_census.py`, from the reference
+the winners separates the two (a local census over the reference
 workbooks):
 
 | `[ c(-2)  c(-1)  c(0)  c(1) ]` | cases | which |
