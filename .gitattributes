@@ -1,21 +1,23 @@
-# -text means: store and check out these bytes unchanged, on every platform.
-# Git's autocrlf is on by default on Windows, and for these files a converted
-# checkout is not cosmetic -- it changes what the file IS.
+# Normalise line endings so collaborators on different platforms do not see
+# spurious whole-file diffs. Without this, a Windows checkout stores CRLF and
+# every text file appears rewritten to anyone on Linux or macOS.
+#
+# Text is stored LF in the repository and checked out native.
+* text=auto
 
-# The MATLAB reference files have a SHA-256 recorded in NOTICE, and that digest
-# is over the bytes on disk. A CRLF checkout would fail every recorded checksum
-# and make the provenance claim in NOTICE look false. (Measured: git's binary
-# heuristic happens to spare these files today, so nothing was broken -- but
-# nothing was guaranteeing it either. This states the requirement.)
-matlab/*.m -text
+# Shell scripts and R must stay LF even on Windows: a CRLF shebang line makes
+# the script unrunnable, and Rscript is fussy about stray carriage returns.
+*.sh   text eol=lf
+*.R    text eol=lf
 
-# The generated engine and its provenance manifest. assemble_sicopr.py writes
-# both with newline='\n' explicitly so that a Windows run and a Linux run
-# produce identical bytes -- which is what lets CI diff them byte-for-byte
-# against a fresh assembler run. That only holds if the checkout does not
-# convert them back: without -text, autocrlf hands Windows a CRLF working copy,
-# the assembler regenerates LF, and every regeneration shows as a whole-file
-# diff. The two settings are a pair; changing one without the other breaks the
-# generated-file check.
-sicopr.py -text
-com_functions/inlined_copies.json -text
+# Checksum files are consumed by sha256sum, which treats a trailing CR as part
+# of the filename and then fails to open every entry.
+*.sha256 text eol=lf
+
+# Binary deliverables: never diff or convert these.
+*.pptx binary
+*.docx binary
+*.xlsx binary
+*.png  binary
+*.mat  binary
+*.s4p  binary
