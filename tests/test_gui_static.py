@@ -36,6 +36,8 @@ sys.path.insert(0, _ROOT)
 from audit_check import check, finish  # noqa: E402
 
 STATIC = os.path.join(_ROOT, 'gui', 'static')
+CSS = os.path.join(STATIC, 'style.css')
+HTML = os.path.join(STATIC, 'index.html')
 JS = os.path.join(STATIC, 'app.js')
 
 
@@ -303,5 +305,55 @@ if not parsed:
     print("   WARNING: app.js was NOT parsed. Install a JS engine, or "
           "`pip install esprima` -- a syntax error here is invisible to every "
           "other test in this repo.")
+
+# ---- the hidden attribute actually hides -------------------------------
+#
+# `el.hidden = true` relies on the browser's `[hidden] { display: none }`, which
+# is a UA rule and loses to ANY author rule that sets `display` on the element.
+# So a class with `display: flex` silently makes `hidden` do nothing, and the
+# element stays on screen while the JS believes it closed it.
+#
+# That shipped: the config browse dialog had `.modalback { display: flex }` and
+# no `[hidden]` rule, so neither Cancel nor "Use this directory" appeared to
+# work. Nothing else here could see it -- the ids lined up, the JS parsed, the
+# endpoints answered.
+_html = io.open(HTML, encoding='utf-8').read()
+_css = io.open(CSS, encoding='utf-8').read()
+
+_classes = set()
+for _tag, _attrs in re.findall(r'<(\w+)([^>]*\bhidden\b[^>]*)>', _html):
+    _m = re.search(r'class="([^"]+)"', _attrs)
+    if _m:
+        _classes.update(_m.group(1).split())
+
+_broken = []
+for _c in sorted(_classes):
+    _sets_display = re.search(
+        r'\.' + re.escape(_c) + r'\s*(?:,[^{]*)?\{[^}]*?display:\s*[a-z-]+', _css)
+    _has_hide = re.search(r'\.' + re.escape(_c) + r'\[hidden\]', _css)
+    if _sets_display and not _has_hide:
+        _broken.append(_c)
+
+check("every_hidden_class_can_actually_be_hidden",
+      not _broken,
+      "these classes are used with the hidden attribute AND set display, so "
+      "hidden does nothing for them; each needs its own [hidden] rule: %s"
+      % ', '.join('.' + c for c in _broken))
+
+
+# ---- dialog text is readable -------------------------------------------
+#
+# The same dialog shipped with hardcoded greys: #8b95a1 on white is about
+# 2.9:1, below the 4.5:1 that normal text needs, and a hardcoded white panel is
+# wrong in dark mode. The stylesheet already carries variables for both.
+_modal_block = _css[_css.find('.modalback'):] if '.modalback' in _css else ''
+_hardcoded = re.findall(r'(?:color|background)\s*:\s*(#[0-9a-fA-F]{3,6})',
+                        _modal_block)
+check("the_browse_dialog_takes_its_colours_from_the_theme",
+      not _hardcoded,
+      "hardcoded colours in the browse dialog (%s); use var(--ink), "
+      "var(--muted), var(--panel), var(--line) so it follows the theme and "
+      "stays legible" % ', '.join(sorted(set(_hardcoded))))
+
 
 finish()
