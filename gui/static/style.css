@@ -289,3 +289,37 @@ button.link { background: transparent; color: var(--accent); border: 0;
 #dynFrame { width: 100%; height: 78vh; min-height: 480px; border: 0;
   background: #fff; border: 1px solid var(--line); border-radius: 8px; }
 #dynLog { height: 200px; min-height: 0; margin-top: 12px; }
+
+/* ---- directory browser -------------------------------------------------
+ * Configuration workbooks are kept outside the repository deliberately, so the
+ * editor has to be able to point somewhere else. A page cannot open a native
+ * folder picker for a path on the server, so the browsing is server-side.
+ */
+.modalback {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .45);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.modal {
+  background: #fff; border-radius: 8px; padding: 1rem 1.1rem;
+  width: min(680px, 92vw); max-height: 82vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .3);
+}
+.modal h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.brpath {
+  font-family: ui-monospace, Consolas, monospace; font-size: .82rem;
+  margin: 0 0 .5rem; word-break: break-all; color: #555f6b;
+}
+.brlist {
+  list-style: none; margin: 0 0 .6rem; padding: 0; overflow-y: auto;
+  border: 1px solid #dfe3e8; border-radius: 5px; flex: 1; min-height: 160px;
+}
+.brlist li {
+  padding: .3rem .6rem; cursor: pointer; display: flex; gap: .6rem;
+  border-bottom: 1px solid #f0f2f4; font-size: .86rem;
+}
+.brlist li:hover { background: #eef4fa; }
+.brlist li .n { flex: 1; word-break: break-all; }
+.brlist li .c { color: #1b7f4b; font-variant-numeric: tabular-nums; }
+.brlist li.empty { color: #8b95a1; cursor: default; }
+.modal .grow { flex: 1; }

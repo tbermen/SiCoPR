@@ -307,15 +307,110 @@ async function fillConfigList(dir) {
   return list;
 }
 
-async function boot() {
-  const dirs = await api('/api/config_dirs');
-  const dsel = $('#dirPick');
+/* ---- directory browser -------------------------------------------------
+ *
+ * A page cannot open a native folder picker for a path on the SERVER, and the
+ * server is where configs are read. So the browsing is server-side: ask what
+ * is under a path, show it, descend. The config count beside each directory is
+ * the point -- it says where to go without opening anything.
+ *
+ * Opening a directory trusts it for the rest of the session. Nothing is
+ * written to disk; restarting the editor forgets it.
+ */
+let BR_AT = '';
+
+function fillDirPick(dirs, dsel) {
+  dsel.textContent = '';
   for (const d of dirs) {
     const o = document.createElement('option');
     o.value = d.dir;
     o.textContent = `${d.dir}  (${d.count})`;
     dsel.appendChild(o);
   }
+}
+
+async function brShow(path) {
+  const d = await api(`/api/browse?path=${encodeURIComponent(path || '')}`);
+  const err = $('#brErr');
+  err.hidden = !d.error;
+  err.textContent = d.error || '';
+  if (d.error) return;
+  BR_AT = d.path;
+  $('#brPath').textContent = d.places
+    ? 'Start from one of these'
+    : `${d.path}    (${d.configs} config${d.configs === 1 ? '' : 's'} here)`;
+  $('#brUp').disabled = !d.parent;
+  $('#brUse').disabled = d.places || !d.configs;
+  const ul = $('#brList');
+  ul.textContent = '';
+  if (!d.dirs.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'no subdirectories';
+    ul.appendChild(li);
+    return;
+  }
+  for (const e of d.dirs) {
+    const li = document.createElement('li');
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = e.name;
+    li.appendChild(n);
+    if (e.configs) {
+      const c = document.createElement('span');
+      c.className = 'c';
+      c.textContent = `${e.configs} config${e.configs === 1 ? '' : 's'}`;
+      li.appendChild(c);
+    }
+    li.addEventListener('click', () => brShow(e.path)
+      .catch((x) => toast(x.message, true)));
+    ul.appendChild(li);
+  }
+}
+
+function brClose() { $('#browseBack').hidden = true; }
+
+/* The chosen directory joins the picker and is selected. */
+async function brUse() {
+  const dsel = $('#dirPick');
+  const chosen = BR_AT;
+  // Choosing is what grants access; browsing to it did not.
+  await api(`/api/open?path=${encodeURIComponent(chosen)}`);
+  brClose();
+  fillDirPick(await api('/api/config_dirs'), dsel);
+  const match = [...dsel.options].find((o) => o.value === chosen);
+  if (!match) {
+    const o = document.createElement('option');
+    o.value = chosen;
+    o.textContent = chosen;
+    dsel.appendChild(o);
+  }
+  dsel.value = chosen;
+  const l = await fillConfigList(chosen);
+  if (l.length) await loadConfig(l[0].path);
+  else toast('no configuration workbooks in that directory', true);
+}
+
+async function boot() {
+  const dirs = await api('/api/config_dirs');
+  const dsel = $('#dirPick');
+  fillDirPick(dirs, dsel);
+
+  $('#btnBrowse').addEventListener('click', () => {
+    $('#browseBack').hidden = false;
+    brShow('').catch((e) => toast(e.message, true));
+  });
+  $('#brUp').addEventListener('click', () => {
+    const parent = BR_AT ? BR_AT.replace(/[\\/][^\\/]+[\\/]?$/, '') : '';
+    brShow(parent && parent !== BR_AT ? parent : '')
+      .catch((e) => toast(e.message, true));
+  });
+  $('#brCancel').addEventListener('click', brClose);
+  $('#brUse').addEventListener('click', () => brUse()
+    .catch((e) => toast(e.message, true)));
+  $('#browseBack').addEventListener('click', (ev) => {
+    if (ev.target === $('#browseBack')) brClose();
+  });
   dsel.addEventListener('change', async () => {
     if (Object.keys(EDITS).length
       && !confirm('Discard unsaved changes and change directory?')) {
@@ -337,7 +432,8 @@ async function boot() {
     loadConfig(pick.value).catch((e) => toast(e.message, true));
   });
   if (list.length) await loadConfig(list[0].path);
-  else toast('no configuration workbooks found', true);
+  else toast('no configuration workbooks found \u2014 use Browse to point at '
+             + 'a directory that has some', true);
 }
 
 /* ------------------------------------------------------------ new config */

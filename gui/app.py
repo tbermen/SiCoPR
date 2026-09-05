@@ -8,7 +8,17 @@ and this needs to serve a handful of JSON endpoints to one local user.
 
 Binds to 127.0.0.1 only. This reads and writes files anywhere the path parameter
 points, so it must not be reachable from the network; `_safe_path` additionally
-refuses anything outside the repo.
+refuses anything outside the roots the user has opened.
+
+Those roots are the repository, anything named by `--config-dir` or
+`SICOPR_CONFIG_DIRS`, and any directory the user has explicitly chosen through
+`/api/open`. Browsing alone grants nothing: `/api/browse` lists directory names
+and counts the workbooks in them, and that is all it can do.
+
+This does widen what the server can read beyond the repository, and it is a
+deliberate trade. Configuration workbooks are kept out of the repository on
+purpose, so an editor that can only see inside it can no longer find any.
+Nothing is persisted; a restart forgets every chosen directory.
 
 This also SPAWNS PROCESSES (`/api/exec/start`). The command is built as an argv
 list from validated repo-relative paths and handed to subprocess without a
@@ -30,6 +40,8 @@ Endpoints
     POST /api/exec/stop        terminate the current run
     GET  /api/sparam?path=     mixed-mode response of one Touchstone file
     GET  /api/config_dirs      directories containing configuration workbooks
+    GET  /api/browse?path=     directories under path, for picking one
+    GET  /api/open?path=       trust that directory for this session
     POST /api/new_config       create a config from a template
     GET  /api/dynamic?path=    .mat exports in a run and their dashboards
     POST /api/render           build the R dashboard for one .mat export
@@ -73,19 +85,58 @@ CONFIG_GLOBS = [
 RESULT_GLOBS = ['results*/', 'results/*/']
 
 
-def _safe_path(p):
-    """Absolute path inside the repo, or None.
+# Directories outside the repository that the user has opened this session,
+# plus anything named by --config-dir or SICOPR_CONFIG_DIRS at startup.
+# Configuration workbooks no longer live inside the repository -- they are
+# someone else's work product and are kept out of it deliberately -- so the
+# editor has to be able to look somewhere else. Session-scoped: nothing is
+# written to disk and a restart forgets it.
+EXTRA_ROOTS = []
 
-    The browser is local and trusted, but a path parameter that can walk out of
-    the repo turns a convenience server into a file-read primitive for anything
-    else running on the machine.
+
+def _under(full, root):
+    try:
+        return os.path.commonpath([full, root]) == root
+    except ValueError:          # different drives on Windows
+        return False
+
+
+def add_root(path):
+    """Trust a directory for this session. -> the absolute path, or None."""
+    if not path:
+        return None
+    full = os.path.abspath(path)
+    if not os.path.isdir(full):
+        return None
+    if full != _ROOT and not any(_under(full, r) for r in EXTRA_ROOTS):
+        EXTRA_ROOTS.append(full)
+    return full
+
+
+def _roots():
+    return [_ROOT] + EXTRA_ROOTS
+
+
+def _safe_path(p):
+    """Absolute path inside the repo or an opened directory, or None.
+
+    The browser is local and trusted, but a path parameter that can walk
+    anywhere turns a convenience server into a file-read primitive for anything
+    else running on the machine. So a path is accepted only under a root the
+    user has actually opened -- the repository always, plus whatever
+    /api/browse was pointed at this session.
     """
     if not p:
         return None
     full = os.path.abspath(os.path.join(_ROOT, p))
-    if os.path.commonpath([full, _ROOT]) != _ROOT:
-        return None
-    return full
+    return full if any(_under(full, r) for r in _roots()) else None
+
+
+def _display(p):
+    """Repo-relative with forward slashes when inside it, absolute when not."""
+    if _under(os.path.abspath(p), _ROOT):
+        return os.path.relpath(p, _ROOT).replace(os.sep, '/')
+    return os.path.abspath(p)
 
 
 def _jsonable(v):
@@ -161,17 +212,82 @@ def _looks_like_config(path):
 def list_config_dirs():
     """Every directory holding at least one configuration workbook."""
     seen = {}
-    for root, dirs, files in os.walk(_ROOT):
-        dirs[:] = [d for d in dirs
-                   if d not in ('.git', '__pycache__', '.venv', 'node_modules')]
-        n = 0
-        for f in files:
-            if f.lower().endswith('.xlsx') and not f.startswith('~$') \
-                    and _looks_like_config(os.path.join(root, f)):
-                n += 1
-        if n:
-            seen[os.path.relpath(root, _ROOT).replace('\\', '/')] = n
+    for base in _roots():
+        for root, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs
+                       if d not in ('.git', '__pycache__', '.venv',
+                                    'node_modules')]
+            n = 0
+            for f in files:
+                if f.lower().endswith('.xlsx') and not f.startswith('~$') \
+                        and _looks_like_config(os.path.join(root, f)):
+                    n += 1
+            if n:
+                seen[_display(root)] = n
     return [{'dir': k, 'count': v} for k, v in sorted(seen.items())]
+
+
+def _config_count(d):
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return 0
+    return sum(1 for f in names
+               if f.lower().endswith('.xlsx') and not f.startswith('~$')
+               and _looks_like_config(os.path.join(d, f)))
+
+
+def browse(path=None):
+    """List the directories under `path`, for picking a config directory.
+
+    With no path, offer the places worth starting from rather than a bare
+    filesystem root: the repository, anything named at startup, whatever has
+    already been opened, and the drives.
+
+    Looking does NOT grant access. This lists directory names, and opens the
+    .xlsx files in them far enough to count which look like configurations --
+    that count is what makes the browser usable, since it says where to go
+    without descending. Reading a configuration needs the directory to have
+    been chosen, which is /api/open.
+    """
+    if not path:
+        places = []
+        for p in _roots():
+            places.append({'name': p, 'path': p, 'configs': _config_count(p)})
+        for d in _drives():
+            if not any(x['path'] == d for x in places):
+                places.append({'name': d, 'path': d, 'configs': 0})
+        return {'path': '', 'parent': None, 'dirs': places,
+                'configs': 0, 'places': True}
+
+    full = os.path.abspath(path)
+    if not os.path.isdir(full):
+        return {'error': 'not a directory: %s' % full}
+    dirs = []
+    try:
+        for name in sorted(os.listdir(full), key=str.lower):
+            sub = os.path.join(full, name)
+            if not os.path.isdir(sub) or name in ('.git', '__pycache__',
+                                                  '.venv', 'node_modules'):
+                continue
+            dirs.append({'name': name, 'path': sub,
+                         'configs': _config_count(sub)})
+    except OSError as e:
+        return {'error': str(e)}
+    parent = os.path.dirname(full.rstrip(os.sep))
+    return {'path': full, 'parent': parent if parent != full else None,
+            'dirs': dirs, 'configs': _config_count(full), 'places': False}
+
+
+def _drives():
+    if os.name != 'nt':
+        return ['/']
+    out = []
+    for letter in 'CDEFGHIJKLMNOPQRSTUVWXYZ':
+        d = '%s:%s' % (letter, os.sep)
+        if os.path.isdir(d):
+            out.append(d)
+    return out
 
 
 def list_configs(rel_dir=None):
@@ -189,7 +305,7 @@ def list_configs(rel_dir=None):
     for p in paths:
         if os.path.basename(p).startswith('~$') or not _looks_like_config(p):
             continue
-        out.append({'path': os.path.relpath(p, _ROOT).replace('\\', '/'),
+        out.append({'path': _display(p),
                     'name': os.path.basename(p),
                     'size': os.path.getsize(p)})
     return out
@@ -907,6 +1023,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(list_configs(q.get('dir', [None])[0]))
             if u.path == '/api/config_dirs':
                 return self._json(list_config_dirs())
+            if u.path == '/api/browse':
+                return self._json(browse(q.get('path', [''])[0]))
+            if u.path == '/api/open':
+                d = add_root(q.get('path', [''])[0])
+                return self._json({'ok': bool(d), 'dir': d}
+                                  if d else {'error': 'not a directory'})
             if u.path == '/api/config':
                 return self._json(config_payload(q.get('path', [''])[0]))
             if u.path == '/api/results':
@@ -1088,6 +1210,20 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    for d in (os.environ.get('SICOPR_CONFIG_DIRS') or '').split(os.pathsep):
+        if d.strip() and not add_root(d.strip()):
+            print('SICOPR_CONFIG_DIRS: not a directory, ignored: %s' % d)
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == '--config-dir' and i + 1 < len(argv):
+            if not add_root(argv[i + 1]):
+                print('--config-dir: not a directory: %s' % argv[i + 1])
+                return 2
+        elif a.startswith('--config-dir='):
+            if not add_root(a.split('=', 1)[1]):
+                print('--config-dir: not a directory: %s' % a.split('=', 1)[1])
+                return 2
+
     dup = schematic.duplicate_names()
     if dup:
         print('schematic.BLOCKS lists these keywords more than once: %s' % dup)
@@ -1095,7 +1231,18 @@ def main():
     srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     url = 'http://127.0.0.1:%d' % PORT
     print('SiCoPR config editor on %s   (Ctrl-C to stop)' % url)
-    print('%d config(s) visible' % len(list_configs()))
+    for d in EXTRA_ROOTS:
+        print('also looking in %s' % d)
+    # Count across every root, not just the repo: saying "0 config(s) visible"
+    # directly under a line naming the directory they are in is worse than
+    # saying nothing.
+    found = list_config_dirs()
+    print('%d config(s) in %d director%s'
+          % (sum(d['count'] for d in found), len(found),
+             'y' if len(found) == 1 else 'ies'))
+    if not found:
+        print('none found -- use Browse in the config view to point at a '
+              'directory that has some')
     if '--no-browser' not in sys.argv:
         try:
             webbrowser.open(url)

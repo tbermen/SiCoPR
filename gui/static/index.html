@@ -27,6 +27,8 @@
 <section id="configView" class="view" hidden>
   <div class="rhead">
     <select id="dirPick" title="configuration directory"></select>
+    <button id="btnBrowse" class="ghost"
+            title="look in another directory">Browse&hellip;</button>
     <select id="configPick" title="configuration workbook"></select>
     <button id="btnNew" class="ghost">New&hellip;</button>
     <button id="btnSave" disabled>Save as&hellip;</button>
@@ -232,5 +234,21 @@
 <div id="toast" hidden></div>
 
 <script src="/static/app.js"></script>
+<!-- ==================================================== Browse ========= -->
+<div id="browseBack" class="modalback" hidden>
+  <div class="modal">
+    <h3>Choose a directory holding configuration workbooks</h3>
+    <p id="brPath" class="brpath"></p>
+    <ul id="brList" class="brlist"></ul>
+    <p id="brErr" class="err" hidden></p>
+    <div class="row">
+      <button id="brUp" class="ghost">Up</button>
+      <span class="grow"></span>
+      <button id="brCancel" class="ghost">Cancel</button>
+      <button id="brUse">Use this directory</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
