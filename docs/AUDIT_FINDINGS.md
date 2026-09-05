@@ -17,6 +17,32 @@
 > remain open and accepted; they are marked `xcheck` in `tests/` and print as
 > `XFAIL`.
 
+## Which verdicts are weakest
+
+151 of the 159 verdicts rest on a line-by-line read of both implementations.
+**Eight do not.** They were reached by checking the method and the shape of the
+result rather than by reading every line, and all eight came out EQUIVALENT:
+
+| function | tier |
+|---|---|
+| `Bathtub_Contribution_Wrapper` | medium |
+| `Bread_Crumb_Chdata_Reduction` | small |
+| `Burst_Probability_Calc` | small |
+| `MLSE_U1_c_178A` | medium |
+| `Output_Arg_Fill` | large |
+| `RILN_TD` | medium |
+| `capture_RIL_RILN` | large |
+| `parameter_size_adjustment` | medium |
+
+An EQUIVALENT verdict from this pass has already been proved wrong once -- a
+1-based/0-based index confusion that a full-pipeline comparison caught and this
+reading did not. These eight are where that is most likely to have happened
+again, so they are the place to start if a discrepancy ever points into
+functions this document calls settled.
+
+The 208-case correlation exercises the mainline path through most of them, which
+is real evidence, but it is coverage of a path rather than proof of a function.
+
 Status: AUDIT COVERAGE COMPLETE (batches B01-B21). The gate this once waited at never ran -- the pass was overtaken by the 208-case correlation, as the banner above says. Nothing here is outstanding work.
 All 157 MATLAB functions + 2 cross-cutting scans are now classified: 0
 NOT_YET_AUDITED. B01-B12 covered the risk-ordered work queue (section 3, groups
