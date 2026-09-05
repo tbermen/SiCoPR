@@ -151,7 +151,9 @@ crosstalk channels, review the exact `sicopr.py` command it assembles, run it
 with the terminal output streamed live, then refresh to see the new results —
 per case, the headline numbers from `results.csv` and the figures grouped by
 pipeline stage. An S-parameter tab plots the mixed-mode response of any
-Touchstone file in the repo, using the engine's own reader. See
+Touchstone file, using the engine's own reader. Configs, channels and results
+live outside the repository; every tab has a **Browse…** button to open the
+directory that holds them, or start with `--dir DIR --run-dir DIR`. See
 [gui/README.md](gui/README.md).
 
 ## 4. Repository layout

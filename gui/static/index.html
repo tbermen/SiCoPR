@@ -58,6 +58,8 @@
 <section id="sparamView" class="view" hidden>
   <div class="rhead">
     <select id="spDir" title="channel directory"></select>
+    <button id="spBrowse" class="ghost"
+            title="look for channels in another directory">Browse&hellip;</button>
     <label class="row"><input id="spFilter" type="checkbox" checked> THRU only</label>
     <span id="spMeta" class="counts"></span>
   </div>
@@ -93,8 +95,19 @@
         <code id="nlConfig">(none)</code>
         <button id="btnToConfig" class="link">change in Config</button>
       </div>
+      <div class="cfgline">
+        <span class="muted">Working directory</span>
+        <code id="nlCwd">(repository)</code>
+        <button id="nlCwdBrowse" class="link">change</button>
+      </div>
+      <p class="muted">The engine resolves a relative <code>RESULT_DIR</code>
+        against this directory, so it decides where the output lands.</p>
       <label>Channel directory
-        <select id="nlDir"></select>
+        <span class="pickrow">
+          <select id="nlDir"></select>
+          <button id="nlBrowse" class="ghost"
+                  title="look for channels in another directory">Browse&hellip;</button>
+        </span>
       </label>
       <label>THRU (victim)
         <select id="nlThru"></select>
@@ -147,6 +160,8 @@
 <section id="resultsView" class="view" hidden>
   <div class="rhead">
     <select id="runPick" title="results directory"></select>
+    <button id="btnResBrowse" class="ghost"
+            title="look for runs in another directory">Browse&hellip;</button>
     <button id="btnRefresh" class="ghost">Refresh</button>
     <span id="runMeta" class="counts"></span>
   </div>
@@ -157,6 +172,8 @@
 <section id="dynamicView" class="view" hidden>
   <div class="rhead">
     <select id="dynPick" title="results directory"></select>
+    <button id="btnDynBrowse" class="ghost"
+            title="look for runs in another directory">Browse&hellip;</button>
     <button id="btnDynRefresh" class="ghost">Refresh</button>
     <span id="dynMeta" class="counts"></span>
   </div>
@@ -237,7 +254,7 @@
 <!-- ==================================================== Browse ========= -->
 <div id="browseBack" class="modalback" hidden>
   <div class="modal">
-    <h3>Choose a directory holding configuration workbooks</h3>
+    <h3 id="brTitle">Choose a directory</h3>
     <p id="brPath" class="brpath"></p>
     <ul id="brList" class="brlist"></ul>
     <p id="brErr" class="err" hidden></p>

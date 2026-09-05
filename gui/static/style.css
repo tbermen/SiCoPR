@@ -195,6 +195,9 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px;
 .card select, .card input[type=text] { width: 100%; max-width: none;
   margin-top: 4px; font-family: ui-monospace, monospace; font-size: 12px; }
 .card label.row select { width: auto; margin-top: 0; }
+/* a select with a Browse button beside it, inside a stacked label */
+.card .pickrow { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+.card .pickrow select { flex: 1; margin-top: 0; }
 .card input[readonly] { color: var(--muted); }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 620px) { .two { grid-template-columns: 1fr; } }

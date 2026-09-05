@@ -10,19 +10,25 @@ Binds to 127.0.0.1 only. This reads and writes files anywhere the path parameter
 points, so it must not be reachable from the network; `_safe_path` additionally
 refuses anything outside the roots the user has opened.
 
-Those roots are the repository, anything named by `--config-dir` or
-`SICOPR_CONFIG_DIRS`, and any directory the user has explicitly chosen through
-`/api/open`. Browsing alone grants nothing: `/api/browse` lists directory names
-and counts the workbooks in them, and that is all it can do.
+Those roots are the repository, anything named by `--dir` or `SICOPR_DIRS`,
+the run directory (`--run-dir`), and any directory the user has explicitly
+chosen through `/api/open`. Browsing alone grants nothing: `/api/browse` lists
+directory names and counts the workbooks, Touchstone files and run directories
+in them, and that is all it can do. One set of roots serves every tab: a
+directory opened for its configs is also searched for channels and results.
 
 This does widen what the server can read beyond the repository, and it is a
-deliberate trade. Configuration workbooks are kept out of the repository on
-purpose, so an editor that can only see inside it can no longer find any.
-Nothing is persisted; a restart forgets every chosen directory.
+deliberate trade. Configuration workbooks, channel models and run output are
+all kept out of the repository on purpose -- the first two are someone else's
+work product, the third is disposable -- so a GUI that can only see inside it
+can no longer find any of the three. Nothing is persisted; a restart forgets
+every chosen directory.
 
 This also SPAWNS PROCESSES (`/api/exec/start`). The command is built as an argv
-list from validated repo-relative paths and handed to subprocess without a
-shell, and only one run may be live at a time.
+list from validated paths under the opened roots and handed to subprocess
+without a shell, and only one run may be live at a time. The run executes in
+`RUN_CWD`: the engine resolves a relative `RESULT_DIR` against its working
+directory, so that choice is what decides where output lands.
 
 Endpoints
     GET  /                     the page
@@ -42,6 +48,7 @@ Endpoints
     GET  /api/config_dirs      directories containing configuration workbooks
     GET  /api/browse?path=     directories under path, for picking one
     GET  /api/open?path=       trust that directory for this session
+    GET  /api/run_dir[?path=]  where a run executes; with path, change it
     POST /api/new_config       create a config from a template
     GET  /api/dynamic?path=    .mat exports in a run and their dashboards
     POST /api/render           build the R dashboard for one .mat export
@@ -82,16 +89,30 @@ CONFIG_GLOBS = [
     'config/*.xlsx',
     'configs/*.xlsx',
 ]
-RESULT_GLOBS = ['results*/', 'results/*/']
+# How deep under a root to look for run directories. A run is recognised by
+# what is in it (case_NN/ or results.csv), not by its name, because the
+# engine writes wherever RESULT_DIR says: `results/<run>` in the repository,
+# `engine_results/<run>` in a workspace runs/ tree. Two levels covers both; a
+# third allows for one more layer of grouping without walking a whole disk.
+RESULT_DEPTH = 3
+SKIP_DIRS = ('.git', '__pycache__', '.venv', 'node_modules')
 
 
 # Directories outside the repository that the user has opened this session,
-# plus anything named by --config-dir or SICOPR_CONFIG_DIRS at startup.
-# Configuration workbooks no longer live inside the repository -- they are
-# someone else's work product and are kept out of it deliberately -- so the
-# editor has to be able to look somewhere else. Session-scoped: nothing is
-# written to disk and a restart forgets it.
+# plus anything named by --dir / SICOPR_DIRS / --run-dir at startup. Configs,
+# channels and run output no longer live inside the repository -- the first
+# two are someone else's work product and the third is disposable, all kept out
+# of it deliberately -- so the GUI has to be able to look somewhere else. One
+# list serves every tab. Session-scoped: nothing is written to disk and a
+# restart forgets it.
 EXTRA_ROOTS = []
+
+# Where a run launched from the Run tab executes. The engine resolves a
+# relative RESULT_DIR against its working directory, so this decides where
+# output lands. The repository is the default because that is where it always
+# landed; --run-dir or the Run tab's Browse moves it, typically to a workspace
+# runs/ tree so GUI runs and command-line runs end up in the same place.
+RUN_CWD = _ROOT
 
 
 def _under(full, root):
@@ -115,6 +136,16 @@ def add_root(path):
 
 def _roots():
     return [_ROOT] + EXTRA_ROOTS
+
+
+def set_run_dir(path):
+    """Make `path` the working directory for runs, opening it as a root so the
+    results it produces are visible. -> the absolute path, or None."""
+    global RUN_CWD
+    full = add_root(path)
+    if full:
+        RUN_CWD = full
+    return full
 
 
 def _safe_path(p):
@@ -214,9 +245,7 @@ def list_config_dirs():
     seen = {}
     for base in _roots():
         for root, dirs, files in os.walk(base):
-            dirs[:] = [d for d in dirs
-                       if d not in ('.git', '__pycache__', '.venv',
-                                    'node_modules')]
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
             n = 0
             for f in files:
                 if f.lower().endswith('.xlsx') and not f.startswith('~$') \
@@ -237,28 +266,81 @@ def _config_count(d):
                and _looks_like_config(os.path.join(d, f)))
 
 
+def _s4p_count(d):
+    try:
+        return sum(1 for f in os.listdir(d) if f.lower().endswith('.s4p'))
+    except OSError:
+        return 0
+
+
+def _is_run_dir(d):
+    """A run directory is one the engine wrote: case_NN/ subdirectories, or a
+    results.csv of its own for runs that kept output at the top level.
+
+    Not every results.csv is the engine's. The audit scripts write one too,
+    into tests/, with a timestamp/test_name header -- and that made the test
+    directory the newest "run" in the picker. So a bare results.csv counts only
+    if its header is the engine's, which carries COM_dB.
+    """
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return False
+    if any(n.lower().startswith('case_') and os.path.isdir(os.path.join(d, n))
+           for n in names):
+        return True
+    if 'results.csv' not in names:
+        return False
+    try:
+        with open(os.path.join(d, 'results.csv'), encoding='utf-8-sig') as f:
+            return 'COM_dB' in f.readline()
+    except OSError:
+        return False
+
+
+def _run_count(d):
+    """Runs directly at `d`: itself if it is one, plus its immediate children
+    that are. Says whether a directory is worth descending into for results."""
+    n = 1 if _is_run_dir(d) else 0
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return n
+    for name in names:
+        sub = os.path.join(d, name)
+        if name not in SKIP_DIRS and os.path.isdir(sub) and _is_run_dir(sub):
+            n += 1
+    return n
+
+
+def _counts(d):
+    return {'configs': _config_count(d), 's4p': _s4p_count(d),
+            'runs': _run_count(d)}
+
+
 def browse(path=None):
-    """List the directories under `path`, for picking a config directory.
+    """List the directories under `path`, for picking one to open.
 
     With no path, offer the places worth starting from rather than a bare
     filesystem root: the repository, anything named at startup, whatever has
     already been opened, and the drives.
 
-    Looking does NOT grant access. This lists directory names, and opens the
-    .xlsx files in them far enough to count which look like configurations --
-    that count is what makes the browser usable, since it says where to go
-    without descending. Reading a configuration needs the directory to have
-    been chosen, which is /api/open.
+    Looking does NOT grant access. This lists directory names and counts what
+    each holds -- configuration workbooks, .s4p files, run directories -- and
+    those counts are what make the browser usable, since they say where to go
+    without descending. Reading anything needs the directory to have been
+    chosen, which is /api/open.
     """
     if not path:
         places = []
         for p in _roots():
-            places.append({'name': p, 'path': p, 'configs': _config_count(p)})
+            places.append(dict(name=p, path=p, **_counts(p)))
         for d in _drives():
             if not any(x['path'] == d for x in places):
-                places.append({'name': d, 'path': d, 'configs': 0})
+                places.append({'name': d, 'path': d,
+                               'configs': 0, 's4p': 0, 'runs': 0})
         return {'path': '', 'parent': None, 'dirs': places,
-                'configs': 0, 'places': True}
+                'configs': 0, 's4p': 0, 'runs': 0, 'places': True}
 
     full = os.path.abspath(path)
     if not os.path.isdir(full):
@@ -267,16 +349,14 @@ def browse(path=None):
     try:
         for name in sorted(os.listdir(full), key=str.lower):
             sub = os.path.join(full, name)
-            if not os.path.isdir(sub) or name in ('.git', '__pycache__',
-                                                  '.venv', 'node_modules'):
+            if not os.path.isdir(sub) or name in SKIP_DIRS:
                 continue
-            dirs.append({'name': name, 'path': sub,
-                         'configs': _config_count(sub)})
+            dirs.append(dict(name=name, path=sub, **_counts(sub)))
     except OSError as e:
         return {'error': str(e)}
     parent = os.path.dirname(full.rstrip(os.sep))
-    return {'path': full, 'parent': parent if parent != full else None,
-            'dirs': dirs, 'configs': _config_count(full), 'places': False}
+    return dict(path=full, parent=parent if parent != full else None,
+                dirs=dirs, places=False, **_counts(full))
 
 
 def _drives():
@@ -534,24 +614,45 @@ def config_payload(rel):
     }
 
 
+def _run_dirs(base, depth=RESULT_DEPTH):
+    """Run directories under `base`, found by content to `depth` levels.
+
+    A run is not descended into: its case_NN/ children are cases, not runs. A
+    container such as `results/` or `engine_results/` is not a run and is not
+    listed -- it would otherwise appear as one aggregating everything inside.
+    """
+    out = []
+    stack = [(base, 0)]
+    while stack:
+        d, level = stack.pop()
+        if _is_run_dir(d):
+            out.append(d)
+            continue
+        if level >= depth:
+            continue
+        try:
+            names = os.listdir(d)
+        except OSError:
+            continue
+        for name in names:
+            sub = os.path.join(d, name)
+            if name not in SKIP_DIRS and os.path.isdir(sub):
+                stack.append((sub, level + 1))
+    return out
+
+
 def list_results():
     out = []
-    for g in RESULT_GLOBS:
-        for p in glob.glob(os.path.join(_ROOT, g)):
-            if not os.path.isdir(p):
+    seen = set()
+    for base in _roots():
+        for p in _run_dirs(base):
+            if p in seen:
                 continue
-            rel = os.path.relpath(p, _ROOT).replace('\\', '/')
+            seen.add(p)
             csvs = glob.glob(os.path.join(p, '**', '*.csv'), recursive=True)
             pngs = glob.glob(os.path.join(p, '**', '*.png'), recursive=True)
             cases = [d for d in os.listdir(p)
                      if d.startswith('case_') and os.path.isdir(os.path.join(p, d))]
-            # `results*/` also matches the `results/` container itself, which
-            # would otherwise appear as a run aggregating every run inside it.
-            # A run has either case directories or output files of its own.
-            direct = glob.glob(os.path.join(p, '*.csv')) + \
-                glob.glob(os.path.join(p, '*.png'))
-            if not cases and not direct:
-                continue
             # Sort by the newest FILE inside, not the directory's own mtime.
             # A directory's mtime does not change when a file in one of its
             # sub-directories is rewritten, and per-case output lands in
@@ -566,7 +667,7 @@ def list_results():
                     newest = max(newest, os.path.getmtime(f))
                 except OSError:
                     pass
-            out.append({'path': rel, 'mtime': newest,
+            out.append({'path': _display(p), 'mtime': newest,
                         'csv': len(csvs), 'png': len(pngs), 'cases': len(cases)})
     out.sort(key=lambda r: -r['mtime'])
     return out[:50]
@@ -631,13 +732,12 @@ def _guess_role(name):
 def list_channel_dirs():
     """Directories holding Touchstone files, with a count each."""
     seen = {}
-    for root, dirs, files in os.walk(_ROOT):
-        dirs[:] = [d for d in dirs
-                   if d not in ('.git', '__pycache__', '.venv', 'node_modules')]
-        s4p = [f for f in files if f.lower().endswith('.s4p')]
-        if s4p:
-            rel = os.path.relpath(root, _ROOT).replace('\\', '/')
-            seen[rel] = len(s4p)
+    for base in _roots():
+        for root, dirs, files in os.walk(base):
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            s4p = [f for f in files if f.lower().endswith('.s4p')]
+            if s4p:
+                seen[_display(root)] = len(s4p)
     return [{'dir': k, 'count': v} for k, v in sorted(seen.items())]
 
 
@@ -651,7 +751,7 @@ def list_channels(rel_dir):
             continue
         p = os.path.join(full, f)
         out.append({
-            'path': os.path.relpath(p, _ROOT).replace('\\', '/'),
+            'path': _display(p),
             'name': f,
             'role': _guess_role(f),
             'size': os.path.getsize(p),
@@ -688,10 +788,9 @@ def dynamic_payload(rel):
     for mat in sorted(glob.glob(os.path.join(full, '**', '*.mat'), recursive=True)):
         html = mat[:-4] + '_report.html'
         cases.append({
-            'mat': os.path.relpath(mat, _ROOT).replace('\\', '/'),
+            'mat': _display(mat),
             'name': os.path.basename(mat),
-            'report': (os.path.relpath(html, _ROOT).replace('\\', '/')
-                       if os.path.isfile(html) else None),
+            'report': _display(html) if os.path.isfile(html) else None,
             'report_mtime': os.path.getmtime(html) if os.path.isfile(html) else None,
             'mat_mtime': os.path.getmtime(mat),
         })
@@ -706,7 +805,7 @@ def render_dynamic(mat_rel):
     """
     mat = _safe_path(mat_rel)
     if not mat or not os.path.isfile(mat) or not mat.lower().endswith('.mat'):
-        return {'error': 'not a .mat export inside the repo: %r' % mat_rel}
+        return {'error': 'not a .mat export in an opened directory: %r' % mat_rel}
     rs = _rscript()
     if not rs:
         return {'error': 'Rscript was not found. The dynamic dashboard is built '
@@ -721,7 +820,7 @@ def render_dynamic(mat_rel):
     except RuntimeError as e:
         return {'error': str(e)}
     # _display_argv drops argv[0] and prefixes "python"; this job is Rscript
-    shown = 'Rscript' + _display_argv(job.argv)[len('python'):]
+    shown = 'Rscript' + _display_argv(job.argv, _ROOT)[len('python'):]
     return {'ok': True, 'command': shown}
 
 
@@ -817,7 +916,8 @@ def build_netlist(body):
     def resolve(rel, kind, ext):
         full = _safe_path(rel)
         if not full:
-            problems.append('%s: %r is outside the repository' % (kind, rel))
+            problems.append('%s: %r is outside every opened directory'
+                            % (kind, rel))
             return None
         if not full.lower().endswith(ext):
             problems.append('%s: %r is not a %s file' % (kind, rel, ext))
@@ -865,12 +965,19 @@ def build_netlist(body):
     return argv, []
 
 
-def _display_argv(argv):
-    """The command as a person would type it — repo-relative, python first."""
+def _display_argv(argv, cwd=None):
+    """The command as a person would type it from `cwd`, python first.
+
+    Paths under the working directory are shown relative to it, so the line
+    can be pasted into a shell there and work. Anything else stays absolute --
+    a repo-relative path shown to someone whose shell is in runs/ is a command
+    that fails when pasted.
+    """
+    cwd = cwd or RUN_CWD
     out = ['python']
     for a in argv[1:]:
-        if os.path.isabs(a) and a.startswith(_ROOT):
-            a = os.path.relpath(a, _ROOT).replace('\\', '/')
+        if os.path.isabs(a) and _under(os.path.abspath(a), cwd):
+            a = os.path.relpath(a, cwd).replace('\\', '/')
         out.append('"%s"' % a if ' ' in a else a)
     return ' '.join(out)
 
@@ -949,8 +1056,7 @@ def run_payload(rel):
         for png in sorted(glob.glob(os.path.join(cdir, '*.png'))):
             base = os.path.basename(png)
             sid = base[1] if base.startswith('s') and base[1:2].isdigit() else '?'
-            stages.setdefault(sid, []).append(
-                os.path.relpath(png, _ROOT).replace('\\', '/'))
+            stages.setdefault(sid, []).append(_display(png))
 
         cases.append({
             'name': name or os.path.basename(full),
@@ -1029,6 +1135,11 @@ class Handler(BaseHTTPRequestHandler):
                 d = add_root(q.get('path', [''])[0])
                 return self._json({'ok': bool(d), 'dir': d}
                                   if d else {'error': 'not a directory'})
+            if u.path == '/api/run_dir':
+                want = q.get('path', [''])[0]
+                if want and not set_run_dir(want):
+                    return self._json({'error': 'not a directory: %s' % want})
+                return self._json({'ok': True, 'dir': RUN_CWD})
             if u.path == '/api/config':
                 return self._json(config_payload(q.get('path', [''])[0]))
             if u.path == '/api/results':
@@ -1050,7 +1161,7 @@ class Handler(BaseHTTPRequestHandler):
                 st = r.status(since)
                 st['idle'] = False
                 st['slot'] = slot
-                st['command'] = _display_argv(r.argv)
+                st['command'] = _display_argv(r.argv, r.cwd)
                 return self._json(st)
             if u.path == '/api/dynamic':
                 return self._json(dynamic_payload(q.get('path', [''])[0]))
@@ -1079,10 +1190,11 @@ class Handler(BaseHTTPRequestHandler):
         if problems:
             return {'error': 'the inputs are not runnable', 'problems': problems}
         try:
-            r = runner.start(argv, _ROOT, label=os.path.basename(body['config']))
+            r = runner.start(argv, RUN_CWD, label=os.path.basename(body['config']))
         except RuntimeError as e:
             return {'error': str(e)}
-        return {'ok': True, 'command': _display_argv(r.argv)}
+        return {'ok': True, 'command': _display_argv(r.argv, r.cwd),
+                'cwd': r.cwd}
 
     # Assets a dashboard is allowed to pull in, and how to label them. A .js
     # served as text/plain is refused by the browser, so the type matters.
@@ -1131,7 +1243,9 @@ class Handler(BaseHTTPRequestHandler):
             if glob.glob(os.path.join(d, '*_report.html')):
                 break
             parent = os.path.dirname(d)
-            if parent == d or len(d) <= len(_ROOT):
+            # stop at the edge of the opened roots: an asset is served only
+            # if a dashboard sits between it and a directory the user chose
+            if parent == d or not any(_under(parent, r) for r in _roots()):
                 return self._send(404, b'not found', 'text/plain')
             d = parent
 
@@ -1139,8 +1253,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, f.read(), ctype)
 
     def _figure(self, rel):
-        """Serve a generated figure. Restricted to .png inside the repo: this
-        endpoint exists to show run output, not to read arbitrary files."""
+        """Serve a generated figure. Restricted to .png under an opened root:
+        this endpoint exists to show run output, not to read arbitrary files."""
         full = _safe_path(rel)
         if not full or not full.lower().endswith('.png') or not os.path.isfile(full):
             return self._send(404, b'not found', 'text/plain')
@@ -1163,7 +1277,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({
                     'ok': not problems, 'problems': problems,
                     'command': _display_argv(argv) if argv else '',
-                    'argv': argv or []})
+                    'argv': argv or [], 'cwd': RUN_CWD})
             if u.path == '/api/exec/start':
                 return self._json(self._start(body))
             if u.path == '/api/exec/stop':
@@ -1209,20 +1323,34 @@ class Handler(BaseHTTPRequestHandler):
                 'warnings': warnings}
 
 
+# Startup options. Each names a directory; `--dir` opens one for every tab,
+# `--run-dir` also makes it the working directory for runs. `--config-dir` and
+# SICOPR_CONFIG_DIRS are the names these had when only configs could be opened;
+# they still work and mean the same as `--dir`.
+_DIR_FLAGS = {'--dir': add_root, '--config-dir': add_root,
+              '--run-dir': set_run_dir}
+_DIR_ENVS = {'SICOPR_DIRS': add_root, 'SICOPR_CONFIG_DIRS': add_root,
+             'SICOPR_RUN_DIR': set_run_dir}
+
+
 def main():
-    for d in (os.environ.get('SICOPR_CONFIG_DIRS') or '').split(os.pathsep):
-        if d.strip() and not add_root(d.strip()):
-            print('SICOPR_CONFIG_DIRS: not a directory, ignored: %s' % d)
+    for env, opener in _DIR_ENVS.items():
+        for d in (os.environ.get(env) or '').split(os.pathsep):
+            if d.strip() and not opener(d.strip()):
+                print('%s: not a directory, ignored: %s' % (env, d))
     argv = sys.argv[1:]
-    for i, a in enumerate(argv):
-        if a == '--config-dir' and i + 1 < len(argv):
-            if not add_root(argv[i + 1]):
-                print('--config-dir: not a directory: %s' % argv[i + 1])
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        flag, _, inline = a.partition('=')
+        if flag in _DIR_FLAGS:
+            value = inline if inline else (argv[i + 1] if i + 1 < len(argv) else '')
+            if not _DIR_FLAGS[flag](value):
+                print('%s: not a directory: %s' % (flag, value))
                 return 2
-        elif a.startswith('--config-dir='):
-            if not add_root(a.split('=', 1)[1]):
-                print('--config-dir: not a directory: %s' % a.split('=', 1)[1])
-                return 2
+            i += 1 if inline else 2
+            continue
+        i += 1
 
     dup = schematic.duplicate_names()
     if dup:
@@ -1233,16 +1361,21 @@ def main():
     print('SiCoPR config editor on %s   (Ctrl-C to stop)' % url)
     for d in EXTRA_ROOTS:
         print('also looking in %s' % d)
+    print('runs execute in %s' % RUN_CWD)
     # Count across every root, not just the repo: saying "0 config(s) visible"
     # directly under a line naming the directory they are in is worse than
     # saying nothing.
     found = list_config_dirs()
-    print('%d config(s) in %d director%s'
+    chans = list_channel_dirs()
+    runs = list_results()
+    print('%d config(s) in %d director%s; %d channel director%s; %d run%s'
           % (sum(d['count'] for d in found), len(found),
-             'y' if len(found) == 1 else 'ies'))
-    if not found:
-        print('none found -- use Browse in the config view to point at a '
-              'directory that has some')
+             'y' if len(found) == 1 else 'ies',
+             len(chans), 'y' if len(chans) == 1 else 'ies',
+             len(runs), '' if len(runs) == 1 else 's'))
+    if not found or not chans:
+        print('use Browse on any tab to point at a directory that has what '
+              'it needs, or start with --dir DIR')
     if '--no-browser' not in sys.argv:
         try:
             webbrowser.open(url)

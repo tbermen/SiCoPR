@@ -101,6 +101,122 @@ try:
               code == 200 and len(body) > 200,
               "GET %s returned %s with %d bytes" % (asset, code, len(body)))
 
+    # ------------------------------------------- directories outside the repo
+    #
+    # Channels and run output live outside the repository -- in the workspace
+    # data/ and runs/ trees -- so every listing must search the opened roots,
+    # not the repository alone. After the workspace move, the S-parameter, Run
+    # and both Results tabs came up empty while the Config tab, which had been
+    # taught to look elsewhere, worked: the same defect three more times.
+    #
+    # Needs no real data, so it runs before the config gate below and on a
+    # fresh clone.
+    ws = tempfile.mkdtemp(prefix='sicopr_ws_')
+    try:
+        ch_dir = os.path.join(ws, 'data', 'channels')
+        os.makedirs(ch_dir)
+        for n in ('demo_thru1.s4p', 'demo_xtalk1_Fext.s4p'):
+            with open(os.path.join(ch_dir, n), 'w') as f:
+                f.write('! placeholder\n')
+        run_dir = os.path.join(ws, 'runs', 'engine_results', 'DEMO_run')
+        os.makedirs(os.path.join(run_dir, 'case_01'))
+        with open(os.path.join(run_dir, 'case_01', 'results.csv'), 'w') as f:
+            f.write('COM_dB,VEO_mV\n3.5,12\n')
+        # the audit scripts' own log, which is not a run and must not be
+        # mistaken for one by its file name
+        with open(os.path.join(ws, 'results.csv'), 'w') as f:
+            f.write('timestamp,test_name,result,reason\n')
+        nc = os.path.normcase
+
+        before_ch = get_json('/api/channel_dirs')
+        before_runs = get_json('/api/results')
+        check("an_unopened_directory_is_not_searched",
+              not any(nc(ch_dir) == nc(d['dir']) for d in before_ch)
+              and not any(nc(run_dir) == nc(r['path']) for r in before_runs),
+              "channels or runs under %s were listed before it was opened; "
+              "opening is what grants access" % ws)
+
+        br = get_json('/api/browse?path='
+                      + urllib.parse.quote(os.path.join(ws, 'runs')))
+        row = next((d for d in br.get('dirs', [])
+                    if d['name'] == 'engine_results'), None)
+        check("browse_counts_runs_as_well_as_configs",
+              row is not None and row.get('runs') == 1 and 's4p' in row,
+              "browse row for engine_results was %r; the counts are what tell "
+              "the user where to go" % (row,))
+        br = get_json('/api/browse?path='
+                      + urllib.parse.quote(os.path.join(ws, 'data')))
+        row = next((d for d in br.get('dirs', [])
+                    if d['name'] == 'channels'), None)
+        check("browse_counts_touchstone_files",
+              row is not None and row.get('s4p') == 2,
+              "browse row for channels was %r" % (row,))
+
+        r = get_json('/api/open?path=' + urllib.parse.quote(ws))
+        check("a_directory_can_be_opened", r.get('ok'),
+              "/api/open returned %r" % r)
+
+        after_ch = get_json('/api/channel_dirs')
+        hit = next((d for d in after_ch if nc(d['dir']) == nc(ch_dir)), None)
+        check("channel_directories_are_found_under_an_opened_root",
+              hit is not None and hit['count'] == 2,
+              "/api/channel_dirs after opening %s: %r" % (ws, after_ch))
+        if hit:
+            chans = get_json('/api/channels?dir='
+                             + urllib.parse.quote(hit['dir']))
+            check("channels_outside_the_repo_list_with_usable_paths",
+                  [c['name'] for c in chans]
+                  == ['demo_thru1.s4p', 'demo_xtalk1_Fext.s4p']
+                  and all(os.path.isfile(c['path']) for c in chans),
+                  "channels came back as %r" % (chans,))
+
+        after_runs = get_json('/api/results')
+        paths = [nc(r['path']) for r in after_runs]
+        check("runs_are_found_by_content_under_an_opened_root",
+              nc(run_dir) in paths,
+              "%s, which holds case_01/results.csv, is not in %r"
+              % (run_dir, after_runs[:3]))
+        check("run_containers_are_not_listed_as_runs",
+              nc(os.path.dirname(run_dir)) not in paths
+              and nc(os.path.join(ws, 'runs')) not in paths,
+              "a directory that merely contains runs was listed as one: %r"
+              % paths[:5])
+        check("a_results_csv_that_is_not_the_engines_is_not_a_run",
+              nc(ws) not in paths,
+              "%s holds only the audit scripts' results.csv (header "
+              "timestamp,test_name,...) and was listed as a run" % ws)
+        if nc(run_dir) in paths:
+            rp = get_json('/api/run?path=' + urllib.parse.quote(run_dir))
+            check("a_run_outside_the_repo_can_be_opened",
+                  [c['name'] for c in rp.get('cases', [])] == ['case_01']
+                  and rp['cases'][0]['metrics'],
+                  "/api/run for %s returned %r" % (run_dir, rp))
+
+        # The working directory for runs. The engine resolves a relative
+        # RESULT_DIR against it, so it is what decides where output lands.
+        rd = get_json('/api/run_dir')
+        check("the_run_directory_defaults_to_the_repository",
+              nc(rd.get('dir', '')) == nc(_ROOT),
+              "/api/run_dir reported %r" % rd)
+        want = os.path.join(ws, 'runs')
+        rd = get_json('/api/run_dir?path=' + urllib.parse.quote(want))
+        check("the_run_directory_can_be_changed",
+              nc(rd.get('dir', '')) == nc(want),
+              "/api/run_dir?path= returned %r" % rd)
+        code, nl = post_json('/api/netlist', {'config': '', 'thru': ''})
+        check("the_netlist_reports_the_working_directory",
+              nc(nl.get('cwd', '')) == nc(want),
+              "netlist carried cwd=%r" % nl.get('cwd'))
+        bad = get_json('/api/run_dir?path='
+                       + urllib.parse.quote(os.path.join(ws, 'nope')))
+        check("a_missing_run_directory_is_refused", 'error' in bad,
+              "/api/run_dir with a missing path returned %r" % bad)
+        # back to the default, so the netlist checks below see repo-relative
+        # paths in the displayed command
+        get_json('/api/run_dir?path=' + urllib.parse.quote(_ROOT))
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
     # ------------------------------------------------------------- configs
     configs = get_json('/api/configs')
     check("the_configs_endpoint_answers", isinstance(configs, list),
@@ -110,8 +226,9 @@ try:
         # Configuration workbooks are IEEE contributions and are not shipped
         # with the repository. A fresh clone has none, and the contract CI
         # enforces is that this SKIPS rather than fails -- otherwise every
-        # public clone is red for want of data it cannot have. The static
-        # checks above still ran; everything below needs a real config.
+        # public clone is red for want of data it cannot have. The static and
+        # directory checks above still ran; everything below needs a real
+        # config.
         print('\nSKIP: no configuration workbooks present, so the config, '
               'netlist, run and results checks cannot run. See README '
               'section 1 for where they come from.')

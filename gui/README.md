@@ -12,6 +12,34 @@ It serves on `http://127.0.0.1:8765` and opens a browser. Use
 
 Stdlib only — nothing to install beyond what the engine already needs.
 
+## Where it looks
+
+Configuration workbooks, channel models and run output are all kept **outside**
+the repository — the first two are other people's work product, the third is
+disposable — so a fresh start finds none of them. Every tab has a **Browse…**
+button that walks the server's filesystem, showing beside each directory how
+many configs, `.s4p` files and run directories it holds, and **Use this
+directory** opens it. An opened directory is searched recursively and serves
+every tab at once: open a workspace root and configs, channels and results all
+appear. Nothing is remembered between restarts.
+
+To start with directories already open:
+
+```
+python gui/app.py --dir G:\si\data --run-dir G:\si\runs
+```
+
+`--dir` opens a directory (repeatable; `SICOPR_DIRS` takes a `;`-separated
+list). `--run-dir` opens one *and* makes it the working directory for runs
+launched from the Run tab (`SICOPR_RUN_DIR`). That matters because the engine
+resolves a relative `RESULT_DIR` against its working directory: with the
+default, output lands in the repository's `results/`; pointed at a workspace
+`runs/` tree, GUI runs and command-line runs end up in the same place. The Run
+tab shows the current working directory and lets you change it.
+
+`--config-dir` and `SICOPR_CONFIG_DIRS` are older names for `--dir` and still
+work.
+
 ## Five tabs, one operation each
 
 | tab | what it is for |
@@ -32,7 +60,7 @@ inside itself.
 - Draws the channel as blocks: Tx die → Tx package → channel → Rx package →
   Rx die, with the FEXT/NEXT aggressors and the
   Tx FFE → CTLE → Rx FFE → DFE → detector chain.
-- The config picker browses **any** directory in the repo that holds
+- The config picker lists every directory under the opened roots that holds
   configuration workbooks, not a fixed list. **New…** creates one from a
   template, optionally resetting every setting to the default the workbook
   itself declares.
@@ -45,8 +73,9 @@ inside itself.
   each edit their own half and the halves are recombined on save, in the shape
   the original literal had.
 - Edits are tracked, shown on the schematic, and written to a **new** workbook.
-- **S-parameters** plots the mixed-mode response of any Touchstone file in the
-  repo — SDD21 solid, SDD11/SDD22 dashed — overlaying several at once. The
+- **S-parameters** plots the mixed-mode response of any Touchstone file under
+  an opened directory — SDD21 solid, SDD11/SDD22 dashed — overlaying several at
+  once. The
   conversion and port order come from the engine's own `read_p4_s4params`, so
   what is drawn is what COM consumes, not an approximation. Decimation keeps
   the *worst* value in each bin, so a narrow suck-out cannot vanish between
@@ -88,7 +117,9 @@ inside itself.
 
 Only one run at a time — a COM run is CPU-heavy and a browser that could stack
 them up is a way to fall over, not a feature. The command is assembled as an
-argv list from validated repo-relative paths and never goes through a shell.
+argv list from paths validated against the opened directories and never goes
+through a shell. It executes in the working directory the Run tab shows, which
+is where a relative `RESULT_DIR` puts the output.
 
 ### Long runs
 

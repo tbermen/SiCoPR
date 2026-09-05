@@ -310,14 +310,26 @@ async function fillConfigList(dir) {
 /* ---- directory browser -------------------------------------------------
  *
  * A page cannot open a native folder picker for a path on the SERVER, and the
- * server is where configs are read. So the browsing is server-side: ask what
- * is under a path, show it, descend. The config count beside each directory is
- * the point -- it says where to go without opening anything.
+ * server is where everything is read. So the browsing is server-side: ask what
+ * is under a path, show it, descend. The counts beside each directory -- of
+ * configs, .s4p files and run directories -- are the point: they say where to
+ * go without opening anything.
  *
- * Opening a directory trusts it for the rest of the session. Nothing is
- * written to disk; restarting the editor forgets it.
+ * One dialog serves every tab. What differs is what happens on "Use": which
+ * picker gets refilled, or, for the Run tab's working directory, which server
+ * setting changes. Opening a directory trusts it for the rest of the session
+ * and for every tab at once. Nothing is written to disk; restarting the
+ * editor forgets it.
  */
 let BR_AT = '';
+let BR_FOR = 'config';   // config | channel | results | rundir
+
+const BR_TITLES = {
+  config: 'Choose a directory holding configuration workbooks',
+  channel: 'Choose a directory holding Touchstone (.s4p) channels',
+  results: 'Choose a directory holding run output',
+  rundir: 'Choose the working directory for runs',
+};
 
 function fillDirPick(dirs, dsel) {
   dsel.textContent = '';
@@ -329,6 +341,21 @@ function fillDirPick(dirs, dsel) {
   }
 }
 
+function brOpen(purpose) {
+  BR_FOR = purpose;
+  $('#brTitle').textContent = BR_TITLES[purpose];
+  $('#browseBack').hidden = false;
+  brShow('').catch((e) => toast(e.message, true));
+}
+
+function brCounts(e) {
+  const bits = [];
+  if (e.configs) bits.push(`${e.configs} config${e.configs === 1 ? '' : 's'}`);
+  if (e.s4p) bits.push(`${e.s4p} .s4p`);
+  if (e.runs) bits.push(`${e.runs} run${e.runs === 1 ? '' : 's'}`);
+  return bits.join(' · ');
+}
+
 async function brShow(path) {
   const d = await api(`/api/browse?path=${encodeURIComponent(path || '')}`);
   const err = $('#brErr');
@@ -336,11 +363,15 @@ async function brShow(path) {
   err.textContent = d.error || '';
   if (d.error) return;
   BR_AT = d.path;
+  const here = brCounts(d);
   $('#brPath').textContent = d.places
     ? 'Start from one of these'
-    : `${d.path}    (${d.configs} config${d.configs === 1 ? '' : 's'} here)`;
+    : `${d.path}    (${here || 'nothing of interest directly'} here)`;
   $('#brUp').disabled = !d.parent;
-  $('#brUse').disabled = d.places || !d.configs;
+  // Any real directory may be opened: what is under it is searched
+  // recursively, so a parent that shows nothing "here" can still be the
+  // right choice.
+  $('#brUse').disabled = d.places;
   const ul = $('#brList');
   ul.textContent = '';
   if (!d.dirs.length) {
@@ -356,10 +387,11 @@ async function brShow(path) {
     n.className = 'n';
     n.textContent = e.name;
     li.appendChild(n);
-    if (e.configs) {
+    const counts = brCounts(e);
+    if (counts) {
       const c = document.createElement('span');
       c.className = 'c';
-      c.textContent = `${e.configs} config${e.configs === 1 ? '' : 's'}`;
+      c.textContent = counts;
       li.appendChild(c);
     }
     li.addEventListener('click', () => brShow(e.path)
@@ -370,13 +402,35 @@ async function brShow(path) {
 
 function brClose() { $('#browseBack').hidden = true; }
 
-/* The chosen directory joins the picker and is selected. */
+/* Choosing is what grants access; browsing to it did not. What happens next
+ * depends on which tab asked. */
 async function brUse() {
-  const dsel = $('#dirPick');
   const chosen = BR_AT;
-  // Choosing is what grants access; browsing to it did not.
-  await api(`/api/open?path=${encodeURIComponent(chosen)}`);
   brClose();
+  if (BR_FOR === 'rundir') {
+    const r = await api(`/api/run_dir?path=${encodeURIComponent(chosen)}`);
+    toast('runs will execute in ' + r.dir);
+    await refreshNetlist();
+    return;
+  }
+  await api(`/api/open?path=${encodeURIComponent(chosen)}`);
+  if (BR_FOR === 'channel') {
+    const dirs = await fillChannelDirs();
+    // prefer a directory under what was just opened, else keep the first
+    const under = dirs.find((d) => d.dir.startsWith(chosen));
+    if (!under) { toast('no .s4p files under that directory', true); return; }
+    for (const id of ['#spDir', '#nlDir']) $(id).value = under.dir;
+    await spLoadDir(under.dir);
+    fillChannelSelects(await api('/api/channels?dir='
+      + encodeURIComponent(under.dir)));
+    return;
+  }
+  if (BR_FOR === 'results') {
+    resultsEnter();
+    dynEnter();
+    return;
+  }
+  const dsel = $('#dirPick');
   fillDirPick(await api('/api/config_dirs'), dsel);
   const match = [...dsel.options].find((o) => o.value === chosen);
   if (!match) {
@@ -396,10 +450,12 @@ async function boot() {
   const dsel = $('#dirPick');
   fillDirPick(dirs, dsel);
 
-  $('#btnBrowse').addEventListener('click', () => {
-    $('#browseBack').hidden = false;
-    brShow('').catch((e) => toast(e.message, true));
-  });
+  $('#btnBrowse').addEventListener('click', () => brOpen('config'));
+  $('#spBrowse').addEventListener('click', () => brOpen('channel'));
+  $('#nlBrowse').addEventListener('click', () => brOpen('channel'));
+  $('#nlCwdBrowse').addEventListener('click', () => brOpen('rundir'));
+  $('#btnResBrowse').addEventListener('click', () => brOpen('results'));
+  $('#btnDynBrowse').addEventListener('click', () => brOpen('results'));
   $('#brUp').addEventListener('click', () => {
     const parent = BR_AT ? BR_AT.replace(/[\\/][^\\/]+[\\/]?$/, '') : '';
     brShow(parent && parent !== BR_AT ? parent : '')
@@ -623,6 +679,7 @@ async function refreshNetlist() {
   }).catch((e) => ({ ok: false, problems: [e.message], command: '' }));
 
   $('#nlCmd').textContent = r.command || '(not runnable yet)';
+  if (r.cwd) $('#nlCwd').textContent = r.cwd;
   const host = $('#nlProblems');
   host.textContent = '';
   for (const p of r.problems || []) {
@@ -689,25 +746,43 @@ function fillChannelSelects(files) {
   refreshNetlist();
 }
 
+/* Both channel pickers -- S-parameters and Run -- list the same directories,
+ * so one call fills both. Channels are not in the repository, so an empty
+ * list is the normal first state, and the placeholder says what to do. */
+const NO_S4P = 'no .s4p files in any opened directory — use Browse…';
+let CHANNEL_DIRS = null;   // null until first fetched
+
+async function fillChannelDirs() {
+  const dirs = await api('/api/channel_dirs');
+  CHANNEL_DIRS = dirs;
+  for (const id of ['#spDir', '#nlDir']) {
+    const dsel = $(id);
+    const keep = dsel.value;
+    dsel.textContent = '';
+    if (!dirs.length) {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = NO_S4P;
+      dsel.appendChild(o);
+    }
+    for (const d of dirs) {
+      const o = document.createElement('option');
+      o.value = d.dir;
+      o.textContent = `${d.dir}  (${d.count})`;
+      dsel.appendChild(o);
+    }
+    if (dirs.some((d) => d.dir === keep)) dsel.value = keep;
+  }
+  return dirs;
+}
+
 async function runEnter() {
   try {
     $('#nlConfig').textContent = CFG ? CFG.path : '(none)';
-    const dirs = await api('/api/channel_dirs');
-    const dsel = $('#nlDir');
-    if (!dsel.options.length) {
-      if (!dirs.length) {
-        const o = document.createElement('option');
-        o.textContent = 'no .s4p files found in the repository';
-        dsel.appendChild(o);
-      }
-      for (const d of dirs) {
-        const o = document.createElement('option');
-        o.value = d.dir;
-        o.textContent = `${d.dir}  (${d.count})`;
-        dsel.appendChild(o);
-      }
+    if (CHANNEL_DIRS === null) {
+      const dirs = await fillChannelDirs();
       if (dirs.length) fillChannelSelects(await api('/api/channels?dir='
-        + encodeURIComponent(dirs[0].dir)));
+        + encodeURIComponent($('#nlDir').value)));
     }
     refreshNetlist();
     pollStatus();          // pick up a run already in progress
@@ -716,6 +791,7 @@ async function runEnter() {
 
 $('#nlDir').addEventListener('change', async () => {
   try {
+    if (!$('#nlDir').value) return;
     fillChannelSelects(await api('/api/channels?dir='
       + encodeURIComponent($('#nlDir').value)));
   } catch (e) { toast(e.message, true); }
@@ -858,14 +934,19 @@ async function pollStatus() {
   }
 }
 
+/* Run output is not in the repository either, so an empty list means "nothing
+ * opened yet" at least as often as "nothing has run". */
+const NO_RUNS = 'No run directories in any opened directory. Use Browse… to '
+  + 'open one holding runs, or run sicopr.py with SAVE_FIGURES / CSV_REPORT '
+  + 'enabled in the config.';
+
 function resultsEnter() {
   api('/api/results').then((rows) => {
     const pick = $('#runPick');
     const keepSel = pick.value;
     pick.textContent = '';
     if (!rows.length) {
-      $('#runBody').textContent = 'No result directories found. '
-        + 'Run sicopr.py with SAVE_FIGURES / CSV_REPORT enabled in the config.';
+      $('#runBody').textContent = NO_RUNS;
       return;
     }
     const keep = pick.value;
@@ -901,7 +982,7 @@ $('#btnRefresh').addEventListener('click', async () => {
         + `${r.png} figures)`;
       pick.appendChild(o);
     }
-    if (!rows.length) { $('#runBody').textContent = 'No result directories found.'; return; }
+    if (!rows.length) { $('#runBody').textContent = NO_RUNS; return; }
     // stay where the reader was if it still exists, else show the newest
     pick.value = rows.some((r) => r.path === keep) ? keep : rows[0].path;
     await loadRun(pick.value);
@@ -1082,21 +1163,12 @@ let SP_ALL = [];         // every file in the current directory
 
 async function spEnter() {
   try {
-    const dsel = $('#spDir');
-    if (!dsel.options.length) {
-      const dirs = await api('/api/channel_dirs');
-      if (!dirs.length) {
-        toast('no .s4p files found in the repository', true);
-        return;
-      }
-      for (const d of dirs) {
-        const o = document.createElement('option');
-        o.value = d.dir;
-        o.textContent = `${d.dir}  (${d.count})`;
-        dsel.appendChild(o);
-      }
-      await spLoadDir(dirs[0].dir);
+    if (CHANNEL_DIRS === null) await fillChannelDirs();
+    if (!CHANNEL_DIRS.length) {
+      toast(NO_S4P, true);
+      return;
     }
+    if (!SP_ALL.length) await spLoadDir($('#spDir').value);
   } catch (e) { toast(e.message, true); }
 }
 
@@ -1126,6 +1198,7 @@ function spFillFiles() {
 }
 
 $('#spDir').addEventListener('change', () => {
+  if (!$('#spDir').value) return;
   spLoadDir($('#spDir').value).catch((e) => toast(e.message, true));
 });
 $('#spFilter').addEventListener('change', spFillFiles);
@@ -1306,7 +1379,7 @@ async function dynEnter() {
       pick.appendChild(o);
     }
     if (!rows.length) {
-      $('#dynList').textContent = 'No result directories found.';
+      $('#dynList').textContent = NO_RUNS;
       return;
     }
     pick.value = rows.some((r) => r.path === keep) ? keep : rows[0].path;
