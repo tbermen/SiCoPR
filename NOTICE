@@ -76,6 +76,9 @@ Three kinds of file are derived from the upstream above and carry its licence:
       repository (Copyright 2025 802-COM Authors) plus one NaN filter of ours;
       csvread4com is from the same branch.
 
+  octave/patches/*.m                   (5 files)
+      Those bodies as the generator consumes them, licence headers intact.
+
   com_functions/fn/*/py_impl.py        (157 files)
       The Python translation, function by function. Each corresponds to a named
       MATLAB function and a line range recorded in com_functions/registry.json.

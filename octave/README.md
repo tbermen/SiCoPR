@@ -94,24 +94,43 @@ Octave at about 3.3 times SiCoPR's time, the ratio the three-way study measured
 on the branch. The subset comparison across channel families and configurations
 is the `octave-sicopr-correlation` study in the `si-studies` repository.
 
-## shims/ and shims_B/
+## What is in this directory, and what left it
 
-Kept as evidence, not used by anything.
+| | |
+|---|---|
+| `com_ieee8023_*_octave_compat.m` | the two generated files, committed |
+| `make_octave_compat.py` | the generator |
+| `patches/` | **the source.** The generator reads these; without them nothing can be regenerated and `--check` cannot run. Not spare parts |
+| `README.md` | this file |
 
-`shims/` were the path overrides for running the official release file under
-Octave before the fixes lived in the file. `shims_B/` were the two overrides the
-three-way study applied to the branch `src/` tree; both are now inside the
-patch set (`read_Nport_touchstone` verbatim; `conv_fct_noPDFx` is unnecessary
-because the release calls `conv_fct`, which already builds the PDF axis the
-branch's variant dropped).
+`shims/` and `shims_B/` **moved out on 2026-09-10**, to
+`studies/octave-three-way/harness/`. They were path overrides: files placed
+earlier on Octave's search path so they shadowed the reference code's own
+versions. That was the only way to change a monolithic release file from
+outside, and it is why the third blocker ended the attempt, since `MMSE` is a
+local subfunction that nothing on the path can shadow. Generating the file
+removed the need for the technique entirely.
 
-Octave `addpath` **prepends**, so a shim directory must be added **last** to take
-precedence. Getting that backwards runs the shadowed copy while appearing to
-have applied the override. This is one reason the fixes are in the file now.
+They still have one job, which is why they were moved rather than deleted: the
+`octave-three-way` study's two arms are defined by them, and that study's
+2026-09-04 release is the ad hoc deliverable. They now live beside the harness
+that is their only caller.
+
+One rule survives them, because it is about Octave rather than about shims:
+`addpath` **prepends**, so a directory added last ends up searched first.
+Getting that backwards runs the copy you meant to shadow while the log says the
+override was applied.
+
+## patches/
+
+Do not delete this. The relationship is the one `sicopr.py` has with
+`com_functions/fn/*/py_impl.py`: the generated file is committed for
+convenience, and the sources are the code. `tests/test_octave_compat.py` runs
+`make_octave_compat.py --check`, which regenerates from `patches/` and compares.
 
 ## Licence
 
-The two release files, everything in `patches/` and `shims_B/` derive from the
-COM reference code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`,
-headers intact. The generator, the changes and `shims/` are
+The two generated files and everything in `patches/` derive from the COM
+reference code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`, headers
+intact. The generator and the changes it applies are
 `Copyright 2026 Todd Bermensolo` under the same licence.
