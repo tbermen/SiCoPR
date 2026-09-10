@@ -1,75 +1,117 @@
 # octave/
 
-What it takes to run the IEEE 802.3 COM reference code under GNU Octave, and
-the evidence behind it.
+The IEEE 802.3 COM reference code, made to run under GNU Octave, and the
+evidence behind it.
 
-## The two release files
+## The two files
 
-| file | md5 | identical to |
+| file | derived from | how |
 |---|---|---|
-| `com_ieee8023_4p15p0_octave_compat.m` | `1f2006a2e5bf4bba45d505ece9db016b` | `matlab/com_ieee8023_4p15p0.m` |
-| `com_ieee8023_4p16p0_beta1_octave_compat.m` | `15bfd011eda92fabafea3fdab2cfc85f` | `matlab/com_ieee8023_4p16p0.m` |
+| `com_ieee8023_4p15p0_octave_compat.m` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m` | `make_octave_compat.py` |
+| `com_ieee8023_4p16p0_octave_compat.m` | `matlab/com_ieee8023_4p16p0.m` | `make_octave_compat.py` |
 
-These were downloaded from the `release/` folder of the `Octave_compat` branch
-of the COM reference repository, and they are **byte-identical** to the
-mainline releases already in `matlab/`. They are kept, duplication and all,
-because that identity is the finding: `git diff main..Octave_compat -- release/`
-is empty, so the branch's `release/` folder carries **none** of the Octave
-compatibility work. Anyone downloading from there expecting Octave support will
-not get it.
+Until 2026-09-10 these were byte-identical to the MATLAB releases: files whose
+name promised Octave compatibility and whose content had none. They are now
+**generated** from `matlab/` by a small, named patch set, and committed so a
+reader needs no build step, the same arrangement as `sicopr.py`. Each carries a
+provenance block after its licence header naming its source and the source's
+SHA-256. `tests/test_octave_compat.py` fails if a committed file is not what the
+generator produces, or if Octave cannot parse it.
 
-The compatibility work lives in the branch's `src/` folder instead, behind an
-`OP.OCTAVE` flag set by passing `'Octave'` as the first argument.
+The 4p15p0 file exists so that Octave can be compared exactly with the MATLAB
+reference results. Those were produced with **4p15p0 plus the adaptive local
+search**, the build in `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`,
+which is also the build SiCoPR emulates (`VERSION.json`, `primary_reference`).
+So that is the 4p15p0 source here, not the bare release, whose legacy local
+search would agree with neither. The 4p16p0 file is the current release, which
+adopted the adaptive search into the mainline. Both take the same patch set; the
+two sources are identical in every function it touches.
 
-Verified 2026-09-02 by direct comparison. Neither file contains any Octave-aware
-code: no `OCTAVE_VERSION`, no `isoctave`, no guarded `exist` check.
+```
+python octave/make_octave_compat.py            # regenerate both
+python octave/make_octave_compat.py --check    # what the test runs
+```
 
-## shims/
+## What the patch set is, and why each item is there
 
-Overrides for running the **mainline release file** under Octave. Retired: that
-route was abandoned after a third incompatibility and a roughly 30x runtime
-penalty. Kept as evidence of what the official release needs.
+Every item was found by running the official release under Octave 11.3 in the
+2026-09 three-way study, each costing a full run to discover.
 
-| shim | why |
-|---|---|
-| `verLessThan.m` | line 92 calls `verLessThan('matlab','7.4.1')` unguarded on every run. Octave resolves the first argument against installed packages and errors. Returns a constant, so it cannot move a number. |
-| `textscan.m` | the touchstone reader finds frequency lines by counting NaN per row of a 9-wide `textscan`, which needs MATLAB line-record semantics. Octave streams numbers continuously. Validated bit-exact against an independent parse on all 164 s4p files in the corpus before retirement. |
+| change | kind | why |
+|---|---|---|
+| `verLessThan('matlab', ...)` guarded by `exist('OCTAVE_VERSION','builtin')` | line edit in the main function | Octave resolves the first argument against installed packages and errors on every run |
+| `read_Nport_touchstone` replaced | `patches/` | the mainline reader finds frequency lines by counting NaN per row of a 9-wide `textscan`, which needs MATLAB line-record semantics; the replacement reads a flat `%f` stream, **filters NaN before reshaping**, and reshapes by count. Without the filter, Octave emits one NaN per blank line and 12 of the 164 corpus files lose their frequency axis |
+| `MMSE`: `Rn = real(Rn)` after the `ifft` | line edit | Octave `ifft` always returns complex; MATLAB returns real for a conjugate-symmetric input. The complex residue reaches the Toeplitz solve, every FOM candidate is rejected, and the equalizer search finds no solution. `MMSE` is a local subfunction, so no path shim can reach it: this is the item that forced the patch into the file |
+| `CDF_ev` replaced | `patches/` | the mainline does `find` over an axis that grows every MLSE iteration; the `lookup` form is what keeps an Octave run at minutes rather than hours. **This is the whole performance story**: the release file under Octave was measured 30 to 60 times slower than the branch, and this one function is why |
+| `MLSE_U1_c_178A`: `real()` on the `CDF_ev` arguments | line edit | as the branch has it; a no-op once `MMSE` is real |
+| `COM_CommandLine_Parse` replaced | `patches/` | sets `OP.OCTAVE`, detected automatically here (the branch requires an `'Octave'` keyword, which still works) |
+| `read_ParamConfigFile`: `.csv` via `csvread4com` | line edit + `patches/csvread4com.m` | no `xlsread` under Octave |
+| `writecsv_transposed` replaced | `patches/` | Octave has no `writecell` |
 
-A third blocker had no shim and ended that route: Octave `ifft` always returns
-complex where MATLAB returns real for a conjugate-symmetric input. The residue
-reaches the MMSE solve and the equalizer search finds no solution at all. `MMSE`
-is a local subfunction of the monolithic release file, so it cannot be shadowed
-from the path, and the only override point would have been `ifft` itself.
+Every replaced body is the version the three-way study ran on 208 cases against
+the MATLAB reference to 5e-14 dB, taken from Rich Mellitz's `Octave_compat`
+branch `src/` tree (plus our NaN filter, which the branch lacked and which was
+reported upstream). **Nothing in the set changes a number under MATLAB**: each
+edit is a no-op there, which is what makes the result a reference and not a
+fork.
 
-## shims_B/
+The generator also normalises function terminators: Octave requires that a file
+close every function with `end` or none, the release closes none, and the
+branch's stand-alone files are inconsistent. Getting this wrong is a parse error
+reported at the last line of a 12,000-line file.
 
-Active overrides for the branch `src/` tree, which is the route that works. Both
-restore behaviour the mainline code already has; neither adds any.
+## Running a case
 
-| shim | why |
-|---|---|
-| `conv_fct_noPDFx.m` | the branch version skips building `p.x` for speed, but `CDF_ev` indexes that axis, so from the second MLSE loop iteration the index comes from a stale, shorter axis. Restores the one commented-out line `conv_fct` already has. Without it, DER_MLSE came out 9.4e-14 instead of 4.6e-08 and COM read 6.153 dB where the reference is 3.496 dB. |
-| `read_Nport_touchstone.m` | the branch reader reshapes a flat value stream without filtering NaN. Octave `textscan` emits one NaN per blank line, so any touchstone file whose frequency blocks are separated by blank lines loses its frequency axis. 12 of 164 files in the corpus are written that way and every case using them failed. |
+Octave cannot read the `.xlsx` configuration. Convert it once:
 
-Both carry the upstream BSD-3-Clause header and copyright, and both were
-reported upstream.
+```
+python tools/xlsx_to_com_mat.py config.xlsx -o config.mat --set RESULT_DIR=out/ --set SAVE_FIGURES=0 --set DISPLAY_WINDOW=0
+octave-cli --no-gui --no-window-system --eval "addpath('octave'); r = com_ieee8023_4p15p0_octave_compat('config.mat', 0, 0, 'thru.s4p'); save('-v7','r.mat','r')"
+```
+
+or let `tools/octave_compare.py` do both sides and the comparison:
+
+```
+python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p b.s4p --next c.s4p --version 4p15p0
+```
+
+Set `OPENBLAS_NUM_THREADS=1` and `OMP_NUM_THREADS=1` when running several
+Octave cases at once: COM under Octave is loop-bound, and one BLAS thread per
+process is what lets N processes use N cores.
+
+## Measured
+
+One 208-corpus case (the sender's acceptance channel, KR package A case 1,
+without crosstalk), on this machine, 2026-09-10:
+
+| | COM_dB | wall |
+|---|---|---|
+| MATLAB reference (4p15p0, sender's machine) | 3.96618396709908 | unknown |
+| SiCoPR, `python -m sicopr` | 3.9661839670990786 | 44 s |
+| Octave 11.3, `..._4p16p0_octave_compat.m` | 3.96618396709909 | 147 s |
+
+Octave at about 3.3 times SiCoPR's time, the ratio the three-way study measured
+on the branch. The subset comparison across channel families and configurations
+is the `octave-sicopr-correlation` study in the `si-studies` repository.
+
+## shims/ and shims_B/
+
+Kept as evidence, not used by anything.
+
+`shims/` were the path overrides for running the official release file under
+Octave before the fixes lived in the file. `shims_B/` were the two overrides the
+three-way study applied to the branch `src/` tree; both are now inside the
+patch set (`read_Nport_touchstone` verbatim; `conv_fct_noPDFx` is unnecessary
+because the release calls `conv_fct`, which already builds the PDF axis the
+branch's variant dropped).
 
 Octave `addpath` **prepends**, so a shim directory must be added **last** to take
 precedence. Getting that backwards runs the shadowed copy while appearing to
-have applied the override.
-
-## Result
-
-With the branch `src/`, these two shims and a `.mat` configuration, COM under
-Octave 11.3.0 reproduced a MATLAB 4.15 reference across 208 cases to within
-5.1e-14 dB, with matching equalizer selection, matching sampling phase and
-identical pass/fail on every case.
-
-The full procedure is in the Octave usage document produced by the
-`octave-three-way` study.
+have applied the override. This is one reason the fixes are in the file now.
 
 ## Licence
 
-The two release files and the `shims_B/` overrides derive from the COM reference
-code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`. Headers are intact.
-`shims/` is original work under the same licence.
+The two release files, everything in `patches/` and `shims_B/` derive from the
+COM reference code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`,
+headers intact. The generator, the changes and `shims/` are
+`Copyright 2026 Todd Bermensolo` under the same licence.

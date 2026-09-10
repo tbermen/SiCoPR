@@ -1,0 +1,293 @@
+"""make_octave_compat.py -- derive the Octave-capable release files from matlab/.
+
+    python octave/make_octave_compat.py            # regenerate both files
+    python octave/make_octave_compat.py --check    # exit 1 if the committed files differ
+
+The official COM release files cannot run under GNU Octave. Three things stop
+them, each found the hard way in the 2026-09 three-way study: `verLessThan` is
+called unguarded, the Touchstone reader depends on MATLAB `textscan` starting a
+new record at every line break, and `ifft` returns complex where MATLAB returns
+real for a conjugate-symmetric input, which poisons the MMSE solve inside a
+local subfunction that no path shim can reach. A fourth item is speed: the
+mainline `CDF_ev` does a `find` over an axis that grows every MLSE iteration,
+which under Octave costs 30 to 60 times the run time of the `lookup` form.
+
+Rich Mellitz's `Octave_compat` branch fixes all of this in its `src/` tree, but
+its `release/` folder is byte-identical to mainline, so nobody downloading a
+release gets the fixes. This script carries them into the release files instead,
+as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
+
+  replaced functions (octave/patches/<name>.m, whole subfunction swapped)
+    CDF_ev                  lookup() when available; the speed fix
+    COM_CommandLine_Parse   OP.OCTAVE, detected or forced with 'Octave'
+    read_Nport_touchstone   flat %f read, NaN filtered before reshape
+    writecsv_transposed     fprintf, since Octave has no writecell
+  added function
+    csvread4com             a .csv config reader without xlsread
+  line substitutions
+    main                    verLessThan guarded by the Octave test
+    MMSE                    Rn = real(Rn) after the ifft
+    MLSE_U1_c_178A          real() on the CDF_ev arguments
+    read_ParamConfigFile    .csv configs read by csvread4com
+
+Every replaced function is the version the three-way study ran on 208 cases
+against the MATLAB reference to 5e-14 dB, including the NaN filter the branch
+itself lacked. Nothing here changes a number under MATLAB: each edit is a no-op
+there, which is what makes the result a reference and not a fork.
+
+The generated files are committed, like sicopr.py, so a reader needs no build
+step. `--check` is the test that they were not edited by hand.
+
+Copyright 2026 Todd Bermensolo
+SPDX-License-Identifier: BSD-3-Clause
+"""
+import hashlib
+import io
+import os
+import re
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+PATCHES = os.path.join(HERE, 'patches')
+
+# The 4p15p0 source is the adaptive-local-search build, not the bare release.
+# It is the build the 208-case MATLAB reference results were produced with and
+# the build SiCoPR emulates (VERSION.json, primary_reference); the bare 4p15p0
+# release has only the legacy local search, so an Octave run of it would differ
+# from both of the things this file exists to be compared against.
+VERSIONS = {
+    '4p15p0': ('matlab/com_ieee8023_4p15p0_adaptive_local_search.m',
+               'octave/com_ieee8023_4p15p0_octave_compat.m'),
+    '4p16p0': ('matlab/com_ieee8023_4p16p0.m',
+               'octave/com_ieee8023_4p16p0_octave_compat.m'),
+}
+
+REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
+            'writecsv_transposed']
+ADDED = ['csvread4com']
+
+# (label, old, new, expected count). Exact text; a miss is an error, never a
+# silent skip, because a substitution that no longer matches means the release
+# changed under the patch.
+SUBSTITUTIONS = [
+    ('main: guard verLessThan under Octave',
+     "if verLessThan('matlab', '7.4.1')\n",
+     "if ~exist('OCTAVE_VERSION', 'builtin') && verLessThan('matlab', '7.4.1') "
+     "% OCTAVE: verLessThan resolves its first argument against packages there\n",
+     1),
+    ('MMSE: real part after ifft',
+     "Rn=ifft(S_n)*fb;\n",
+     "Rn=ifft(S_n)*fb;\n"
+     "Rn=real(Rn); % OCTAVE: ifft returns complex for a conjugate-symmetric input; "
+     "MATLAB returns real. No-op under MATLAB.\n",
+     1),
+    ('read_ParamConfigFile: .csv configs via csvread4com',
+     "[na1, na2, parameter] = xlsread(paramFile);\n",
+     "[parameter] = csvread4com(paramFile); % OCTAVE: no xlsread\n",
+     2),
+]
+
+# Regex substitutions for the two MLSE lines, whose whitespace is not worth
+# pinning: wrap the CDF_ev argument in real().
+REGEX_SUBSTITUTIONS = [
+    ('MLSE_U1_c_178A: real() on CDF_ev arguments',
+     re.compile(r"CDF_ev\(\s*(A_s\s*\*\s*\(u_(?:j|trunc)[^,]*?\^\(1/2\))\s*,"),
+     r"CDF_ev( real(\1),",
+     2),
+]
+
+
+def sha256(path):
+    return hashlib.sha256(open(path, 'rb').read()).hexdigest()
+
+
+def function_spans(lines):
+    """name -> (start, end) line indices of every top-level subfunction."""
+    starts = [i for i, l in enumerate(lines) if re.match(r'^function\b', l)]
+    spans = {}
+    for k, i in enumerate(starts):
+        j = starts[k + 1] if k + 1 < len(starts) else len(lines)
+        hdr, q = lines[i], i
+        while hdr.rstrip().endswith('...') and q + 1 < j:
+            q += 1
+            hdr = hdr.rstrip()[:-3] + lines[q]
+        m = (re.search(r'=\s*([A-Za-z_]\w*)\s*\(', hdr)
+             or re.match(r'^function\s+([A-Za-z_]\w*)', hdr))
+        spans[m.group(1)] = (i, j)
+    return spans
+
+
+def read_patch(name, release_ends_functions):
+    """A patch body, with its function-terminating `end` matched to the release.
+
+    Octave requires that within one file either every function is closed with
+    `end` or none is. The branch's stand-alone files are inconsistent about it,
+    and a mismatch is a parse error reported at the last line of a 12,000-line
+    file. So the terminator is normalised here rather than left to the patch.
+    """
+    with io.open(os.path.join(PATCHES, name + '.m'), encoding='utf-8') as fh:
+        text = fh.read().replace('\r\n', '\n')
+    if 'BSD-3-Clause' not in text:
+        raise SystemExit('patch %s carries no licence header' % name)
+    lines = text.rstrip('\n').split('\n')
+    while lines and not lines[-1].strip():
+        lines.pop()
+    has_end = function_is_closed(lines)
+    if release_ends_functions and not has_end:
+        lines.append('end')
+    elif not release_ends_functions and has_end:
+        if lines[-1].strip() != 'end':
+            raise SystemExit('patch %s: balance says the function is closed but '
+                             'its last line is %r' % (name, lines[-1]))
+        lines.pop()
+    return lines
+
+
+_BLOCK_OPEN = {'if', 'for', 'parfor', 'while', 'switch', 'try', 'unwind_protect', 'do'}
+_TOKENS = re.compile(r"[\[\]\(\)\{\}]|\b(?:if|for|parfor|while|switch|try|"
+                     r"unwind_protect|do|until|function|end\w*)\b")
+
+
+def _code_only(line):
+    """A line with strings and the trailing comment removed, so that `end`
+    inside 'text' or after % is not counted."""
+    out, i, n = [], 0, len(line)
+    while i < n:
+        c = line[i]
+        if c in '%#':
+            break
+        if c == '"' or (c == "'" and (not out or not out[-1].strip()
+                                      or out[-1].strip()[-1] not in "\\w)]}'\".")
+                        and not re.search(r"[\w)\]}'\"]$", ''.join(out).rstrip())):
+            q, i = c, i + 1
+            while i < n:
+                if line[i] == q and not (i + 1 < n and line[i + 1] == q):
+                    break
+                i += 2 if line[i] == q else 1
+            out.append(' ')
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+
+def function_is_closed(lines):
+    """Do the `end`s outnumber the blocks they close? Then one closes the
+    function. `end` inside brackets is an index, not a terminator."""
+    depth = opens = ends = 0
+    for raw in lines:
+        for m in _TOKENS.finditer(_code_only(raw)):
+            t = m.group(0)
+            if t in '([{':
+                depth += 1
+            elif t in ')]}':
+                depth = max(0, depth - 1)
+            elif depth == 0:
+                if t in _BLOCK_OPEN:
+                    opens += 1
+                elif t == 'until':
+                    ends += 1          # do ... until closes a do block
+                elif t.startswith('end'):
+                    ends += 1
+    return ends > opens
+
+
+def ends_functions(lines, spans):
+    """Does the release close its functions with `end`? Judged by the last
+    code line before each function header after the first."""
+    votes = 0
+    for name, (i, _j) in spans.items():
+        if i == 0:
+            continue
+        k = i - 1
+        while k > 0 and (not lines[k].strip() or lines[k].strip().startswith('%')):
+            k -= 1
+        votes += lines[k].strip() == 'end'
+    return votes > (len(spans) - 1) / 2
+
+
+def provenance(ver, src_rel, src_sha):
+    return [
+        '%% ---------------------------------------------------------------------',
+        '%% OCTAVE-CAPABLE DERIVATIVE. Generated by octave/make_octave_compat.py',
+        '%%%% from %s (sha256 %s).' % (src_rel, src_sha),
+        '%% Do not edit by hand; edit the patches and regenerate.',
+        '%%',
+        '%% Changes from the release, each a no-op under MATLAB:',
+        '%%   replaced  CDF_ev (lookup), COM_CommandLine_Parse (OP.OCTAVE),',
+        '%%             read_Nport_touchstone (flat read, NaN filter), writecsv_transposed',
+        '%%   added     csvread4com',
+        '%%   edited    verLessThan guard; MMSE Rn=real(Rn); MLSE real() on CDF_ev args;',
+        '%%             .csv config via csvread4com',
+        '%% Configs: .mat (parameter cell array, see tools/xlsx_to_com_mat.py) or .csv.',
+        '%%%% Version %s%s. Copyright 2025 802-COM Authors; changes Copyright 2026'
+        % (ver, ' with adaptive local search' if 'adaptive' in src_rel else ''),
+        '%% Todd Bermensolo. SPDX-License-Identifier: BSD-3-Clause',
+        '%% ---------------------------------------------------------------------',
+    ]
+
+
+def build(ver):
+    src_rel, dst_rel = VERSIONS[ver]
+    src = os.path.join(ROOT, src_rel)
+    # latin-1 maps every byte to one code point, so the release's stray cp1252
+    # characters (a trademark sign in the header) survive the round trip
+    with io.open(src, encoding='latin-1') as fh:
+        text = fh.read()
+    nl = '\r\n' if '\r\n' in text else '\n'
+    text = text.replace('\r\n', '\n')
+
+    for label, old, new, count in SUBSTITUTIONS:
+        n = text.count(old)
+        if n != count:
+            raise SystemExit('%s: expected %d match(es) in %s, found %d'
+                             % (label, count, src_rel, n))
+        text = text.replace(old, new)
+    for label, rx, repl, count in REGEX_SUBSTITUTIONS:
+        text, n = rx.subn(repl, text)
+        if n != count:
+            raise SystemExit('%s: expected %d match(es) in %s, found %d'
+                             % (label, count, src_rel, n))
+
+    lines = text.split('\n')
+    spans = function_spans(lines)
+    closed = ends_functions(lines, spans)
+    # replace from the bottom up so earlier spans stay valid
+    for name in sorted(REPLACED, key=lambda n: -spans[n][0]):
+        if name not in spans:
+            raise SystemExit('%s: function %s not found' % (src_rel, name))
+        i, j = spans[name]
+        lines[i:j] = read_patch(name, closed) + ['']
+    for name in ADDED:
+        if name in spans:
+            raise SystemExit('%s: %s already exists in the release' % (src_rel, name))
+        lines += [''] + read_patch(name, closed) + ['']
+
+    # provenance block right after the SPDX line of the file header
+    k = next(i for i, l in enumerate(lines) if 'SPDX-License-Identifier' in l)
+    lines[k + 1:k + 1] = provenance(ver, src_rel, sha256(src))
+    return nl.join(lines), dst_rel
+
+
+def main(argv):
+    check = '--check' in argv
+    bad = 0
+    for ver in VERSIONS:
+        out, dst_rel = build(ver)
+        dst = os.path.join(ROOT, dst_rel)
+        if check:
+            have = io.open(dst, encoding='latin-1', newline='').read() if os.path.exists(dst) else None
+            ok = have == out
+            print('%-8s %s %s' % (ver, 'OK      ' if ok else 'DIFFERS ', dst_rel))
+            bad += not ok
+        else:
+            with io.open(dst, 'w', encoding='latin-1', newline='') as fh:
+                fh.write(out)
+            print('%-8s wrote %s (%d lines)' % (ver, dst_rel, out.count('\n') + 1))
+    return 1 if bad else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

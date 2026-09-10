@@ -26,6 +26,16 @@ were produced before this file existed and are not restated as changes.
 
 ### Added
 
+- `octave/com_ieee8023_4p15p0_octave_compat.m` and `..._4p16p0_octave_compat.m`
+  now run under GNU Octave. They are generated from `matlab/` by
+  `octave/make_octave_compat.py` with the patch set in `octave/patches/`, and
+  `tests/test_octave_compat.py` checks that the committed files are what the
+  generator produces and that Octave parses them. Before this they were
+  byte-identical to the MATLAB releases.
+- `tools/xlsx_to_com_mat.py` — a COM workbook as the `.mat` configuration
+  Octave reads, with `--set KEY=VALUE` for the headless plumbing keywords.
+- `tools/octave_compare.py` — the same case through Octave and `python -m
+  sicopr`, compared field by field; batch mode over a JSON case list.
 - `NOTICE` — upstream provenance, origin and SHA-256 checksums for each of the
   four MATLAB reference files.
 - `CITATION.cff`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, this file.

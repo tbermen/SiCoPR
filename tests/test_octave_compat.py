@@ -1,0 +1,116 @@
+"""The Octave-capable release files: generated, licensed, and parseable.
+
+octave/com_ieee8023_<ver>_octave_compat.m used to be byte-identical copies of the
+MATLAB releases -- files whose name promised Octave compatibility and whose
+content had none. They are now derived from matlab/ by
+octave/make_octave_compat.py with a small named patch set, and committed so a
+reader needs no build step. These checks keep that arrangement honest:
+
+  * the committed files are exactly what the generator produces (no hand edits);
+  * every patch body carries the upstream licence header;
+  * each compat file differs from its matlab/ source in the places the patch
+    set names, so the name is no longer a lie;
+  * when octave-cli is installed, Octave parses both files. Parsing a
+    12,000-line function file is what caught the "inconsistent function
+    endings" and the stray-`end` defects, neither of which any text check saw.
+
+An end-to-end Octave-versus-SiCoPR run takes minutes and needs a channel that
+is not in the repository, so it is opt-in: set COM_OCTAVE_CASE to
+"<config.xlsx>;<thru.s4p>" and the last check runs both engines and requires
+COM_dB to agree within 1e-9 dB.
+
+Run: python tests/test_octave_compat.py
+"""
+# Copyright 2026 Todd Bermensolo
+# SPDX-License-Identifier: BSD-3-Clause
+
+import glob
+import hashlib
+import io
+import os
+import subprocess
+import sys
+import tempfile
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.join(_ROOT, 'tools'))
+
+from audit_check import check, finish            # noqa: E402
+
+OCT = os.path.join(_ROOT, 'octave')
+GEN = os.path.join(OCT, 'make_octave_compat.py')
+sys.path.insert(0, OCT)
+from make_octave_compat import VERSIONS as FILES   # noqa: E402  source -> output, per version
+
+# --------------------------------------------------- generated, not edited
+p = subprocess.run([sys.executable, GEN, '--check'], capture_output=True, text=True, cwd=_ROOT)
+check("octave_compat_files_are_exactly_what_the_generator_produces",
+      p.returncode == 0,
+      "make_octave_compat.py --check disagrees with the committed files; edit "
+      "the patches and regenerate rather than the output:\n%s" % (p.stdout + p.stderr).strip())
+
+# ------------------------------------------------------------- licences
+patches = sorted(glob.glob(os.path.join(OCT, 'patches', '*.m')))
+check("every_patch_body_carries_the_upstream_licence",
+      patches and all('BSD-3-Clause' in io.open(f, encoding='utf-8').read() for f in patches),
+      "patch files without an SPDX BSD-3-Clause header: %s"
+      % [os.path.basename(f) for f in patches
+         if 'BSD-3-Clause' not in io.open(f, encoding='utf-8').read()])
+
+# --------------------------------------------------- the name is now true
+for ver, (src_rel, dst_rel) in FILES.items():
+    src = io.open(os.path.join(_ROOT, src_rel), encoding='latin-1').read()
+    dst = io.open(os.path.join(_ROOT, dst_rel), encoding='latin-1').read()
+    check("%s_compat_file_differs_from_the_matlab_release" % ver,
+          hashlib.sha256(src.encode('latin-1')).hexdigest()
+          != hashlib.sha256(dst.encode('latin-1')).hexdigest(),
+          "%s is byte-identical to %s: the file promises Octave compatibility and "
+          "carries none" % (dst_rel, src_rel))
+    markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
+               "raw = raw(~isnan(raw))", "OCTAVE-CAPABLE DERIVATIVE"]
+    missing = [m for m in markers if m not in dst]
+    check("%s_compat_file_carries_every_named_change" % ver, not missing,
+          "%s lacks: %s" % (dst_rel, missing))
+    check("%s_compat_file_keeps_the_release_function_count_plus_one" % ver,
+          dst.count('\nfunction') + dst.startswith('function')
+          == src.count('\nfunction') + src.startswith('function') + 1,
+          "expected the release's functions plus csvread4com; got %d vs %d"
+          % (dst.count('\nfunction') + dst.startswith('function'),
+             src.count('\nfunction') + src.startswith('function')))
+
+# -------------------------------------------------------- octave parses
+from xlsx_to_com_mat import find_octave       # noqa: E402
+octave = find_octave()
+if not octave:
+    print('\nSKIP: octave-cli not found; the parse and end-to-end checks did not run.')
+else:
+    for ver, (_src, dst_rel) in FILES.items():
+        entry = os.path.splitext(os.path.basename(dst_rel))[0]
+        # nargin() forces a parse of the function file without running it
+        ev = "addpath('%s'); printf('NARGIN %%d\\n', nargin('%s'));" % (
+            OCT.replace('\\', '/'), entry)
+        q = subprocess.run([octave, '--no-gui', '--no-window-system', '--eval', ev],
+                           capture_output=True, text=True, timeout=300, errors='replace')
+        ok = q.returncode == 0 and 'NARGIN -1' in q.stdout and 'error:' not in (q.stdout + q.stderr)
+        check("octave_parses_the_%s_compat_file" % ver, ok,
+              "Octave %s on %s:\n%s" % ('failed' if q.returncode else 'reported',
+                                       dst_rel, (q.stdout + q.stderr).strip()[-600:]))
+
+    case = os.environ.get('COM_OCTAVE_CASE', '')
+    if ';' in case:
+        cfg, thru = case.split(';', 1)
+        from octave_compare import run_case                 # noqa: E402
+        out = tempfile.mkdtemp(prefix='sicopr_octave_')
+        row = run_case({'id': 'case', 'config': cfg, 'thru': thru}, '4p15p0', out, octave)
+        check("octave_and_sicopr_agree_on_COM_for_the_given_case",
+              'd_COM_dB' in row and abs(row['d_COM_dB']) < 1e-9,
+              "row was %r" % {k: v for k, v in row.items() if 'COM' in k or 'error' in k})
+        print('\nend-to-end: Octave %.1f s, SiCoPR %.1f s, evidence under %s'
+              % (row.get('octave_wall_s', -1), row.get('sicopr_wall_s', -1), out))
+    else:
+        print('\nnote: set COM_OCTAVE_CASE="<config.xlsx>;<thru.s4p>" to run both '
+              'engines on a case (minutes).')
+
+finish()

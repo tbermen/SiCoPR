@@ -61,12 +61,17 @@ pushes to `master` directly, including the maintainer.
 
 **The port ships. The data it was verified against does not.** The engine, its
 tests, the tooling, the MATLAB reference sources and the documentation are all
-here. What is not here is the data: the channel S-parameters and COM
-configuration workbooks the port was correlated against are IEEE 802.3
-contributions and are not ours to redistribute, and neither are the outputs —
-reference values, comparison tables, generated figures and result files are
-either derived from that data or produced by running on it, and are excluded on
-the same grounds. CI enforces the exclusion so none of it drifts back in.
+here. What is not here is the data: the channel S-parameters the port was
+correlated against are IEEE 802.3 contributions and are not ours to
+redistribute, and neither are the outputs — reference values, comparison tables,
+generated figures and result files are either derived from that data or
+produced by running on it, and are excluded on the same grounds. CI enforces the
+exclusion so none of it drifts back in. The COM configuration workbooks are a
+different case: each carries a `License Notice` sheet placing it under the same
+BSD-3-Clause licence as the reference code, so they may be redistributed. They
+are still not in this repository today, only because nothing here needs them
+yet; a runnable example built on them and on channels a reader fetches from the
+IEEE public area is a possible future addition.
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
 passes — 890 per-function tests plus the cross-check scripts — and every test that
@@ -156,6 +161,24 @@ live outside the repository; every tab has a **Browse…** button to open the
 directory that holds them, or start with `--dir DIR --run-dir DIR`. See
 [gui/README.md](gui/README.md).
 
+### The reference under GNU Octave (optional)
+
+`octave/` carries the COM 4p15p0 and 4p16p0 release files made to run under
+GNU Octave, generated from `matlab/` by `octave/make_octave_compat.py` with a
+small, named patch set, every item of which is a no-op under MATLAB. Octave
+reads its configuration from a `.mat`; `tools/xlsx_to_com_mat.py` makes one
+from a workbook, and `tools/octave_compare.py` runs the same case through Octave
+and `python -m sicopr` and compares the results field by field:
+
+```powershell
+python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p --next b.s4p --version 4p15p0
+```
+
+So a reader with a workbook, a channel and Octave can check this port against
+the reference code without a MATLAB licence. On the corpus case measured so far
+Octave and SiCoPR agree to 1e-14 dB, with Octave at about three times SiCoPR's
+run time. See [octave/README.md](octave/README.md).
+
 ## 4. Repository layout
 
 | Path | What it is |
@@ -170,6 +193,7 @@ directory that holds them, or start with `--dir DIR --run-dir DIR`. See
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
+| `octave/` | the `4p15p0` and `4p16p0` releases made to run under GNU Octave, generated from `matlab/` by `make_octave_compat.py` with the patch set in `patches/` (§3) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | audit and interface-check scripts, plus state ledgers |
 | `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |
