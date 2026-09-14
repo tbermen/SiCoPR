@@ -356,4 +356,26 @@ check("the_browse_dialog_takes_its_colours_from_the_theme",
       "stays legible" % ', '.join(sorted(set(_hardcoded))))
 
 
+# ---- the dashboard URL keeps its directory ------------------------------
+#
+# /rpt/ is path-mapped so that a dashboard's relative lib/... links resolve to
+# its own directory. That only works if the separators are real URL segments.
+# A run under G:\si\runs reaches the page as an absolute Windows path, and
+# '...'.split('/') on one of those returns a SINGLE segment, so the base for
+# every relative link collapses to '/rpt/'. The dashboard still loads, so
+# nothing looks broken: the text renders, Plotly 404s, and no chart is drawn.
+# Found on 2026-09-14, after the runs tree moved outside the repository.
+_rpt = re.search(r"""['"]/rpt/['"]\s*\+\s*(.+?);""", src, re.S)
+check("the_dashboard_url_is_split_into_path_segments",
+      _rpt and '.split(' in _rpt.group(1),
+      "the /rpt/ URL is not built by splitting the path into segments; "
+      "relative lib/... links inside the dashboard will not resolve")
+check("the_dashboard_url_normalises_windows_separators",
+      _rpt and re.search(r"replace\(\s*/\\\\+/g\s*,\s*['\"]/['\"]\s*\)",
+                         _rpt.group(1)),
+      "the /rpt/ URL is built without turning backslashes into '/' first, so "
+      "an absolute Windows report path becomes one URL segment and every "
+      "relative lib/... link 404s: the dashboard renders with no charts")
+
+
 finish()

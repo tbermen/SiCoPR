@@ -1465,7 +1465,17 @@ function dynOpen(c) {
   // path-mapped, not a query parameter: the dashboard links Plotly and friends
   // with RELATIVE paths (lib/...), which only resolve if the page is served
   // from a URL that mirrors its directory.
-  fr.src = '/rpt/' + c.report.split('/').map(encodeURIComponent).join('/');
+  //
+  // Normalise the separators FIRST, or that mirroring is lost. A run inside the
+  // repo arrives as 'results/x/y_report.html' and splits into segments; a run
+  // under G:\si\runs arrives as an absolute Windows path, and splitting THAT on
+  // '/' yields a single segment. The dashboard itself still loads, because the
+  // server decodes the whole thing back to a path, so the failure is silent:
+  // every relative lib/... link resolves against '/rpt/' instead of the run
+  // directory, 404s, and the page renders all of its text with no Plotly loaded
+  // and therefore no charts.
+  fr.src = '/rpt/' + c.report.replace(/\\/g, '/')
+    .split('/').map(encodeURIComponent).join('/');
   fr.hidden = false;
   $('#dynEmpty').hidden = true;
 }
