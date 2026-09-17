@@ -68,8 +68,11 @@ for ver, (src_rel, dst_rel) in FILES.items():
           != hashlib.sha256(dst.encode('latin-1')).hexdigest(),
           "%s is byte-identical to %s: the file promises Octave compatibility and "
           "carries none" % (dst_rel, src_rel))
+    # "raw = sscanf(body, '%f')" replaced the blank-line NaN shim on 2026-09-16:
+    # textscan on a file handle stops part way through large touchstone files,
+    # silently, and sscanf on the file's text subsumes both problems.
     markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
-               "raw = raw(~isnan(raw))", "OCTAVE-CAPABLE DERIVATIVE"]
+               "raw = sscanf(body, '%f')", "OCTAVE-CAPABLE DERIVATIVE"]
     missing = [m for m in markers if m not in dst]
     check("%s_compat_file_carries_every_named_change" % ver, not missing,
           "%s lacks: %s" % (dst_rel, missing))
@@ -97,6 +100,37 @@ else:
         check("octave_parses_the_%s_compat_file" % ver, ok,
               "Octave %s on %s:\n%s" % ('failed' if q.returncode else 'reported',
                                        dst_rel, (q.stdout + q.stderr).strip()[-600:]))
+
+    # ------------------------------------------ the reader reads the whole file
+    # Octave's textscan on a file handle stops part way through a large
+    # touchstone file, silently: on the 2026-09-15 corpus it returned 2180 of
+    # 8001 points for one THRU and 928 of 8001 for the FEXT beside it. A short
+    # crosstalk file trips the caller's point-count check; a short THRU passes
+    # every check and puts COM tens of dB out (9 cases came back at -15 to
+    # -23 dB). The reader reads the text and parses it with sscanf instead.
+    # This builds a file large enough to provoke that failure, in the layout the
+    # affected files use: blocks of four lines separated by a blank line.
+    npts = 8001
+    tmp = tempfile.mkdtemp(prefix='sicopr_s4p_')
+    s4p = os.path.join(tmp, 'synthetic.s4p')
+    with io.open(s4p, 'w', encoding='ascii', newline='') as fh:
+        fh.write('!synthetic, %d points\r\n# HZ S MA R 50.000000 \r\n' % npts)
+        for k in range(npts):
+            pair = '\t'.join('%.9g\t%.9g' % (0.5 - 1e-6 * k, (k % 360) - 180.0)
+                             for _ in range(4))
+            fh.write('%d.\t%s\t\r\n' % (k * 10000000, pair))
+            for _ in range(3):
+                fh.write('\t%s\t\r\n' % pair)
+            fh.write('\t\r\n')
+    ev = ("addpath('%s'); [sch, fax] = read_Nport_touchstone('%s', [1 2 3 4], 50); "
+          "printf('POINTS %%d\\n', numel(fax));"
+          % (os.path.join(OCT, 'patches').replace('\\', '/'), s4p.replace('\\', '/')))
+    q = subprocess.run([octave, '--no-gui', '--no-window-system', '--eval', ev],
+                       capture_output=True, text=True, timeout=600, errors='replace')
+    check("octave_reader_reads_every_point_of_a_large_touchstone_file",
+          ('POINTS %d' % npts) in q.stdout,
+          "expected %d points from %s; Octave said:\n%s"
+          % (npts, s4p, (q.stdout + q.stderr).strip()[-600:]))
 
     case = os.environ.get('COM_OCTAVE_CASE', '')
     if ';' in case:

@@ -32,46 +32,72 @@ function [sch,schFreqAxis,port_order]=read_Nport_touchstone(touchstone_file,port
 %
 % SPDX-License-Identifier: BSD-3-Clause
 [file_path,root_name,extension]=fileparts(touchstone_file);
-fid=fopen(touchstone_file);
 
 %fetch number of ports from extension
 num_ports = str2double(regexp(extension,'\d+','match','once'));
 
+%% ===== ROBUST READER (FIXED) =====
+% The whole file is read at once and parsed with sscanf, rather than pulled
+% through textscan on an open file handle.
+%
+% WHY (2026-09-16): Octave's textscan on a file handle silently STOPS PART
+% WAY THROUGH a large touchstone file. No error, no short-read indication --
+% the stream simply ends. Measured on the 2026-09-15 corpus,
+% CR_1mOSFPDAC_TP0TP5_23p5dB_PCBHost_3p7dB_THRU.s4p: 2180 of its 8001 points;
+% the FEXT1 file beside it, 928 of 8001. It is the amount already read that
+% decides, not the content: the blocks around the stop parse in full when
+% they are the only thing in the file. 37 of that corpus's 1650 files are
+% affected, all from two contributors.
+%
+% The damage is worst when it is quiet. A truncated crosstalk file trips the
+% caller's "different number of frequency points" check and stops the run; a
+% truncated THRU passes every check and yields COM tens of dB wrong -- 9 cases
+% came out at -15 to -23 dB where the Python port says +3 to +5.8 dB.
+%
+% sscanf on the file's text reads every file in the corpus completely, and
+% subsumes the earlier blank-line shim (approved Gate 3c): blank lines are
+% whitespace to sscanf, so the NaN-per-blank-line stream that shim filtered
+% never arises. For any file the old reader read in full, the values are the
+% same text parsed to the same doubles, so results do not move.
+txt = fileread(touchstone_file);
+lines = strsplit(txt, sprintf('\n'));
+
 %Get option line
-[optstr,~] = textscan(fid,'%s',1,'Delimiter','','CommentStyle','!');
-optcell=textscan(optstr{1}{1},'%s');
-optcell=optcell{1};
-while isempty(optcell) || isempty(strfind(optcell{1},'#'))
-    [optstr,~] = textscan(fid,'%s',1,'Delimiter','','CommentStyle','!');
-    optcell=textscan(optstr{1}{1},'%s');
-    optcell=optcell{1};
+optcell = {};
+first_data = numel(lines) + 1;
+for line_i = 1:numel(lines)
+    stripped = strtrim(lines{line_i});
+    if isempty(stripped) || stripped(1) == '!'
+        continue;
+    end
+    if stripped(1) == '#'
+        opt_tokens = textscan(stripped, '%s');
+        optcell = opt_tokens{1};
+        first_data = line_i + 1;
+        break;
+    end
+end
+if isempty(optcell)
+    error('No option line found in %s', touchstone_file);
 end
 
-%% ===== ROBUST READER (FIXED) =====
-raw = textscan(fid, '%f', ...
-    'CommentStyle','!', ...
-    'CollectOutput', true);
-fclose(fid);
-
-raw = raw{1};
-% --- SHIM (approved Gate 3c) -------------------------------------------
-% Octave textscan with a %f format emits one NaN per BLANK LINE. The branch
-% reader reshapes the flat stream without filtering NaN, so any touchstone
-% file whose frequency blocks are separated by blank lines is misaligned and
-% its frequency axis destroyed. 12 of the 164 files in this corpus are like
-% that, all belonging to channels R24-R26 (li_dj CR Designs A/B/C).
-% Measured on li_dj_CR_Design_C_Rev1_THRU.s4p: 396033 real values + 12000 NaN
-% gives floor(408033/33) = 12364 frequency points instead of 12001, with a
-% non-monotonic axis. The mainline reader drops NaN explicitly; this restores
-% that one line and nothing else. Provably a no-op for files without blanks.
-raw = raw(~isnan(raw));
-% --- end SHIM ----------------------------------------------------------
+body = strjoin(lines(first_data:end), sprintf('\n'));
+body = regexprep(body, '![^\n]*', '');   % comments out, line structure kept
+raw = sscanf(body, '%f');
 
 columns = num_ports*num_ports*2 + 1;     % values per freq point
 num_freq = floor(length(raw) / columns);
 
 if num_freq == 0
     error('No valid S-parameter data found');
+end
+
+if mod(length(raw), columns) ~= 0
+    % The mainline reader trims silently. Say so instead: this is what a
+    % short read looks like, and it is what went undiagnosed above.
+    warning('COM:read_Nport_touchstone:ShortRead', ...
+        'In %s: %d values is not a whole number of %d-value points; %d trailing value(s) dropped', ...
+        touchstone_file, length(raw), columns, mod(length(raw), columns));
 end
 
 raw = raw(1:num_freq * columns);         % trim
