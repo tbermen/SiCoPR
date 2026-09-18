@@ -10022,15 +10022,16 @@ function [sch,schFreqAxis,port_order]=read_Nport_touchstone(touchstone_file,port
 num_ports = str2double(regexp(extension,'\d+','match','once'));
 
 %% ===== ROBUST READER (FIXED) =====
-% The whole file is read at once and parsed with sscanf, rather than pulled
-% through textscan on an open file handle.
+% The whole file is read at once and parsed with sscanf; textscan is not used
+% at all.
 %
-% WHY (2026-09-16): Octave's textscan on a file handle can STOP PART WAY
-% THROUGH a touchstone file, silently. No error, no short-read indication --
-% the stream simply ends. The lines where it stops are ordinary: they parse
-% in full when they are the only thing in the file. Measured on the
-% 2026-09-15 corpus, CR_1mOSFPDAC_TP0TP5_23p5dB_PCBHost_3p7dB_THRU.s4p: 2180
-% of its 8001 points; the FEXT1 file beside it, 928 of 8001.
+% WHY (2026-09-16): Octave's textscan can STOP PART WAY THROUGH a touchstone
+% file, silently, whether it reads an open file handle or the file's text as a
+% string. No error, no short-read indication -- the data simply ends. The
+% lines where it stops are ordinary: they parse in full when they are the only
+% thing in the file. Measured on the 2026-09-15 corpus,
+% CR_1mOSFPDAC_TP0TP5_23p5dB_PCBHost_3p7dB_THRU.s4p: 2180 of its 8001 points,
+% the same from a handle or a string; the FEXT1 file beside it, 928 of 8001.
 %
 % Audited file by file, old reader against this one: 102 of that corpus's
 % 1650 files are cut short. 66 are cut above 67 GHz, where COM's flim drops

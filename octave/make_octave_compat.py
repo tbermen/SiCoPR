@@ -20,7 +20,8 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
   replaced functions (octave/patches/<name>.m, whole subfunction swapped)
     CDF_ev                  lookup() when available; the speed fix
     COM_CommandLine_Parse   OP.OCTAVE, detected or forced with 'Octave'
-    read_Nport_touchstone   flat %f read, NaN filtered before reshape
+    read_Nport_touchstone   whole file parsed with sscanf; Octave's textscan
+                            can stop part way through a file, silently
     writecsv_transposed     fprintf, since Octave has no writecell
   added function
     csvread4com             a .csv config reader without xlsread

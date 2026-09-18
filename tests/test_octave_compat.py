@@ -69,8 +69,9 @@ for ver, (src_rel, dst_rel) in FILES.items():
           "%s is byte-identical to %s: the file promises Octave compatibility and "
           "carries none" % (dst_rel, src_rel))
     # "raw = sscanf(body, '%f')" replaced the blank-line NaN shim on 2026-09-16:
-    # textscan on a file handle stops part way through large touchstone files,
-    # silently, and sscanf on the file's text subsumes both problems.
+    # Octave's textscan can stop part way through a touchstone file, silently,
+    # from a file handle or a string, and sscanf on the file's text subsumes
+    # both problems.
     markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
                "raw = sscanf(body, '%f')", "OCTAVE-CAPABLE DERIVATIVE"]
     missing = [m for m in markers if m not in dst]
@@ -102,12 +103,12 @@ else:
                                        dst_rel, (q.stdout + q.stderr).strip()[-600:]))
 
     # ------------------------------------------ the reader reads the whole file
-    # Octave's textscan on a file handle stops part way through a large
-    # touchstone file, silently: on the 2026-09-15 corpus it returned 2180 of
-    # 8001 points for one THRU and 928 of 8001 for the FEXT beside it. A short
-    # crosstalk file trips the caller's point-count check; a short THRU passes
-    # every check and puts COM tens of dB out (9 cases came back at -15 to
-    # -23 dB). The reader reads the text and parses it with sscanf instead.
+    # Octave's textscan can stop part way through a touchstone file, silently,
+    # whether it reads a file handle or the text as a string: on the 2026-09-15
+    # corpus it returned 2180 of 8001 points for one THRU and 928 of 8001 for
+    # the FEXT beside it. A short crosstalk file trips the caller's point-count
+    # check; a short THRU passes every check and puts COM tens of dB out (9
+    # cases came back at -12 to -23.5 dB). The reader does not use textscan.
     # This builds a file large enough to provoke that failure, in the layout the
     # affected files use: blocks of four lines separated by a blank line.
     npts = 8001
