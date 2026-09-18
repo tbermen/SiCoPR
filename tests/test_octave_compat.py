@@ -68,12 +68,14 @@ for ver, (src_rel, dst_rel) in FILES.items():
           != hashlib.sha256(dst.encode('latin-1')).hexdigest(),
           "%s is byte-identical to %s: the file promises Octave compatibility and "
           "carries none" % (dst_rel, src_rel))
-    # "raw = sscanf(body, '%f')" replaced the blank-line NaN shim on 2026-09-16:
-    # Octave's textscan can stop part way through a touchstone file, silently,
-    # from a file handle or a string, and sscanf on the file's text subsumes
-    # both problems.
+    # The reader replaced the blank-line NaN shim on 2026-09-16: Octave's
+    # textscan can stop part way through a touchstone file, silently, from a
+    # file handle or a string, and parsing the file's text whole subsumes both
+    # problems. str2double replaced sscanf there on 2026-09-18, for speed; the
+    # isequal and circshift markers are the two other speed substitutions.
     markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
-               "raw = sscanf(body, '%f')", "OCTAVE-CAPABLE DERIVATIVE"]
+               "raw = str2double(tokens)", "any(b ~= blim)", "any(w ~= wlim)",
+               "Vt([n_V-s_V+1:n_V, 1:n_V-s_V])", "OCTAVE-CAPABLE DERIVATIVE"]
     missing = [m for m in markers if m not in dst]
     check("%s_compat_file_carries_every_named_change" % ver, not missing,
           "%s lacks: %s" % (dst_rel, missing))

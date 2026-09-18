@@ -2156,7 +2156,8 @@ if iscolumn(V); V=V.';end
 for i=1:length(C)
     if C(i)~=0
         ishift=(i-1-cmx)*spui;
-        V0=circshift(V',[ishift,0])*C(i)+V0;
+        Vt=V'; n_V=numel(Vt); s_V=mod(ishift,n_V); % OCTAVE speed: circshift is an m-file there; same elements
+        V0=Vt([n_V-s_V+1:n_V, 1:n_V-s_V])*C(i)+V0;
     end
 end
 %V0=circshift(V0,[(-cmx)*spui,0]);
@@ -2783,7 +2784,7 @@ b=wbl(Nw+1:length(wbl)-1); % dfe taps before limits are applied
 
 %% apply blim (slide 11)  <---- need help here How do I get to RxFFE tap coefficents, C?
 blim = min(bmax(:), max(bmin(:), b));
-if (Nb > 0) && ~isequal(b, blim)
+if (Nb > 0) && any(b ~= blim) % OCTAVE speed: isequal is 13x slower here; same result
     wl = [R, -h0'; h0, 0]\[h0'+Hb'*blim; 1];
     w = wl(1:Nw);
 end
@@ -2795,7 +2796,7 @@ if length(w)<length(wmax)
       wmin=wmin(1:length(w));
 end
 wlim = min(wmax(:)*w(1+dw), max(wmin(:)*w(1+dw), w));
-if ~isequal(w, wlim)
+if any(w ~= wlim) % OCTAVE speed: isequal is 13x slower here; same result
     wlim = wlim/(h0*wlim); % Ensure the equalized pulse amplitude is 1.
     if Nb > 0
         b = Hb*wlim; % Update the feedback coefficients.
@@ -10044,36 +10045,37 @@ num_ports = str2double(regexp(extension,'\d+','match','once'));
 % truncated THRU passes every check and yields COM tens of dB wrong -- 9 cases
 % came out at -12 to -23.5 dB where the Python port says +3.2 to +5.8 dB.
 %
-% sscanf on the file's text reads every file in the corpus completely, and
+% Reading the file's text whole reads every file in the corpus completely, and
 % subsumes the earlier blank-line shim (approved Gate 3c): blank lines are
-% whitespace to sscanf, so the NaN-per-blank-line stream that shim filtered
-% never arises. For any file the old reader read in full, the values are the
-% same text parsed to the same doubles, so results do not move.
+% only whitespace between tokens, so the NaN-per-blank-line stream that shim
+% filtered never arises. For any file the old reader read in full, the values
+% are the same text parsed to the same doubles, so results do not move.
+%
+% SPEED (2026-09-18): the tokens are split with regexp and parsed with
+% str2double. The first version of this fix parsed with sscanf over a rejoined
+% copy of every line, which is correct but slow under Octave: the parse alone
+% took 5.8 s on an 8001-point 4-port file, against 1.4 s here. Across all
+% 1814 files of both corpora this reader is 1.8x faster as a whole and returns
+% the same S-parameters and frequency axis, bit for bit, on every one. A
+% crosstalk case reads up to 13 such files.
 txt = fileread(touchstone_file);
-lines = strsplit(txt, sprintf('\n'));
 
-%Get option line
-optcell = {};
-first_data = numel(lines) + 1;
-for line_i = 1:numel(lines)
-    stripped = strtrim(lines{line_i});
-    if isempty(stripped) || stripped(1) == '!'
-        continue;
-    end
-    if stripped(1) == '#'
-        opt_tokens = textscan(stripped, '%s');
-        optcell = opt_tokens{1};
-        first_data = line_i + 1;
-        break;
-    end
-end
-if isempty(optcell)
+%Get option line: the first line whose first non-blank character is '#'
+[opt_line, opt_end] = regexp(txt, '^[ \t\r\f\v]*#[^\n]*', 'match', 'end', 'once', 'lineanchors');
+if isempty(opt_line)
     error('No option line found in %s', touchstone_file);
 end
+opt_tokens = textscan(strtrim(opt_line), '%s');
+optcell = opt_tokens{1};
 
-body = strjoin(lines(first_data:end), sprintf('\n'));
-body = regexprep(body, '![^\n]*', '');   % comments out, line structure kept
-raw = sscanf(body, '%f');
+body = regexprep(txt(opt_end+1:end), '![^\n]*', '');   % comments out
+tokens = regexp(body, '\S+', 'match');
+raw = str2double(tokens).';
+if any(isnan(raw))
+    % sscanf and textscan would stop here, quietly; say which token instead.
+    bad = find(isnan(raw), 1);
+    error('In %s: value %d, "%s", is not a number', touchstone_file, bad, tokens{bad});
+end
 
 columns = num_ports*num_ports*2 + 1;     % values per freq point
 num_freq = floor(length(raw) / columns);

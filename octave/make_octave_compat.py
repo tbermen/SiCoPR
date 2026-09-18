@@ -20,8 +20,9 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
   replaced functions (octave/patches/<name>.m, whole subfunction swapped)
     CDF_ev                  lookup() when available; the speed fix
     COM_CommandLine_Parse   OP.OCTAVE, detected or forced with 'Octave'
-    read_Nport_touchstone   whole file parsed with sscanf; Octave's textscan
-                            can stop part way through a file, silently
+    read_Nport_touchstone   whole file tokenized and parsed with str2double;
+                            Octave's textscan can stop part way through a
+                            file, silently
     writecsv_transposed     fprintf, since Octave has no writecell
   added function
     csvread4com             a .csv config reader without xlsread
@@ -30,6 +31,8 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
     MMSE                    Rn = real(Rn) after the ifft
     MLSE_U1_c_178A          real() on the CDF_ev arguments
     read_ParamConfigFile    .csv configs read by csvread4com
+    MMSE_FOM, FFE           speed only: an elementwise test for isequal and an
+                            index expression for circshift, same results
 
 Every replaced function is the version the three-way study ran on 208 cases
 against the MATLAB reference to 5e-14 dB, including the NaN filter the branch
@@ -87,6 +90,31 @@ SUBSTITUTIONS = [
      "[na1, na2, parameter] = xlsread(paramFile);\n",
      "[parameter] = csvread4com(paramFile); % OCTAVE: no xlsread\n",
      2),
+    # Speed, 2026-09-18. Each gives results identical to the line it replaces,
+    # under Octave and MATLAB; measured in runs/report_docs/Octave_Speedup_Options_2026_09_18.md.
+    # isequal costs 34 us a call under Octave against 2.9 us for the elementwise
+    # test, and MMSE_FOM makes these two checks about 3 million times in one
+    # Tx-FFE-swept case: 7 percent of the run. The operands are always same-size
+    # numeric vectors (blim and wlim are clipped copies of b and w), for which
+    # ~isequal and any(~=) agree, NaN included.
+    ('MMSE_FOM: elementwise test instead of isequal (speed)',
+     "if (Nb > 0) && ~isequal(b, blim)\n",
+     "if (Nb > 0) && any(b ~= blim) % OCTAVE speed: isequal is 13x slower here; same result\n",
+     1),
+    ('MMSE_FOM: elementwise test instead of isequal (speed)',
+     "if ~isequal(w, wlim)\n",
+     "if any(w ~= wlim) % OCTAVE speed: isequal is 13x slower here; same result\n",
+     1),
+    # circshift is an m-file under Octave, 130 to 380 us a call against 19 to 55
+    # for an index expression; FFE makes one per nonzero tap, 7 percent of a
+    # Tx-FFE-swept case. [x(n-s+1:n); x(1:n-s)] with s = mod(shift, n) is what
+    # circshift computes for a column, element for element.
+    ('FFE: index expression instead of circshift (speed)',
+     "        V0=circshift(V',[ishift,0])*C(i)+V0;\n",
+     "        Vt=V'; n_V=numel(Vt); s_V=mod(ishift,n_V); "
+     "% OCTAVE speed: circshift is an m-file there; same elements\n"
+     "        V0=Vt([n_V-s_V+1:n_V, 1:n_V-s_V])*C(i)+V0;\n",
+     1),
 ]
 
 # Regex substitutions for the two MLSE lines, whose whitespace is not worth
