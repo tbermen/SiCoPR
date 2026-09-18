@@ -40,19 +40,23 @@ num_ports = str2double(regexp(extension,'\d+','match','once'));
 % The whole file is read at once and parsed with sscanf, rather than pulled
 % through textscan on an open file handle.
 %
-% WHY (2026-09-16): Octave's textscan on a file handle silently STOPS PART
-% WAY THROUGH a large touchstone file. No error, no short-read indication --
-% the stream simply ends. Measured on the 2026-09-15 corpus,
-% CR_1mOSFPDAC_TP0TP5_23p5dB_PCBHost_3p7dB_THRU.s4p: 2180 of its 8001 points;
-% the FEXT1 file beside it, 928 of 8001. It is the amount already read that
-% decides, not the content: the blocks around the stop parse in full when
-% they are the only thing in the file. 37 of that corpus's 1650 files are
-% affected, all from two contributors.
+% WHY (2026-09-16): Octave's textscan on a file handle can STOP PART WAY
+% THROUGH a touchstone file, silently. No error, no short-read indication --
+% the stream simply ends. The lines where it stops are ordinary: they parse
+% in full when they are the only thing in the file. Measured on the
+% 2026-09-15 corpus, CR_1mOSFPDAC_TP0TP5_23p5dB_PCBHost_3p7dB_THRU.s4p: 2180
+% of its 8001 points; the FEXT1 file beside it, 928 of 8001.
+%
+% Audited file by file, old reader against this one: 102 of that corpus's
+% 1650 files are cut short. 66 are cut above 67 GHz, where COM's flim drops
+% the data anyway, so they change nothing -- 65 of them stop at 67.1 GHz, a
+% near miss rather than a margin. 36, on ten channels from two contributors,
+% are cut between 3.3 and 32 GHz. No file of the 208-case corpus is cut.
 %
 % The damage is worst when it is quiet. A truncated crosstalk file trips the
 % caller's "different number of frequency points" check and stops the run; a
 % truncated THRU passes every check and yields COM tens of dB wrong -- 9 cases
-% came out at -15 to -23 dB where the Python port says +3 to +5.8 dB.
+% came out at -12 to -23.5 dB where the Python port says +3.2 to +5.8 dB.
 %
 % sscanf on the file's text reads every file in the corpus completely, and
 % subsumes the earlier blank-line shim (approved Gate 3c): blank lines are
