@@ -33,6 +33,10 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
     read_ParamConfigFile    .csv configs read by csvread4com
     MMSE_FOM, FFE           speed only: an elementwise test for isequal and an
                             index expression for circshift, same results
+    get_pdf_from_sampled_signal  speed only: its loop's two helpers inlined
+  replaced for speed
+    FOM_rxffe_floating_taps MMSE_FOM's search-mode work inlined, invariants
+                            hoisted; every candidate FOM bit-identical
 
 Every replaced function is the version the three-way study ran on 208 cases
 against the MATLAB reference to 5e-14 dB, including the NaN filter the branch
@@ -68,7 +72,7 @@ VERSIONS = {
 }
 
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
-            'writecsv_transposed']
+            'writecsv_transposed', 'FOM_rxffe_floating_taps']
 ADDED = ['csvread4com']
 
 # (label, old, new, expected count). Exact text; a miss is an error, never a
@@ -114,6 +118,44 @@ SUBSTITUTIONS = [
      "        Vt=V'; n_V=numel(Vt); s_V=mod(ishift,n_V); "
      "% OCTAVE speed: circshift is an m-file there; same elements\n"
      "        V0=Vt([n_V-s_V+1:n_V, 1:n_V-s_V])*C(i)+V0;\n",
+     1),
+    # The ISI distribution build: two function calls and two struct copies per
+    # ISI term, 1.7 million times in a Tx-FFE-swept case. Inlined, carrying only
+    # the running y and Min; the axis is built once at the end by conv_fct's own
+    # formula. conv_fct never reads the running axis, so the ones it built were
+    # never used -- but every consumer of the RESULT gets a fresh one, which is
+    # the point defect #1 of the three-way study turned on (a branch dropped
+    # conv_fct's axis line and CDF_ev read a stale axis). 1.6 to 2.3x on this
+    # function, output identical field for field on captured real inputs.
+    ('get_pdf_from_sampled_signal: Init_PDF_Fast and conv_fct inlined (speed)',
+     "empty_pdf=pdf;\n"
+     "for k = 1:length(input_vector)\n"
+     "    %     pdfn=d_cpdf(BinSize, abs(input_vector(k))*values, prob);\n"
+     "    pdfn=Init_PDF_Fast(empty_pdf, abs(input_vector(k))*values, prob);\n"
+     "    pdf=conv_fct(pdf, pdfn);\n"
+     "end\n",
+     "% OCTAVE speed: Init_PDF_Fast and conv_fct inlined; same result field for field.\n"
+     "% Only y and Min are carried through the loop. The axis is built once, at the\n"
+     "% end, exactly as conv_fct builds it: never drop that line (see defect #1).\n"
+     "pdf_y = pdf.y;\n"
+     "pdf_Min = pdf.Min;\n"
+     "for k = 1:length(input_vector)\n"
+     "    rv = round((abs(input_vector(k))*values)/BinSize);    % Init_PDF_Fast\n"
+     "    q = zeros(1, numel(BinSize*rv(1):BinSize:BinSize*rv(end)));\n"
+     "    bp = rv-rv(1)+1;\n"
+     "    q(bp(1)) = prob(1);\n"
+     "    for m = 2:L\n"
+     "        q(bp(m)) = q(bp(m))+prob(m);\n"
+     "    end\n"
+     "    pdf_Min = round(pdf_Min+rv(1));                       % conv_fct\n"
+     "    pdf_y = conv2(pdf_y, q);\n"
+     "end\n"
+     "if length(input_vector) > 0\n"
+     "    pdf.Min = pdf_Min;\n"
+     "    pdf.y = pdf_y;\n"
+     "    pMax = pdf.Min+length(pdf.y)-1;\n"
+     "    pdf.x = (pdf.Min*pdf.BinSize:pdf.BinSize:pMax*pdf.BinSize);\n"
+     "end\n",
      1),
 ]
 
