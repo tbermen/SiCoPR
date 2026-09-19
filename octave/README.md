@@ -120,6 +120,13 @@ single precision, and the product of two of those is exact, which hides a
 fused multiply-add completely. The first version of the check had exactly that
 blind spot.
 
+Measured 2026-09-18, four cases run side by side, every result field
+byte-identical with the kernels off and on: the kernels alone are 1.36 to
+1.92 times faster, and with the interpreted items above the release is 2.5 to
+3 times faster than it was before any speed item (1368-case `wo_C1_R001`:
+1418 s to 561 s). On that case Octave now takes 1.5 times
+SiCoPR's time (451 s against 299 s, one `tools/octave_compare.py` run).
+
 The `.oct` is built for one Octave version and platform, so it is not
 committed. The release files ask it for its version string and ignore a
 build that does not match. On Windows, Octave holds a loaded `.oct` open, so
