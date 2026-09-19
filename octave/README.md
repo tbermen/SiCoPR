@@ -40,7 +40,7 @@ Every item was found by running the official release under Octave 11.3 in the
 | change | kind | why |
 |---|---|---|
 | `verLessThan('matlab', ...)` guarded by `exist('OCTAVE_VERSION','builtin')` | line edit in the main function | Octave resolves the first argument against installed packages and errors on every run |
-| `read_Nport_touchstone` replaced | `patches/` | the mainline reader finds frequency lines by counting NaN per row of a 9-wide `textscan`, which needs MATLAB line-record semantics; the replacement reads a flat `%f` stream, **filters NaN before reshaping**, and reshapes by count. Without the filter, Octave emits one NaN per blank line and 12 of the 164 corpus files lose their frequency axis |
+| `read_Nport_touchstone` replaced | `patches/` | Octave's `textscan` can **stop part way through a touchstone file, silently**, whether it reads a file handle or the file's text as a string. On the 2026-09-15 corpus, 102 of 1650 files came back short and 36 of them below 67 GHz; a short THRU passes every check and puts COM tens of dB out. The replacement reads the file's text whole (`fileread`) and parses its tokens (`str2double`), with no `textscan` at all. That also retires the earlier blank-line problem (one NaN per blank line, 12 of 164 files losing their frequency axis), since blank lines are only whitespace between tokens |
 | `MMSE`: `Rn = real(Rn)` after the `ifft` | line edit | Octave `ifft` always returns complex; MATLAB returns real for a conjugate-symmetric input. The complex residue reaches the Toeplitz solve, every FOM candidate is rejected, and the equalizer search finds no solution. `MMSE` is a local subfunction, so no path shim can reach it: this is the item that forced the patch into the file |
 | `CDF_ev` replaced | `patches/` | the mainline does `find` over an axis that grows every MLSE iteration; the `lookup` form is what keeps an Octave run at minutes rather than hours. **This is the whole performance story**: the release file under Octave was measured 30 to 60 times slower than the branch, and this one function is why |
 | `MLSE_U1_c_178A`: `real()` on the `CDF_ev` arguments | line edit | as the branch has it; a no-op once `MMSE` is real |
@@ -48,12 +48,82 @@ Every item was found by running the official release under Octave 11.3 in the
 | `read_ParamConfigFile`: `.csv` via `csvread4com` | line edit + `patches/csvread4com.m` | no `xlsread` under Octave |
 | `writecsv_transposed` replaced | `patches/` | Octave has no `writecell` |
 
-Every replaced body is the version the three-way study ran on 208 cases against
-the MATLAB reference to 5e-14 dB, taken from Rich Mellitz's `Octave_compat`
-branch `src/` tree (plus our NaN filter, which the branch lacked and which was
-reported upstream). **Nothing in the set changes a number under MATLAB**: each
-edit is a no-op there, which is what makes the result a reference and not a
-fork.
+The `CDF_ev`, `COM_CommandLine_Parse` and `writecsv_transposed` bodies are the
+versions the three-way study ran on 208 cases against the MATLAB reference to
+5e-14 dB, taken from Rich Mellitz's `Octave_compat` branch `src/` tree. The
+reader is ours (2026-09-16); the branch's version, with the NaN filter we
+reported upstream, still uses `textscan`. **Nothing in this table changes a
+number under MATLAB**: each edit is a no-op there, which is what makes the
+result a reference and not a fork.
+
+## Speed, with every result unchanged
+
+Octave has no JIT, so its time goes to small calls made very often. The items
+below remove that overhead and nothing else. The rule for admitting one is
+that **no result may change, not even in the last bit**: a before/after run on
+four cases (two 4p15p0, two 4p16p0 with crosstalk) compares every field of the
+result struct byte for byte, and only `config_file` and `rtmin`, which name the
+run, may differ. An item that would move a bit was dropped: computing one
+`H'*H` for the whole search and indexing it per candidate was 1.8 times
+faster on the search, and changed its FOMs in the last bits on 135 of 138 tap
+sets.
+
+| change | kind | what it saves |
+|---|---|---|
+| `read_Nport_touchstone`: `str2double` on the tokens | in the replaced reader | `sscanf` over a rejoined copy took 5.8 s to parse one 8001-point 4-port file, against 1.4 s; 1.8x on reading across all 1814 files of both corpora, identical S-parameters on every one |
+| `MMSE_FOM`: `any(b ~= blim)` for `isequal(b, blim)`, and likewise for `w` | line edits | `isequal` is an m-file, 34 µs a call, run per candidate |
+| `FFE`: each tap added in place as two blocks | line edit | `circshift` is an m-file and built a shifted copy per tap |
+| `get_pdf_from_sampled_signal`: `Init_PDF_Fast` and `conv_fct` inlined, bins filled in one assignment when distinct | line edit | two calls and a struct per ISI sample |
+| `FOM_rxffe_floating_taps` replaced | `patches/` | `MMSE_FOM`'s search-mode work inlined, everything that does not change per candidate computed once |
+
+These are checked under Octave, where the files run. They are not checked
+under MATLAB, which is not on this machine; the correctness items above are
+the ones that must be no-ops there.
+
+## Optional compiled kernels (`accel/`)
+
+`accel/com_octave_accel.cc` runs three of the hottest loops compiled: the
+floating-tap search's candidate loop, the ISI distribution loop and FFE's tap
+loop. The release files work without it. When `com_octave_accel.oct` sits
+beside them, `com_octave_accel_on` (an added function) sends those loops to it
+instead.
+
+```
+python octave/accel/build_accel.py        # -> octave/com_octave_accel.oct
+COM_OCTAVE_ACCEL=0                        # environment: run without it
+```
+
+The kernels return **exactly** what the interpreted code returns, byte for
+byte. The constraint shapes the design:
+
+- every operation is the one the interpreter performs, in the same order,
+  through the same liboctave calls (`xgemm` with the interpreter's transpose
+  flags, `Matrix::solve` as `A\b` calls it, `octave::range`, `octave::convn`);
+- it is built with `-ffp-contract=off`, because a fused `a*b+c` rounds once
+  where the interpreter rounds twice;
+- the ISI distribution's convolution runs as a few shifted adds only on a step
+  where every product is exact. `conv2` rounds some of its multiply-adds once
+  (fused, inside BLAS) and some twice, which makes no difference while the
+  products are exact and a real one once a distribution's far tail sinks into
+  the subnormal range, as a few hundred 4-level steps do. On such a step the
+  kernel calls `convn`, as `conv2` does.
+
+`tests/test_octave_compat.py` runs the release's own functions with the
+kernels off and on and compares every output, including every candidate FOM
+of the search and a distribution whose tail goes subnormal. The check was
+proven by planting five last-bit defects (a reassociated product, two
+summation orders reversed, a build with fused multiply-add allowed, and the
+convolution shortcut without its exactness check), and it fails on each. It
+uses full-precision inputs:
+Octave's `randn('seed', ...)` selects an old generator whose values are all
+single precision, and the product of two of those is exact, which hides a
+fused multiply-add completely. The first version of the check had exactly that
+blind spot.
+
+The `.oct` is built for one Octave version and platform, so it is not
+committed. The release files ask it for its version string and ignore a
+build that does not match. On Windows, Octave holds a loaded `.oct` open, so
+rebuild with no Octave session using it.
 
 The generator also normalises function terminators: Octave requires that a file
 close every function with `end` or none, the release closes none, and the
@@ -101,6 +171,8 @@ is the `octave-sicopr-correlation` study in the `si-studies` repository.
 | `com_ieee8023_*_octave_compat.m` | the two generated files, committed |
 | `make_octave_compat.py` | the generator |
 | `patches/` | **the source.** The generator reads these; without them nothing can be regenerated and `--check` cannot run. Not spare parts |
+| `accel/` | the optional compiled kernels' source and `build_accel.py` |
+| `com_octave_accel.oct` | built by `build_accel.py`, never committed |
 | `README.md` | this file |
 
 `shims/` and `shims_B/` **moved out on 2026-09-10**, to

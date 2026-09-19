@@ -52,6 +52,12 @@ function idx = FOM_rxffe_floating_taps(param,h,H,Nb,Rnn,dw,d,wmax,wmin,bmin,bmax
 % numerator R_LM/(levels-1), which the release computes first in the same
 % expression, so the division by sigma_e sees the same operands. 1.08 to
 % 1.10x more on this function, every candidate FOM still bit-identical.
+%
+% COMPILED (2026-09-18): when the optional kernel com_octave_accel.oct is
+% present (octave/accel/), the candidate loop runs there instead and returns
+% the same best_FOM, value for value. If a candidate's variance comes out
+% negative, where this code would go complex, the kernel says so and the loop
+% below runs instead.
 hisi=h(isi_start:isi_end);
 hisi=hisi(param.RxFFE_cpx+1:param.N_bmax);
 bank_size = param.N_bf;
@@ -76,6 +82,16 @@ for j=1:num_groups
         wmx=wmx(1:Nw);
         wmn=wmn(1:Nw);
     end
+    accel_done = false;
+    if com_octave_accel_on()
+        [accel_FOM, accel_fb] = com_octave_accel('floating_fom', H, RnnS, Nb, dw, d, wmx, wmn, ...
+            bmin, bmax, sigma_X2, fom_num, Nfix, cmx1, cpx, all_idx, valid_tap_locations, bank_size);
+        if ~accel_fb
+            best_FOM = accel_FOM;
+            accel_done = true;
+        end
+    end
+    if ~accel_done
     for k=1:length(valid_tap_locations)
         this_location=valid_tap_locations(k);
         new_idx = [all_idx this_location:this_location+bank_size-1];
@@ -113,6 +129,7 @@ for j=1:num_groups
         w_tr = w';
         sigma_e=sqrt(sigma_X2*(w_tr*R*w+1+b'*b-2*w_tr*h0'-2*w_tr*Hb'*b));
         best_FOM(k)=20*log10(fom_num/sigma_e);
+    end
     end
     [~,best_FOM_idx]=max(best_FOM);
     start_tap = valid_tap_locations(best_FOM_idx);

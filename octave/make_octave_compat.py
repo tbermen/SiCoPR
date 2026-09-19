@@ -24,8 +24,9 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
                             Octave's textscan can stop part way through a
                             file, silently
     writecsv_transposed     fprintf, since Octave has no writecell
-  added function
+  added functions
     csvread4com             a .csv config reader without xlsread
+    com_octave_accel_on     whether the optional compiled kernels are in use
   line substitutions
     main                    verLessThan guarded by the Octave test
     MMSE                    Rn = real(Rn) after the ifft
@@ -37,6 +38,10 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
   replaced for speed
     FOM_rxffe_floating_taps MMSE_FOM's search-mode work inlined, invariants
                             hoisted; every candidate FOM bit-identical
+  optional compiled kernels (octave/accel/, built with build_accel.py)
+    the search's candidate loop, the ISI distribution loop and FFE's tap loop
+    run compiled when com_octave_accel.oct is present; each returns exactly
+    what the interpreted code returns, and COM_OCTAVE_ACCEL=0 turns them off
 
 Every replaced function is the version the three-way study ran on 208 cases
 against the MATLAB reference to 5e-14 dB, including the NaN filter the branch
@@ -73,7 +78,7 @@ VERSIONS = {
 
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
             'writecsv_transposed', 'FOM_rxffe_floating_taps']
-ADDED = ['csvread4com']
+ADDED = ['csvread4com', 'com_octave_accel_on']
 
 # (label, old, new, expected count). Exact text; a miss is an error, never a
 # silent skip, because a substitution that no longer matches means the release
@@ -130,6 +135,9 @@ SUBSTITUTIONS = [
      "V0=0;\n"
      "if iscolumn(V); V=V.';end\n"
      "Vt=V'; n_V=numel(Vt); % OCTAVE speed: taps added in place, no shifted copy; same result\n"
+     "if n_V > 0 && isreal(V) && isreal(C) && com_octave_accel_on()   % compiled, same values\n"
+     "    V0=com_octave_accel('ffe', C, cmx, spui, V);\n"
+     "else\n"
      "for i=1:length(C)\n"
      "    if C(i)~=0\n"
      "        ishift=(i-1-cmx)*spui;\n"
@@ -138,6 +146,7 @@ SUBSTITUTIONS = [
      "        V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V);\n"
      "        V0(1:s_V)=Vt(n_V-s_V+1:n_V)*C(i)+V0(1:s_V);\n"
      "    end\n"
+     "end\n"
      "end\n",
      1),
     # The ISI distribution build: two function calls and two struct copies per
@@ -158,6 +167,9 @@ SUBSTITUTIONS = [
      "% OCTAVE speed: Init_PDF_Fast and conv_fct inlined; same result field for field.\n"
      "% Only y and Min are carried through the loop. The axis is built once, at the\n"
      "% end, exactly as conv_fct builds it: never drop that line (see defect #1).\n"
+     "if length(input_vector) > 0 && com_octave_accel_on()          % compiled, same values\n"
+     "    [pdf_y, pdf_Min] = com_octave_accel('pdf_build', input_vector, values, prob, BinSize, pdf.y, pdf.Min);\n"
+     "else\n"
      "pdf_y = pdf.y;\n"
      "pdf_Min = pdf.Min;\n"
      "for k = 1:length(input_vector)\n"
@@ -174,6 +186,7 @@ SUBSTITUTIONS = [
      "    end\n"
      "    pdf_Min = round(pdf_Min+rv(1));                       % conv_fct\n"
      "    pdf_y = conv2(pdf_y, q);\n"
+     "end\n"
      "end\n"
      "if length(input_vector) > 0\n"
      "    pdf.Min = pdf_Min;\n"

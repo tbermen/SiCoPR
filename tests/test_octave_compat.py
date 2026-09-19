@@ -12,7 +12,9 @@ reader needs no build step. These checks keep that arrangement honest:
     set names, so the name is no longer a lie;
   * when octave-cli is installed, Octave parses both files. Parsing a
     12,000-line function file is what caught the "inconsistent function
-    endings" and the stray-`end` defects, neither of which any text check saw.
+    endings" and the stray-`end` defects, neither of which any text check saw;
+  * when the optional compiled kernels are built (octave/accel/), they return
+    exactly what the interpreted code returns, byte for byte.
 
 An end-to-end Octave-versus-SiCoPR run takes minutes and needs a channel that
 is not in the repository, so it is opt-in: set COM_OCTAVE_CASE to
@@ -72,19 +74,22 @@ for ver, (src_rel, dst_rel) in FILES.items():
     # textscan can stop part way through a touchstone file, silently, from a
     # file handle or a string, and parsing the file's text whole subsumes both
     # problems. str2double replaced sscanf there on 2026-09-18, for speed; the
-    # isequal and circshift markers are the two other speed substitutions.
+    # isequal and circshift markers are the two other speed substitutions. The
+    # com_octave_accel calls are the three sites the optional kernels take over.
     markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
                "raw = str2double(tokens)", "any(b ~= blim)", "any(w ~= wlim)",
                "V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V)", "pdf_y = conv2(pdf_y, q)",
                "q(bp) = prob", "R = Hs'*Hs+RnnS(cols,cols)", "fom_num/sigma_e",
-               "OCTAVE-CAPABLE DERIVATIVE"]
+               "com_octave_accel('floating_fom'", "com_octave_accel('pdf_build'",
+               "com_octave_accel('ffe'", "OCTAVE-CAPABLE DERIVATIVE"]
     missing = [m for m in markers if m not in dst]
     check("%s_compat_file_carries_every_named_change" % ver, not missing,
           "%s lacks: %s" % (dst_rel, missing))
-    check("%s_compat_file_keeps_the_release_function_count_plus_one" % ver,
+    check("%s_compat_file_keeps_the_release_function_count_plus_two" % ver,
           dst.count('\nfunction') + dst.startswith('function')
-          == src.count('\nfunction') + src.startswith('function') + 1,
-          "expected the release's functions plus csvread4com; got %d vs %d"
+          == src.count('\nfunction') + src.startswith('function') + 2,
+          "expected the release's functions plus csvread4com and com_octave_accel_on; "
+          "got %d vs %d"
           % (dst.count('\nfunction') + dst.startswith('function'),
              src.count('\nfunction') + src.startswith('function')))
 
@@ -136,6 +141,123 @@ else:
           ('POINTS %d' % npts) in q.stdout,
           "expected %d points from %s; Octave said:\n%s"
           % (npts, s4p, (q.stdout + q.stderr).strip()[-600:]))
+
+    # ------------------------------ the compiled kernels change nothing
+    # octave/accel/com_octave_accel.cc, when built, runs three hot loops of the
+    # release files compiled. It must return exactly what the interpreted code
+    # returns. This pulls the GENERATED functions out of the release file, runs
+    # them on seeded synthetic inputs in two Octave processes, kernels off
+    # (COM_OCTAVE_ACCEL=0) and on, and compares every output byte for byte, so
+    # signed zeros count. The inputs cover 4-level signalling (sparse adds in
+    # the kernel), 3-level (the kernel calls convn), zero taps, negative shifts
+    # and colliding distribution bins, and a distribution long enough that its
+    # tail goes subnormal, where products stop being exact and conv2's own
+    # rounding (fused in places) decides the bins. The search is compared on every
+    # candidate's FOM, not only on the taps it picks: a last-bit change rarely
+    # moves the maximum. The seed is 'state', not 'seed': 'seed' selects Octave's
+    # old generator, whose values are all single precision, and the product of
+    # two of those is exact, which hides a fused multiply-add completely.
+    accel = os.path.join(OCT, 'com_octave_accel.oct')
+    if not os.path.isfile(accel):
+        print('\nnote: octave/com_octave_accel.oct not built; the kernel checks did not run '
+              '(python octave/accel/build_accel.py).')
+    else:
+        import re
+        import numpy as np
+        import scipy.io
+        rel = io.open(os.path.join(_ROOT, FILES['4p16p0'][1]), encoding='latin-1').read().split('\n')
+        starts = [i for i, l in enumerate(rel) if re.match(r'^function\b', l)]
+        wanted = ('FOM_rxffe_floating_taps', 'get_pdf_from_sampled_signal', 'FFE',
+                  'com_octave_accel_on', 'd_cpdf', 'normal_dist')
+        kdir = tempfile.mkdtemp(prefix='sicopr_accel_')
+        for k, i in enumerate(starts):
+            m = re.search(r'=\s*([A-Za-z_]\w*)\s*\(', rel[i]) or re.match(r'^function\s+([A-Za-z_]\w*)', rel[i])
+            if m and m.group(1) in wanted:
+                j = starts[k + 1] if k + 1 < len(starts) else len(rel)
+                body = '\n'.join(rel[i:j]) + '\n'
+                if m.group(1) == 'FOM_rxffe_floating_taps':
+                    first = body.index('\n') + 1
+                    hook = '    [~,best_FOM_idx]=max(best_FOM);\n'
+                    assert body.count(hook) == 1, 'the search has changed; update this test'
+                    body = (body[:first] + 'global accel_fom accel_by_kernel\n' + body[first:]).replace(
+                        hook, '    accel_fom{end+1} = best_FOM; accel_by_kernel(end+1) = accel_done;\n' + hook)
+                io.open(os.path.join(kdir, m.group(1) + '.m'), 'w', encoding='latin-1').write(body)
+        driver = r"""
+function accel_driver(out)
+  rand('state', 11); randn('state', 11);   % 'seed' would give single-precision values
+  % FFE: several pulses and tap sets, zeros and a negative shift included
+  for t = 1:6
+    V = randn(1, 800 + 700*t); V(1:7:end) = 0; V(3:11:end) = -0;
+    C = randn(1, 2 + 4*t); C(2) = 0;
+    ffe{t} = FFE(C, min(t, numel(C)-1), 8*t, V);
+  end
+  ffe{7} = FFE(zeros(1, 5), 2, 32, randn(1, 100));
+  % the ISI distribution: 4 and 3 levels, values tiny enough to collide bins
+  for t = 1:8
+    L = 4 - (t > 6);
+    v = randn(200 + 50*t, 1) .* 10 .^ (-6 + 4*rand(200 + 50*t, 1));
+    p = get_pdf_from_sampled_signal(v, L, 1e-5 * (1 + t/10));
+    pdf_y{t} = p.y; pdf_min(t) = p.Min; pdf_x{t} = p.x;
+  end
+  % a long ISI vector: the far tail sinks below realmin, where products stop
+  % being exact and conv2's own rounding, fused in places, decides the bins
+  v = (2 + abs(randn(700, 1))) * 1e-5 .* sign(randn(700, 1));
+  p = get_pdf_from_sampled_signal(v, 4, 1e-5);
+  pdf_y{9} = p.y; pdf_min(9) = p.Min; pdf_x{9} = p.x;
+  subnormal_bins = sum(p.y > 0 & p.y < realmin);
+  % the floating-tap search on a synthetic but well-posed system
+  global accel_fom accel_by_kernel
+  accel_fom = {}; accel_by_kernel = [];
+  param = struct('RxFFE_cmx', 6, 'RxFFE_cpx', 8, 'N_bmax', 80, 'N_bf', 4, 'N_bg', 2, ...
+                 'R_LM', 0.95, 'levels', 4);
+  for t = 1:2
+    H = randn(1800, 87) * 0.02; H(706, :) = H(706, :) + 1;   % the cursor row, d+1
+    h = randn(1, 400) * 0.05;
+    Rnn = eye(87) * 1e-4;
+    idx{t} = FOM_rxffe_floating_taps(param, h, H, t, Rnn, 6, 705, ones(87,1)*0.8, -ones(87,1)*0.8, ...
+                                     -0.5, 0.5, 15/27, 1, 200);
+  end
+  used = com_octave_accel_on();
+  save('-v7', out, 'ffe', 'pdf_y', 'pdf_min', 'pdf_x', 'idx', 'accel_fom', 'accel_by_kernel', 'subnormal_bins', 'used');
+end
+"""
+        io.open(os.path.join(kdir, 'accel_driver.m'), 'w', encoding='latin-1').write(driver)
+        res = {}
+        for mode in ('0', '1'):
+            out = os.path.join(kdir, 'out_%s.mat' % mode)
+            ev = ("addpath('%s'); addpath('%s'); accel_driver('%s');"
+                  % (kdir.replace('\\', '/'), OCT.replace('\\', '/'), out.replace('\\', '/')))
+            q = subprocess.run([octave, '--no-gui', '--no-window-system', '--eval', ev],
+                               capture_output=True, text=True, timeout=900, errors='replace',
+                               env=dict(os.environ, COM_OCTAVE_ACCEL=mode))
+            res[mode] = scipy.io.loadmat(out) if os.path.isfile(out) else None
+            if res[mode] is None:
+                print((q.stdout + q.stderr)[-800:])
+
+        def flat(d):
+            vals = []
+            for k in ('ffe', 'pdf_y', 'pdf_min', 'pdf_x', 'idx', 'accel_fom'):
+                v = d[k]
+                if v.dtype == object:
+                    vals += [np.asarray(x, dtype=float) for x in v.ravel()]
+                else:
+                    vals.append(np.asarray(v, dtype=float))
+            return vals
+
+        ok = res['0'] is not None and res['1'] is not None
+        if ok:
+            a, b = flat(res['0']), flat(res['1'])
+            ok = (len(a) == len(b) and all(x.shape == y.shape and x.tobytes() == y.tobytes()
+                                           for x, y in zip(a, b)))
+        if ok:
+            by_kernel = [np.asarray(res[m]['accel_by_kernel']).ravel() for m in ('0', '1')]
+            ok = by_kernel[1].size > 0 and by_kernel[1].all() and not by_kernel[0].any()
+            # the long-vector case must still reach the subnormal range, or it tests nothing
+            ok = ok and int(np.asarray(res['0']['subnormal_bins']).ravel()[0]) > 0
+        check("compiled_kernels_return_what_the_interpreted_code_returns",
+              ok and bool(res['1']['used']) and not bool(res['0']['used']),
+              "kernels off/on disagree, or were not used when on (used: off=%s on=%s); see %s"
+              % (res['0'] and bool(res['0']['used']), res['1'] and bool(res['1']['used']), kdir))
 
     case = os.environ.get('COM_OCTAVE_CASE', '')
     if ';' in case:

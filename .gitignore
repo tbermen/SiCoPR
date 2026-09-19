@@ -35,3 +35,8 @@ tests/results.csv
 # Machine-local Claude Code state. settings.json IS shared; these are not.
 .claude/settings.local.json
 .claude/projects/
+
+# The optional Octave kernels are built per machine (octave/accel/build_accel.py)
+# and are tied to one Octave version, so they are never committed.
+octave/*.oct
+octave/accel/*.o

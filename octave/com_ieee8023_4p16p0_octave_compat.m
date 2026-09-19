@@ -2154,6 +2154,9 @@ function [ V0 ] = FFE( C , cmx,spui, V )
 V0=0;
 if iscolumn(V); V=V.';end
 Vt=V'; n_V=numel(Vt); % OCTAVE speed: taps added in place, no shifted copy; same result
+if n_V > 0 && isreal(V) && isreal(C) && com_octave_accel_on()   % compiled, same values
+    V0=com_octave_accel('ffe', C, cmx, spui, V);
+else
 for i=1:length(C)
     if C(i)~=0
         ishift=(i-1-cmx)*spui;
@@ -2162,6 +2165,7 @@ for i=1:length(C)
         V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V);
         V0(1:s_V)=Vt(n_V-s_V+1:n_V)*C(i)+V0(1:s_V);
     end
+end
 end
 %V0=circshift(V0,[(-cmx)*spui,0]);
 % disp(max(V0));
@@ -2237,6 +2241,12 @@ function idx = FOM_rxffe_floating_taps(param,h,H,Nb,Rnn,dw,d,wmax,wmin,bmin,bmax
 % numerator R_LM/(levels-1), which the release computes first in the same
 % expression, so the division by sigma_e sees the same operands. 1.08 to
 % 1.10x more on this function, every candidate FOM still bit-identical.
+%
+% COMPILED (2026-09-18): when the optional kernel com_octave_accel.oct is
+% present (octave/accel/), the candidate loop runs there instead and returns
+% the same best_FOM, value for value. If a candidate's variance comes out
+% negative, where this code would go complex, the kernel says so and the loop
+% below runs instead.
 hisi=h(isi_start:isi_end);
 hisi=hisi(param.RxFFE_cpx+1:param.N_bmax);
 bank_size = param.N_bf;
@@ -2261,6 +2271,16 @@ for j=1:num_groups
         wmx=wmx(1:Nw);
         wmn=wmn(1:Nw);
     end
+    accel_done = false;
+    if com_octave_accel_on()
+        [accel_FOM, accel_fb] = com_octave_accel('floating_fom', H, RnnS, Nb, dw, d, wmx, wmn, ...
+            bmin, bmax, sigma_X2, fom_num, Nfix, cmx1, cpx, all_idx, valid_tap_locations, bank_size);
+        if ~accel_fb
+            best_FOM = accel_FOM;
+            accel_done = true;
+        end
+    end
+    if ~accel_done
     for k=1:length(valid_tap_locations)
         this_location=valid_tap_locations(k);
         new_idx = [all_idx this_location:this_location+bank_size-1];
@@ -2298,6 +2318,7 @@ for j=1:num_groups
         w_tr = w';
         sigma_e=sqrt(sigma_X2*(w_tr*R*w+1+b'*b-2*w_tr*h0'-2*w_tr*Hb'*b));
         best_FOM(k)=20*log10(fom_num/sigma_e);
+    end
     end
     [~,best_FOM_idx]=max(best_FOM);
     start_tap = valid_tap_locations(best_FOM_idx);
@@ -8151,6 +8172,9 @@ pdf=d_cpdf(BinSize, 0, 1);
 % OCTAVE speed: Init_PDF_Fast and conv_fct inlined; same result field for field.
 % Only y and Min are carried through the loop. The axis is built once, at the
 % end, exactly as conv_fct builds it: never drop that line (see defect #1).
+if length(input_vector) > 0 && com_octave_accel_on()          % compiled, same values
+    [pdf_y, pdf_Min] = com_octave_accel('pdf_build', input_vector, values, prob, BinSize, pdf.y, pdf.Min);
+else
 pdf_y = pdf.y;
 pdf_Min = pdf.Min;
 for k = 1:length(input_vector)
@@ -8167,6 +8191,7 @@ for k = 1:length(input_vector)
     end
     pdf_Min = round(pdf_Min+rv(1));                       % conv_fct
     pdf_y = conv2(pdf_y, q);
+end
 end
 if length(input_vector) > 0
     pdf.Min = pdf_Min;
@@ -12608,3 +12633,54 @@ for r = 1:nrows
     end
 end
 
+
+
+function on = com_octave_accel_on()
+%% License Notice
+%
+% Copyright 2026 Todd Bermensolo
+%
+% Redistribution and use in source and binary forms, with or without
+% modification, are permitted provided that the following conditions are
+% met:
+%
+% - Redistributions of source code must retain the above copyright
+%   notice, this list of conditions and the following disclaimer.
+%
+% - Redistributions in binary form must reproduce the above copyright
+%   notice, this list of conditions and the following disclaimer in the
+%   documentation and/or other materials provided with the distribution.
+%
+% - Neither the name of the copyright holder nor the names of its
+%   contributors may be used to endorse or promote products derived from
+%   this software without specific prior written permission.
+%
+% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+% "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+% LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+% A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+% HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+% SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+% LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+% DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+% THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+% (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+%
+% SPDX-License-Identifier: BSD-3-Clause
+%
+% ADDED (2026-09-18): whether the optional compiled kernels are to be used.
+% True only under Octave, when com_octave_accel.oct is on the path, reports the
+% version this file was written against, and COM_OCTAVE_ACCEL is not '0'. The
+% kernels return exactly what the interpreted code returns (octave/accel/), so
+% this changes run time, never a result; COM_OCTAVE_ACCEL=0 is how that is
+% checked. Decided once per session.
+persistent cached
+if isempty(cached)
+    cached = false;
+    if exist('OCTAVE_VERSION', 'builtin') && exist('com_octave_accel', 'file') == 3 ...
+            && ~strcmp(getenv('COM_OCTAVE_ACCEL'), '0')
+        cached = strcmp(com_octave_accel('version'), 'com_octave_accel 1 (2026-09-18)');
+    end
+end
+on = cached;
