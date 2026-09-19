@@ -109,15 +109,36 @@ SUBSTITUTIONS = [
      "if ~isequal(w, wlim)\n",
      "if any(w ~= wlim) % OCTAVE speed: isequal is 13x slower here; same result\n",
      1),
-    # circshift is an m-file under Octave, 130 to 380 us a call against 19 to 55
-    # for an index expression; FFE makes one per nonzero tap, 7 percent of a
-    # Tx-FFE-swept case. [x(n-s+1:n); x(1:n-s)] with s = mod(shift, n) is what
-    # circshift computes for a column, element for element.
-    ('FFE: index expression instead of circshift (speed)',
-     "        V0=circshift(V',[ishift,0])*C(i)+V0;\n",
-     "        Vt=V'; n_V=numel(Vt); s_V=mod(ishift,n_V); "
-     "% OCTAVE speed: circshift is an m-file there; same elements\n"
-     "        V0=Vt([n_V-s_V+1:n_V, 1:n_V-s_V])*C(i)+V0;\n",
+    # FFE makes one full-length circular shift per nonzero tap: 7 percent of a
+    # Tx-FFE-swept case. circshift is an m-file under Octave, and the shifted
+    # copy is not needed at all: a circular shift by s is two contiguous blocks,
+    # so each tap is added in place, element k of the shifted pulse being
+    # Vt(k-s) for k > s and Vt(n-s+k) for k <= s. Every element sees the same
+    # x*C(i)+V0 as before, in the same tap order; the first add is still onto a
+    # zero, so signed zeros come out the same, and all-zero taps still return
+    # the scalar 0. 1.2 to 2.2x on this function (2026-09-18, second pass;
+    # the first pass replaced circshift with an index expression, 1.1x).
+    ('FFE: taps added in place as two blocks, no shifted copy (speed)',
+     "V0=0;\n"
+     "if iscolumn(V); V=V.';end\n"
+     "for i=1:length(C)\n"
+     "    if C(i)~=0\n"
+     "        ishift=(i-1-cmx)*spui;\n"
+     "        V0=circshift(V',[ishift,0])*C(i)+V0;\n"
+     "    end\n"
+     "end\n",
+     "V0=0;\n"
+     "if iscolumn(V); V=V.';end\n"
+     "Vt=V'; n_V=numel(Vt); % OCTAVE speed: taps added in place, no shifted copy; same result\n"
+     "for i=1:length(C)\n"
+     "    if C(i)~=0\n"
+     "        ishift=(i-1-cmx)*spui;\n"
+     "        s_V=mod(ishift,n_V);\n"
+     "        if isscalar(V0); V0=zeros(n_V,1)+V0; end\n"
+     "        V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V);\n"
+     "        V0(1:s_V)=Vt(n_V-s_V+1:n_V)*C(i)+V0(1:s_V);\n"
+     "    end\n"
+     "end\n",
      1),
     # The ISI distribution build: two function calls and two struct copies per
     # ISI term, 1.7 million times in a Tx-FFE-swept case. Inlined, carrying only
@@ -143,9 +164,13 @@ SUBSTITUTIONS = [
      "    rv = round((abs(input_vector(k))*values)/BinSize);    % Init_PDF_Fast\n"
      "    q = zeros(1, numel(BinSize*rv(1):BinSize:BinSize*rv(end)));\n"
      "    bp = rv-rv(1)+1;\n"
-     "    q(bp(1)) = prob(1);\n"
-     "    for m = 2:L\n"
-     "        q(bp(m)) = q(bp(m))+prob(m);\n"
+     "    if all(diff(bp) > 0)                                  % distinct bins: no sums\n"
+     "        q(bp) = prob;\n"
+     "    else\n"
+     "        q(bp(1)) = prob(1);\n"
+     "        for m = 2:L\n"
+     "            q(bp(m)) = q(bp(m))+prob(m);\n"
+     "        end\n"
      "    end\n"
      "    pdf_Min = round(pdf_Min+rv(1));                       % conv_fct\n"
      "    pdf_y = conv2(pdf_y, q);\n"

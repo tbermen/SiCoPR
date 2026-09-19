@@ -75,8 +75,9 @@ for ver, (src_rel, dst_rel) in FILES.items():
     # isequal and circshift markers are the two other speed substitutions.
     markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
                "raw = str2double(tokens)", "any(b ~= blim)", "any(w ~= wlim)",
-               "Vt([n_V-s_V+1:n_V, 1:n_V-s_V])", "pdf_y = conv2(pdf_y, q)",
-               "R = Hs'*Hs+RnnS(cols,cols)", "OCTAVE-CAPABLE DERIVATIVE"]
+               "V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V)", "pdf_y = conv2(pdf_y, q)",
+               "q(bp) = prob", "R = Hs'*Hs+RnnS(cols,cols)", "fom_num/sigma_e",
+               "OCTAVE-CAPABLE DERIVATIVE"]
     missing = [m for m in markers if m not in dst]
     check("%s_compat_file_carries_every_named_change" % ver, not missing,
           "%s lacks: %s" % (dst_rel, missing))

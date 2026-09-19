@@ -2133,11 +2133,14 @@ function [ V0 ] = FFE( C , cmx,spui, V )
 
 V0=0;
 if iscolumn(V); V=V.';end
+Vt=V'; n_V=numel(Vt); % OCTAVE speed: taps added in place, no shifted copy; same result
 for i=1:length(C)
     if C(i)~=0
         ishift=(i-1-cmx)*spui;
-        Vt=V'; n_V=numel(Vt); s_V=mod(ishift,n_V); % OCTAVE speed: circshift is an m-file there; same elements
-        V0=Vt([n_V-s_V+1:n_V, 1:n_V-s_V])*C(i)+V0;
+        s_V=mod(ishift,n_V);
+        if isscalar(V0); V0=zeros(n_V,1)+V0; end
+        V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V);
+        V0(1:s_V)=Vt(n_V-s_V+1:n_V)*C(i)+V0(1:s_V);
     end
 end
 %V0=circshift(V0,[(-cmx)*spui,0]);
@@ -2208,6 +2211,12 @@ function idx = FOM_rxffe_floating_taps(param,h,H,Nb,Rnn,dw,d,wmax,wmin,bmin,bmax
 % That is 1.8x here, but the indexed product differs from the per-candidate
 % one in the last bits on 135 of 138 tap sets tried (search FOMs move by up to
 % 3e-14 dB), so a result would stop being bit-identical to the release.
+%
+% Second pass, 2026-09-18: three more invariants hoisted -- the RxFFE_cpx
+% lookup, the wmax/wmin truncation (Nw is fixed within a group), and the FOM
+% numerator R_LM/(levels-1), which the release computes first in the same
+% expression, so the division by sigma_e sees the same operands. 1.08 to
+% 1.10x more on this function, every candidate FOM still bit-identical.
 hisi=h(isi_start:isi_end);
 hisi=hisi(param.RxFFE_cpx+1:param.N_bmax);
 bank_size = param.N_bf;
@@ -2221,16 +2230,24 @@ cmx1 = param.RxFFE_cmx+1;
 RnnS = Rnn/sigma_X2;
 ib = eye(Nb);
 zb = zeros(1,Nb);
+cpx = param.RxFFE_cpx;
+fom_num = param.R_LM/(param.levels-1);
 for j=1:num_groups
     best_FOM=ones(1,length(valid_tap_locations))*-Inf;
+    Nw = Nfix+length(all_idx)+bank_size;
+    wmx = wmax;
+    wmn = wmin;
+    if Nw<length(wmx)
+        wmx=wmx(1:Nw);
+        wmn=wmn(1:Nw);
+    end
     for k=1:length(valid_tap_locations)
         this_location=valid_tap_locations(k);
         new_idx = [all_idx this_location:this_location+bank_size-1];
         new_idx=sort(new_idx);
-        new_idx = new_idx+param.RxFFE_cpx;
+        new_idx = new_idx+cpx;
         % ---- MMSE_FOM(param,H,Nb,Rnn,dw,d,wmax,wmin,bmin,bmax,sigma_X2,new_idx), FOM only
         cols = [1:Nfix new_idx+cmx1];
-        Nw = Nfix+length(new_idx);
         Hs = H(:,cols);
         R = Hs'*Hs+RnnS(cols,cols);
         Hb = Hs(d+2:d+Nb+1,:);
@@ -2248,12 +2265,6 @@ for j=1:num_groups
             wl = [R, -h0'; h0, 0]\[h0'+Hb'*blim; 1];
             w = wl(1:Nw);
         end
-        wmx = wmax;
-        wmn = wmin;
-        if length(w)<length(wmx)
-            wmx=wmx(1:length(w));
-            wmn=wmn(1:length(w));
-        end
         wlim = min(wmx(:)*w(1+dw), max(wmn(:)*w(1+dw), w));
         if any(w ~= wlim)
             wlim = wlim/(h0*wlim);
@@ -2266,7 +2277,7 @@ for j=1:num_groups
         b=blim;
         w_tr = w';
         sigma_e=sqrt(sigma_X2*(w_tr*R*w+1+b'*b-2*w_tr*h0'-2*w_tr*Hb'*b));
-        best_FOM(k)=20*log10((param.R_LM/(param.levels-1)/sigma_e));
+        best_FOM(k)=20*log10(fom_num/sigma_e);
     end
     [~,best_FOM_idx]=max(best_FOM);
     start_tap = valid_tap_locations(best_FOM_idx);
@@ -8113,9 +8124,13 @@ for k = 1:length(input_vector)
     rv = round((abs(input_vector(k))*values)/BinSize);    % Init_PDF_Fast
     q = zeros(1, numel(BinSize*rv(1):BinSize:BinSize*rv(end)));
     bp = rv-rv(1)+1;
-    q(bp(1)) = prob(1);
-    for m = 2:L
-        q(bp(m)) = q(bp(m))+prob(m);
+    if all(diff(bp) > 0)                                  % distinct bins: no sums
+        q(bp) = prob;
+    else
+        q(bp(1)) = prob(1);
+        for m = 2:L
+            q(bp(m)) = q(bp(m))+prob(m);
+        end
     end
     pdf_Min = round(pdf_Min+rv(1));                       % conv_fct
     pdf_y = conv2(pdf_y, q);
