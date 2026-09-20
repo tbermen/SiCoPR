@@ -4,9 +4,18 @@ Thirteen documents, none of them required reading to run COM. This index says
 what each one answers and whether it is current, so you can open the one you
 want and ignore the rest.
 
-The short version: **[`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md)
-is the evidence**, and [`FIX_SUMMARY.md`](FIX_SUMMARY.md) is the history of every
-change that moved a number. Everything else is detail behind those two.
+The short version: **[`TUTORIAL.md`](TUTORIAL.md) is where to start** if you want
+to use the tool, **[`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md)
+is the evidence** that it is right, and [`FIX_SUMMARY.md`](FIX_SUMMARY.md) is the
+history of every change that moved a number. Everything else is detail behind
+those three.
+
+## Using the tool
+
+| document | what it answers | state |
+|---|---|---|
+| [`TUTORIAL.md`](TUTORIAL.md) | the whole tool: install, run, architecture, every feature, configuration, outputs, the study layer, the R reports, the reference code under Octave, and a keyword index | current (v2.0, 2026-09-20) |
+| [`tutorial/`](tutorial/) | the figures it uses | |
 
 ## How accurate is this port, and why should I believe it
 

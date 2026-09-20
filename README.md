@@ -27,10 +27,12 @@ other to run, and the Python side has no R dependency.
 On top of both there is a study layer (`tools/`, `R/`) built to answer one question:
 **does pruning the equalizer search grid change COM?** Results in §5.
 
-> **New to this project?** Start with **[`SiCoPR_Tutorial.docx`](SiCoPR_Tutorial.docx)**
-> — a 40-page tutorial and reference covering installation, architecture, every feature,
-> the study layer, the R reports, a COM concepts primer, and a complete index of all 249
-> configuration keywords. This README is the quick version.
+> **New to this project?** Start with **[`docs/TUTORIAL.md`](docs/TUTORIAL.md)** — a
+> tutorial and reference covering installation, architecture, every feature, the study
+> layer, the R reports, the reference code under GNU Octave, a COM concepts primer, and
+> a complete index of the configuration keywords. This README is the quick version.
+> (It was a `.docx` until 2026-09-20; markdown so it can be diffed and reviewed like
+> the code it describes.)
 
 ---
 

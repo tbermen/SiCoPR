@@ -39,6 +39,10 @@ try {
     Run-Step "Checkpoint tests (Stage 4)" "python -m pytest tests/test_checkpoints.py -v"
     Run-Step "End-to-end tests (Stage 5)" "python -m pytest tests/test_end_to_end.py -v -s"
     Run-Step "Results-export columns"  "python -m pytest tests/test_export_columns.py -q"
+    # The tutorial's table of contents is generated from its own headings. A
+    # hand-maintained one in an 11,000-word document goes stale on the first
+    # section added, and nothing else would notice.
+    Run-Step "Tutorial contents"       "python docs/refresh_tutorial_toc.py --check"
 
     Write-Host ""
     Write-Host "=== Audit scripts ===" -ForegroundColor Cyan
