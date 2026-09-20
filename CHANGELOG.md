@@ -32,6 +32,18 @@ were produced before this file existed and are not restated as changes.
   `tests/test_octave_compat.py` checks that the committed files are what the
   generator produces and that Octave parses them. Before this they were
   byte-identical to the MATLAB releases.
+- The Octave release files run **2.5 to 3 times faster** than when they first
+  ran, and every result is unchanged to the last bit. Part of it is in the patch
+  set (the touchstone reader, the floating-tap search, the ISI distribution
+  build, FFE, two `isequal` tests); the rest is `octave/accel/`, **optional
+  compiled kernels** for the three hottest loops, built once per machine with
+  `python octave/accel/build_accel.py` and used automatically from then on
+  (`COM_OCTAVE_ACCEL=0` turns them off, which is how the equivalence is
+  checked). The `.oct` is per Octave version and platform, so it is not
+  committed, and a build that does not match is ignored. Bit-identity is
+  enforced by `tests/test_octave_compat.py`, which compares the release's own
+  functions with the kernels off and on and fails on each of five planted
+  last-bit defects.
 - `tools/xlsx_to_com_mat.py` — a COM workbook as the `.mat` configuration
   Octave reads, with `--set KEY=VALUE` for the headless plumbing keywords.
 - `tools/octave_compare.py` — the same case through Octave and `python -m

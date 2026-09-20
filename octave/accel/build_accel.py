@@ -3,18 +3,27 @@
     python octave/accel/build_accel.py              # -> octave/com_octave_accel.oct
     python octave/accel/build_accel.py --octave PATH
 
-The release files (octave/com_ieee8023_<ver>_octave_compat.m) run on their own.
-With com_octave_accel.oct beside them, three hot loops run compiled instead and
-return exactly what the interpreted code returns; see com_octave_accel.cc for how
-that is kept true, and tests/test_octave_compat.py for the check. Set the
-environment variable COM_OCTAVE_ACCEL=0 to run without it.
+The release files (octave/com_ieee8023_<ver>_octave_compat.m) run on their own,
+interpreted, and this build is optional. Run it once per machine and
+com_octave_accel.oct lands beside them, where every later run finds it: three
+hot loops then run compiled, automatically, with no change to any command and no
+change to any result (about 1.4 to 1.9 times faster overall). Check with
 
-The build uses mkoctfile, which ships with Octave (and on Windows brings its own
-g++). One flag matters for correctness: -ffp-contract=off, so the compiler never
-fuses a*b+c into one rounding where the interpreter rounds twice. The .oct is
-built for one Octave version and platform and is not committed; rebuild after
-upgrading Octave. The release files check the kernel's version string and ignore a
-stale build.
+    octave-cli --eval "addpath('octave'); disp(com_octave_accel('version'))"
+
+which prints the version when the kernels are usable. COM_OCTAVE_ACCEL=0 in the
+environment runs interpreted whatever is built; see com_octave_accel.cc for how
+"no change to any result" is kept true and tests/test_octave_compat.py for the
+check that it is.
+
+The build needs mkoctfile, which ships with Octave, and a C++ compiler; the
+Windows Octave installer brings its own g++, so nothing else is needed there. One
+flag matters for correctness: -ffp-contract=off, so the compiler never fuses
+a*b+c into one rounding where the interpreter rounds twice. The .oct is built for
+one Octave version and platform and is not committed; rebuild after upgrading
+Octave, with no Octave session running, because Windows holds a loaded .oct open.
+A build that does not match, or does not load at all, is ignored: the release
+files check the kernel's version string and fall back to interpreted code.
 
 Copyright 2026 Todd Bermensolo
 SPDX-License-Identifier: BSD-3-Clause

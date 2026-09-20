@@ -175,9 +175,20 @@ python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p --next b.s4p --
 ```
 
 So a reader with a workbook, a channel and Octave can check this port against
-the reference code without a MATLAB licence. On the corpus case measured so far
-Octave and SiCoPR agree to 1e-14 dB, with Octave at about three times SiCoPR's
-run time. See [octave/README.md](octave/README.md).
+the reference code without a MATLAB licence. The two agree to 3.6e-14 dB across
+the 1368-case 4p16p0 workload, at about 2.5 times SiCoPR's run time.
+
+Optionally, `octave/accel/` holds C++ for the three hottest loops. It is not
+required and nothing changes until it is built:
+
+```powershell
+python octave/accel/build_accel.py     # once per machine
+```
+
+After that any Octave run that has `octave/` on its path uses it automatically,
+with the same command and byte-identical results, at about 1.5 times SiCoPR's
+run time. `COM_OCTAVE_ACCEL=0` turns it off. See
+[octave/README.md](octave/README.md).
 
 ## 4. Repository layout
 
@@ -193,7 +204,7 @@ run time. See [octave/README.md](octave/README.md).
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
-| `octave/` | the `4p15p0` and `4p16p0` releases made to run under GNU Octave, generated from `matlab/` by `make_octave_compat.py` with the patch set in `patches/` (§3) |
+| `octave/` | the `4p15p0` and `4p16p0` releases made to run under GNU Octave, generated from `matlab/` by `make_octave_compat.py` with the patch set in `patches/`, plus optional compiled kernels in `accel/` (§3) |
 | `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
 | `dev/` | audit and interface-check scripts, plus state ledgers |
 | `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |

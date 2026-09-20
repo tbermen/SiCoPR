@@ -157,6 +157,23 @@ else:
     # moves the maximum. The seed is 'state', not 'seed': 'seed' selects Octave's
     # old generator, whose values are all single precision, and the product of
     # two of those is exact, which hides a fused multiply-add completely.
+    # ---------------------------- a kernel that cannot be loaded is not fatal
+    # The kernels are optional and per machine, so the case to survive is a
+    # com_octave_accel.oct left over from another Octave version or another
+    # platform. Loading one is an error, not a false, so com_octave_accel_on
+    # catches it and the release runs its own interpreted code. Without that
+    # catch a run dies with "opening the library ... failed".
+    stale = tempfile.mkdtemp(prefix='sicopr_staleoct_')
+    io.open(os.path.join(stale, 'com_octave_accel.oct'), 'wb').write(b'not a loadable oct file')
+    ev = ("addpath('%s'); addpath('%s'); printf('ON %%d\\n', com_octave_accel_on());"
+          % (os.path.join(OCT, 'patches').replace('\\', '/'), stale.replace('\\', '/')))
+    q = subprocess.run([octave, '--no-gui', '--no-window-system', '--eval', ev],
+                       capture_output=True, text=True, timeout=300, errors='replace')
+    check("an_unloadable_compiled_kernel_is_ignored_not_fatal",
+          q.returncode == 0 and 'ON 0' in q.stdout,
+          "expected the release to fall back to interpreted code; Octave said:\n%s"
+          % (q.stdout + q.stderr).strip()[-400:])
+
     accel = os.path.join(OCT, 'com_octave_accel.oct')
     if not os.path.isfile(accel):
         print('\nnote: octave/com_octave_accel.oct not built; the kernel checks did not run '

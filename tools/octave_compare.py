@@ -27,6 +27,10 @@ gets a single BLAS thread so N workers do not each spin up 16.
 Every run leaves its evidence under `<out>/<id>/`: the converted config, the
 Octave log and result, and the SiCoPR results tree. Nothing is cleaned up.
 
+The Octave side runs about 1.6x faster if octave/com_octave_accel.oct has been
+built (python octave/accel/build_accel.py); it is picked up automatically, needs
+no flag here, and returns the same bits. COM_OCTAVE_ACCEL=0 runs without it.
+
 Copyright 2026 Todd Bermensolo
 SPDX-License-Identifier: BSD-3-Clause
 """

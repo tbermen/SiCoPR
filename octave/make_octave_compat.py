@@ -32,8 +32,9 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
     MMSE                    Rn = real(Rn) after the ifft
     MLSE_U1_c_178A          real() on the CDF_ev arguments
     read_ParamConfigFile    .csv configs read by csvread4com
-    MMSE_FOM, FFE           speed only: an elementwise test for isequal and an
-                            index expression for circshift, same results
+    MMSE_FOM, FFE           speed only: an elementwise test for isequal, and
+                            each FFE tap added in place instead of through a
+                            shifted copy; same results
     get_pdf_from_sampled_signal  speed only: its loop's two helpers inlined
   replaced for speed
     FOM_rxffe_floating_taps MMSE_FOM's search-mode work inlined, invariants
@@ -43,10 +44,13 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
     run compiled when com_octave_accel.oct is present; each returns exactly
     what the interpreted code returns, and COM_OCTAVE_ACCEL=0 turns them off
 
-Every replaced function is the version the three-way study ran on 208 cases
-against the MATLAB reference to 5e-14 dB, including the NaN filter the branch
-itself lacked. Nothing here changes a number under MATLAB: each edit is a no-op
-there, which is what makes the result a reference and not a fork.
+CDF_ev, COM_CommandLine_Parse and writecsv_transposed are the versions the
+three-way study ran on 208 cases against the MATLAB reference to 5e-14 dB. The
+reader is ours, because the branch's still uses textscan; so is the
+floating-tap search, which is a speed rewrite of the release's own. Nothing here
+changes a number under MATLAB: each edit is a no-op there, which is what makes
+the result a reference and not a fork. The speed items are checked under Octave,
+by running whole cases before and after and comparing every field of the result.
 
 The generated files are committed, like sicopr.py, so a reader needs no build
 step. `--check` is the test that they were not edited by hand.
@@ -324,12 +328,23 @@ def provenance(ver, src_rel, src_sha):
         '%%%% from %s (sha256 %s).' % (src_rel, src_sha),
         '%% Do not edit by hand; edit the patches and regenerate.',
         '%%',
-        '%% Changes from the release, each a no-op under MATLAB:',
-        '%%   replaced  CDF_ev (lookup), COM_CommandLine_Parse (OP.OCTAVE),',
-        '%%             read_Nport_touchstone (flat read, NaN filter), writecsv_transposed',
-        '%%   added     csvread4com',
-        '%%   edited    verLessThan guard; MMSE Rn=real(Rn); MLSE real() on CDF_ev args;',
-        '%%             .csv config via csvread4com',
+        '%% Changes from the release, each computing what the line it replaces',
+        '%% computes, and each a no-op under MATLAB:',
+        '%%   to run     CDF_ev (lookup, not find on a growing axis),',
+        '%%             COM_CommandLine_Parse (OP.OCTAVE), read_Nport_touchstone',
+        '%%             (the file read whole, no textscan), writecsv_transposed,',
+        '%%             csvread4com (added); verLessThan guard; MMSE Rn=real(Rn);',
+        '%%             MLSE real() on CDF_ev args; .csv config via csvread4com',
+        '%%   for speed  FOM_rxffe_floating_taps (the search inlined, invariants',
+        '%%             hoisted); get_pdf_from_sampled_signal (its two helpers',
+        '%%             inlined); FFE (taps added in place); MMSE_FOM (elementwise',
+        '%%             tests for isequal). Results are bit-identical: checked by',
+        '%%             running whole cases before and after and comparing every',
+        '%%             field of the result.',
+        '%% Optional, and not required to run this file: if com_octave_accel.oct',
+        '%% (octave/accel/, built by build_accel.py) is on the path, three hot loops',
+        '%% run compiled and return the same bits, about 1.4 to 1.9 times faster.',
+        '%% com_octave_accel_on (added) decides; COM_OCTAVE_ACCEL=0 turns it off.',
         '%% Configs: .mat (parameter cell array, see tools/xlsx_to_com_mat.py) or .csv.',
         '%%%% Version %s%s. Copyright 2025 802-COM Authors; changes Copyright 2026'
         % (ver, ' with adaptive local search' if 'adaptive' in src_rel else ''),

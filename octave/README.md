@@ -3,6 +3,17 @@
 The IEEE 802.3 COM reference code, made to run under GNU Octave, and the
 evidence behind it.
 
+**To run a case**, see [Running a case](#running-a-case): convert the workbook
+to a `.mat`, then call the release file. Nothing here needs building.
+
+**To make it faster**, build the optional compiled kernels once
+(`python octave/accel/build_accel.py`). Every later run finds them and is about
+1.4 to 1.9 times faster, with the same command and the same results, bit for
+bit. See [Optional compiled kernels](#optional-compiled-kernels).
+
+**To understand what was changed and why**, read on: the patch set is the point
+of this directory, and every item in it is a no-op under MATLAB.
+
 ## The two files
 
 | file | derived from | how |
@@ -13,7 +24,9 @@ evidence behind it.
 Until 2026-09-10 these were byte-identical to the MATLAB releases: files whose
 name promised Octave compatibility and whose content had none. They are now
 **generated** from `matlab/` by a small, named patch set, and committed so a
-reader needs no build step, the same arrangement as `sicopr.py`. Each carries a
+reader needs no build step, the same arrangement as `sicopr.py`. (The optional
+compiled kernels below are the one thing that is built, and the files run
+without them.) Each carries a
 provenance block after its licence header naming its source and the source's
 SHA-256. `tests/test_octave_compat.py` fails if a committed file is not what the
 generator produces, or if Octave cannot parse it.
@@ -56,6 +69,11 @@ reported upstream, still uses `textscan`. **Nothing in this table changes a
 number under MATLAB**: each edit is a no-op there, which is what makes the
 result a reference and not a fork.
 
+The generator also normalises function terminators: Octave requires that a file
+close every function with `end` or none, the release closes none, and the
+branch's stand-alone files are inconsistent. Getting this wrong is a parse error
+reported at the last line of a 12,000-line file.
+
 ## Speed, with every result unchanged
 
 Octave has no JIT, so its time goes to small calls made very often. The items
@@ -80,18 +98,46 @@ These are checked under Octave, where the files run. They are not checked
 under MATLAB, which is not on this machine; the correctness items above are
 the ones that must be no-ops there.
 
-## Optional compiled kernels (`accel/`)
+## Optional compiled kernels
 
-`accel/com_octave_accel.cc` runs three of the hottest loops compiled: the
-floating-tap search's candidate loop, the ISI distribution loop and FFE's tap
-loop. The release files work without it. When `com_octave_accel.oct` sits
-beside them, `com_octave_accel_on` (an added function) sends those loops to it
-instead.
+**Nothing here happens unless you build it.** The release files are complete on
+their own and run interpreted, as they always have. `accel/com_octave_accel.cc`
+is C++ for three of their hottest loops — the floating-tap search's candidate
+loop, the ISI distribution loop and FFE's tap loop — and building it puts
+`com_octave_accel.oct` beside the `.m` files. From then on those three loops run
+compiled **automatically**, on any run that has `octave/` on its path, with no
+change to the command, the configuration or the results.
 
 ```
-python octave/accel/build_accel.py        # -> octave/com_octave_accel.oct
-COM_OCTAVE_ACCEL=0                        # environment: run without it
+python octave/accel/build_accel.py     # once per machine -> octave/com_octave_accel.oct
 ```
+
+Is it in use? Ask the kernel itself; it answers only if it is built, loadable
+and the version the release files expect:
+
+```
+octave-cli --eval "addpath('octave'); disp(com_octave_accel('version'))"
+```
+
+A version string means the release files will use it. `error: 'com_octave_accel'
+undefined` means they will not, and will run interpreted.
+
+To run without it, set `COM_OCTAVE_ACCEL=0` in the environment before starting
+Octave (the release decides once per session, on its first COM call). That is
+the switch the equivalence check uses, and the one to reach for if a result ever
+looks suspect: the same case with the kernels off must give the same numbers.
+
+What you need to build it: `mkoctfile`, which comes with Octave, and a C++
+compiler. The Windows Octave installer brings its own `g++`, so nothing else is
+needed there; on Linux or macOS install the compiler the usual way. Built and
+measured here on Octave 11.3, Windows.
+
+The `.oct` is built for one Octave version and platform, so **it is not
+committed and there is no prebuilt binary to download**. Rebuild it after
+upgrading Octave: the release files check the version string, and ignore a
+build that does not match or does not load, falling back to interpreted code
+rather than failing. On Windows, Octave holds a loaded `.oct` open, so rebuild
+with no Octave session using it.
 
 The kernels return **exactly** what the interpreted code returns, byte for
 byte. The constraint shapes the design:
@@ -114,7 +160,7 @@ of the search and a distribution whose tail goes subnormal. The check was
 proven by planting five last-bit defects (a reassociated product, two
 summation orders reversed, a build with fused multiply-add allowed, and the
 convolution shortcut without its exactness check), and it fails on each. It
-uses full-precision inputs:
+uses full-precision inputs, which matters more than it sounds:
 Octave's `randn('seed', ...)` selects an old generator whose values are all
 single precision, and the product of two of those is exact, which hides a
 fused multiply-add completely. The first version of the check had exactly that
@@ -126,16 +172,6 @@ byte-identical with the kernels off and on: the kernels alone are 1.36 to
 3 times faster than it was before any speed item (1368-case `wo_C1_R001`:
 1418 s to 561 s). On that case Octave now takes 1.5 times
 SiCoPR's time (451 s against 299 s, one `tools/octave_compare.py` run).
-
-The `.oct` is built for one Octave version and platform, so it is not
-committed. The release files ask it for its version string and ignore a
-build that does not match. On Windows, Octave holds a loaded `.oct` open, so
-rebuild with no Octave session using it.
-
-The generator also normalises function terminators: Octave requires that a file
-close every function with `end` or none, the release closes none, and the
-branch's stand-alone files are inconsistent. Getting this wrong is a parse error
-reported at the last line of a 12,000-line file.
 
 ## Running a case
 
@@ -152,24 +188,42 @@ or let `tools/octave_compare.py` do both sides and the comparison:
 python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p b.s4p --next c.s4p --version 4p15p0
 ```
 
+**The command is the same with or without the compiled kernels.** The
+`addpath('octave')` above is what finds them, since `com_octave_accel.oct` is
+built into that directory, so a run picks them up with no flag once they are
+built and ignores them when they are not. `COM_OCTAVE_ACCEL=0` in the
+environment runs interpreted whatever is built. Same for `octave_compare.py`
+and any harness that puts `octave/` on the path.
+
 Set `OPENBLAS_NUM_THREADS=1` and `OMP_NUM_THREADS=1` when running several
 Octave cases at once: COM under Octave is loop-bound, and one BLAS thread per
-process is what lets N processes use N cores.
+process is what lets N processes use N cores. Memory, not CPU, is the limit on
+how many fit: about 0.3 GB for a case without crosstalk and up to 1.2 GB with
+it.
 
 ## Measured
 
-One 208-corpus case (the sender's acceptance channel, KR package A case 1,
-without crosstalk), on this machine, 2026-09-10:
+**Agreement.** One 208-corpus case (the sender's acceptance channel, KR package
+A case 1, without crosstalk), on this machine, 2026-09-10:
 
-| | COM_dB | wall |
+| | COM_dB |
+|---|---|
+| MATLAB reference (4p15p0, sender's machine) | 3.96618396709908 |
+| SiCoPR, `python -m sicopr` | 3.9661839670990786 |
+| Octave 11.3, `..._4p16p0_octave_compat.m` | 3.96618396709909 |
+
+Since then, on the 1368-case 4p16p0 workload, **Octave and SiCoPR agree within
+3.6e-14 dB on every case compared** (1299 of 1368 at the time of writing). The subset
+comparison across channel families and configurations is the
+`octave-sicopr-correlation` study in the `si-studies` repository.
+
+**Speed**, per case, same machine, one BLAS thread each:
+
+| | Octave against SiCoPR | measured |
 |---|---|---|
-| MATLAB reference (4p15p0, sender's machine) | 3.96618396709908 | unknown |
-| SiCoPR, `python -m sicopr` | 3.9661839670990786 | 44 s |
-| Octave 11.3, `..._4p16p0_octave_compat.m` | 3.96618396709909 | 147 s |
-
-Octave at about 3.3 times SiCoPR's time, the ratio the three-way study measured
-on the branch. The subset comparison across channel families and configurations
-is the `octave-sicopr-correlation` study in the `si-studies` repository.
+| before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
+| interpreted, speed items in | about 2.5x | the row below, times the 1.67x the kernels give on that case |
+| **with the compiled kernels** | **about 1.5x** | 451 s against 299 s, 1368-case `wo_C1_R001` |
 
 ## What is in this directory, and what left it
 
@@ -178,8 +232,8 @@ is the `octave-sicopr-correlation` study in the `si-studies` repository.
 | `com_ieee8023_*_octave_compat.m` | the two generated files, committed |
 | `make_octave_compat.py` | the generator |
 | `patches/` | **the source.** The generator reads these; without them nothing can be regenerated and `--check` cannot run. Not spare parts |
-| `accel/` | the optional compiled kernels' source and `build_accel.py` |
-| `com_octave_accel.oct` | built by `build_accel.py`, never committed |
+| `accel/` | the optional compiled kernels: `com_octave_accel.cc` and `build_accel.py`. Nothing here runs until you build it |
+| `com_octave_accel.oct` | what that build produces, beside the `.m` files where a run finds it. Per machine, never committed, safe to delete |
 | `README.md` | this file |
 
 `shims/` and `shims_B/` **moved out on 2026-09-10**, to
@@ -213,3 +267,8 @@ The two generated files and everything in `patches/` derive from the COM
 reference code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`, headers
 intact. The generator and the changes it applies are
 `Copyright 2026 Todd Bermensolo` under the same licence.
+
+`accel/com_octave_accel.cc` translates three of the release's own loops into
+C++, so it is derived work as well and carries both notices.
+`patches/com_octave_accel_on.m`, which decides whether the kernels are used, is
+original and carries only ours. `NOTICE` records all of this.

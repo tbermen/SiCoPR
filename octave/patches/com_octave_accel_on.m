@@ -33,17 +33,26 @@ function on = com_octave_accel_on()
 % SPDX-License-Identifier: BSD-3-Clause
 %
 % ADDED (2026-09-18): whether the optional compiled kernels are to be used.
-% True only under Octave, when com_octave_accel.oct is on the path, reports the
-% version this file was written against, and COM_OCTAVE_ACCEL is not '0'. The
-% kernels return exactly what the interpreted code returns (octave/accel/), so
-% this changes run time, never a result; COM_OCTAVE_ACCEL=0 is how that is
-% checked. Decided once per session.
+% True only under Octave, when com_octave_accel.oct is on the path, loads, and
+% reports the version this file was written against, and COM_OCTAVE_ACCEL is not
+% '0'. The kernels return exactly what the interpreted code returns
+% (octave/accel/), so this changes run time, never a result; COM_OCTAVE_ACCEL=0
+% is how that is checked. Decided once per session.
+%
+% A .oct built for another Octave version or another platform fails to load, and
+% that is an error, not a false: hence the try. Anything the kernel is not sure
+% about leaves the release running its own interpreted code, which is the whole
+% point of keeping it optional.
 persistent cached
 if isempty(cached)
     cached = false;
     if exist('OCTAVE_VERSION', 'builtin') && exist('com_octave_accel', 'file') == 3 ...
             && ~strcmp(getenv('COM_OCTAVE_ACCEL'), '0')
-        cached = strcmp(com_octave_accel('version'), 'com_octave_accel 1 (2026-09-18)');
+        try
+            cached = strcmp(com_octave_accel('version'), 'com_octave_accel 1 (2026-09-18)');
+        catch
+            cached = false;
+        end
     end
 end
 on = cached;

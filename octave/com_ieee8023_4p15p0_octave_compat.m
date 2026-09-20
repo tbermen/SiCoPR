@@ -36,12 +36,23 @@ function results=com_ieee8023_(varargin)
 %% from matlab/com_ieee8023_4p15p0_adaptive_local_search.m (sha256 56c11a4aa24597620f0affe9d8442f930e0964967ed9d4a53c0a287221c0f73e).
 %% Do not edit by hand; edit the patches and regenerate.
 %%
-%% Changes from the release, each a no-op under MATLAB:
-%%   replaced  CDF_ev (lookup), COM_CommandLine_Parse (OP.OCTAVE),
-%%             read_Nport_touchstone (flat read, NaN filter), writecsv_transposed
-%%   added     csvread4com
-%%   edited    verLessThan guard; MMSE Rn=real(Rn); MLSE real() on CDF_ev args;
-%%             .csv config via csvread4com
+%% Changes from the release, each computing what the line it replaces
+%% computes, and each a no-op under MATLAB:
+%%   to run     CDF_ev (lookup, not find on a growing axis),
+%%             COM_CommandLine_Parse (OP.OCTAVE), read_Nport_touchstone
+%%             (the file read whole, no textscan), writecsv_transposed,
+%%             csvread4com (added); verLessThan guard; MMSE Rn=real(Rn);
+%%             MLSE real() on CDF_ev args; .csv config via csvread4com
+%%   for speed  FOM_rxffe_floating_taps (the search inlined, invariants
+%%             hoisted); get_pdf_from_sampled_signal (its two helpers
+%%             inlined); FFE (taps added in place); MMSE_FOM (elementwise
+%%             tests for isequal). Results are bit-identical: checked by
+%%             running whole cases before and after and comparing every
+%%             field of the result.
+%% Optional, and not required to run this file: if com_octave_accel.oct
+%% (octave/accel/, built by build_accel.py) is on the path, three hot loops
+%% run compiled and return the same bits, about 1.4 to 1.9 times faster.
+%% com_octave_accel_on (added) decides; COM_OCTAVE_ACCEL=0 turns it off.
 %% Configs: .mat (parameter cell array, see tools/xlsx_to_com_mat.py) or .csv.
 %% Version 4p15p0 with adaptive local search. Copyright 2025 802-COM Authors; changes Copyright 2026
 %% Todd Bermensolo. SPDX-License-Identifier: BSD-3-Clause
@@ -12636,17 +12647,26 @@ function on = com_octave_accel_on()
 % SPDX-License-Identifier: BSD-3-Clause
 %
 % ADDED (2026-09-18): whether the optional compiled kernels are to be used.
-% True only under Octave, when com_octave_accel.oct is on the path, reports the
-% version this file was written against, and COM_OCTAVE_ACCEL is not '0'. The
-% kernels return exactly what the interpreted code returns (octave/accel/), so
-% this changes run time, never a result; COM_OCTAVE_ACCEL=0 is how that is
-% checked. Decided once per session.
+% True only under Octave, when com_octave_accel.oct is on the path, loads, and
+% reports the version this file was written against, and COM_OCTAVE_ACCEL is not
+% '0'. The kernels return exactly what the interpreted code returns
+% (octave/accel/), so this changes run time, never a result; COM_OCTAVE_ACCEL=0
+% is how that is checked. Decided once per session.
+%
+% A .oct built for another Octave version or another platform fails to load, and
+% that is an error, not a false: hence the try. Anything the kernel is not sure
+% about leaves the release running its own interpreted code, which is the whole
+% point of keeping it optional.
 persistent cached
 if isempty(cached)
     cached = false;
     if exist('OCTAVE_VERSION', 'builtin') && exist('com_octave_accel', 'file') == 3 ...
             && ~strcmp(getenv('COM_OCTAVE_ACCEL'), '0')
-        cached = strcmp(com_octave_accel('version'), 'com_octave_accel 1 (2026-09-18)');
+        try
+            cached = strcmp(com_octave_accel('version'), 'com_octave_accel 1 (2026-09-18)');
+        catch
+            cached = false;
+        end
     end
 end
 on = cached;

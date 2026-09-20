@@ -25,6 +25,10 @@
 // the interpreted code, and a release is compared end to end with the kernels
 // on and off (COM_OCTAVE_ACCEL=0 turns them off).
 //
+// The three loops are translated from the COM reference code's own, operation
+// for operation, so this is derived work and carries the upstream notice too.
+//
+// Copyright 2025 802-COM Authors
 // Copyright 2026 Todd Bermensolo
 // SPDX-License-Identifier: BSD-3-Clause
 
