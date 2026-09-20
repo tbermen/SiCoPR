@@ -37,7 +37,8 @@ confirmed: without-crosstalk on the base workbooks, with-crosstalk on the
 | rms ΔCOM | **1.1e-14 dB** |
 | pass/fail disagreements at 3 dB | **0** |
 
-**Re-verified 2026-08-31** on the engine at `bf41d64`: all 208 cases re-run from
+**Re-verified 2026-08-31** on the engine at `a1c504c` ("Re-verify the 208-case
+correlation, and date the claim"): all 208 cases re-run from
 scratch, 208 ok / 0 errored, every figure in this table reproduced, and every
 per-case COM, FOM and `itick` **bit-identical to the previous run** rather than
 merely within tolerance. Five engine commits had landed since the previous

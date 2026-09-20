@@ -44,7 +44,8 @@ each alone was insufficient:
 | 2 | 1584 candidates | **10 of 10** |
 
 At floor 2 the ten agree on the same tap vector, the same `itick`, and FOM to
-≤ 2.3e-11. Commit `19f7d4d`.
+≤ 2.3e-11. Commit `1679aa7` ("resolve: all 10 Tx FFE cases reproduce MATLAB —
+grid AND radius floor").
 
 **Corroborating — the floor is the only candidate mechanism.** The full
 4p15p0-vs-4p16p0 comparison over all 208 cases found `COM`, `FOM`, `VEO`, `VEC`,

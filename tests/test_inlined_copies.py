@@ -1,8 +1,9 @@
 """Differential test: inlined copies of a function must behave like the original.
 
 The assembler inlines helper functions into their callers, so one MATLAB
-function can exist as many Python copies. There are currently 178 such copies
-of 70 functions. A fix applied to `com_functions/fn/<name>/py_impl.py` reaches
+function can exist as many Python copies. There are currently 177 such copies
+of 70 functions, and this test prints the count it actually found, so the two
+cannot drift apart unnoticed. A fix applied to `com_functions/fn/<name>/py_impl.py` reaches
 the CANONICAL copy only -- every inlined one keeps the old behaviour, silently.
 
 That is not hypothetical. Engine defect #6 of the 208-case MATLAB correlation
@@ -11,13 +12,13 @@ fixed in THREE inlined copies. The per-function unit tests never saw it: they
 import `py_impl.py` and exercise the canonical version, which is the one copy
 that was already right.
 
-Comparing source text does not work -- 139 of the 178 copies differ textually
+Comparing source text does not work -- most of the copies differ textually
 for legitimate reasons (deliberate stubs, cosmetic rewrites, renamed
 parameters). So this compares BEHAVIOUR: drive both copies with identical
 inputs and diff the numeric output.
 
 Two layers:
-  A. arity parity for all 178 copies, pinned to a reviewed baseline
+  A. arity parity for every copy, pinned to a reviewed baseline
   B. behavioural differential for every copy that can be driven synthetically
 
 Run: python tests/test_inlined_copies.py

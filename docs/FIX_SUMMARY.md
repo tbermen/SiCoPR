@@ -51,15 +51,17 @@ on 2026-08-24 ([`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md)).
 
 Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 
-**Last re-verified 2026-08-31** against the engine at commit `bf41d64`: all 208
+**Last re-verified 2026-08-31** against the engine at commit `a1c504c`
+("Re-verify the 208-case correlation, and date the claim"): all 208
 cases re-run from scratch (3.2 h on five workers with the local comparison
 harness — README §1), 208 ok / 0 errored. Every figure above reproduced, and
 **every per-case COM, FOM and `itick` was bit-identical to the previous run** — not
 merely within tolerance of MATLAB, but the same float.
 
 That re-run was not a formality. Five engine commits had landed since the previous
-comparison (2026-08-28 04:58), two of which could move a number: `41a5d3e` made all
-39 `argsort` calls stable, and `13b6974` fixed a `round()` on an integer ratio. Both
+comparison (2026-08-28 04:58), two of which could move a number: `a906a79` ("sort
+stability") made all 39 `argsort` calls stable, and `6ea5d3f` ("close ledger #16's
+class") fixed a `round()` on an integer ratio. Both
 are the kind of change that flips a winner on an exact tie. **Neither moved anything
 on this corpus**, which is what the ledger predicted for them and is now measured
 rather than assumed. The standing caveat applies: this corpus is one channel family,

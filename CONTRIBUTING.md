@@ -155,7 +155,9 @@ it has neither. This is not belt-and-braces: a mangled escape sequence shipped
 exactly that failure once.
 
 **The server reads and writes files by path and spawns processes.** Every path
-parameter is containment-checked against the repo, file types are whitelisted,
+parameter is containment-checked against the roots the user gave it (the repo,
+`--dir`/`--run-dir`/`SICOPR_DIRS`, and directories opened in the session; see
+`_safe_path` in `gui/app.py`), file types are whitelisted,
 and commands are built as argv lists without a shell. If you add an endpoint
 that takes a path, add the guard and a test that plants a real file outside the
 repo — a test that asks for a *non-existent* outside path passes whether or not

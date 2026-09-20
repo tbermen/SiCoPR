@@ -16,16 +16,21 @@
 ## TL;DR
 **Feature-complete for the standard FD-based COM flow, and past the stub stage.** Every
 MATLAB 4p15p0 function has a Python implementation (157 registry functions; `LFSR` is
-inlined inside `PRBS13Q`). **886 unit tests pass (0 fail)**; the bundled 802.3ck C2M
-config runs end to end. (It produced Case 1 = 3.5664 dB, Case 2 = 3.0184 dB when this
+inlined inside `PRBS13Q`). **886 unit tests pass (0 fail)**; an 802.3ck C2M config ran
+end to end (a local file; no configuration is bundled with the repository). (It produced Case 1 = 3.5664 dB, Case 2 = 3.0184 dB when this
 was written; the August 2026 engine fixes moved those to 3.4694 and 2.9331 dB.) The items that were "true stubs" or "unwired dispatch" in
 the previous revision of this doc (RxFFE, floating taps, causality, Rx quantization,
 TD-ILN, COM pie plot) are **now implemented and wired** — see §A/§B.
 
 **The remaining work is verification, not implementation:**
-1. **No bit-for-bit MATLAB numeric parity** yet (no MATLAB reference run was available).
+1. ~~**No bit-for-bit MATLAB numeric parity** yet (no MATLAB reference run was available).
    All verification to date is translation fidelity + unit tests + internal consistency +
-   e2e stability. This is the single biggest open item — see §E.
+   e2e stability. This is the single biggest open item — see §E.~~
+   **No longer true, and the reason this document is a snapshot.** Parity against 208
+   MATLAB reference cases was established in August 2026: COM bit-exact on 198 of 208 and
+   exact on all 104 without crosstalk, with the remaining ten explained by a
+   configuration mismatch rather than an engine defect. See
+   [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md) and README §7.
 2. **A large implemented-but-unexercised feature surface** (crosstalk, MLSE, RxFFE,
    floating DFE, ERL, FD ICN/ILD, calibration, modal masks, quantization) — code + unit
    tests exist, but no config/channel in-repo triggers them end-to-end — see §D.

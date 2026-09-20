@@ -89,8 +89,8 @@ to support.
 
 The channels themselves are public: the sets used come from the IEEE 802.3dj public
 area, and the configuration workbooks from the COM ad hoc. To run SiCoPR you need a
-COM configuration workbook and at least one Touchstone channel; §4 shows the command
-and §3 the editor for building a config.
+COM configuration workbook and at least one Touchstone channel; §3 shows the command,
+and the editor for building a config.
 
 ## 2. Install
 
@@ -102,7 +102,10 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Nothing to build — the tool runs directly from `sicopr.py`. Python 3.9+ (developed on 3.14).
+Nothing to build — the tool runs directly from `sicopr.py`. Python 3.10+ (developed on
+3.14; `pyproject.toml` is the authority, CI runs 3.12). `pip install -e .` instead of
+`requirements.txt` also works, and is what makes `python -m sicopr` run from any
+directory.
 
 The R reports additionally need, inside R:
 
@@ -122,7 +125,7 @@ FEXT, `--next` for NEXT, each accepting multiple files.
 
 | flag | what it does |
 |---|---|
-| `--export-mat` | per-case engineering `.mat` snapshot for the R dashboard (§10) |
+| `--export-mat` | per-case engineering `.mat` snapshot for the R dashboard (§11) |
 | `--matlab-version` | which MATLAB release to emulate — **default `4p15p0`** (§8) |
 | `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. MATLAB gates the eye on `MLSE == 0`, but MLSE is applied afterwards, so the pre-MLSE eye is well defined. Diagnostic only: no reported value changes. |
 
@@ -175,8 +178,9 @@ python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p --next b.s4p --
 ```
 
 So a reader with a workbook, a channel and Octave can check this port against
-the reference code without a MATLAB licence. The two agree to 3.6e-14 dB across
-the 1368-case 4p16p0 workload, at about 2.5 times SiCoPR's run time.
+the reference code without a MATLAB licence. The two agree to **3.6e-14 dB on all
+1368 cases** of the 4p16p0 workload (2026-09-19), with the same sampling phase on
+every one, at about 2.5 times SiCoPR's run time.
 
 Optionally, `octave/accel/` holds C++ for the three hottest loops. It is not
 required and nothing changes until it is built:
@@ -199,13 +203,13 @@ run time. `COM_OCTAVE_ACCEL=0` turns it off. See
 | `com_functions/fn/<name>/test_verify.py` | per-function unit tests |
 | `assemble_sicopr.py` | concatenates the `py_impl.py` files into `sicopr.py` |
 | `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `sicopr.py`, so they live beside it |
-| `tools/` | study layer (§5) plus the MATLAB-comparison harness, the version differ, and the oracle extractor (§6) |
+| `tools/` | study layer (§5), the Octave bridge (`octave_compare.py`, `xlsx_to_com_mat.py`) and the version differ (§6). The MATLAB-comparison harness is **not** here: it is kept with the data it needs (§1) |
 | `gui/` | the config editor — a local web app for building configs from a schematic view (§3) |
 | `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
 | `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
 | `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
 | `octave/` | the `4p15p0` and `4p16p0` releases made to run under GNU Octave, generated from `matlab/` by `make_octave_compat.py` with the patch set in `patches/`, plus optional compiled kernels in `accel/` (§3) |
-| `docs/` | audit findings, fix summary, feature plan, 4p16p0 change analysis + measured impact |
+| `docs/` | the evidence and the history behind the numbers — correlation, fix ledger, closed root causes, dated snapshots. [`docs/README.md`](docs/README.md) says which is which |
 | `dev/` | audit and interface-check scripts, plus state ledgers |
 | `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |
 
@@ -359,7 +363,9 @@ argument for treating the remaining 41 as unverified rather than as probably-fin
 time this harness has been pointed at more copies, it has found more divergences.
 
 `com_functions/inlined_copies.json`, written by the assembler, records where every copy came
-from — which helper, which caller, and the upstream MATLAB line range of each.
+from — which helper, which caller, and the upstream MATLAB line range of each. It counts a
+wider population than the 177 above: 280 copies of 71 helpers, because it also lists
+private helpers that have no canonical top-level function to compare against.
 
 The practical risk is not in what runs today. It is that a future caller which forgets to
 inject would silently get the approximation, with no error and a plausible number.
@@ -373,7 +379,7 @@ by re-introducing it — a check that has never failed for the right reason is n
 | script | guards against | why |
 |---|---|---|
 | `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and six of the fifteen engine fixes overall. Caught a new instance during the 4p16p0 port. |
-| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **178 copies of 70 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
+| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **177 copies of 70 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
 | `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the hoisted Gram matrix, FFT/direct convolution agreement, shared buffers. Found a live cache-aliasing defect. |
 | `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks — the only tests in the repo that assert against MATLAB rather than against Python. The oracle file itself is not tracked (it *is* reference data); the test skips without it. |
 | `test_abort_path_leaks.py` | writing into a caller's struct before an early return | the sibling of the leak above that the leak guard cannot see: the function *does* return the struct, but commits values on a path MATLAB never commits on. Ledger #10b. |
@@ -425,10 +431,9 @@ Each crosstalk condition runs on the configuration its own MATLAB reference was 
 with: the without-crosstalk cases on the base workbooks, the with-crosstalk cases on the
 workbooks that sweep the Tx FFE. **That pairing was confirmed by the COM maintainer on
 2026-08-24**, so it is the configuration, not one reading among several. Produced with
-(local tooling, not part of this repository — §1):
-
-Run with the local comparison harness (§1): resolve the case set, run all 208
-with modal ERL across five workers, then export the comparison table.
+the local comparison harness, which is not part of this repository (§1): it resolves
+the case set, runs all 208 with modal ERL across five workers, then exports the
+comparison table.
 
 Getting there took **seventeen** engine-level and settings findings, each with what it
 bought recorded in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md); the full write-up is
@@ -453,8 +458,10 @@ Honest caveats for anyone relying on the numbers:
 
 - **No MATLAB-vs-Python runtime comparison is offered.** The timings that exist were taken
   on different machines and, at the time, on different search spaces. The Python-vs-Python
-  speed-up (5.4× on identical work, every output field bit-identical) is unaffected by that
-  and is the only speed claim made.
+  speed-up (**roughly 4.5–5× on identical work**, every output field bit-identical) is
+  unaffected by that and is the only speed claim made. It is a range, not a figure: repeat
+  runs of the same build varied by ±13%, as
+  [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md) records.
 - **Results produced before August 2026 are not comparable to current output.** The engine
   fixes changed COM materially — the largest removed a systematic FOM bias affecting 95.7%
   of cases. Regenerate rather than comparing against archived numbers.

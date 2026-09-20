@@ -32,8 +32,9 @@ were produced before this file existed and are not restated as changes.
   `tests/test_octave_compat.py` checks that the committed files are what the
   generator produces and that Octave parses them. Before this they were
   byte-identical to the MATLAB releases.
-- The Octave release files run **2.5 to 3 times faster** than when they first
-  ran, and every result is unchanged to the last bit. Part of it is in the patch
+- The Octave release files run **2.5 to 3 times faster than the same files before
+  this work** (one 4p16p0 case: 1418 s to 561 s; one 4p15p0 case: 137 s to 46 s),
+  and every result is unchanged to the last bit. Part of it is in the patch
   set (the touchstone reader, the floating-tap search, the ISI distribution
   build, FFE, two `isequal` tests); the rest is `octave/accel/`, **optional
   compiled kernels** for the three hottest loops, built once per machine with

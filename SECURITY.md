@@ -10,8 +10,10 @@ requests and stores no credentials.
 One component is different and worth knowing about: the optional configuration
 editor under `gui/` runs a local HTTP server, reads and writes files by path,
 and **spawns `sicopr.py` as a subprocess**. It binds to `127.0.0.1` only. Every
-path parameter is checked to be inside the repository, file types are
-restricted, and commands are built as argument lists without a shell. It is
+path parameter is checked to be inside one of the roots the user gave it — the
+repository, any directory passed with `--dir`/`--run-dir` or `SICOPR_DIRS`, and
+any directory opened in the session — file types are restricted, and commands
+are built as argument lists without a shell. It is
 built for a single local user and should not be exposed to a network.
 
 ## Reporting a vulnerability

@@ -26,7 +26,8 @@ appear. Nothing is remembered between restarts.
 To start with directories already open:
 
 ```
-python gui/app.py --dir G:\si\data --run-dir G:\si\runs
+python gui/app.py --dir C:\com\data --run-dir C:\com\runs
+# python gui/app.py --dir ~/com/data --run-dir ~/com/runs      # macOS / Linux
 ```
 
 `--dir` opens a directory (repeatable; `SICOPR_DIRS` takes a `;`-separated

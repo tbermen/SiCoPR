@@ -212,10 +212,11 @@ A case 1, without crosstalk), on this machine, 2026-09-10:
 | SiCoPR, `python -m sicopr` | 3.9661839670990786 |
 | Octave 11.3, `..._4p16p0_octave_compat.m` | 3.96618396709909 |
 
-Since then, on the 1368-case 4p16p0 workload, **Octave and SiCoPR agree within
-3.6e-14 dB on every case compared** (1299 of 1368 at the time of writing). The subset
-comparison across channel families and configurations is the
-`octave-sicopr-correlation` study in the `si-studies` repository.
+Since then, on a 1368-case 4p16p0 workload (171 channels, four configurations,
+with and without crosstalk), **Octave and SiCoPR ran every case and agree within
+3.6e-14 dB on all 1368**, with the same sampling phase on every one
+(2026-09-19). The earlier subset comparison across channel families is held
+privately with the channels it needs and is not published.
 
 **Speed**, per case, same machine, one BLAS thread each:
 
@@ -236,18 +237,17 @@ comparison across channel families and configurations is the
 | `com_octave_accel.oct` | what that build produces, beside the `.m` files where a run finds it. Per machine, never committed, safe to delete |
 | `README.md` | this file |
 
-`shims/` and `shims_B/` **moved out on 2026-09-10**, to
-`studies/octave-three-way/harness/`. They were path overrides: files placed
+`shims/` and `shims_B/` **moved out on 2026-09-10**, into the private study tree
+that is their only caller. They were path overrides: files placed
 earlier on Octave's search path so they shadowed the reference code's own
 versions. That was the only way to change a monolithic release file from
 outside, and it is why the third blocker ended the attempt, since `MMSE` is a
 local subfunction that nothing on the path can shadow. Generating the file
 removed the need for the technique entirely.
 
-They still have one job, which is why they were moved rather than deleted: the
-`octave-three-way` study's two arms are defined by them, and that study's
-2026-09-04 release is the ad hoc deliverable. They now live beside the harness
-that is their only caller.
+They still have one job, which is why they were moved rather than deleted: they
+define the two arms of the three-way comparison study, which is held privately
+with the channels it needs.
 
 One rule survives them, because it is about Octave rather than about shims:
 `addpath` **prepends**, so a directory added last ends up searched first.
