@@ -68,10 +68,11 @@ generated figures and result files are either derived from that data or
 produced by running on it, and are excluded on the same grounds. CI enforces the
 exclusion so none of it drifts back in. The COM configuration workbooks are a
 different case: each carries a `License Notice` sheet placing it under the same
-BSD-3-Clause licence as the reference code, so they may be redistributed. They
-are still not in this repository today, only because nothing here needs them
-yet; a runnable example built on them and on channels a reader fetches from the
-IEEE public area is a possible future addition.
+BSD-3-Clause licence as the reference code, so they may be redistributed. One of
+them ships, in [`examples/`](examples/), together with the results both engines
+produced on it and the SHA-256 of each channel file it needs — so the one thing
+you have to fetch yourself is the channel, and you can tell whether you fetched
+the right one.
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
 passes — 890 per-function tests plus the cross-check scripts — and every test that
@@ -88,9 +89,14 @@ reasonable thing to do, and is what the numbers in §7 are stated precisely enou
 to support.
 
 The channels themselves are public: the sets used come from the IEEE 802.3dj public
-area, and the configuration workbooks from the COM ad hoc. To run SiCoPR you need a
-COM configuration workbook and at least one Touchstone channel; §3 shows the command,
-and the editor for building a config.
+area — [the channel and tool page](https://www.ieee802.org/3/dj/public/tools/index.html)
+lists the CR and KR contributions by name — and the configuration workbooks from the
+COM ad hoc. To run SiCoPR you need a COM configuration workbook and at least one
+Touchstone channel; §3 shows the command, and the editor for building a config.
+
+**The shortest path from a clone to a number** is [`examples/`](examples/): a
+workbook, one named channel to download, and a script that runs the case and checks
+what it got against the values both engines already produced on it.
 
 ## 2. Install
 
@@ -114,6 +120,9 @@ install.packages(c("plotly", "htmltools", "jsonlite", "R.matlab"))
 ```
 
 ## 3. Run
+
+New here? [`examples/`](examples/) runs a real case end to end — one download, one
+command, and it tells you whether your result matches the one in the repository.
 
 ```powershell
 python sicopr.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...]

@@ -10162,8 +10162,19 @@ num_ports = str2double(regexp(extension,'\d+','match','once'));
 % Reading the file's text whole reads every file in the corpus completely, and
 % subsumes the earlier blank-line shim (approved Gate 3c): blank lines are
 % only whitespace between tokens, so the NaN-per-blank-line stream that shim
-% filtered never arises. For any file the old reader read in full, the values
-% are the same text parsed to the same doubles, so results do not move.
+% filtered never arises.
+%
+% SECOND DEFECT, measured 2026-09-20: Octave's textscan does not only stop
+% early, it also PARSES INACCURATELY. On real touchstone text its '%f' lands up
+% to one ulp from the nearest double: of twelve values taken from an 802.3dj
+% channel, nine differed from the correctly rounded value, while str2double
+% matched all twelve. So even a file the old reader read in full came back with
+% last-bit-wrong S-parameters. Reading one 10001-point channel both ways,
+% 151195 of 160016 complex entries differ, worst 2.5e-16 absolute (7.3e-16
+% relative). That is small and it is not nothing: through the FD metrics it
+% shows up around 1e-12, and on COM around 1e-14. An earlier version of this
+% comment claimed the two readers parsed the same text to the same doubles.
+% That was assumed, not measured, and it was wrong.
 %
 % SPEED (2026-09-18): the tokens are split with regexp and parsed with
 % str2double. The first version of this fix parsed with sscanf over a rejoined
