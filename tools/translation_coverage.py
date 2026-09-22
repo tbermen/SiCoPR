@@ -40,9 +40,18 @@ DEFAULT_REF = os.path.join(_ROOT, 'matlab', 'com_ieee8023_4p16p0.m')
 
 # a test that quotes the reference, rather than a reading of it
 ORACLE_MARKS = ('COM Octave', 'octave_oracle', 'COM_Octave')
-# an assertion that pins a value rather than a shape or a type
+# An assertion that pins a VALUE rather than a shape or a type.
+#
+# Floats and array comparisons are obvious. Integer and string equality counts
+# too: several functions return a decision -- a skip flag, a chosen index, a
+# field name -- and `assert skip_it == 1` pins that as surely as a float does.
+# What does not count is equality against a length or a shape, which is
+# structural however it is written.
 VALUE = re.compile(r'\d+\.\d|\de-\d|\de\+\d|approx|allclose|isclose'
-                   r'|assert_array|assert_almost|== \[|== _OCT|_OCT\w*\[')
+                   r'|assert_array|assert_almost|== \[|== _OCT|_OCT\w*\['
+                   r"|[=!]= *-?\d|[=!]= *'|[=!]= *\"|is True|is False")
+STRUCTURAL = re.compile(r'len\(|\.shape|\.size|\.ndim|isinstance|hasattr'
+                        r'|in vars\(|\.dtype')
 # things MATLAB provides that are not translated functions
 BUILTIN = set('''if else elseif end for while switch case otherwise function return
  zeros ones length size abs real imag sum max min exp sqrt log log10 find isempty
@@ -129,7 +138,8 @@ def survey(ref=DEFAULT_REF):
             checks = re.findall(r'assert [^\n]*|pytest\.raises\([^\n]*'
                                 r'|np\.testing\.[^\n]*', src)
             r['checks'] = len(checks)
-            r['value_checks'] = sum(1 for c in checks if VALUE.search(c))
+            r['value_checks'] = sum(1 for c in checks
+                                    if VALUE.search(c) and not STRUCTURAL.search(c))
             r['oracle'] = any(k in src for k in ORACLE_MARKS)
         rows.append(r)
     return rows
@@ -144,7 +154,11 @@ def grade(r):
         return 'inlined in caller'
     if not r['has_test'] or not r['checks']:
         return 'no test'
-    if r['oracle']:
+    # The oracle marker is a comment. It says where the numbers came from, not
+    # that any assertion uses them, so it only upgrades a test that already
+    # pins a value -- otherwise stripping the assertions from an
+    # oracle-documented test would leave the grade untouched.
+    if r['value_checks'] and r['oracle']:
         return 'oracle'
     if r['value_checks']:
         return 'values pinned'
@@ -164,6 +178,7 @@ NON_NUMERIC = {
     'save_cmd_line': 'writes the command line to a file',
     'missingParameter': 'raises; verified with pytest.raises',
     'end_display_control': 'formats and prints the end-of-run summary',
+    'OptFom_Plot_Best_Results': 'draws the best-result figures',
 }
 
 ORDER = ['oracle', 'values pinned', 'shape only', 'no numeric result',

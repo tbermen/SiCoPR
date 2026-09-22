@@ -73,3 +73,65 @@ def test_blank_lines_ignored(tmp_path):
     result = Bread_Crumb_Chdata_Reduction(cd, fpath)
     assert not hasattr(result[0], 'a')
     assert hasattr(result[0], 'b')
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave, both directives.
+#
+# This decides which chdata fields survive into output_args, so the answer is
+# the exact set of field names -- and the assertions above checked structure
+# rather than which names came back. It is the last leaf function in the
+# translation inventory without a value check.
+# ---------------------------------------------------------------------------
+
+_OCT_REDUCE = ['base', 'sdd21', 'type']
+_OCT_INCLUDE = ['base', 'sdd21']
+
+
+def _oct_chdata():
+    return [SimpleNamespace(base='chA', sdd21=[1, 2, 3], sdd21_raw=[9, 9],
+                            sdd11_raw=[8, 8], type='THRU'),
+            SimpleNamespace(base='chB', sdd21=[4, 5, 6], sdd21_raw=[7, 7],
+                            sdd11_raw=[6, 6], type='NEXT')]
+
+
+def _oct_fields_file(tmp_path, first_line, names):
+    p = tmp_path / ('%s.txt' % first_line.lstrip('#'))
+    p.write_text('\n'.join([first_line] + list(names)) + '\n')
+    return str(p)
+
+
+def test_reduce_removes_exactly_the_listed_fields(tmp_path):
+    p = _oct_fields_file(tmp_path, '#reduce', ['sdd21_raw', 'sdd11_raw'])
+    out = Bread_Crumb_Chdata_Reduction(_oct_chdata(), p)
+    for i, ch in enumerate(out):
+        assert sorted(vars(ch)) == _OCT_REDUCE, (
+            'channel %d kept %r; COM Octave keeps %r'
+            % (i, sorted(vars(ch)), _OCT_REDUCE))
+
+
+def test_include_keeps_exactly_the_listed_fields(tmp_path):
+    p = _oct_fields_file(tmp_path, '#include', ['base', 'sdd21'])
+    out = Bread_Crumb_Chdata_Reduction(_oct_chdata(), p)
+    for i, ch in enumerate(out):
+        assert sorted(vars(ch)) == _OCT_INCLUDE, (
+            'channel %d kept %r; COM Octave keeps %r'
+            % (i, sorted(vars(ch)), _OCT_INCLUDE))
+
+
+def test_the_two_directives_disagree(tmp_path):
+    """#reduce and #include over the same name list must not give the same
+    answer, or the tests above are pinning one behaviour twice."""
+    names = ['base', 'sdd21']
+    a = Bread_Crumb_Chdata_Reduction(
+        _oct_chdata(), _oct_fields_file(tmp_path, '#reduce', names))
+    b = Bread_Crumb_Chdata_Reduction(
+        _oct_chdata(), _oct_fields_file(tmp_path, '#include', names))
+    assert sorted(vars(a[0])) != sorted(vars(b[0]))
+
+
+def test_values_of_the_surviving_fields_are_untouched(tmp_path):
+    p = _oct_fields_file(tmp_path, '#include', ['base', 'sdd21'])
+    out = Bread_Crumb_Chdata_Reduction(_oct_chdata(), p)
+    assert out[0].base == 'chA' and list(out[0].sdd21) == [1, 2, 3]
+    assert out[1].base == 'chB' and list(out[1].sdd21) == [4, 5, 6]
