@@ -14,6 +14,8 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.CDF_ev.py_impl import CDF_ev as _CDF_ev
+from com_functions.fn.CDF_inv_ev.py_impl import CDF_inv_ev as _CDF_inv_ev
 from scipy.special import erfc, erfcinv
 from types import SimpleNamespace
 
@@ -24,28 +26,6 @@ def _qfuncinv(x):
 
 def _qfunc(x):
     return 0.5 * erfc(np.asarray(x, dtype=float) / np.sqrt(2))
-
-
-def _CDF_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    cdf = np.asarray(CDF, dtype=float)
-    hit = x >= -val
-    if not hit.any():
-        # find() is empty, so MATLAB's CDF(index) is an empty 1x0 -- there is
-        # no value to return.  np.argmax on an all-False mask answers 0, which
-        # would hand back CDF(1) as though it were the crossing.
-        raise IndexError('CDF_ev: no PDF.x >= -val')
-    index = int(np.argmax(hit))
-    return float(cdf[index])
-
-
-def _CDF_inv_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    cdf = np.asarray(CDF, dtype=float)
-    indices = np.where(cdf >= val)[0]
-    if len(indices) == 0:
-        return float(x[-1])
-    return float(x[indices[0]])
 
 
 def MLSE(param, alpha, A_s, A_ni, PDF, CDF):

@@ -143,15 +143,19 @@ check("gram_hoist_argument_is_actually_used",
       "dead and the measured speed-up is not coming from where it is claimed")
 
 # =========================================================== 3. conv gating
+# _conv1d and its size gate live with the canonical conv_fct. get_PSDs used
+# to carry its own copy; that duplicate was collapsed onto an import on
+# 2026-09-22, so the invariant is checked where the code now is.
+cf = _load('conv_fct')
 for n in (8, 64, 127, 128, 129, 512):
     a = rng.standard_normal(n)
     b = rng.standard_normal(max(4, n // 2))
     ref = np.convolve(a, b)
-    got = psd._conv1d(a.copy(), b.copy())
+    got = cf._conv1d(a.copy(), b.copy())
     check("conv1d_matches_direct_convolution__n%d" % n,
           got.shape == ref.shape and np.allclose(got, ref, rtol=0, atol=1e-9),
           "FFT/direct convolution disagree at n=%d (gate is %d): max|delta| "
-          "= %.3g" % (n, psd._CONV_FFT_MIN,
+          "= %.3g" % (n, cf._CONV_FFT_MIN,
                       np.max(np.abs(got - ref)) if got.shape == ref.shape
                       else float('nan')))
 

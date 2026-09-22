@@ -27,6 +27,7 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.compute_hard_cap.py_impl import compute_hard_cap as _compute_hard_cap
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -92,13 +93,6 @@ def _mround(x):
     # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
     # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
     return int(round(x))
-
-
-def _compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
-    """Inlined compute_hard_cap (MATLAB lines 5788-5794)."""
-    if use_hard_cap:
-        return max(min_radius, _mround(mul * LSV))
-    return float('nan')
 
 
 def _append_csv_row(file_path, header_cells, row_cells):

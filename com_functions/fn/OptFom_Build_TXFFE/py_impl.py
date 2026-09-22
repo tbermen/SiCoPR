@@ -13,29 +13,7 @@
 
 import re
 import numpy as np
-
-
-def _Full_Grid_Matrix(in_list):
-    if not isinstance(in_list, (list, tuple)):
-        raise ValueError('input must be list of individual sweep variables')
-    num_columns = len(in_list)
-    num_cases = 1
-    for col in in_list:
-        num_cases *= len(col)
-    out = [[None] * num_columns for _ in range(num_cases)]
-    num_repetitions = 1
-    for k in range(num_columns - 1, -1, -1):
-        col = list(in_list[k])
-        n = len(col)
-        C = []
-        for elem in col:
-            C.extend([elem] * num_repetitions)
-        num_repeats = num_cases // len(C)
-        D = C * num_repeats
-        for row in range(num_cases):
-            out[row][k] = D[row]
-        num_repetitions *= n
-    return out
+from com_functions.fn.Full_Grid_Matrix.py_impl import Full_Grid_Matrix as _Full_Grid_Matrix
 
 
 def OptFom_Build_TXFFE(param):

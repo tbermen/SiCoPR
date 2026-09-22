@@ -15,6 +15,11 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.Bessel_Thomson_Filter.py_impl import Bessel_Thomson_Filter as _Bessel_Thomson_Filter
+from com_functions.fn.auto_port_order.py_impl import auto_port_order as _auto_port_order
+from com_functions.fn.bessel.py_impl import bessel as _bessel
+from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
+from com_functions.fn.synth_tline.py_impl import synth_tline as _synth_tline
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -48,120 +53,13 @@ def _mmax(a):
     return np.nanmax(a)
 
 
-def _mmin(a):
-    """MATLAB min(): the mirror of _mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
 import warnings
 import copy
 from types import SimpleNamespace
 from math import factorial
 
 
-def _mround(x):
-    """MATLAB round(): half away from zero."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _auto_port_order(sch, F, flip_victim=0):
-    """Inlined auto_port_order (MATLAB lines 4932-5057, r4p15p0). Returns 1-based list."""
-    sch = np.asarray(sch)
-    F = np.asarray(F, dtype=float).ravel()
-    MinThruEnergy = 0.1
-    if sch.shape[2] != 4:
-        raise ValueError('Auto Port Order routine only works for 4 port S-parameters')
-    LowFreq_Matrix = np.abs(sch[0, :, :])
-    Raw_LowFreq_Matrix = LowFreq_Matrix.copy()
-    LowFreq_Matrix = LowFreq_Matrix - np.diag(np.diag(LowFreq_Matrix))
-    max_matrix = np.maximum(np.triu(LowFreq_Matrix), np.tril(LowFreq_Matrix).T)
-    LowFreq_Matrix = max_matrix + np.triu(max_matrix).T
-    ConnectedPorts = np.zeros(4, dtype=int)
-    for k in range(4):
-        col = LowFreq_Matrix[:, k]
-        idx = int(np.argmax(col))
-        if col[idx] < MinThruEnergy:
-            raise ValueError('Unable to determine port connections:  Low Energy')
-        ConnectedPorts[k] = idx + 1
-    for k in range(1, 5):
-        if ConnectedPorts[ConnectedPorts[k - 1] - 1] != k:
-            raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    port_order = [1, 0, int(ConnectedPorts[0]), 0]
-    others = sorted(set(range(1, 5)) - {1, int(ConnectedPorts[0])})
-    port_order[1], port_order[3] = others[0], others[-1]
-    if ConnectedPorts[port_order[1] - 1] != port_order[3]:
-        raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    try:
-        TxN, RxN = port_order[1], port_order[3]
-        vector1 = sch[:, TxN - 1, 0] if Raw_LowFreq_Matrix[TxN - 1, 0] > Raw_LowFreq_Matrix[0, TxN - 1] else sch[:, 0, TxN - 1]
-        vector2 = sch[:, RxN - 1, 0] if Raw_LowFreq_Matrix[RxN - 1, 0] > Raw_LowFreq_Matrix[0, RxN - 1] else sch[:, 0, RxN - 1]
-        Floc = F.copy()
-        if Floc[0] == 0:
-            vector1, vector2, Floc = vector1[1:], vector2[1:], Floc[1:]
-        pd1 = -1.0 * np.unwrap(np.angle(vector1)) / (Floc * 2 * np.pi)
-        pd2 = -1.0 * np.unwrap(np.angle(vector2)) / (Floc * 2 * np.pi)
-        qs, tqs = _mround(len(Floc) / 4.0), _mround(len(Floc) * 3.0 / 4.0)
-        m1, m2 = float(np.mean(pd1[qs - 1:tqs])), float(np.mean(pd2[qs - 1:tqs]))
-        if max(m1, m2) > min(m1, m2) * 2:
-            if int(np.argmax([m1, m2])) + 1 == 1:
-                port_order[1], port_order[3] = port_order[3], port_order[1]
-        else:
-            print('Did not use phase delay in auto-port discovery since the phase delay '
-                  'of Near End and Far End are similar')
-    except Exception as ME_msg:
-        print(str(ME_msg))
-        print('Unable to use phase delay to determine port order')
-    if flip_victim:
-        port_order = [port_order[2], port_order[3], port_order[0], port_order[1]]
-    print(f'Auto Port Order: [{" ".join(str(p) for p in port_order)}]')
-    return port_order
-
-
 # ---- inlined helpers (from synth_tline, combines4p, make_pkg, make_full_pkg, s21_pkg, add_brd) ---
-
-def _synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float)
-    f_GHz = f / 1e9
-    eps_val = np.finfo(float).tiny
-    f_GHz_s = np.where(f_GHz == 0, eps_val, f_GHz)
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float).ravel()
-    gamma0, a1, a2 = gamma_coeff[0], gamma_coeff[1], gamma_coeff[2]
-    gamma_1 = a1 * (1.0 + 1j)
-    gamma_2 = a2 * (1.0 - 2j / np.pi * np.log(f_GHz_s)) + 2j * np.pi * float(tau)
-    gamma = gamma0 + gamma_1 * np.sqrt(f_GHz_s) + gamma_2 * f_GHz_s
-    gamma = np.where(f_GHz == 0, gamma0, gamma)
-    if float(d) == 0.0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (float(Z_c) - 2.0 * float(Z_0)) / (float(Z_c) + 2.0 * float(Z_0))
-    exp_gd = np.exp(-float(d) * gamma)
-    denom = 1.0 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1.0 - exp_gd ** 2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21, s21, s11
-
-
-def _combines4p(s11_1, s12_1, s21_1, s22_1, s11_2, s12_2, s21_2, s22_2):
-    N = 1.0 - s22_1 * s11_2
-    s11 = s11_1 + s12_1 * s21_1 * s11_2 / N
-    s12 = s12_1 * s12_2 / N
-    s21 = s21_2 * s21_1 / N
-    s22 = s22_2 + s12_2 * s21_2 * s22_1 / N
-    return s11, s12, s21, s22
-
 
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     f = np.asarray(f, dtype=float)
@@ -359,58 +257,6 @@ def _make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             else:
                 s11o, s12o, s21o, s22o = _combines4p(s11o, s12o, s21o, s22o, sp11, sp12, sp21, sp22)
     return s11o, s12o, s21o, s22o
-
-
-def _factorial(k):
-    """MATLAB factorial(): a double, so it overflows to Inf above 170!.
-
-    COM Octave, bessel(90): a(1:10) are Inf, a(11) = 2.31e157.  Python's exact
-    math.factorial made the first ten finite (~1.09e164) instead.
-    """
-    return np.inf if k > 170 else factorial(k)
-
-
-def _bessel(n):
-    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
-    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
-    # assignment is undefined".  Returning an empty array answered a call the
-    # reference refuses.
-    if n < 0:
-        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
-    # MATLAB factorial() rejects non-integers.  COM Octave: bessel(2.5) ->
-    # "factorial: all N must be real non-negative integers".
-    if n != int(n):
-        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
-    n = int(n)
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        a[ii] = _factorial(2 * n - ii) / (2 ** (n - ii) * _factorial(ii) * _factorial(n - ii))
-    return a
-
-
-def _length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _Bessel_Thomson_Filter(param, f, use_BT):
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
-    # ALL non-zero, and length() is the LONGEST dimension, not the first.
-    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
-    # f scalar -> 1 (len(f) raised TypeError).
-    use = np.asarray(use_BT)
-    if not (use.size and np.all(use)):
-        return np.ones(_length(f))
-    if use_BT:
-        a = _bessel(int(param.BTorder))
-        acoef = a[::-1]
-        H_bt = a[0] / np.polyval(acoef, 1j * f / (float(param.fb_BT_cutoff) * float(param.fb)))
-    else:
-        H_bt = np.ones(len(f))
-    return H_bt
 
 
 def _s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):

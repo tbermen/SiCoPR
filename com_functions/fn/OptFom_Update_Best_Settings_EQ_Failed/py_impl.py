@@ -1,4 +1,5 @@
 import numpy as np
+from com_functions.fn.FFE.py_impl import FFE as _FFE
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -31,18 +32,6 @@ def _mmax(a):
         return np.max(a)
     return np.nanmax(a)
 
-
-def _mmin(a):
-    """MATLAB min(): the mirror of _mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
 
 from types import SimpleNamespace
 
@@ -82,17 +71,6 @@ def _value_copy(obj):
 
 
 # --- inline from FFE (MATLAB 2026-2048) ---
-def _FFE(C, cmx, spui, V):
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
 
 
 def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):

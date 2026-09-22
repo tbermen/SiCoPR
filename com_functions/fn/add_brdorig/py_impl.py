@@ -1,31 +1,6 @@
 import numpy as np
-
-
-def _synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float).ravel()
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float)
-    f_GHz = f / 1e9
-    gamma_1 = gamma_coeff[1] * (1.0 + 1j)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        gamma_2 = gamma_coeff[2] * (1.0 - 2j / np.pi * np.log(f_GHz)) + 2j * np.pi * tau
-    gamma = gamma_coeff[0] + gamma_1 * np.sqrt(f_GHz) + gamma_2 * f_GHz
-    gamma[f_GHz == 0] = gamma_coeff[0]
-    rho_rl = 0.0 if d == 0 else (Z_c - 2.0 * Z_0) / (Z_c + 2.0 * Z_0)
-    exp_gd = np.exp(-d * gamma)
-    exp_gd2 = exp_gd ** 2
-    denom = 1.0 - rho_rl ** 2 * exp_gd2
-    s11 = rho_rl * (1.0 - exp_gd2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21.copy(), s21.copy(), s11.copy()
-
-
-def _combines4p(a11, a12, a21, a22, b11, b12, b21, b22):
-    def sq(x): return np.asarray(x, dtype=complex).ravel()
-    a11, a12, a21, a22 = sq(a11), sq(a12), sq(a21), sq(a22)
-    b11, b12, b21, b22 = sq(b11), sq(b12), sq(b21), sq(b22)
-    Nv = 1 - a22 * b11
-    return (a11 + a12 * a21 * b11 / Nv, a12 * b12 / Nv,
-            b21 * a21 / Nv, b22 + b12 * b21 * a22 / Nv)
+from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
+from com_functions.fn.synth_tline.py_impl import synth_tline as _synth_tline
 
 
 def add_brdorig(chdata, param, OP):

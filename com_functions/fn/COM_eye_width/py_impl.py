@@ -23,6 +23,7 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.get_center_of_UI.py_impl import get_center_of_UI as _get_center_of_UI
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -93,11 +94,6 @@ def _conv1d(a, b):
     if min(a.size, b.size) >= _CONV_FFT_MIN:
         return fftconvolve(a, b)
     return np.convolve(a, b)
-
-
-def _get_center_of_UI(samp_UI):
-    """Returns 0-based center index (Python convention)."""
-    return samp_UI // 2
 
 
 def _get_pdf_full(chdata_0, delta_y, t_s, param, OP, pdf_range):

@@ -18,47 +18,10 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
+from com_functions.fn.synth_tline.py_impl import synth_tline as _synth_tline
 import copy
 from types import SimpleNamespace
-
-
-def _synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    """Inlined synth_tline (MATLAB lines 11292-11316)."""
-    f = np.asarray(f, dtype=complex)
-    f_r = f.real
-    with np.errstate(divide='ignore', invalid='ignore'):
-        f_GHz = f_r / 1e9
-    eps = np.finfo(float).tiny
-    f_GHz_safe = np.where(f_GHz == 0, eps, f_GHz)
-
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float).ravel()
-    gamma0, a1, a2 = gamma_coeff[0], gamma_coeff[1], gamma_coeff[2]
-
-    gamma_1 = a1 * (1.0 + 1j)
-    gamma_2 = a2 * (1.0 - 2j / np.pi * np.log(f_GHz_safe)) + 2j * np.pi * float(tau)
-    gamma = gamma0 + gamma_1 * np.sqrt(f_GHz_safe) + gamma_2 * f_GHz_safe
-    gamma = np.where(f_GHz == 0, gamma0, gamma)
-
-    if float(d) == 0.0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (Z_c - 2.0 * Z_0) / (Z_c + 2.0 * Z_0)
-
-    exp_gd = np.exp(-float(d) * gamma)
-    denom = 1.0 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1.0 - exp_gd ** 2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21, s21, s11  # s11, s12, s21, s22
-
-
-def _combines4p(s11_1, s12_1, s21_1, s22_1, s11_2, s12_2, s21_2, s22_2):
-    """Inlined combines4p (MATLAB lines 5327-5370)."""
-    N = 1.0 - s22_1 * s11_2
-    s11 = s11_1 + s12_1 * s21_1 * s11_2 / N
-    s12 = s12_1 * s12_2 / N
-    s21 = s21_2 * s21_1 / N
-    s22 = s22_2 + s12_2 * s21_2 * s22_1 / N
-    return s11, s12, s21, s22
 
 
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):

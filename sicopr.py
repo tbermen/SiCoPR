@@ -719,45 +719,6 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
 
 
 
-def _Apply_EQ__TD_CTLE(ir_in, fb, f_z, f_p1, f_p2, kacdc_dB, oversampling):
-    # No dtype=float: MATLAB's filter() carries a complex input through, and
-    # the cast silently DISCARDED the imaginary part.  atleast_1d because
-    # MATLAB filters a scalar (1x1) and returns a scalar, where lfilter raised
-    # "selected axis is out of range" on a 0-d array.
-    ir_in = np.atleast_1d(np.asarray(ir_in))
-    p1_ctle = -2 * np.pi * f_p1
-    p2_ctle = -2 * np.pi * f_p2
-    z_ctle = -2 * np.pi * f_z * 10 ** (kacdc_dB / 20)
-    k_ctle = -p2_ctle
-    bilinear_fs = 2 * fb * oversampling
-    p2d = (1 + p2_ctle / bilinear_fs) / (1 - p2_ctle / bilinear_fs)
-    p1d = (1 + p1_ctle / bilinear_fs) / (1 - p1_ctle / bilinear_fs)
-    zd = (1 + z_ctle / bilinear_fs) / (1 - z_ctle / bilinear_fs)
-    kd = ((bilinear_fs - z_ctle)
-          / ((bilinear_fs - p1_ctle) * (bilinear_fs - p2_ctle))
-          * f_p1 / f_z)
-    B_filt = k_ctle * kd * np.poly([zd, -1])
-    A_filt = np.poly([p1d, p2d])
-    # MATLAB filter() runs along the first NON-singleton dimension: down the
-    # columns of a matrix, along a row vector.  lfilter defaults to axis=-1,
-    # which filtered a matrix along its rows instead.
-    axis = 0 if (ir_in.ndim >= 2 and ir_in.shape[0] != 1) else -1
-    return lfilter(B_filt, A_filt, ir_in, axis=axis), p1_ctle, p2_ctle, z_ctle
-
-
-def _Apply_EQ__FFE(C, cmx, spui, V):
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
-
-
 def Apply_EQ(param, fom_result, chdata, OP):
     FB = param.fb
     ctle_idx = int(fom_result.ctle) - 1  # MATLAB 1-based → 0-based
@@ -794,13 +755,13 @@ def Apply_EQ(param, fom_result, chdata, OP):
         if OP.INCLUDE_CTLE == 1:
             ctle_type = param.CTLE_type
             if ctle_type == 'CL93':
-                eq_ir, _, _, _ = _Apply_EQ__TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
+                eq_ir, _, _, _ = _TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
             elif ctle_type == 'CL120d':
-                eq_ir, _, _, _ = _Apply_EQ__TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
-                eq_ir, _, _, _ = _Apply_EQ__TD_CTLE(eq_ir, FB, FHP, FHP, 100e100, GDCHP, M)
+                eq_ir, _, _, _ = _TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
+                eq_ir, _, _, _ = _TD_CTLE(eq_ir, FB, FHP, FHP, 100e100, GDCHP, M)
             elif ctle_type == 'CL120e':
-                eq_ir, _, _, _ = _Apply_EQ__TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
-                eq_ir, _, _, _ = _Apply_EQ__TD_CTLE(eq_ir, FB, FHPZ, FHPP, 1e99, 0, M)
+                eq_ir, _, _, _ = _TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
+                eq_ir, _, _, _ = _TD_CTLE(eq_ir, FB, FHPZ, FHPP, 1e99, 0, M)
             else:
                 eq_ir = uneq_ir
         else:
@@ -810,7 +771,7 @@ def Apply_EQ(param, fom_result, chdata, OP):
         eq_pulse = lfilter(np.ones(M), [1.0], eq_ir)
 
         if chdata[i].type in ('FEXT', 'THRU'):
-            eq_pulse = _Apply_EQ__FFE(fom_result.txffe, fom_result.cur - 1, M, eq_pulse)
+            eq_pulse = _FFE(fom_result.txffe, fom_result.cur - 1, M, eq_pulse)
 
         chdata[i].pulse_response_w_CFT_TXFFE_noRxFFE = eq_pulse
         chdata[i].ctle_pulse = eq_pulse
@@ -820,7 +781,7 @@ def Apply_EQ(param, fom_result, chdata, OP):
 
         if OP.RxFFE:
             if OP.FFE_OPT_METHOD.upper() == 'MMSE':
-                chdata[i].ctle_imp_response = _Apply_EQ__FFE(fom_result.RxFFE, fom_result.cur - 1, M, eq_ir)
+                chdata[i].ctle_imp_response = _FFE(fom_result.RxFFE, fom_result.cur - 1, M, eq_ir)
             # MATLAB L973: [eq_pulse, C] = force(eq_pulse, param, OP, t_s, fom_result.RxFFE)
             # C provided -> force applies the precomputed RxFFE taps (top-level fn).
             eq_pulse, _, _ = force(eq_pulse, param, OP, fom_result.t_s, fom_result.RxFFE)
@@ -843,18 +804,6 @@ def Apply_EQ(param, fom_result, chdata, OP):
 # ============================================================
 
 
-def _Bathtub_Contribution_Wrapper__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 
@@ -863,117 +812,16 @@ def _Bathtub_Contribution_Wrapper__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _Bathtub_Contribution_Wrapper__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _Bathtub_Contribution_Wrapper__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is half-to-even.
-
-    COM Octave: p1.Min=0.5, p2.Min=0 -> p.Min=1  (Python round() gives 0)
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
-
-def _Bathtub_Contribution_Wrapper__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit only when accumulation overshoots it; it is NOT
-    (pmin:pmax)*binsize, which differs by 1 ulp on 24.6% of elements (measured
-    against Octave over 7920 (Min, length, BinSize) combinations).
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _Bathtub_Contribution_Wrapper__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _Bathtub_Contribution_Wrapper__mround(p1.Min + p2.Min)
-    p.y = _Bathtub_Contribution_Wrapper__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _Bathtub_Contribution_Wrapper__colon_x(p.Min, pMax, p.BinSize)
-    return p
-
-
-def _Bathtub_Contribution_Wrapper__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer, and the zip() below would
-        # silently normalise whatever it collected.  COM Octave 4p16p0:
-        # d_cpdf(1,[-1 0 1],[0.5 0.5]) errors "probs(3): out of bound 2".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted: MATLAB requires every element <= the next, which is false as
-    # soon as a NaN is present.  np.diff(values) < 0 is False across a NaN, so
-    # that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _Bathtub_Contribution_Wrapper__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` dropped
-    # NaN, so a NaN-bearing (or all-zero) probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) -> Min=-1, x=[-1 0 1], y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
 
 
 def _Bathtub_Contribution_Wrapper__plot_bathtub_curves(hax, max_signal, sci_pdf, cci_pdf, isi_and_xtalk_pdf,
                          noise_pdf, jitt_pdf, combined_interference_and_noise_pdf, bin_size):
-    cursors = _Bathtub_Contribution_Wrapper__d_cpdf(bin_size, max_signal * np.array([-1.0, 1.0]), np.array([0.5, 0.5]))
-    signal_and_isi_pdf = _Bathtub_Contribution_Wrapper__conv_fct(cursors, sci_pdf)
-    signal_and_xtalk_pdf = _Bathtub_Contribution_Wrapper__conv_fct(cursors, cci_pdf)
-    signal_and_channel_noise_pdf = _Bathtub_Contribution_Wrapper__conv_fct(cursors, isi_and_xtalk_pdf)
-    signal_and_system_noise_pdf = _Bathtub_Contribution_Wrapper__conv_fct(cursors, noise_pdf)
-    signal_and_system_jitt_pdf = _Bathtub_Contribution_Wrapper__conv_fct(cursors, jitt_pdf)
+    cursors = _d_cpdf(bin_size, max_signal * np.array([-1.0, 1.0]), np.array([0.5, 0.5]))
+    signal_and_isi_pdf = _conv_fct(cursors, sci_pdf)
+    signal_and_xtalk_pdf = _conv_fct(cursors, cci_pdf)
+    signal_and_channel_noise_pdf = _conv_fct(cursors, isi_and_xtalk_pdf)
+    signal_and_system_noise_pdf = _conv_fct(cursors, noise_pdf)
+    signal_and_system_jitt_pdf = _conv_fct(cursors, jitt_pdf)
 
     cursors_l = copy.copy(cursors)
     cursors_l.y = cursors_l.y.copy()
@@ -982,8 +830,8 @@ def _Bathtub_Contribution_Wrapper__plot_bathtub_curves(hax, max_signal, sci_pdf,
     cursors_r.y = cursors_r.y.copy()
     cursors_r.y[cursors_r.x < 0] = 0
 
-    signal_and_total_noise_pdf_l = _Bathtub_Contribution_Wrapper__conv_fct(cursors_l, combined_interference_and_noise_pdf)
-    signal_and_total_noise_pdf_r = _Bathtub_Contribution_Wrapper__conv_fct(cursors_r, combined_interference_and_noise_pdf)
+    signal_and_total_noise_pdf_l = _conv_fct(cursors_l, combined_interference_and_noise_pdf)
+    signal_and_total_noise_pdf_r = _conv_fct(cursors_r, combined_interference_and_noise_pdf)
 
     hax.semilogy(signal_and_isi_pdf.x, np.abs(np.cumsum(signal_and_isi_pdf.y) - 0.5),
                  'r', label='ISI')
@@ -1075,7 +923,7 @@ def Bathtub_Contribution_Wrapper(COM_SNR_Struct, Noise_Struct, param, chdata, OP
 # MATLAB→Python translation notes for Bessel_Thomson_Filter
 # MATLAB lines: 1028–1037
 # ============================================================
-# bessel(n): called from sibling module — inlined as _Bessel_Thomson_Filter__bessel (protocol:
+# bessel(n): called from sibling module — inlined as _bessel (protocol:
 #   no cross-module imports from py_impl.py siblings).
 # a(1) in MATLAB (1-based) = a[0] in Python = constant term (largest value)
 # fliplr(a) reverses [a0,...,an] → [an,...,a0], highest-degree first for polyval
@@ -1083,35 +931,6 @@ def Bathtub_Contribution_Wrapper(COM_SNR_Struct, Noise_Struct, param, chdata, OP
 # use_BT=False: all-pass (unity response)
 # ============================================================
 
-
-
-def _Bessel_Thomson_Filter__factorial(k):
-    """MATLAB factorial(): a double, so it overflows to Inf above 170!."""
-    return math.inf if k > 170 else math.factorial(k)
-
-
-def _Bessel_Thomson_Filter__bessel(n):
-    """Bessel polynomial coefficients [a0, a1, ..., an].
-    a[k] = coeff of x^k; a[0] = constant term (largest), a[n] = 1.
-    """
-    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
-    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
-    # assignment is undefined".  Returning an empty array answered a call the
-    # reference refuses.
-    if n < 0:
-        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
-    # MATLAB factorial() rejects non-integers.  COM Octave: bessel(2.5) ->
-    # "factorial: all N must be real non-negative integers".
-    if n != int(n):
-        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
-    n = int(n)
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        # COM Octave, bessel(90): a(1:10) are Inf.  Python's exact
-        # math.factorial made them finite (~1.09e164) instead.
-        a[ii] = (_Bessel_Thomson_Filter__factorial(2 * n - ii)
-                 / (2 ** (n - ii) * _Bessel_Thomson_Filter__factorial(ii) * _Bessel_Thomson_Filter__factorial(n - ii)))
-    return a
 
 
 def _Bessel_Thomson_Filter__length(x):
@@ -1133,7 +952,7 @@ def Bessel_Thomson_Filter(param, f, use_BT):
     use = np.asarray(use_BT)
     if not (use.size and np.all(use)):
         return np.ones(_Bessel_Thomson_Filter__length(f))
-    a = _Bessel_Thomson_Filter__bessel(param.BTorder)       # [a0,...,an]; a[0] is constant term
+    a = _bessel(param.BTorder)       # [a0,...,an]; a[0] is constant term
     acoef = a[::-1]                  # fliplr → highest-degree first
     s = 1j * f / (param.fb_BT_cutoff * param.fb)
     return a[0] / np.polyval(acoef, s)   # a(1) in MATLAB = a[0]
@@ -1213,31 +1032,6 @@ def _Burst_Probability_Calc__mmax(a):
     return np.nanmax(a)
 
 
-def _Burst_Probability_Calc__mmin(a):
-    """MATLAB min(): the mirror of _Burst_Probability_Calc__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _Burst_Probability_Calc__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _Burst_Probability_Calc__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 # --- inline from conv_fct (MATLAB 5371-5388) ---
@@ -1247,129 +1041,9 @@ def _Burst_Probability_Calc__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _Burst_Probability_Calc__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _Burst_Probability_Calc__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is half-to-even.
-
-    COM Octave: p1.Min=0.5, p2.Min=0 -> p.Min=1  (Python round() gives 0)
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
-
-def _Burst_Probability_Calc__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit only when accumulation overshoots it; it is NOT
-    (pmin:pmax)*binsize, which differs by 1 ulp on 24.6% of elements (measured
-    against Octave over 7920 (Min, length, BinSize) combinations).
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _Burst_Probability_Calc__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _Burst_Probability_Calc__mround(p1.Min + p2.Min)
-    p.y = _Burst_Probability_Calc__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _Burst_Probability_Calc__colon_x(p.Min, pMax, p.BinSize)
-    return p
 
 
 # --- inline from get_pdf_from_sampled_signal (MATLAB 7473-7518) ---
-def _Burst_Probability_Calc__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer, and the zip() below would
-        # silently normalise whatever it collected.  COM Octave 4p16p0:
-        # d_cpdf(1,[-1 0 1],[0.5 0.5]) errors "probs(3): out of bound 2".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted: MATLAB requires every element <= the next, which is false as
-    # soon as a NaN is present.  np.diff(values) < 0 is False across a NaN, so
-    # that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _Burst_Probability_Calc__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` dropped
-    # NaN, so a NaN-bearing (or all-zero) probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) -> Min=-1, x=[-1 0 1], y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _Burst_Probability_Calc__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _Burst_Probability_Calc__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
 
 
 def _Burst_Probability_Calc__get_pdf_from_sampled_signal(input_vector, L, BinSize):
@@ -1380,18 +1054,18 @@ def _Burst_Probability_Calc__get_pdf_from_sampled_signal(input_vector, L, BinSiz
     if _Burst_Probability_Calc__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
-        return _Burst_Probability_Calc__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _Burst_Probability_Calc__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
-        pdfn = _Burst_Probability_Calc__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _Burst_Probability_Calc__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -1416,11 +1090,11 @@ def Burst_Probability_Calc(COM_SNR_Struct, DFE_taps, param, OP):
         if OP.use_simple_EP_model:
             tap_val = 2.0 * A_s * float(_Burst_Probability_Calc__mmax(sorted_abs_taps))
             post_pdf = _Burst_Probability_Calc__get_pdf_from_sampled_signal(tap_val, param.levels, param.delta_y)
-            new_pdf = _Burst_Probability_Calc__conv_fct(error_propagation_noise_pdf[0], post_pdf)
+            new_pdf = _conv_fct(error_propagation_noise_pdf[0], post_pdf)
         else:
             tap_val = 2.0 * A_s * float(sorted_abs_taps[k - 1])
             post_pdf = _Burst_Probability_Calc__get_pdf_from_sampled_signal(tap_val, param.levels, param.delta_y)
-            new_pdf = _Burst_Probability_Calc__conv_fct(error_propagation_noise_pdf[k - 1], post_pdf)
+            new_pdf = _conv_fct(error_propagation_noise_pdf[k - 1], post_pdf)
         error_propagation_noise_pdf.append(new_pdf)
         idx = np.where(new_pdf.x >= error_threshold)[0]
         p_ep_k = 1e-20 if len(idx) == 0 else float(np.sum(new_pdf.y[idx[0]:]))
@@ -1985,11 +1659,6 @@ def _COM_eye_width__conv1d(a, b):
     return np.convolve(a, b)
 
 
-def _COM_eye_width__get_center_of_UI(samp_UI):
-    """Returns 0-based center index (Python convention)."""
-    return samp_UI // 2
-
-
 def _COM_eye_width__get_pdf_full(chdata_0, delta_y, t_s, param, OP, pdf_range):
     """Stub: returns list of trivial PDFs, zero ISI, unit signal."""
     samp_UI = int(param.samples_for_C2M)
@@ -2103,7 +1772,7 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         eye_contour: (samp_UI, 2*(levels-1)) array
         out_VT, out_VB: scalars or [] (only set when T_O != 0)
     """
-    gcu_fn = _get_center_of_UI_fn or _COM_eye_width__get_center_of_UI
+    gcu_fn = _get_center_of_UI_fn or _get_center_of_UI
     gpf_fn = _get_pdf_full_fn or _COM_eye_width__get_pdf_full
     nd_fn = _normal_dist_fn or _COM_eye_width__normal_dist
     cf_fn = _conv_fct_fn or _COM_eye_width__conv_fct
@@ -2383,9 +2052,9 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
 # Non-MMSE path: sigma_TX uses SNR_TX param; sigma_G = norm([sigma_RJ*sigma_X*norm(h_J), sigma_N, sigma_TX]).
 # MMSE path: sigma_TX/sigma_G/sigma_rjit/sigma_N from PSD_results.
 # NS.ber_q: erfcinv-based from specBER, or Noise_Crest_Factor if nonzero.
-# normal_dist inlined as _Create_Noise_PDF__normal_dist.
-# conv_fct inlined as _Create_Noise_PDF__conv_fct.
-# d_cpdf inlined as _Create_Noise_PDF__d_cpdf.
+# normal_dist inlined as _normal_dist.
+# conv_fct inlined as _conv_fct.
+# d_cpdf inlined as _d_cpdf.
 # NS.p_DD = get_pdf_from_sampled_signal(A_DD*h_J, levels, delta_y) [inlined].
 # NS.sci_pdf = chdata[0].pdfr.
 # sci_mxi, sci_msi: find(cumsum(sci_pdf.y) >= specBER, 1, 'first') 1-based → argmax on cumsum.
@@ -2429,42 +2098,6 @@ def _Create_Noise_PDF__mmax(a):
     return np.nanmax(a)
 
 
-def _Create_Noise_PDF__mmin(a):
-    """MATLAB min(): the mirror of _Create_Noise_PDF__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _Create_Noise_PDF__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _Create_Noise_PDF__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _Create_Noise_PDF__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 
@@ -2473,155 +2106,27 @@ def _Create_Noise_PDF__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _Create_Noise_PDF__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _Create_Noise_PDF__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the limit only when accumulation overshoots it; the product form
-    (pmin:pmax)*binsize builds each element as one product instead, and the two
-    differ by 1 ulp on most bins.  Swept over 7920 (Min, length, BinSize)
-    combinations against COM Octave, the product form got 24.6% of elements
-    wrong; this form got none.
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _Create_Noise_PDF__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _Create_Noise_PDF__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
-    # support empty and raised instead of answering.
-    # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns
-    # Min=-1, x=[-1 0 1], y=[NaN NaN NaN]; likewise probs=[0 0 0].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _Create_Noise_PDF__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _Create_Noise_PDF__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _Create_Noise_PDF__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _Create_Noise_PDF__mround(p1.Min + p2.Min)         # MATLAB round: half away from zero
-    p.y = _Create_Noise_PDF__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _Create_Noise_PDF__colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
-    return p
-
-
-def _Create_Noise_PDF__normal_dist(sigma, nsigma, binsize):
-    pdf = SimpleNamespace()
-    pdf.BinSize = binsize
-    pdf.Min = -_Create_Noise_PDF__mround(2 * nsigma * sigma / binsize)
-    pdf.x = np.arange(pdf.Min, -pdf.Min + 1) * binsize
-    eps = np.finfo(float).eps
-    pdf.y = np.exp(-pdf.x ** 2 / (2 * sigma ** 2 + eps))
-    pdf.y = pdf.y / np.sum(pdf.y)
-    return pdf
 
 
 def _Create_Noise_PDF__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
-        return _Create_Noise_PDF__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     if _Create_Noise_PDF__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
-        return _Create_Noise_PDF__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _Create_Noise_PDF__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
-        pdfn = _Create_Noise_PDF__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _Create_Noise_PDF__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -2716,20 +2221,20 @@ def Create_Noise_PDF(A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results=N
     else:
         NS.ber_q = float(param.Noise_Crest_Factor)
 
-    NS.gaussian_noise_pdf = _Create_Noise_PDF__normal_dist(NS.sigma_G, NS.ber_q, delta_y)
+    NS.gaussian_noise_pdf = _normal_dist(NS.sigma_G, NS.ber_q, delta_y)
 
     if OP.force_BBN_Q_factor:
-        NS.ne_noise_pdf = _Create_Noise_PDF__normal_dist(sigma_ne, OP.BBN_Q_factor, delta_y)
+        NS.ne_noise_pdf = _normal_dist(sigma_ne, OP.BBN_Q_factor, delta_y)
     else:
-        NS.ne_noise_pdf = _Create_Noise_PDF__normal_dist(sigma_ne, NS.ber_q, delta_y)
-    NS.gaussian_noise_pdf = _Create_Noise_PDF__conv_fct(NS.gaussian_noise_pdf, NS.ne_noise_pdf)
+        NS.ne_noise_pdf = _normal_dist(sigma_ne, NS.ber_q, delta_y)
+    NS.gaussian_noise_pdf = _conv_fct(NS.gaussian_noise_pdf, NS.ne_noise_pdf)
 
     h_J = np.asarray(fom_result.h_J, dtype=float).ravel()
     NS.p_DD = _Create_Noise_PDF__get_pdf_from_sampled_signal(param.A_DD * h_J, int(param.levels), delta_y)
 
-    NS.noise_pdf = _Create_Noise_PDF__conv_fct(NS.gaussian_noise_pdf, NS.p_DD)
-    gaussian_rjitt_pdf = _Create_Noise_PDF__normal_dist(NS.sigma_rjit, NS.ber_q, delta_y)
-    NS.jitt_pdf = _Create_Noise_PDF__conv_fct(gaussian_rjitt_pdf, NS.p_DD)
+    NS.noise_pdf = _conv_fct(NS.gaussian_noise_pdf, NS.p_DD)
+    gaussian_rjitt_pdf = _normal_dist(NS.sigma_rjit, NS.ber_q, delta_y)
+    NS.jitt_pdf = _conv_fct(gaussian_rjitt_pdf, NS.p_DD)
 
     NS.sci_pdf = chdata[0].pdfr
 
@@ -2744,17 +2249,17 @@ def Create_Noise_PDF(A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results=N
                              / (erfcinv(2 * param.specBER) * np.sqrt(2))))
 
     if not OP.RX_CALIBRATION:
-        MDNEXT_cci_pdf = _Create_Noise_PDF__d_cpdf(delta_y, 0, 1)
-        MDFEXT_cci_pdf = _Create_Noise_PDF__d_cpdf(delta_y, 0, 1)
+        MDNEXT_cci_pdf = _d_cpdf(delta_y, 0, 1)
+        MDFEXT_cci_pdf = _d_cpdf(delta_y, 0, 1)
         # MATLAB k=2..number_of_s4p_files (1-based) → Python k=1..len(chdata)-1 (0-based)
         n_files = getattr(param, 'number_of_s4p_files', len(chdata))
         for k in range(1, n_files):
             if k >= len(chdata):
                 break
             if chdata[k].type == 'NEXT':
-                MDNEXT_cci_pdf = _Create_Noise_PDF__conv_fct(MDNEXT_cci_pdf, chdata[k].pdfr)
+                MDNEXT_cci_pdf = _conv_fct(MDNEXT_cci_pdf, chdata[k].pdfr)
             elif chdata[k].type == 'FEXT':
-                MDFEXT_cci_pdf = _Create_Noise_PDF__conv_fct(MDFEXT_cci_pdf, chdata[k].pdfr)
+                MDFEXT_cci_pdf = _conv_fct(MDFEXT_cci_pdf, chdata[k].pdfr)
             else:
                 raise ValueError(f'Crosstalk PDF unexpected channel type: {chdata[k].type!r}')
 
@@ -2763,19 +2268,19 @@ def Create_Noise_PDF(A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results=N
         mdfxi = _first_ber_idx(MDFEXT_cci_pdf)
         NS.MDFEXT_peak_interference = float(abs(MDFEXT_cci_pdf.x[mdfxi]))
 
-        NS.cci_pdf = _Create_Noise_PDF__conv_fct(MDFEXT_cci_pdf, MDNEXT_cci_pdf)
+        NS.cci_pdf = _conv_fct(MDFEXT_cci_pdf, MDNEXT_cci_pdf)
         cci_mxi = _first_ber_idx(NS.cci_pdf)
         NS.crosstalk_peak_interference_at_BER = float(abs(NS.cci_pdf.x[cci_mxi]))
         NS.cci_sigma = float(abs(NS.cci_pdf.x[cci_mxi]
                                  / (erfcinv(2 * param.specBER) * np.sqrt(2))))
-        NS.isi_and_xtalk_pdf = _Create_Noise_PDF__conv_fct(NS.sci_pdf, NS.cci_pdf)
+        NS.isi_and_xtalk_pdf = _conv_fct(NS.sci_pdf, NS.cci_pdf)
     else:
         NS.isi_and_xtalk_pdf = NS.sci_pdf
 
     mxi = _first_ber_idx(NS.isi_and_xtalk_pdf)
     NS.peak_interference_at_BER = float(abs(NS.isi_and_xtalk_pdf.x[mxi]))
 
-    combined_interference_and_noise_pdf = _Create_Noise_PDF__conv_fct(NS.isi_and_xtalk_pdf, NS.noise_pdf)
+    combined_interference_and_noise_pdf = _conv_fct(NS.isi_and_xtalk_pdf, NS.noise_pdf)
 
     if int(param.N_qb) != 0:
         # Equation 93A-37 (MATLAB L1674-1675): apply Rx ADC quantization noise.
@@ -3415,7 +2920,7 @@ def Init_PDF_Fast(EmptyPDF, values, probs):
 # ============================================================
 # qfuncinv(x) = sqrt(2)*erfcinv(2*x) → scipy.special.erfcinv.
 # qfunc(x) = 0.5*erfc(x/sqrt(2)) → scipy.special.erfc.
-# CDF_ev, CDF_inv_ev: inlined as _MLSE__CDF_ev and _MLSE__CDF_inv_ev.
+# CDF_ev, CDF_inv_ev: inlined as _CDF_ev and _CDF_inv_ev.
 # DER_MLSE loop: j = 1:200 (Python range(1,201)).
 # DER_MLSE_CDF while loop: convergence when DER_delta <= 0.001.
 # When A_s < A_ni: skip computation, set new_com_CDF = COM_from_matlab, deltas=0.
@@ -3432,28 +2937,6 @@ def _MLSE__qfuncinv(x):
 
 def _MLSE__qfunc(x):
     return 0.5 * erfc(np.asarray(x, dtype=float) / np.sqrt(2))
-
-
-def _MLSE__CDF_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    cdf = np.asarray(CDF, dtype=float)
-    hit = x >= -val
-    if not hit.any():
-        # find() is empty, so MATLAB's CDF(index) is an empty 1x0 -- there is
-        # no value to return.  np.argmax on an all-False mask answers 0, which
-        # would hand back CDF(1) as though it were the crossing.
-        raise IndexError('CDF_ev: no PDF.x >= -val')
-    index = int(np.argmax(hit))
-    return float(cdf[index])
-
-
-def _MLSE__CDF_inv_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    cdf = np.asarray(CDF, dtype=float)
-    indices = np.where(cdf >= val)[0]
-    if len(indices) == 0:
-        return float(x[-1])
-    return float(x[indices[0]])
 
 
 def MLSE(param, alpha, A_s, A_ni, PDF, CDF):
@@ -3488,7 +2971,7 @@ def MLSE(param, alpha, A_s, A_ni, PDF, CDF):
         while DER_delta > 0.001:
             last = DER_MLSE_CDF
             arg_jj = float(np.sqrt(1 + (jj - 1) * (1 - alpha) ** 2 + alpha ** 2) * A_peak / (L - 1))
-            term = 2.0 * jj * ((L - 1) / L) ** jj * _MLSE__CDF_ev(arg_jj, PDF, cdf)
+            term = 2.0 * jj * ((L - 1) / L) ** jj * _CDF_ev(arg_jj, PDF, cdf)
             DER_MLSE_CDF = term + DER_MLSE_CDF
             DER_delta = 1.0 - last / DER_MLSE_CDF if DER_MLSE_CDF != 0 else np.inf
             jj += 1
@@ -3496,8 +2979,8 @@ def MLSE(param, alpha, A_s, A_ni, PDF, CDF):
         inner_g = (0.5 * DER_MLSE * (L / (L - 1) - _MLSE__qfunc((1 - 2 * alpha) * A_peak / ((L - 1) * sigma_noise))))
         SNR_DFE_eqivalent = float(SNR_DFE * ((L - 1) * sigma_noise / A_peak * _MLSE__qfuncinv(float(inner_g))) ** 2)
 
-        inner_cdf = 0.5 * DER_MLSE_CDF * (L / (L - 1) - _MLSE__CDF_ev(float((1 - 2 * alpha) * A_peak / (L - 1)), PDF, cdf))
-        SNR_DFE_eqivalent_CDF = float(SNR_DFE * ((L - 1) / A_peak * _MLSE__CDF_inv_ev(inner_cdf, PDF, cdf)) ** 2)
+        inner_cdf = 0.5 * DER_MLSE_CDF * (L / (L - 1) - _CDF_ev(float((1 - 2 * alpha) * A_peak / (L - 1)), PDF, cdf))
+        SNR_DFE_eqivalent_CDF = float(SNR_DFE * ((L - 1) / A_peak * _CDF_inv_ev(inner_cdf, PDF, cdf)) ** 2)
 
         delta_com = float(10.0 * np.log10(SNR_DFE_eqivalent / SNR_DFE))
         delta_com_CDF = float(10.0 * np.log10(SNR_DFE_eqivalent_CDF / SNR_DFE))
@@ -3550,30 +3033,6 @@ def MLSE(param, alpha, A_s, A_ni, PDF, CDF):
 # ============================================================
 
 
-def _MLSE_U1_c_178A__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
-
-def _MLSE_U1_c_178A__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's.
-
-    COM Octave: p1.Min=0.5, p2.Min=0 -> p.Min=1 (Python round() gives 0).
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
 
 
 
@@ -3582,97 +3041,6 @@ def _MLSE_U1_c_178A__mround(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _MLSE_U1_c_178A__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _MLSE_U1_c_178A__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit, where (pmin:pmax)*binsize forms each element
-    as one product. Swept over 7920 (Min, length, BinSize) combinations against
-    Octave, the product form got 24.6% of the elements wrong, all by 1 ulp;
-    this form got none. The last element is pinned only when accumulation
-    overshoots the limit -- pinning unconditionally is wrong, e.g. COM Octave
-    Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004, -0.20000000000000004].
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _MLSE_U1_c_178A__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _MLSE_U1_c_178A__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        bin_idx = 0 if k == 0 else (len(t) - 1 if k == len(values) - 1
-                                     else int(np.argmin(np.abs(t - v))))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _MLSE_U1_c_178A__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _MLSE_U1_c_178A__mround(p1.Min + p2.Min)   # MATLAB round: halves go away from zero
-    p.y = _MLSE_U1_c_178A__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    # (p.Min*BinSize : BinSize : pMax*BinSize) -- a floating-point colon, which
-    # is NOT (p.Min:pMax)*BinSize.
-    p.x = _MLSE_U1_c_178A__colon_x(p.Min, pMax, p.BinSize)
-    return p
 
 
 def _MLSE_U1_c_178A__scale_pdf(pdf, scale_factor):
@@ -3692,35 +3060,6 @@ def _MLSE_U1_c_178A__scale_pdf(pdf, scale_factor):
         pdf_out.y[-1] = pdf_out.y[-2]
     pdf_out.y = pdf_out.y / np.sum(pdf_out.y)
     return pdf_out
-
-
-def _MLSE_U1_c_178A__scaleCDF(pdf, delta_com, DER0, A_s):
-    P = np.cumsum(np.asarray(pdf.y, dtype=float))
-    ider0 = int(np.argmax(P >= DER0))
-    scale_factor = 1.0 / 10.0 ** (-delta_com / 20.0)
-    pdf_out = _MLSE_U1_c_178A__scale_pdf(pdf, scale_factor)
-    cdf_out = np.cumsum(pdf_out.y)
-    return pdf_out, cdf_out, scale_factor
-
-
-def _MLSE_U1_c_178A__CDF_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    cdf = np.asarray(CDF, dtype=float)
-    hit = x >= -val
-    if not hit.any():
-        # find() is empty, so MATLAB's CDF(index) is an empty 1x0 -- there is
-        # no value to return.  np.argmax on an all-False mask answers 0, which
-        # would hand back CDF(1) as though it were the crossing.
-        raise IndexError('CDF_ev: no PDF.x >= -val')
-    index = int(np.argmax(hit))
-    return float(cdf[index])
-
-
-def _MLSE_U1_c_178A__CDF_inv_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    cdf = np.asarray(CDF, dtype=float)
-    indices = np.where(cdf >= val)[0]
-    return float(x[indices[0]]) if len(indices) > 0 else float(x[-1])
 
 
 def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
@@ -3743,14 +3082,14 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
     cdf_arr = np.asarray(CDF, dtype=float)
 
     # Step 1: scale CDF
-    p_an, P_an, _ = _MLSE_U1_c_178A__scaleCDF(PDF, delta_COM_an, DER0, A_s)
+    p_an, P_an, _ = _scaleCDF(PDF, delta_COM_an, DER0, A_s)
 
     sigma_an_2_pdf = float(np.sum(p_an.y * p_an.x ** 2) - np.sum(pdf_y * pdf_x ** 2))
     sigma_G_2 = float(PSD_results.S_G_rms) ** 2
     g_an = sigma_an_2_pdf / (float(PSD_results.S_rn_rms) ** 2)
 
     COM_from_matlab = float(20.0 * np.log10(A_s / A_ni))
-    DER_DFE = _MLSE_U1_c_178A__CDF_ev(A_s, PDF, cdf_arr)
+    DER_DFE = _CDF_ev(A_s, PDF, cdf_arr)
 
     S_an = g_an * np.asarray(PSD_results.S_rn, dtype=float)
     S_ni = np.asarray(PSD_results.S_isi, dtype=float) + np.asarray(PSD_results.S_n, dtype=float) + S_an
@@ -3759,7 +3098,7 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
 
     # Build convolved PDFs
     p_scaled_by_b = _MLSE_U1_c_178A__scale_pdf(p_an, b0)
-    p_j = _MLSE_U1_c_178A__conv_fct(p_an, p_scaled_by_b)
+    p_j = _conv_fct(p_an, p_scaled_by_b)
     p_scaled_by_1mb = _MLSE_U1_c_178A__scale_pdf(p_an, 1.0 - b0)
     p_trunc = copy.copy(p_an)
 
@@ -3789,7 +3128,7 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
             scale_arg = float(A_s * uu ** 1.5 / (uVu ** 0.5)) if uVu > 0 else 0.0
             P_j_y = np.cumsum(p_j.y)
             DER_MLSE_j = float(((L - 1) / L) ** (j - 1)
-                               * _MLSE_U1_c_178A__CDF_ev(scale_arg, p_j, P_j_y))
+                               * _CDF_ev(scale_arg, p_j, P_j_y))
             DER_MLSE += DER_MLSE_j
 
             if j == trunc:
@@ -3800,12 +3139,12 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
                 scale_t = float(A_s * uu_t ** 1.5 / (uVu_t ** 0.5)) if uVu_t > 0 else 0.0
                 P_trunc_y = np.cumsum(p_trunc.y)
                 DER_MLSE_trunc += (L * ((L - 1) / L) ** (j - 1)
-                                   * _MLSE_U1_c_178A__CDF_ev(scale_t, p_trunc, P_trunc_y))
+                                   * _CDF_ev(scale_t, p_trunc, P_trunc_y))
             elif j < trunc:
                 DER_MLSE_trunc = DER_MLSE
-                p_trunc = _MLSE_U1_c_178A__conv_fct(p_trunc, p_scaled_by_1mb)
+                p_trunc = _conv_fct(p_trunc, p_scaled_by_1mb)
 
-            p_j = _MLSE_U1_c_178A__conv_fct(p_j, p_scaled_by_1mb)
+            p_j = _conv_fct(p_j, p_scaled_by_1mb)
             j += 1
 
         # Q_budget_adj
@@ -3816,18 +3155,18 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
             q_arr = np.asarray(Q_budget_adj_param, dtype=float).ravel()
             Q_budget_adj = float(q_arr[0] - q_arr[1] * COM_from_matlab) if len(q_arr) >= 2 else 0.0
 
-        inv_trunc = _MLSE_U1_c_178A__CDF_inv_ev(DER_MLSE_trunc, p_an, P_an)
+        inv_trunc = _CDF_inv_ev(DER_MLSE_trunc, p_an, P_an)
         delta_com = float(20.0 * np.log10(1.0 / A_s * -inv_trunc)) - Q_budget_adj if inv_trunc < 0 else 0.0
-        inv_notrunc = _MLSE_U1_c_178A__CDF_inv_ev(DER_MLSE, p_an, P_an)
+        inv_notrunc = _CDF_inv_ev(DER_MLSE, p_an, P_an)
         delta_com_notrunc = (float(20.0 * np.log10(1.0 / A_s * -inv_notrunc)) - Q_budget_adj
                              if inv_notrunc < 0 else 0.0)
         delta_com_notrunc = max(delta_com_notrunc, 0.0)
-        DER_MLSE = _MLSE_U1_c_178A__CDF_ev(A_s * 10.0 ** (delta_com_notrunc / 20.0), PDF, cdf_arr)
+        DER_MLSE = _CDF_ev(A_s * 10.0 ** (delta_com_notrunc / 20.0), PDF, cdf_arr)
         delta_com_calc = delta_com
         if delta_com < 0:
             delta_com = 0.0
             print('MLSE truncation failed. Try increasing trunc')
-        DER_MLSE_trunc = _MLSE_U1_c_178A__CDF_ev(A_s * 10.0 ** (delta_com / 20.0), PDF, cdf_arr)
+        DER_MLSE_trunc = _CDF_ev(A_s * 10.0 ** (delta_com / 20.0), PDF, cdf_arr)
         new_com = COM_from_matlab + delta_com
     else:
         DER_MLSE = float('nan')
@@ -3837,7 +3176,7 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
         Q_budget_adj = 0.0
         DER_MLSE_trunc = float('nan')
 
-    PDF1, CDF1, _ = _MLSE_U1_c_178A__scaleCDF(PDF, -delta_com, DER0, A_s)
+    PDF1, CDF1, _ = _scaleCDF(PDF, -delta_com, DER0, A_s)
 
     r = SimpleNamespace()
     r.CDF = CDF1
@@ -4555,35 +3894,12 @@ def N_s(f, param, sigma_ns, OP):
 # fieldnames(param) → vars(param).keys() for SimpleNamespace
 # regexp → re.search
 # txffe_sweep_indices: 1-based MATLAB convention (used by OptFom_Local_Search)
-# Full_Grid_Matrix inlined as _OptFom_Build_TXFFE__Full_Grid_Matrix
+# Full_Grid_Matrix inlined as _Full_Grid_Matrix
 # precursor/postcursor indices are 1-based lists, converted to 0-based for numpy
 # postcursor_indices range-expansion: MATLAB (first:last) → Python range(first, last+1)
 # TXFFE_grid converted to float numpy array for matrix operations
 # ============================================================
 
-
-
-def _OptFom_Build_TXFFE__Full_Grid_Matrix(in_list):
-    if not isinstance(in_list, (list, tuple)):
-        raise ValueError('input must be list of individual sweep variables')
-    num_columns = len(in_list)
-    num_cases = 1
-    for col in in_list:
-        num_cases *= len(col)
-    out = [[None] * num_columns for _ in range(num_cases)]
-    num_repetitions = 1
-    for k in range(num_columns - 1, -1, -1):
-        col = list(in_list[k])
-        n = len(col)
-        C = []
-        for elem in col:
-            C.extend([elem] * num_repetitions)
-        num_repeats = num_cases // len(C)
-        D = C * num_repeats
-        for row in range(num_cases):
-            out[row][k] = D[row]
-        num_repetitions *= n
-    return out
 
 
 def OptFom_Build_TXFFE(param):
@@ -4618,11 +3934,11 @@ def OptFom_Build_TXFFE(param):
         TXFFE_grid = np.array([[0.0]])
         FULL_tx_index_vector = [[1]]
     else:
-        grid_raw = _OptFom_Build_TXFFE__Full_Grid_Matrix(txffe_cell)
+        grid_raw = _Full_Grid_Matrix(txffe_cell)
         TXFFE_grid = np.array(grid_raw, dtype=float)
         txffe_index_cell = [list(range(1, int(txffe_lengths[k]) + 1))
                             for k in range(num_taps)]
-        FULL_tx_index_vector = _OptFom_Build_TXFFE__Full_Grid_Matrix(txffe_index_cell)
+        FULL_tx_index_vector = _Full_Grid_Matrix(txffe_index_cell)
 
     # Build precursor/postcursor indices (1-based) adjusting cur for leading zeros
     cur_start = cur  # original cursor position (1-based)
@@ -4759,13 +4075,6 @@ def _OptFom_Adaptive_Local_Search__mround(x):
     # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
     # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
     return int(round(x))
-
-
-def _OptFom_Adaptive_Local_Search__compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
-    """Inlined compute_hard_cap (MATLAB lines 5788-5794)."""
-    if use_hard_cap:
-        return max(min_radius, _OptFom_Adaptive_Local_Search__mround(mul * LSV))
-    return float('nan')
 
 
 def _OptFom_Adaptive_Local_Search__append_csv_row(file_path, header_cells, row_cells):
@@ -4949,7 +4258,7 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
         return _finish(False, 'Evaluate Candidate: Exact Match', raw_L1_TX, L1_w, L2_w)
 
     # ---- Hard cap ----
-    hard_cap = _OptFom_Adaptive_Local_Search__compute_hard_cap(use_hard_cap, hard_cap_multiplier, LocalSearch_Value, min_radius)
+    hard_cap = _compute_hard_cap(use_hard_cap, hard_cap_multiplier, LocalSearch_Value, min_radius)
     if use_hard_cap and raw_L1_TX > hard_cap:
         return _finish(True, 'Skip: TX Exceeds Cap', raw_L1_TX, L1_w, L2_w, hard_cap)
 
@@ -5552,7 +4861,7 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
 # MATLAB→Python translation notes for OptFom_Compute_CTLE
 # MATLAB lines: 3144–3218
 # ============================================================
-# FD_CTLE and TD_CTLE inlined as _OptFom_Compute_CTLE__FD_CTLE and _OptFom_Compute_CTLE__TD_CTLE.
+# FD_CTLE and TD_CTLE inlined as _FD_CTLE and _TD_CTLE.
 # OptFom_FD_or_TD_Fields inlined: TDMODE→'uneq_pulse_response'/'ctle_pulse_response'.
 # THIS.ctle_index and THIS.g_LP_index are 1-based (MATLAB convention) →
 #   subtract 1 for 0-based array access.
@@ -5594,51 +4903,6 @@ def _OptFom_Compute_CTLE__mmax(a):
     return np.nanmax(a)
 
 
-def _OptFom_Compute_CTLE__mmin(a):
-    """MATLAB min(): the mirror of _OptFom_Compute_CTLE__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _OptFom_Compute_CTLE__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-
-def _OptFom_Compute_CTLE__FD_CTLE(freq, f_z, f_p1, f_p2, kacdc_dB):
-    freq = np.asarray(freq, dtype=float)
-    num = 10 ** (kacdc_dB / 20) + 1j * freq / f_z
-    den = (1 + 1j * freq / f_p1) * (1 + 1j * freq / f_p2)
-    return num / den
-
-
-def _OptFom_Compute_CTLE__TD_CTLE(ir_in, fb, f_z, f_p1, f_p2, kacdc_dB, oversampling):
-    # No dtype=float: MATLAB's filter() carries a complex input through, and
-    # the cast silently DISCARDED the imaginary part.  atleast_1d because
-    # MATLAB filters a scalar (1x1) and returns a scalar, where lfilter raised
-    # "selected axis is out of range" on a 0-d array.
-    ir_in = np.atleast_1d(np.asarray(ir_in))
-    p1_ctle = -2 * np.pi * f_p1
-    p2_ctle = -2 * np.pi * f_p2
-    z_ctle = -2 * np.pi * f_z * 10 ** (kacdc_dB / 20)
-    k_ctle = -p2_ctle
-    bilinear_fs = 2 * fb * oversampling
-    p2d = (1 + p2_ctle / bilinear_fs) / (1 - p2_ctle / bilinear_fs)
-    p1d = (1 + p1_ctle / bilinear_fs) / (1 - p1_ctle / bilinear_fs)
-    zd = (1 + z_ctle / bilinear_fs) / (1 - z_ctle / bilinear_fs)
-    kd = ((bilinear_fs - z_ctle)
-          / ((bilinear_fs - p1_ctle) * (bilinear_fs - p2_ctle))
-          * f_p1 / f_z)
-    B_filt = k_ctle * kd * np.poly([zd, -1])
-    A_filt = np.poly([p1d, p2d])
-    # MATLAB filter() runs along the first NON-singleton dimension: down the
-    # columns of a matrix, along a row vector.  lfilter defaults to axis=-1,
-    # which filtered a matrix along its rows instead.
-    axis = 0 if (ir_in.ndim >= 2 and ir_in.shape[0] != 1) else -1
-    return lfilter(B_filt, A_filt, ir_in, axis=axis), p1_ctle, p2_ctle, z_ctle
 
 
 def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
@@ -5669,13 +4933,13 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     elif ctle_type == 'CL120d':
         g_DC_low = float(g_DC_HP_values.ravel()[g_LP_index])
         f_HP = float(np.asarray(param.f_HP).ravel()[g_LP_index])
-        H_low = _OptFom_Compute_CTLE__FD_CTLE(f, f_HP, f_HP, 100e100, g_DC_low)
-        H_low_xc = _OptFom_Compute_CTLE__FD_CTLE(f_xc_arr, f_HP, f_HP, 100e100, g_DC_low)
+        H_low = _FD_CTLE(f, f_HP, f_HP, 100e100, g_DC_low)
+        H_low_xc = _FD_CTLE(f_xc_arr, f_HP, f_HP, 100e100, g_DC_low)
     elif ctle_type == 'CL120e':
         HP_Z = float(np.asarray(param.f_HP_Z).ravel()[ctle_index])
         HP_P = float(np.asarray(param.f_HP_P).ravel()[ctle_index])
-        H_low = _OptFom_Compute_CTLE__FD_CTLE(f, HP_Z, HP_P, 100e100, 0.0)
-        H_low_xc = _OptFom_Compute_CTLE__FD_CTLE(f_xc_arr, HP_Z, HP_P, 100e100, 0.0)
+        H_low = _FD_CTLE(f, HP_Z, HP_P, 100e100, 0.0)
+        H_low_xc = _FD_CTLE(f_xc_arr, HP_Z, HP_P, 100e100, 0.0)
     else:
         raise ValueError(f'Unknown CTLE_type: {ctle_type}')
 
@@ -5689,13 +4953,13 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
             if len(last_arr) > 0:
                 ir = ir[:int(last_arr[-1]) + 1]
             setattr(chdata[k], uneq_field, ir)
-            ctle_out, _, _, _ = _OptFom_Compute_CTLE__TD_CTLE(ir, baud_rate, CTLE_fz, CTLE_fp1, CTLE_fp2,
+            ctle_out, _, _, _ = _TD_CTLE(ir, baud_rate, CTLE_fz, CTLE_fp1, CTLE_fp2,
                                           g_dc, param.samples_per_ui)
             if ctle_type == 'CL120d':
-                ctle_out, _, _, _ = _OptFom_Compute_CTLE__TD_CTLE(ctle_out, baud_rate, f_HP, f_HP, 100e100,
+                ctle_out, _, _, _ = _TD_CTLE(ctle_out, baud_rate, f_HP, f_HP, 100e100,
                                               g_DC_low, param.samples_per_ui)
             elif ctle_type == 'CL120e':
-                ctle_out, _, _, _ = _OptFom_Compute_CTLE__TD_CTLE(ctle_out, baud_rate, HP_Z, HP_P, 100e100,
+                ctle_out, _, _, _ = _TD_CTLE(ctle_out, baud_rate, HP_Z, HP_P, 100e100,
                                               0.0, param.samples_per_ui)
             setattr(chdata[k], ctle_field, ctle_out)
     else:
@@ -5707,13 +4971,13 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
 
     if OP.RX_CALIBRATION:
         f2 = np.asarray(chdata[1].faxis, dtype=float)
-        ctle_gain2 = _OptFom_Compute_CTLE__FD_CTLE(f2, CTLE_fz, CTLE_fp1, CTLE_fp2, g_dc)
+        ctle_gain2 = _FD_CTLE(f2, CTLE_fz, CTLE_fp1, CTLE_fp2, g_dc)
         if ctle_type == 'CL93':
             H_low2 = np.ones(len(f2))
         elif ctle_type == 'CL120d':
-            H_low2 = _OptFom_Compute_CTLE__FD_CTLE(f2, f_HP, f_HP, 100e100, g_DC_low)
+            H_low2 = _FD_CTLE(f2, f_HP, f_HP, 100e100, g_DC_low)
         else:  # CL120e
-            H_low2 = _OptFom_Compute_CTLE__FD_CTLE(f2, HP_Z, HP_P, 100e100, 0.0)
+            H_low2 = _FD_CTLE(f2, HP_Z, HP_P, 100e100, 0.0)
         H_ctf2 = H_low2 * ctle_gain2
     else:
         H_ctf2 = 1
@@ -5736,195 +5000,8 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
 # dfecursors_windowed: MATLAB sbr(cursor_i-T_O+M*(1):M:cursor_i+M*ndfe-T_O) (1-based)
 #   → Python sbr[cursor_i-T_O+M : cursor_i+M*ndfe-T_O+1 : M] (0-based)
 # N_tail_start: 1-based in MATLAB config → subtract 1 for 0-based array access.
-# dfe_clipper and floatingDFE inlined as _OptFom_Compute_DFE__dfe_clipper and _OptFom_Compute_DFE__floatingDFE.
+# dfe_clipper and floatingDFE inlined as _dfe_clipper and _floatingDFE.
 # ============================================================
-
-
-def _OptFom_Compute_DFE__mextreme_complex(a, take):
-    """MATLAB orders complex values by magnitude, then by angle; numpy orders
-    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
-    and 5 in numpy. take is -1 for max, 0 for min."""
-    f = np.asarray(a).ravel()
-    good = ~np.isnan(np.abs(f))
-    if not good.any():
-        return f[0]
-    g = f[good]
-    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
-
-
-def _OptFom_Compute_DFE__mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _OptFom_Compute_DFE__mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
-
-
-def _OptFom_Compute_DFE__mmin(a):
-    """MATLAB min(): the mirror of _OptFom_Compute_DFE__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _OptFom_Compute_DFE__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-
-def _OptFom_Compute_DFE__dfe_clipper(input_arr, max_threshold, min_threshold):
-    inp = np.asarray(input_arr, dtype=float)
-    hi = np.asarray(max_threshold, dtype=float)
-    lo = np.asarray(min_threshold, dtype=float)
-    is_row = inp.ndim <= 1 or (inp.ndim == 2 and inp.shape[0] == 1)
-    if is_row:
-        hi = hi.ravel()
-        lo = lo.ravel()
-    else:
-        hi = hi.ravel().reshape(-1, 1)
-        lo = lo.ravel().reshape(-1, 1)
-    out = inp.copy()
-    out[inp > hi] = hi[inp > hi]
-    out[inp < lo] = lo[inp < lo]
-    return out
-
-
-def _OptFom_Compute_DFE__fb_mask(ndiff, positions, value):
-    """ndiff[positions] = value, growing ndiff the way MATLAB would.
-
-    ML 6260/6296 assign `ndiff(new_bank)=min_energy` where new_bank can run
-    past the end of ndiff: ndiff is indexed by bank START position, so it is
-    tap_bk-1 shorter than h0. MATLAB grows on out-of-range assignment; NumPy
-    raises IndexError. The grown entries are -Inf, sort last, and are never
-    selected, so the growth is inert -- the divergence was a crash, not a wrong
-    answer. See com_functions/fn/findbankloc/py_impl.py.
-    """
-    positions = np.asarray(positions, dtype=int).ravel()
-    if positions.size == 0:
-        return ndiff
-    need = int(positions.max()) + 1
-    if need > ndiff.size:
-        ndiff = np.concatenate([ndiff, np.zeros(need - ndiff.size)])
-    ndiff[positions] = value
-    return ndiff
-
-
-def _OptFom_Compute_DFE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
-    hisi = np.asarray(hisi, dtype=float).ravel()
-    len_ = idx_en - idx_st + 1
-    h0 = np.abs(hisi[idx_st - 1:idx_en])
-    h1 = np.maximum(0.0, h0 - bmaxg * curval)
-    if curval < 0:
-        h1 = np.zeros(len_)
-    n_bins = len_ - tap_bk + 1
-    h0n = np.zeros(n_bins)
-    h1n = np.zeros(n_bins)
-    for ii in range(tap_bk):
-        h0n += h0[ii:ii + n_bins] ** 2
-        h1n += h1[ii:ii + n_bins] ** 2
-    ndiff = h0n - h1n
-    MIN_E = -np.inf
-    idx = np.full(tap_bk * N_bg, -1, dtype=int)
-    ordered_set = np.arange((N_bg - 1) * tap_bk + 1)
-    set_next_bank = -1
-    for k in range(N_bg):
-        val_sort = np.argsort(-ndiff, kind='stable')
-        if k == 0:
-            ns = len(ordered_set)
-            if np.array_equal(np.sort(val_sort[:ns]), ordered_set):
-                idx = np.arange(N_bg * tap_bk)
-                break
-        if set_next_bank >= 0:
-            new_bank = np.arange(set_next_bank, set_next_bank + tap_bk)
-            idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
-            set_next_bank = -1
-            ndiff = _OptFom_Compute_DFE__fb_mask(ndiff, new_bank, MIN_E)
-            b_start = new_bank[0] - tap_bk + 1
-            b_end = new_bank[0] - 1
-            badV = np.arange(max(0, b_start), b_end + 1, dtype=int) if b_end >= 0 else np.array([], dtype=int)
-            if len(badV):
-                ndiff[badV] = MIN_E
-            continue
-        new_bank = np.arange(val_sort[0], val_sort[0] + tap_bk)
-        if k == N_bg - 1:
-            idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
-            break
-        placed = idx[:tap_bk * k]
-        badV = np.array([], dtype=int)
-        do_it_again = True
-        first_time = True
-        num_loops = 0
-        while do_it_again:
-            do_it_again = False
-            if num_loops > len(ndiff):
-                break
-            b_start = new_bank[0] - tap_bk + 1
-            b_end = new_bank[0] - 1
-            badV = np.arange(max(0, b_start), b_end + 1, dtype=int) if b_end >= 0 else np.array([], dtype=int)
-            if len(badV) and len(placed):
-                badV = badV[~np.isin(badV, placed)]
-            goodV_idx = new_bank[0] - tap_bk
-            if len(badV) > 0:
-                if not first_time:
-                    val_sort = np.argsort(-ndiff, kind='stable')
-                first_time = False
-                checkV = np.concatenate([badV, new_bank])
-                badV_pos = np.array([int(np.where(val_sort == v)[0][0]) for v in badV])
-                found_goodV = False
-                ii_found = len(val_sort) - 1
-                for ii_vs in range(len(val_sort)):
-                    if val_sort[ii_vs] == goodV_idx:
-                        found_goodV = True
-                        ii_found = ii_vs
-                        break
-                    if not np.any(val_sort[ii_vs] == checkV):
-                        ii_found = ii_vs
-                        break
-                if (not found_goodV) and len(badV_pos) > 0 and _OptFom_Compute_DFE__mmin(badV_pos) < ii_found:
-                    do_it_again = True
-                    ndiff[new_bank[0]] = MIN_E
-                    new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
-                if found_goodV:
-                    set_next_bank = goodV_idx
-            num_loops += 1
-        ndiff = _OptFom_Compute_DFE__fb_mask(ndiff, new_bank, MIN_E)
-        idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
-        if len(badV):
-            ndiff[badV] = MIN_E
-    return idx + (idx_st - 1)
-
-
-def _OptFom_Compute_DFE__floatingDFE(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, curval, dfe_delta=0):
-    hisi = np.asarray(hisi, dtype=float).copy()
-    tap_coef = np.zeros(len(hisi))
-    b = np.zeros(len(hisi))
-    tap_loc = _OptFom_Compute_DFE__findbankloc(hisi, N_b + 1, N_bmax, N_bf, curval, bmaxg, N_bg)
-    flt_curval = hisi[tap_loc].copy()
-    if dfe_delta != 0:
-        flt_curval_q = (np.floor(np.abs(flt_curval / curval) / dfe_delta)
-                        * dfe_delta * np.sign(flt_curval) * curval)
-    else:
-        flt_curval_q = flt_curval
-    applied_coef = np.minimum(np.abs(flt_curval_q / curval), bmaxg) * np.sign(flt_curval_q)
-    hisi[tap_loc] -= curval * applied_coef
-    tap_coef[tap_loc] = applied_coef
-    tap_loc = np.sort(tap_loc)
-    b[tap_loc] = bmaxg
-    return tap_loc, tap_coef, hisi, b
 
 
 def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
@@ -5945,7 +5022,7 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
 
     if param.Floating_DFE:
         postcursors = sbr[cursor_i + M :: M]
-        floating_tap_locations, floating_tap_coef, hisi, bmax = _OptFom_Compute_DFE__floatingDFE(
+        floating_tap_locations, floating_tap_coef, hisi, bmax = _floatingDFE(
             postcursors, param.ndfe_passed, param.N_bf, param.N_bg,
             param.N_bmax, param.bmaxg, sbr[cursor_i], param.dfe_delta)
         bmax_arr = np.asarray(bmax)
@@ -5959,7 +5036,7 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
         param.use_bmin = param.bmin
         floating_tap_coef = []
 
-    actual_dfecursors = _OptFom_Compute_DFE__dfe_clipper(
+    actual_dfecursors = _dfe_clipper(
         dfecursors_q,
         sbr[cursor_i] * np.asarray(param.use_bmax).ravel(),
         sbr[cursor_i] * np.asarray(param.use_bmin).ravel())
@@ -5985,7 +5062,7 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
                 param.use_bmax = use_bmax
                 param.use_bmin = use_bmin
 
-                actual_dfecursors = _OptFom_Compute_DFE__dfe_clipper(
+                actual_dfecursors = _dfe_clipper(
                     dfecursors_q,
                     sbr[cursor_i] * np.asarray(param.use_bmax).ravel(),
                     sbr[cursor_i] * np.asarray(param.use_bmin).ravel())
@@ -6086,14 +5163,6 @@ def _OptFom_Compute_TXFFE__OptFom_FD_or_TD_Fields(TDMODE):
 
 
 # --- inline from FFE_Fast (MATLAB 2049-2062) ---
-def _OptFom_Compute_TXFFE__FFE_Fast(C, V_shift):
-    C = np.asarray(C, dtype=float)
-    V_shift = np.asarray(V_shift, dtype=float)
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            V0 = V_shift[:, i] * c + V0
-    return V0
 
 
 def OptFom_Compute_TXFFE(chdata, pulse_struc, txffe, ctle_response_updated, param, OP):
@@ -6134,13 +5203,13 @@ def OptFom_Compute_TXFFE(chdata, pulse_struc, txffe, ctle_response_updated, para
                 mat[:, k] = np.roll(pulse, shift)
             pulse_struc[ii].pulse_ctle_circshift = mat
 
-    sbr = _OptFom_Compute_TXFFE__FFE_Fast(txffe, pulse_struc[0].pulse_ctle_circshift)
+    sbr = _FFE_Fast(txffe, pulse_struc[0].pulse_ctle_circshift)
     chdata[0].pulse_response_w_CFT_TXFFE_noRxFFE = sbr
 
     if ich > 1:
         for ii in range(1, ich):
             if chdata[ii].type in ('FEXT', 'THRU'):
-                chdata[ii].pulse_response_w_CFT_TXFFE_noRxFFE = _OptFom_Compute_TXFFE__FFE_Fast(
+                chdata[ii].pulse_response_w_CFT_TXFFE_noRxFFE = _FFE_Fast(
                     txffe, pulse_struc[ii].pulse_ctle_circshift)
             else:
                 chdata[ii].pulse_response_w_CFT_TXFFE_noRxFFE = pulse_struc[ii].pulse_ctle
@@ -6690,29 +5759,9 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
 # --- OptFom_Update_BEST_Post_Optimize (MATLAB lines 3843–3890) ---
 
 # --- inline from dfe_clipper (MATLAB 5531-5544) ---
-def _OptFom_Update_BEST_Post_Optimize__dfe_clipper(input_arr, max_threshold, min_threshold):
-    inp = np.asarray(input_arr, dtype=float)
-    hi = np.asarray(max_threshold, dtype=float)
-    lo = np.asarray(min_threshold, dtype=float)
-    is_row = inp.ndim <= 1 or (inp.ndim == 2 and inp.shape[0] == 1)
-    if is_row:
-        hi = hi.ravel()
-        lo = lo.ravel()
-    else:
-        hi = hi.ravel().reshape(-1, 1)
-        lo = lo.ravel().reshape(-1, 1)
-    out = inp.copy()
-    out[inp > hi] = hi[inp > hi]
-    out[inp < lo] = lo[inp < lo]
-    return out
 
 
 # --- inline from FD_CTLE (MATLAB 1681-1683) ---
-def _OptFom_Update_BEST_Post_Optimize__FD_CTLE(freq, f_z, f_p1, f_p2, kacdc_dB):
-    freq = np.asarray(freq, dtype=float)
-    num = 10 ** (kacdc_dB / 20) + 1j * freq / f_z
-    den = (1 + 1j * freq / f_p1) * (1 + 1j * freq / f_p2)
-    return num / den
 
 
 # --- inline from OptFom_Calc_Hr (MATLAB 2874-2880) with its helpers ---
@@ -6775,7 +5824,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
     # recomputes ctle_gain in optimize_fom, which does convert -- and it only
     # raises IndexError when the winning CTLE is the LAST in the list.
     ctle_idx = int(BEST.ctle) - 1
-    BEST.ctle_gain1 = _OptFom_Update_BEST_Post_Optimize__FD_CTLE(
+    BEST.ctle_gain1 = _FD_CTLE(
         f,
         float(np.asarray(param.CTLE_fz).ravel()[ctle_idx]),
         float(np.asarray(param.CTLE_fp1).ravel()[ctle_idx]),
@@ -6787,14 +5836,14 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
         BEST.H_low = 1.0
     elif ctle_type == 'CL120d':
         hp_idx = int(BEST.G_high_pass) - 1  # 1-based, from THIS.g_LP_index
-        BEST.H_low = _OptFom_Update_BEST_Post_Optimize__FD_CTLE(
+        BEST.H_low = _FD_CTLE(
             f,
             float(np.asarray(param.f_HP).ravel()[hp_idx]),
             float(np.asarray(param.f_HP).ravel()[hp_idx]),
             1e200,
             float(np.asarray(param.g_DC_HP_values).ravel()[hp_idx]))
     elif ctle_type == 'CL120e':
-        BEST.H_low = _OptFom_Update_BEST_Post_Optimize__FD_CTLE(
+        BEST.H_low = _FD_CTLE(
             f,
             float(np.asarray(param.f_HP_Z).ravel()[ctle_idx]),
             float(np.asarray(param.f_HP_P).ravel()[ctle_idx]),
@@ -6836,7 +5885,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
     BEST.bmax = bmax
     BEST.bmin = bmin
 
-    BEST.DFE_taps_mV = _OptFom_Update_BEST_Post_Optimize__dfe_clipper(
+    BEST.DFE_taps_mV = _dfe_clipper(
         dfe_cursors,
         BEST.cursor * bmax[:min(ndfe, len(bmax))],
         BEST.cursor * bmin[:min(ndfe, len(bmin))])
@@ -6889,18 +5938,6 @@ def _OptFom_Update_Best_Settings_EQ_Failed__mmax(a):
     return np.nanmax(a)
 
 
-def _OptFom_Update_Best_Settings_EQ_Failed__mmin(a):
-    """MATLAB min(): the mirror of _OptFom_Update_Best_Settings_EQ_Failed__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _OptFom_Update_Best_Settings_EQ_Failed__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
 
 def _OptFom_Update_Best_Settings_EQ_Failed__value_copy(obj):
     """MATLAB assigns structs and arrays BY VALUE; Python binds a reference.
@@ -6938,17 +5975,6 @@ def _OptFom_Update_Best_Settings_EQ_Failed__value_copy(obj):
 
 
 # --- inline from FFE (MATLAB 2026-2048) ---
-def _OptFom_Update_Best_Settings_EQ_Failed__FFE(C, cmx, spui, V):
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
 
 
 def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
@@ -6984,7 +6010,7 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
         M = int(param.samples_per_ui)
         cmx = int(param.cursor_index) - 1  # 0-based cursor
         if hasattr(chdata[0], 'ctle_imp_response'):
-            BEST.IR = _OptFom_Update_Best_Settings_EQ_Failed__FFE(THIS.txffe, cmx, M, chdata[0].ctle_imp_response)
+            BEST.IR = _FFE(THIS.txffe, cmx, M, chdata[0].ctle_imp_response)
         else:
             BEST.IR = []
 
@@ -7049,17 +6075,6 @@ def _OptFom_Update_Best_Setttings__value_copy(obj):
 
 
 # --- inline from FFE (MATLAB 2026-2048) ---
-def _OptFom_Update_Best_Setttings__FFE(C, cmx, spui, V):
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
 
 
 def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
@@ -7082,7 +6097,7 @@ def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
     if not OP.TDMODE:
         M = int(param.samples_per_ui)
         cmx = int(param.cursor_index) - 1  # 0-based cursor index
-        BEST.IR = _OptFom_Update_Best_Setttings__FFE(THIS.txffe, cmx, M, chdata[0].ctle_imp_response)
+        BEST.IR = _FFE(THIS.txffe, cmx, M, chdata[0].ctle_imp_response)
 
     # Stash the genuine CTLE frequency response computed for this (winning)
     # setting so the engineering .mat export can reproduce the FD equalizer
@@ -7163,31 +6178,6 @@ def _Output_Arg_Fill__mmax(a):
     return np.nanmax(a)
 
 
-def _Output_Arg_Fill__mmin(a):
-    """MATLAB min(): the mirror of _Output_Arg_Fill__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _Output_Arg_Fill__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _Output_Arg_Fill__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 # --- inline vma helpers ---
@@ -7197,147 +6187,6 @@ def _Output_Arg_Fill__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _Output_Arg_Fill__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _Output_Arg_Fill__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's.
-
-    COM Octave: round(0.5)=1, round(-0.5)=-1, round(2.5)=3; Python gives
-    0, 0, 2.
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
-
-def _Output_Arg_Fill__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the limit only when accumulation overshoots it; the product form
-    (pmin:pmax)*binsize builds each element as one product instead, and the two
-    differ by 1 ulp on most bins.  Swept over 7920 (Min, length, BinSize)
-    combinations against COM Octave, the product form got 24.6% of elements
-    wrong; this form got none.
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _Output_Arg_Fill__lfsr(s, t):
-    s = [int(b) for b in s]
-    n = len(s)
-    t = [int(x) - 1 for x in t]
-    m = len(t)
-    c = [s[:]]
-    for _ in range(2 ** n - 2):
-        b = [0] * m
-        b[0] = s[t[0]] ^ s[t[1]]
-        for i in range(m - 2):
-            b[i + 1] = s[t[i + 2]] ^ b[i]
-        for j in range(n - 1):
-            s[n - 1 - j] = s[n - 2 - j]
-        s[0] = b[m - 2]
-        c.append(s[:])
-    c_arr = np.array(c, dtype=int)
-    return c_arr[:, n - 1]
-
-
-def _Output_Arg_Fill__pam(data):
-    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
-    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
-    # auto-grow then fills it with 0 -- but only if some LATER index is
-    # assigned, because the array only ever grows to the highest assigned
-    # index. Verified against Octave:
-    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
-    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
-    #     pam([1]), pam([]) -> error: value on right hand side is undefined
-    data = np.asarray(data, dtype=float)
-    n_pairs = int(np.floor(len(data) / 2))
-    assigned = {}
-    for i in range(n_pairs):
-        pair = data[2 * i:2 * i + 2]
-        if np.array_equal(pair, [-1, -1]):
-            assigned[i] = -1.0
-        elif np.array_equal(pair, [-1, 1]):
-            assigned[i] = -1.0 / 3.0
-        elif np.array_equal(pair, [1, 1]):
-            assigned[i] = 1.0 / 3.0
-        elif np.array_equal(pair, [1, -1]):
-            assigned[i] = 1.0
-    if not assigned:
-        raise ValueError(
-            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
-            'assigns dataout and errors with "Output argument dataout (and '
-            'maybe others) not assigned". Got %d sample(s).' % len(data))
-    out = np.zeros(max(assigned) + 1)
-    for i, v in assigned.items():
-        out[i] = v
-    return out
-
-
-def _Output_Arg_Fill__PRBS13Q():
-    seq_bits = _Output_Arg_Fill__lfsr([0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1], [13, 12, 2, 1])
-    seq_nrz = 2.0 * (seq_bits - 0.5)
-    seq = _Output_Arg_Fill__pam(seq_nrz)
-    syms = np.zeros(len(seq), dtype=int)
-    syms[_Output_Arg_Fill__mround_arr(2 * (seq + 1)) / 2 == 2] = 3
-    syms[_Output_Arg_Fill__mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[_Output_Arg_Fill__mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
-    return seq, syms, seq_nrz
-
-
-def _Output_Arg_Fill__strfind_int(arr, pattern):
-    arr = np.asarray(arr)
-    n, m = len(arr), len(pattern)
-    return np.array([i for i in range(n - m + 1) if np.array_equal(arr[i:i + m], pattern)], dtype=int)
-
-
-def _Output_Arg_Fill__vma(PR, M):
-    PR = np.asarray(PR, dtype=float).ravel()
-    M = int(M)
-    seq, syms, _ = _Output_Arg_Fill__PRBS13Q()
-    symbols = seq
-    imaxPR = int(np.argmax(PR))
-    pos_3x7 = _Output_Arg_Fill__strfind_int(syms, [3, 3, 3, 3, 3, 3, 3])
-    indx_S3x7_start = M * pos_3x7 + imaxPR
-    indx_S3x7_end = M * (pos_3x7 + 6) + imaxPR
-    pos_0x6 = _Output_Arg_Fill__strfind_int(syms, [0, 0, 0, 0, 0, 0])
-    indx_S0x6_start = M * (pos_0x6 + 1) + imaxPR - 1
-    indx_S0x6_end = M * (pos_0x6 + 5) + imaxPR
-    unit_pulse = np.zeros(M)
-    unit_pulse[0] = 1
-    shifting_vector = np.kron(symbols, unit_pulse)
-    Bit_stream_response = lfilter(PR, [1.0], shifting_vector)
-    icent3 = int(np.floor((indx_S3x7_end - indx_S3x7_start) / 2 + indx_S3x7_start)[0])
-    icent0 = int(np.floor((indx_S0x6_end - indx_S0x6_start) / 2 + indx_S0x6_start)[0])
-    P_3 = float(np.mean(Bit_stream_response[icent3 - M:icent3 + M + 1]))
-    P_0 = float(np.mean(Bit_stream_response[icent0 - M:icent0 + M + 1]))
-    VMA = P_3 - P_0
-    return SimpleNamespace(P_3=P_3, P_0=P_0, VMA=VMA)
 
 
 # --- inline str2csv ---
@@ -7346,87 +6195,9 @@ def _Output_Arg_Fill__str2csv(c):
 
 
 # --- inline pdf2sgm ---
-def _Output_Arg_Fill__pdf2sgm(pdf):
-    x = np.asarray(pdf.x, dtype=float)
-    y = np.asarray(pdf.y, dtype=float)
-    avg = np.sum(x * y)
-    return float(np.sqrt(np.sum((x - avg) ** 2 * y)))
 
 
 # --- inline Burst_Probability_Calc helpers ---
-def _Output_Arg_Fill__conv_fct_b(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _Output_Arg_Fill__mround(p1.Min + p2.Min)         # MATLAB round: half away from zero
-    p.y = _Output_Arg_Fill__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _Output_Arg_Fill__colon_x(p.Min, pMax, p.BinSize)   # MATLAB colon, not (Min:pMax)*BinSize
-    return p
-
-
-def _Output_Arg_Fill__d_cpdf_b(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer. zip() below stopped at the
-        # shorter of the two and silently normalised what it had.
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # MATLAB issorted() needs every element <= the next, which is FALSE across
-    # a NaN. np.diff(values) < 0 is also false across a NaN, so [-1 NaN 1] was
-    # called sorted and answered instead of being rejected.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _Output_Arg_Fill__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects NONZERO, and NaN counts as nonzero. `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector left the support
-    # empty and raised instead of answering.
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _Output_Arg_Fill__Init_PDF_Fast_b(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _Output_Arg_Fill__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    # pdf.x spans rvd[0]..rvd[-1]; a value outside that span (i.e.
-    # `values` is not ascending) makes bin_placement fall off the array
-    # and MATLAB stops. A negative index is legal in numpy, so Python
-    # wrapped round and added the probability to the wrong bin.
-    if bp.size and (bp.min() < 0 or bp.max() >= pdf.y.size):
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
 
 
 def _Output_Arg_Fill__get_pdf_b(iv, L, BinSize):
@@ -7434,18 +6205,18 @@ def _Output_Arg_Fill__get_pdf_b(iv, L, BinSize):
     if _Output_Arg_Fill__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
-        return _Output_Arg_Fill__d_cpdf_b(BinSize, 0, 1)
+        return _d_cpdf_b(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _Output_Arg_Fill__d_cpdf_b(BinSize, 0, 1)
+    pdf = _d_cpdf_b(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
-        pdfn = _Output_Arg_Fill__Init_PDF_Fast_b(empty_pdf, np.abs(v) * values, prob)
-        pdf = _Output_Arg_Fill__conv_fct_b(pdf, pdfn)
+        pdfn = _Init_PDF_Fast_b(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct_b(pdf, pdfn)
     return pdf
 
 
@@ -7464,11 +6235,11 @@ def _Output_Arg_Fill__Burst_Probability_Calc(COM_SNR_Struct, DFE_taps, param, OP
         if OP.use_simple_EP_model:
             tap_val = 2.0 * A_s * float(_Output_Arg_Fill__mmax(sorted_abs_taps))
             post_pdf = _Output_Arg_Fill__get_pdf_b(tap_val, param.levels, param.delta_y)
-            new_pdf = _Output_Arg_Fill__conv_fct_b(ep_noise_pdf[0], post_pdf)
+            new_pdf = _conv_fct_b(ep_noise_pdf[0], post_pdf)
         else:
             tap_val = 2.0 * A_s * float(sorted_abs_taps[k - 1])
             post_pdf = _Output_Arg_Fill__get_pdf_b(tap_val, param.levels, param.delta_y)
-            new_pdf = _Output_Arg_Fill__conv_fct_b(ep_noise_pdf[k - 1], post_pdf)
+            new_pdf = _conv_fct_b(ep_noise_pdf[k - 1], post_pdf)
         ep_noise_pdf.append(new_pdf)
         idx = np.where(new_pdf.x >= error_threshold)[0]
         p_ep_k = 1e-20 if len(idx) == 0 else float(np.sum(new_pdf.y[idx[0]:]))
@@ -7486,7 +6257,7 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
     if tdecq is False or tdecq_str in ('false', 'none', '0'):
         output_args.VMA = []
     elif tdecq_str == 'vma':
-        est_vma = _Output_Arg_Fill__vma(fom_result.sbr, M)
+        est_vma = _vma(fom_result.sbr, M)
         output_args.VMA = est_vma.VMA
     else:
         raise ValueError(f'{OP.TDECQ} not recognized for TDECQ')
@@ -7631,18 +6402,18 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
         output_args.error_propagation_probability = []
         output_args.burst_probabilities = []
 
-    output_args.sgm_Ani__isi_xt_noise = _Output_Arg_Fill__pdf2sgm(COM_SNR_Struct.combined_interference_and_noise_pdf)
-    output_args.sgm_isi_xt = _Output_Arg_Fill__pdf2sgm(Noise_Struct.isi_and_xtalk_pdf)
-    output_args.sgm_noise__gaussian_noise_p_DD = _Output_Arg_Fill__pdf2sgm(Noise_Struct.noise_pdf)
-    output_args.sgm_p_DD = _Output_Arg_Fill__pdf2sgm(Noise_Struct.p_DD)
-    output_args.sgm_gaussian_noise = _Output_Arg_Fill__pdf2sgm(Noise_Struct.gaussian_noise_pdf)
+    output_args.sgm_Ani__isi_xt_noise = _pdf2sgm(COM_SNR_Struct.combined_interference_and_noise_pdf)
+    output_args.sgm_isi_xt = _pdf2sgm(Noise_Struct.isi_and_xtalk_pdf)
+    output_args.sgm_noise__gaussian_noise_p_DD = _pdf2sgm(Noise_Struct.noise_pdf)
+    output_args.sgm_p_DD = _pdf2sgm(Noise_Struct.p_DD)
+    output_args.sgm_gaussian_noise = _pdf2sgm(Noise_Struct.gaussian_noise_pdf)
     output_args.sgm_G = Noise_Struct.sigma_G
     output_args.sgm_rjit = Noise_Struct.sigma_rjit
     output_args.sgm_N = Noise_Struct.sigma_N
     output_args.sgm_TX = Noise_Struct.sigma_TX
-    output_args.sgm_isi = _Output_Arg_Fill__pdf2sgm(Noise_Struct.sci_pdf)
+    output_args.sgm_isi = _pdf2sgm(Noise_Struct.sci_pdf)
     if OP.RX_CALIBRATION == 0:
-        output_args.sgm_xt = _Output_Arg_Fill__pdf2sgm(Noise_Struct.cci_pdf)
+        output_args.sgm_xt = _pdf2sgm(Noise_Struct.cci_pdf)
     else:
         output_args.sgm_xt = []
 
@@ -7735,49 +6506,6 @@ def _PRBS13Q__lfsr(s, t):
     return seq, c_arr
 
 
-_PAM_MAP = {
-    (-1, -1): -1.0,
-    (-1,  1): -1.0 / 3,
-    ( 1,  1):  1.0 / 3,
-    ( 1, -1):  1.0,
-}
-
-
-def _PRBS13Q__pam(data):
-    """Grey-coded PAM4 mapping (MATLAB lines 4213-4225).
-
-    Maps NRZ pairs to PAM4 levels: (-1,-1)→-1, (-1,1)→-1/3, (1,1)→1/3, (1,-1)→1.
-    """
-    data = np.asarray(data, dtype=float).ravel()
-    n_pairs = len(data) // 2
-
-    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
-    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
-    # auto-grow then fills it with 0 -- but only if some LATER index is
-    # assigned, because the array only ever grows to the highest assigned
-    # index. Verified against Octave:
-    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
-    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
-    #     pam([1]), pam([]) -> error: value on right hand side is undefined
-    assigned = {}
-    for k in range(n_pairs):                    # k = i_py // 2
-        i = k * 2                               # 0-based start of pair
-        key = (data[i], data[i + 1])            # exact ±1 comparison
-        if key in _PAM_MAP:
-            assigned[k] = _PAM_MAP[key]
-
-    if not assigned:
-        raise ValueError(
-            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
-            'assigns dataout and errors with "Output argument dataout (and '
-            'maybe others) not assigned". Got %d sample(s).' % data.size)
-
-    dataout = np.zeros(max(assigned) + 1, dtype=float)
-    for k, v in assigned.items():
-        dataout[k] = v
-    return dataout
-
-
 def PRBS13Q():
     """Generate PRBS13Q PAM4 sequence (MATLAB lines 4174-4192).
 
@@ -7790,7 +6518,7 @@ def PRBS13Q():
     seed = [0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1]
     seq_bits, _ = _PRBS13Q__lfsr(seed, taps)
     seq_nrz = 2.0 * (seq_bits - 0.5)
-    seq = _PRBS13Q__pam(seq_nrz)
+    seq = _pam(seq_nrz)
 
     syms = np.zeros(len(seq), dtype=int)
     syms[_PRBS13Q__mround_arr(2 * (seq + 1)) / 2 == 2] = 3
@@ -7924,46 +6652,6 @@ def _RILN_TD__mmax(a):
     return np.nanmax(a)
 
 
-def _RILN_TD__mmin(a):
-    """MATLAB min(): the mirror of _RILN_TD__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _RILN_TD__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _RILN_TD__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _RILN_TD__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
-
-
-_BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
-
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -7971,192 +6659,27 @@ _BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _RILN_TD__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _RILN_TD__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit only when accumulation overshoots it; it is NOT
-    (pmin:pmax)*binsize, which differs by 1 ulp on 24.6% of elements (measured
-    against Octave over 7920 (Min, length, BinSize) combinations).
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _RILN_TD__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _RILN_TD__bessel_poly(n):
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        a[ii] = (math.factorial(2 * n - ii)
-                 / (2 ** (n - ii) * math.factorial(ii) * math.factorial(n - ii)))
-    return a
-
-
-def _RILN_TD__Butterworth_Filter(param, f, use_BW):
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BW` is true only for a non-empty value whose elements are
-    # ALL non-zero.  COM Octave: use_BW=[] -> ones branch, [1 0] -> ones branch.
-    # `not use_BW` raised on any numpy array of more than one element.
-    use = np.asarray(use_BW)
-    if not (use.size and np.all(use)):
-        # ones(1,length(f)): length() is the LONGEST dimension, not the first.
-        # COM Octave: f 2x3 -> ones(1,3); f scalar -> 1 (len(f) raised).
-        return np.ones(_RILN_TD__length(f))
-    s = 1j * f / (param.fb_BW_cutoff * param.fb)
-    return 1.0 / np.polyval(_BW_POLY, s)
-
-
-def _RILN_TD__Bessel_Thomson_Filter(param, f, use_BT):
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
-    # ALL non-zero, and length() is the LONGEST dimension, not the first.
-    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
-    # f scalar -> 1 (len(f) raised TypeError).
-    use = np.asarray(use_BT)
-    if not (use.size and np.all(use)):
-        return np.ones(_RILN_TD__length(f))
-    a = _RILN_TD__bessel_poly(param.BTorder)
-    acoef = a[::-1]
-    s = 1j * np.asarray(f, dtype=float) / (param.fb_BT_cutoff * param.fb)
-    return a[0] / np.polyval(acoef, s)
-
-
-def _RILN_TD__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer, and the zip() below would
-        # silently normalise whatever it collected.  COM Octave 4p16p0:
-        # d_cpdf(1,[-1 0 1],[0.5 0.5]) errors "probs(3): out of bound 2".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted: MATLAB requires every element <= the next, which is false as
-    # soon as a NaN is present.  np.diff(values) < 0 is False across a NaN, so
-    # that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _RILN_TD__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` dropped
-    # NaN, so a NaN-bearing (or all-zero) probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) -> Min=-1, x=[-1 0 1], y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _RILN_TD__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _RILN_TD__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _RILN_TD__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _RILN_TD__mround(p1.Min + p2.Min)     # MATLAB round: half away from zero
-    p.y = _RILN_TD__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _RILN_TD__colon_x(p.Min, pMax, p.BinSize)
-    return p
 
 
 def _RILN_TD__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
-        return _RILN_TD__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     if _RILN_TD__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
-        return _RILN_TD__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _RILN_TD__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
-        pdfn = _RILN_TD__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _RILN_TD__conv_fct(pdf, pdfn)
-    return pdf
-
-
-def _RILN_TD__normal_dist(sigma, nsigma, binsize):
-    pdf = SimpleNamespace()
-    pdf.BinSize = binsize
-    pdf.Min = -_RILN_TD__mround(2 * nsigma * sigma / binsize)
-    pdf.x = np.arange(pdf.Min, -pdf.Min + 1) * binsize
-    eps = np.finfo(float).eps
-    pdf.y = np.exp(-pdf.x ** 2 / (2 * sigma ** 2 + eps))
-    pdf.y = pdf.y / np.sum(pdf.y)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -8171,8 +6694,8 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
     if not hasattr(OP, 'transmitter_transition_time'):
         raise AttributeError('OP.transmitter_transition_time required for RILN_TD')
 
-    H_bt = _RILN_TD__Bessel_Thomson_Filter(param, faxis_f2, True)
-    H_bw = _RILN_TD__Butterworth_Filter(param, faxis_f2, True)
+    H_bt = _Bessel_Thomson_Filter(param, faxis_f2, True)
+    H_bw = _Butterworth_Filter(param, faxis_f2, True)
     H_t = np.exp(-(np.pi * faxis_f2 / 1e9 * OP.transmitter_transition_time / 1.6832) ** 2)
     # MATLAB overrides H_tw with ones after computing it
     H_tw = np.ones(len(faxis_f2))
@@ -8233,7 +6756,7 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
         float(np.linalg.norm(ILN[im::M])) for im in range(M)
     ]))
 
-    pdf_from_norm = _RILN_TD__normal_dist(result.FOM, 7, BinSize)
+    pdf_from_norm = _normal_dist(result.FOM, 7, BinSize)
     fit_peak = float(FIT_PR[ipeak])
     result.SNR_ISI_FOM = float(20 * np.log10(fit_peak / result.FOM)) if result.FOM > 0 else np.inf
     result.SNR_ISI_FOM_PDF = (float(20 * np.log10(fit_peak / result.FOM_PDF))
@@ -8390,15 +6913,6 @@ def _SL__r_parrelell2_params(zref, f, rpad):
     return p
 
 
-def _SL__combines4p(a11, a12, a21, a22, b11, b12, b21, b22):
-    def sq(x): return np.asarray(x, dtype=complex).ravel()
-    a11, a12, a21, a22 = sq(a11), sq(a12), sq(a21), sq(a22)
-    b11, b12, b21, b22 = sq(b11), sq(b12), sq(b21), sq(b22)
-    Nv = 1 - a22 * b11
-    return (a11 + a12 * a21 * b11 / Nv, a12 * b12 / Nv,
-            b21 * a21 / Nv, b22 + b12 * b21 * a22 / Nv)
-
-
 def SL(S, f, R, R_0):
     """Add source/load impedance to S-parameters via cascade (MATLAB lines 4368-4403).
 
@@ -8421,7 +6935,7 @@ def SL(S, f, R, R_0):
         return S
 
     (SLD.Parameters[0, 0, :], SLD.Parameters[0, 1, :],
-     SLD.Parameters[1, 0, :], SLD.Parameters[1, 1, :]) = _SL__combines4p(
+     SLD.Parameters[1, 0, :], SLD.Parameters[1, 1, :]) = _combines4p(
         spr_p[0, 0, :], spr_p[0, 1, :], spr_p[1, 0, :], spr_p[1, 1, :],
         S.Parameters[0, 0, :], S.Parameters[0, 1, :], S.Parameters[1, 0, :], S.Parameters[1, 1, :]
     )
@@ -8430,20 +6944,6 @@ def SL(S, f, R, R_0):
 
 
 # --- SNDR_ref (MATLAB lines 4405–4442) ---
-
-def _SNDR_ref__FFE(C, cmx, spui, V):
-    """Inline copy of FFE (MATLAB lines 2026-2048). cmx is 0-based cursor index."""
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
-
 
 def SNDR_ref(PR_Ref, param):
     """Compute SNDR for 6 TX-FFE presets (MATLAB lines 4405-4442).
@@ -8482,7 +6982,7 @@ def SNDR_ref(PR_Ref, param):
     sigma_iL_arr = np.zeros(n_presets)
 
     for ipst, preset in enumerate(param.preset):
-        PR_FFE = _SNDR_ref__FFE(preset.txffe, 3, M, PR_noFFE)  # cmx=3: 0-based tap 4
+        PR_FFE = _FFE(preset.txffe, 3, M, PR_noFFE)  # cmx=3: 0-based tap 4
         ipeak_0_ffe = int(np.argmax(PR_FFE))
         start_0 = -D_p * M + ipeak_0_ffe
         end_0 = N_p * M + ipeak_0_ffe
@@ -8767,70 +7267,6 @@ def TD_CTLE(ir_in, fb, f_z, f_p1, f_p2, kacdc_dB, oversampling):
 
 
 
-def _TD_FD_fillin__factorial(k):
-    """MATLAB factorial(): a double, so it overflows to Inf above 170!."""
-    return math.inf if k > 170 else math.factorial(k)
-
-
-def _TD_FD_fillin__bessel(n):
-    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
-    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
-    # assignment is undefined".  Returning an empty array answered a call the
-    # reference refuses.  Non-integer n is rejected by MATLAB factorial().
-    if n < 0:
-        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
-    if n != int(n):
-        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
-    n = int(n)
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        # COM Octave, bessel(90): a(1:10) are Inf.  Python's exact
-        # math.factorial made them finite (~1.09e164) instead.
-        a[ii] = (_TD_FD_fillin__factorial(2 * n - ii)
-                 / (2 ** (n - ii) * _TD_FD_fillin__factorial(ii) * _TD_FD_fillin__factorial(n - ii)))
-    return a
-
-
-def _TD_FD_fillin__Bessel_Thomson_Filter(param, f, use_BT):
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
-    # ALL non-zero, and length() is the LONGEST dimension, not the first.
-    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
-    # f scalar -> 1 (len(f) raised TypeError).
-    use = np.asarray(use_BT)
-    if not (use.size and np.all(use)):
-        return np.ones(_TD_FD_fillin__length(f))
-    a = _TD_FD_fillin__bessel(param.BTorder)
-    acoef = a[::-1]
-    s = 1j * f / (param.fb_BT_cutoff * param.fb)
-    return a[0] / np.polyval(acoef, s)
-
-
-_BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
-
-
-def _TD_FD_fillin__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _TD_FD_fillin__Butterworth_Filter(param, f, use_BW):
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BW` is true only for a non-empty value whose elements are
-    # ALL non-zero.  COM Octave: use_BW=[] -> ones branch, [1 0] -> ones branch,
-    # [1 1] -> filter branch.
-    use = np.asarray(use_BW)
-    if not (use.size and np.all(use)):
-        # ones(1,length(f)): length() is the LONGEST dimension, not the first.
-        # COM Octave: f 2x3 -> ones(1,3), three elements not six; f scalar -> 1
-        # (len(f) raised TypeError on a scalar).
-        return np.ones(_TD_FD_fillin__length(f))
-    s = 1j * f / (param.fb_BW_cutoff * param.fb)
-    return 1.0 / np.polyval(_BW_POLY, s)
-
-
 def TD_FD_fillin(param, OP, chdata):
     Over_sample = 2
     num_files = len(chdata)
@@ -8851,8 +7287,8 @@ def TD_FD_fillin(param, OP, chdata):
         UI = param.ui
         M = param.samples_per_ui
 
-        H_bt = _TD_FD_fillin__Bessel_Thomson_Filter(param, f, OP.Bessel_Thomson)
-        H_bw = _TD_FD_fillin__Butterworth_Filter(param, f, OP.Butterworth)
+        H_bt = _Bessel_Thomson_Filter(param, f, OP.Bessel_Thomson)
+        H_bw = _Butterworth_Filter(param, f, OP.Butterworth)
         H_ftr = (H_bw * H_bt).ravel()
 
         prr = np.sinc(f * UI)  # normalised sinc = sin(pi*f*UI)/(pi*f*UI)
@@ -9061,37 +7497,6 @@ def Write_CSV(output_args, csv_file):
 
 
 
-def _add_brd__synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float)
-    f_GHz = f / 1e9
-    gamma_1 = gamma_coeff[1] * (1 + 1j)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        log_f = np.where(f_GHz > 0, np.log(f_GHz), 0.0)
-    gamma_2 = gamma_coeff[2] * (1 - 2j / np.pi * log_f) + 2j * np.pi * tau
-    gamma = gamma_coeff[0] + gamma_1 * np.sqrt(f_GHz) + gamma_2 * f_GHz
-    gamma = np.where(f_GHz == 0, float(gamma_coeff[0]), gamma)
-
-    if d == 0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (Z_c - 2 * Z_0) / (Z_c + 2 * Z_0)
-
-    exp_gd = np.exp(-d * gamma)
-    denom = 1 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1 - exp_gd ** 2) / denom
-    s21 = (1 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21.copy(), s21.copy(), s11.copy()
-
-
-def _add_brd__combines4p(s11in1, s12in1, s21in1, s22in1, s11in2, s12in2, s21in2, s22in2):
-    N = 1 - s22in1 * s11in2
-    s11out = s11in1 + s12in1 * s21in1 * s11in2 / N
-    s12out = s12in1 * s12in2 / N
-    s21out = s21in2 * s21in1 / N
-    s22out = s22in2 + s12in2 * s21in2 * s22in1 / N
-    return s11out, s12out, s21out, s22out
-
-
 def add_brd(chdata, param, OP):
     ctype = chdata.type
     if ctype in ('THRU', 'NOISE'):
@@ -9118,11 +7523,11 @@ def add_brd(chdata, param, OP):
     s11pad2t = -1j * 2 * np.pi * f * c2[0] * zref / (2 + 1j * 2 * np.pi * f * c2[0] * zref)
     s21pad2t = 2 / (2 + 1j * 2 * np.pi * f * c2[0] * zref)
 
-    s11tx, s12tx, s21tx, s22tx = _add_brd__synth_tline(
+    s11tx, s12tx, s21tx, s22tx = _synth_tline(
         chdata.faxis, param.brd_Z_c[0], param.Z0, param.brd_gamma0_a1_a2, param.brd_tau, z_bp_tx)
-    s11tx, s12tx, s21tx, s22tx = _add_brd__combines4p(
+    s11tx, s12tx, s21tx, s22tx = _combines4p(
         s11pad1t, s21pad1t, s21pad1t, s11pad1t, s11tx, s12tx, s21tx, s22tx)
-    s11tx, s12tx, s21tx, s22tx = _add_brd__combines4p(
+    s11tx, s12tx, s21tx, s22tx = _combines4p(
         s11tx, s12tx, s21tx, s22tx, s11pad2t, s21pad2t, s21pad2t, s11pad2t)
 
     # RX side pads
@@ -9131,21 +7536,21 @@ def add_brd(chdata, param, OP):
     s11pad2r = -1j * 2 * np.pi * f * c2[1] * zref / (2 + 1j * 2 * np.pi * f * c2[1] * zref)
     s21pad2r = 2 / (2 + 1j * 2 * np.pi * f * c2[1] * zref)
 
-    s11rx, s12rx, s21rx, s22rx = _add_brd__synth_tline(
+    s11rx, s12rx, s21rx, s22rx = _synth_tline(
         chdata.faxis, param.brd_Z_c[1], param.Z0, param.brd_gamma0_a1_a2, param.brd_tau, z_bp_rx)
-    s11rx, s12rx, s21rx, s22rx = _add_brd__combines4p(
+    s11rx, s12rx, s21rx, s22rx = _combines4p(
         s11pad2r, s21pad2r, s21pad2r, s11pad2r, s11rx, s12rx, s21rx, s22rx)
-    s11rx, s12rx, s21rx, s22rx = _add_brd__combines4p(
+    s11rx, s12rx, s21rx, s22rx = _combines4p(
         s11rx, s12rx, s21rx, s22rx, s11pad1r, s21pad1r, s21pad1r, s11pad1r)
 
     if OP.include_pcb == 1:
-        s11o1, s12o1, s21o1, s22o1 = _add_brd__combines4p(
+        s11o1, s12o1, s21o1, s22o1 = _combines4p(
             s11tx, s12tx, s21tx, s22tx,
             chdata.sdd11_raw, chdata.sdd12_raw, chdata.sdd21_raw, chdata.sdd22_raw)
-        s11out, s12out, s21out, s22out = _add_brd__combines4p(
+        s11out, s12out, s21out, s22out = _combines4p(
             s11o1, s12o1, s21o1, s22o1, s11rx, s12rx, s21rx, s22rx)
     elif OP.include_pcb == 2:
-        s11out, s12out, s21out, s22out = _add_brd__combines4p(
+        s11out, s12out, s21out, s22out = _combines4p(
             chdata.sdd11_raw, chdata.sdd12_raw, chdata.sdd21_raw, chdata.sdd22_raw,
             s11rx, s12rx, s21rx, s22rx)
     else:
@@ -9156,33 +7561,6 @@ def add_brd(chdata, param, OP):
 
 
 # --- add_brdorig (MATLAB lines 4821–4842) ---
-
-def _add_brdorig__synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float).ravel()
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float)
-    f_GHz = f / 1e9
-    gamma_1 = gamma_coeff[1] * (1.0 + 1j)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        gamma_2 = gamma_coeff[2] * (1.0 - 2j / np.pi * np.log(f_GHz)) + 2j * np.pi * tau
-    gamma = gamma_coeff[0] + gamma_1 * np.sqrt(f_GHz) + gamma_2 * f_GHz
-    gamma[f_GHz == 0] = gamma_coeff[0]
-    rho_rl = 0.0 if d == 0 else (Z_c - 2.0 * Z_0) / (Z_c + 2.0 * Z_0)
-    exp_gd = np.exp(-d * gamma)
-    exp_gd2 = exp_gd ** 2
-    denom = 1.0 - rho_rl ** 2 * exp_gd2
-    s11 = rho_rl * (1.0 - exp_gd2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21.copy(), s21.copy(), s11.copy()
-
-
-def _add_brdorig__combines4p(a11, a12, a21, a22, b11, b12, b21, b22):
-    def sq(x): return np.asarray(x, dtype=complex).ravel()
-    a11, a12, a21, a22 = sq(a11), sq(a12), sq(a21), sq(a22)
-    b11, b12, b21, b22 = sq(b11), sq(b12), sq(b21), sq(b22)
-    Nv = 1 - a22 * b11
-    return (a11 + a12 * a21 * b11 / Nv, a12 * b12 / Nv,
-            b21 * a21 / Nv, b22 + b12 * b21 * a22 / Nv)
-
 
 def add_brdorig(chdata, param, OP):
     """Add board trace S-parameters to channel data (MATLAB lines 4821-4841).
@@ -9206,8 +7584,8 @@ def add_brdorig(chdata, param, OP):
     gc = param.brd_gamma0_a1_a2
     tau = param.brd_tau
 
-    s11tx, s12tx, s21tx, s22tx = _add_brdorig__synth_tline(f, param.brd_Z_c[0], param.Z0, gc, tau, z_bp_tx)
-    s11rx, s12rx, s21rx, s22rx = _add_brdorig__synth_tline(f, param.brd_Z_c[1], param.Z0, gc, tau, param.z_bp_rx)
+    s11tx, s12tx, s21tx, s22tx = _synth_tline(f, param.brd_Z_c[0], param.Z0, gc, tau, z_bp_tx)
+    s11rx, s12rx, s21rx, s22rx = _synth_tline(f, param.brd_Z_c[1], param.Z0, gc, tau, param.z_bp_rx)
 
     sdd11 = np.asarray(chdata.sdd11_raw, dtype=complex).ravel()
     sdd12 = np.asarray(chdata.sdd12_raw, dtype=complex).ravel()
@@ -9216,10 +7594,10 @@ def add_brdorig(chdata, param, OP):
 
     include_pcb = int(OP.include_pcb)
     if include_pcb == 1:
-        s11o, s12o, s21o, s22o = _add_brdorig__combines4p(s11tx, s12tx, s21tx, s22tx, sdd11, sdd12, sdd21, sdd22)
-        return _add_brdorig__combines4p(s11o, s12o, s21o, s22o, s11rx, s12rx, s21rx, s22rx)
+        s11o, s12o, s21o, s22o = _combines4p(s11tx, s12tx, s21tx, s22tx, sdd11, sdd12, sdd21, sdd22)
+        return _combines4p(s11o, s12o, s21o, s22o, s11rx, s12rx, s21rx, s22rx)
     if include_pcb == 2:
-        return _add_brdorig__combines4p(sdd11, sdd12, sdd21, sdd22, s11rx, s12rx, s21rx, s22rx)
+        return _combines4p(sdd11, sdd12, sdd21, sdd22, s11rx, s12rx, s21rx, s22rx)
     raise ValueError(f'OP.include_pcb must be 1 or 2, got {include_pcb}')
 
 
@@ -9229,16 +7607,6 @@ def add_brdorig(chdata, param, OP):
 # MATLAB lines 4843-4857, with SL (4368-4401), R_series2 (4354-4360), r_parrelell2 (9390-9395)
 
 
-
-
-def _add_pkg_with_die__combines4p(a11, a12, a21, a22, b11, b12, b21, b22):
-    N = 1.0 - a22 * b11
-    return (
-        a11 + a12 * a21 * b11 / N,
-        a12 * b12 / N,
-        b21 * a21 / N,
-        b22 + b12 * b21 * a22 / N,
-    )
 
 
 def _add_pkg_with_die__R_series2(zref, nfreq, R):
@@ -9273,7 +7641,7 @@ def _add_pkg_with_die__SL(S, R, zref):
         rpad = -R * zref / (R - zref)
         spr11, spr12, spr21, spr22 = _add_pkg_with_die__r_parrelell2(zref, nfreq, rpad)
 
-    o11, o12, o21, o22 = _add_pkg_with_die__combines4p(spr11, spr12, spr21, spr22,
+    o11, o12, o21, o22 = _combines4p(spr11, spr12, spr21, spr22,
                                       s11c, s12c, s21c, s22c)
     SLD.Parameters[:, 0, 0] = o11
     SLD.Parameters[:, 0, 1] = o12
@@ -9300,7 +7668,7 @@ def add_pkg_with_die(S, mode, param, OP):
     s21c = S.Parameters[:, 1, 0]
     s22c = S.Parameters[:, 1, 1]
 
-    o11, o12, o21, o22 = _add_pkg_with_die__combines4p(s11in, s12in, s21in, s22in,
+    o11, o12, o21, o22 = _combines4p(s11in, s12in, s21in, s22in,
                                       s11c, s12c, s21c, s22c)
 
     Smx = copy.deepcopy(S)
@@ -9363,31 +7731,6 @@ def _adjust_Rx_noise_for_quantization__mmax(a):
     return np.nanmax(a)
 
 
-def _adjust_Rx_noise_for_quantization__mmin(a):
-    """MATLAB min(): the mirror of _adjust_Rx_noise_for_quantization__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _adjust_Rx_noise_for_quantization__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _adjust_Rx_noise_for_quantization__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 # --- inline from conv_fct (MATLAB 5371-5388) ---
@@ -9397,150 +7740,15 @@ def _adjust_Rx_noise_for_quantization__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _adjust_Rx_noise_for_quantization__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _adjust_Rx_noise_for_quantization__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is half-to-even.
-
-    COM Octave: p1.Min=0.5, p2.Min=0 -> p.Min=1  (Python round() gives 0)
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
-
-def _adjust_Rx_noise_for_quantization__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit only when accumulation overshoots it; it is NOT
-    (pmin:pmax)*binsize, which differs by 1 ulp on 24.6% of elements (measured
-    against Octave over 7920 (Min, length, BinSize) combinations).
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _adjust_Rx_noise_for_quantization__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _adjust_Rx_noise_for_quantization__mround(p1.Min + p2.Min)
-    p.y = _adjust_Rx_noise_for_quantization__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _adjust_Rx_noise_for_quantization__colon_x(p.Min, pMax, p.BinSize)
-    return p
 
 
 # --- inline from CDF_inv_ev (MATLAB 1142-1148) ---
-def _adjust_Rx_noise_for_quantization__CDF_inv_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    CDF = np.asarray(CDF, dtype=float)
-    idx = np.where(CDF >= val)[0]
-    return float(x[-1]) if len(idx) == 0 else float(x[idx[0]])
 
 
 # --- inline from scalePDF (MATLAB 11268-11275) ---
-def _adjust_Rx_noise_for_quantization__scalePDF(pdf, scale_factor):
-    pdf_out = copy.copy(pdf)
-    pdf_out.Min = int(np.floor(pdf.Min * scale_factor))
-    idx = np.arange(pdf_out.Min, -pdf_out.Min + 1)
-    pdf_out.x = idx * pdf_out.BinSize
-    pdf_out.y = np.interp(pdf_out.x, np.asarray(pdf.x) * scale_factor, np.asarray(pdf.y))
-    pdf_out.y[0] = pdf_out.y[1]
-    pdf_out.y[-1] = pdf_out.y[-2]
-    pdf_out.y = pdf_out.y / np.sum(pdf_out.y)
-    return pdf_out
 
 
 # --- inline from get_pdf_from_sampled_signal (MATLAB 7473-7518) ---
-def _adjust_Rx_noise_for_quantization__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer, and the zip() below would
-        # silently normalise whatever it collected.  COM Octave 4p16p0:
-        # d_cpdf(1,[-1 0 1],[0.5 0.5]) errors "probs(3): out of bound 2".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted: MATLAB requires every element <= the next, which is false as
-    # soon as a NaN is present.  np.diff(values) < 0 is False across a NaN, so
-    # that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _adjust_Rx_noise_for_quantization__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` dropped
-    # NaN, so a NaN-bearing (or all-zero) probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) -> Min=-1, x=[-1 0 1], y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _adjust_Rx_noise_for_quantization__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _adjust_Rx_noise_for_quantization__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
 
 
 def _adjust_Rx_noise_for_quantization__get_pdf_from_sampled_signal(input_vector, L, BinSize):
@@ -9548,18 +7756,18 @@ def _adjust_Rx_noise_for_quantization__get_pdf_from_sampled_signal(input_vector,
     if _adjust_Rx_noise_for_quantization__mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
-        return _adjust_Rx_noise_for_quantization__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
     sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _adjust_Rx_noise_for_quantization__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in input_vector:
-        pdfn = _adjust_Rx_noise_for_quantization__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _adjust_Rx_noise_for_quantization__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -9571,9 +7779,9 @@ def adjust_Rx_noise_for_quantization(combined_interference_and_noise_pdf, NS, ch
     """
     sig_after_ctle_pdf = _adjust_Rx_noise_for_quantization__get_pdf_from_sampled_signal(
         chdata[0].pulse_sampled_w_tx_ffe_ctle, param.levels, param.delta_y)
-    sig_after_ctle_pdf = _adjust_Rx_noise_for_quantization__conv_fct(sig_after_ctle_pdf, combined_interference_and_noise_pdf)
+    sig_after_ctle_pdf = _conv_fct(sig_after_ctle_pdf, combined_interference_and_noise_pdf)
     sig_after_ctle_cdf = np.cumsum(sig_after_ctle_pdf.y)
-    adc_clip = -float(_adjust_Rx_noise_for_quantization__CDF_inv_ev(param.P_qc, sig_after_ctle_pdf, sig_after_ctle_cdf))
+    adc_clip = -float(_CDF_inv_ev(param.P_qc, sig_after_ctle_pdf, sig_after_ctle_cdf))
     ctle_signal_sigma = float(np.sqrt(np.sum((sig_after_ctle_pdf.x ** 2) * sig_after_ctle_pdf.y)))
     adc_lsb = 2.0 * adc_clip / (2 ** param.N_qb - 1)
     NS.sigma_Q = adc_lsb / np.sqrt(12.0)
@@ -9598,10 +7806,10 @@ def adjust_Rx_noise_for_quantization(combined_interference_and_noise_pdf, NS, ch
     cursor_tap = int(param.ffe_pre_tap_len) + 1  # r4p15p0: 1-based cursor tap position
     for irxffe_0, val in enumerate(h_rxffe):
         if (irxffe_0 + 1) != cursor_tap:
-            scaled = _adjust_Rx_noise_for_quantization__scalePDF(quantization_noise_in_pdf, float(np.abs(val)))
-            quantization_noise_pdf = _adjust_Rx_noise_for_quantization__conv_fct(quantization_noise_pdf, scaled)
+            scaled = _scalePDF(quantization_noise_in_pdf, float(np.abs(val)))
+            quantization_noise_pdf = _conv_fct(quantization_noise_pdf, scaled)
 
-    combined_interference_and_noise_pdf = _adjust_Rx_noise_for_quantization__conv_fct(
+    combined_interference_and_noise_pdf = _conv_fct(
         combined_interference_and_noise_pdf, quantization_noise_pdf)
     NS.quantization_noise_pdf = quantization_noise_pdf
     return chdata, NS, combined_interference_and_noise_pdf
@@ -11312,166 +9520,6 @@ def compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
 
 # --- floatingDFE (MATLAB lines 5938–5972) ---
 
-def _floatingDFE__mextreme_complex(a, take):
-    """MATLAB orders complex values by magnitude, then by angle; numpy orders
-    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
-    and 5 in numpy. take is -1 for max, 0 for min."""
-    f = np.asarray(a).ravel()
-    good = ~np.isnan(np.abs(f))
-    if not good.any():
-        return f[0]
-    g = f[good]
-    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
-
-
-def _floatingDFE__mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _floatingDFE__mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
-
-
-def _floatingDFE__mmin(a):
-    """MATLAB min(): the mirror of _floatingDFE__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _floatingDFE__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-
-def _floatingDFE__fb_mask(ndiff, positions, value):
-    """ndiff[positions] = value, growing ndiff the way MATLAB would.
-
-    ML 6260/6296 assign `ndiff(new_bank)=min_energy` where new_bank can run
-    past the end of ndiff: ndiff is indexed by bank START position, so it is
-    tap_bk-1 shorter than h0. MATLAB grows on out-of-range assignment; NumPy
-    raises IndexError. The grown entries are -Inf, sort last, and are never
-    selected, so the growth is inert -- the divergence was a crash, not a wrong
-    answer. See com_functions/fn/findbankloc/py_impl.py.
-    """
-    positions = np.asarray(positions, dtype=int).ravel()
-    if positions.size == 0:
-        return ndiff
-    need = int(positions.max()) + 1
-    if need > ndiff.size:
-        ndiff = np.concatenate([ndiff, np.zeros(need - ndiff.size)])
-    ndiff[positions] = value
-    return ndiff
-
-
-def _floatingDFE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
-    """Inlined findbankloc. Returns 0-based indices into hisi."""
-    hisi = np.asarray(hisi, dtype=float).ravel()
-    len_ = idx_en - idx_st + 1
-    h0 = np.abs(hisi[idx_st - 1:idx_en])
-    h1 = np.maximum(0.0, h0 - bmaxg * curval)
-    if curval < 0:
-        h1 = np.zeros(len_)
-    n_bins = len_ - tap_bk + 1
-    h0n = np.zeros(n_bins)
-    h1n = np.zeros(n_bins)
-    for ii in range(tap_bk):
-        h0n += h0[ii:ii + n_bins] ** 2
-        h1n += h1[ii:ii + n_bins] ** 2
-    ndiff = h0n - h1n
-    MIN_E = -np.inf
-    idx = np.full(tap_bk * N_bg, -1, dtype=int)
-    ordered_set = np.arange((N_bg - 1) * tap_bk + 1)
-    set_next_bank = -1
-
-    for k in range(N_bg):
-        val_sort = np.argsort(-ndiff, kind='stable')
-        if k == 0:
-            ns = len(ordered_set)
-            if np.array_equal(np.sort(val_sort[:ns]), ordered_set):
-                idx = np.arange(N_bg * tap_bk)
-                break
-        if set_next_bank >= 0:
-            new_bank = np.arange(set_next_bank, set_next_bank + tap_bk)
-            idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
-            set_next_bank = -1
-            ndiff = _floatingDFE__fb_mask(ndiff, new_bank, MIN_E)
-            b_start = new_bank[0] - tap_bk + 1
-            b_end = new_bank[0] - 1
-            badV = _floatingDFE__bv(b_start, b_end)
-            if len(badV):
-                ndiff[badV] = MIN_E
-            continue
-        new_bank = np.arange(val_sort[0], val_sort[0] + tap_bk)
-        if k == N_bg - 1:
-            idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
-            break
-        placed = idx[:tap_bk * k]
-        badV = np.array([], dtype=int)
-        do_it_again = True
-        first_time = True
-        num_loops = 0
-        while do_it_again:
-            do_it_again = False
-            if num_loops > len(ndiff):
-                break
-            b_start = new_bank[0] - tap_bk + 1
-            b_end = new_bank[0] - 1
-            badV = _floatingDFE__bv(b_start, b_end)
-            if len(badV) and len(placed):
-                badV = badV[~np.isin(badV, placed)]
-            goodV_idx = new_bank[0] - tap_bk
-            if len(badV) > 0:
-                if not first_time:
-                    val_sort = np.argsort(-ndiff, kind='stable')
-                first_time = False
-                checkV = np.concatenate([badV, new_bank])
-                badV_pos = np.array([int(np.where(val_sort == v)[0][0]) for v in badV])
-                found_goodV = False
-                ii_found = len(val_sort) - 1
-                for ii_vs in range(len(val_sort)):
-                    if val_sort[ii_vs] == goodV_idx:
-                        found_goodV = True
-                        ii_found = ii_vs
-                        break
-                    if not np.any(val_sort[ii_vs] == checkV):
-                        ii_found = ii_vs
-                        break
-                if (not found_goodV) and len(badV_pos) > 0 and _floatingDFE__mmin(badV_pos) < ii_found:
-                    do_it_again = True
-                    ndiff[new_bank[0]] = MIN_E
-                    new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
-                if found_goodV:
-                    set_next_bank = goodV_idx
-            num_loops += 1
-        ndiff = _floatingDFE__fb_mask(ndiff, new_bank, MIN_E)
-        idx[tap_bk * k:tap_bk * (k + 1)] = new_bank
-        if len(badV):
-            ndiff[badV] = MIN_E
-
-    return idx + (idx_st - 1)   # 0-based hisi positions
-
-
-def _floatingDFE__bv(b_start, b_end):
-    if b_end < 0:
-        return np.array([], dtype=int)
-    return np.arange(max(0, b_start), b_end + 1, dtype=int)
-
-
 def floatingDFE(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, curval, dfe_delta=0):
     """Find and apply N_bg groups of N_bf floating DFE taps.
 
@@ -11485,7 +9533,7 @@ def floatingDFE(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, curval, dfe_delta=0):
 
     # MATLAB: findbankloc(hisi, N_b+1, N_bmax, N_bf, curval, bmaxg, N_bg)
     # idx_st=N_b+1 (1-based), idx_en=N_bmax (1-based)
-    tap_loc = _floatingDFE__findbankloc(hisi, N_b + 1, N_bmax, N_bf, curval, bmaxg, N_bg)
+    tap_loc = _findbankloc(hisi, N_b + 1, N_bmax, N_bf, curval, bmaxg, N_bg)
 
     flt_curval = hisi[tap_loc].copy()
     if dfe_delta != 0:
@@ -11680,28 +9728,8 @@ def _force__mextreme_complex(a, take):
     return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
 
 
-def _force__mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _force__mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
-
-
 def _force__mmin(a):
-    """MATLAB min(): the mirror of _force__mmax."""
+    """MATLAB min(): the mirror of _mmax."""
     a = np.asarray(a)
     if a.dtype.kind == 'c':
         return _force__mextreme_complex(a, 0)
@@ -11712,18 +9740,6 @@ def _force__mmin(a):
         return np.min(a)
     return np.nanmin(a)
 
-
-
-def _force__FFE(C, cmx, spui, V):
-    """Inline FFE: apply taps C (length num_taps) to signal V."""
-    V = np.asarray(V, dtype=float).ravel()
-    C = np.asarray(C, dtype=float).ravel()
-    V0 = np.zeros(len(V))
-    for i, ci in enumerate(C):
-        if ci != 0.0:
-            ishift = (i - cmx) * spui
-            V0 += np.roll(V, ishift) * ci
-    return V0
 
 
 def _force__fb_mask(ndiff, positions, value):
@@ -11890,7 +9906,7 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
     idx = np.array([], dtype=int)
 
     if return_V and C is not None and len(np.asarray(C)) > 0:
-        Vfiltered = _force__FFE(C, cmx, spui, V)
+        Vfiltered = _FFE(C, cmx, spui, V)
         return Vfiltered, np.asarray(C, dtype=float).ravel(), idx
 
     # Build vsampled_raw: samples at spui spacing starting at ix
@@ -12018,7 +10034,7 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
         Cmod = np.asarray(C, dtype=float).ravel()
 
     if return_V:
-        Vfiltered = _force__FFE(Cmod, cmx, spui, V)
+        Vfiltered = _FFE(Cmod, cmx, spui, V)
     else:
         Vfiltered = np.array([])
 
@@ -12129,19 +10145,6 @@ def _get_ILN_cmp_td__mmax(a):
     return np.nanmax(a)
 
 
-def _get_ILN_cmp_td__mmin(a):
-    """MATLAB min(): the mirror of _get_ILN_cmp_td__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _get_ILN_cmp_td__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
 def _get_ILN_cmp_td__mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -12153,18 +10156,6 @@ def _get_ILN_cmp_td__mround(x):
     return int(round(x))
 
 
-def _get_ILN_cmp_td__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 
@@ -12173,44 +10164,6 @@ def _get_ILN_cmp_td__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _get_ILN_cmp_td__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _get_ILN_cmp_td__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The MATLAB comment calls this "equivalent to (p.Min:p.Min+length(p.y)-1)*
-    p.BinSize", and it is not: the colon accumulates from the first element as
-    a+k*d and pins the last element to the stated limit, while (a:b)*d forms
-    each element as one product.  Swept over 7920 (Min, length, BinSize)
-    combinations against Octave: the product form got 24.6% of the elements
-    wrong, all by 1 ulp; this form got none.  The last element is pinned only
-    when accumulation overshoots the limit -- pinning unconditionally is wrong,
-    e.g. Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004,
-    -0.20000000000000004], not [..., -0.2].
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
 
 
 def _get_ILN_cmp_td__s21_to_impulse_DC_zero(freq_array, time_step, OP, param):
@@ -12239,102 +10192,25 @@ def _get_ILN_cmp_td__s21_to_impulse_DC_zero(freq_array, time_step, OP, param):
     return voltage, t_out, 0.0, -np.inf
 
 
-def _get_ILN_cmp_td__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below stops at the
-        # shorter of the two and silently normalised whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _get_ILN_cmp_td__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        bin_idx = (0 if k == 0 else len(t) - 1 if k == len(values) - 1
-                   else int(np.argmin(np.abs(t - v))))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
-    # support empty and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _get_ILN_cmp_td__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _get_ILN_cmp_td__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _get_ILN_cmp_td__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _get_ILN_cmp_td__mround(p1.Min + p2.Min)   # MATLAB round: half AWAY FROM ZERO
-    p.y = _get_ILN_cmp_td__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _get_ILN_cmp_td__colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
-    return p
-
-
 def _get_ILN_cmp_td__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
-        return _get_ILN_cmp_td__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     if _get_ILN_cmp_td__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
-        return _get_ILN_cmp_td__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _get_ILN_cmp_td__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
-        pdfn = _get_ILN_cmp_td__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _get_ILN_cmp_td__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -12477,74 +10353,6 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
 
 
 
-def _get_PSDs__mextreme_complex(a, take):
-    """MATLAB orders complex values by magnitude, then by angle; numpy orders
-    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
-    and 5 in numpy. take is -1 for max, 0 for min."""
-    f = np.asarray(a).ravel()
-    good = ~np.isnan(np.abs(f))
-    if not good.any():
-        return f[0]
-    g = f[good]
-    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
-
-
-def _get_PSDs__mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _get_PSDs__mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
-
-
-def _get_PSDs__mmin(a):
-    """MATLAB min(): the mirror of _get_PSDs__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _get_PSDs__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _get_PSDs__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _get_PSDs__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 # ---------------------------------------------------------------------------
@@ -12557,44 +10365,53 @@ def _get_PSDs__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
 
 
-def _get_PSDs__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
+# get_PSDs calls get_pdf_from_sampled_signal once per tick per EQ setting, and
+# consecutive ticks feed it the SAME sampled vector, so most builds are exact
+# repeats. Each build costs ~120 convolutions over a 4096-point vector, so
+# memoising them is worthwhile. Keyed on the input bytes, so a hit is
+# bit-identical by construction; small LRU because repeats are temporally local
+# (within one equalizer setting's tick sweep).
+#
+# This wrapper is the reason get_PSDs keeps a local name for the function
+# rather than calling the canonical directly. It is NOT a duplicate
+# translation: it returns exactly what the canonical returns, which is why the
+# differential in tests/test_inlined_copies.py reports it as identical. It was
+# collapsed onto a bare import on 2026-09-22 and had to be restored -- a copy
+# being behaviourally equivalent does not make it redundant.
+_PDF_CACHE = _collections.OrderedDict()
+_PDF_CACHE_MAX = 64
 
 
-def _get_PSDs__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
+def _get_PSDs__detach(pdf):
+    """Hand out a PDF that shares nothing mutable with the cached entry.
 
-    The MATLAB comment calls this "equivalent to (p.Min:p.Min+length(p.y)-1)*
-    p.BinSize", and it is not: the colon accumulates from the first element as
-    a+k*d and pins the last element to the stated limit, while (a:b)*d forms
-    each element as one product.  Swept over 7920 (Min, length, BinSize)
-    combinations against Octave: the product form got 24.6% of the elements
-    wrong, all by 1 ulp; this form got none.  The last element is pinned only
-    when accumulation overshoots the limit -- pinning unconditionally is wrong,
-    e.g. Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004,
-    -0.20000000000000004], not [..., -0.2].
+    Copying the namespace alone is not enough: the arrays inside would still be
+    shared, so a caller doing `pdf.y *= k` (rather than `pdf.y = pdf.y * k`)
+    would corrupt the cache and silently poison every later hit. Copying the
+    arrays costs far less than recomputing the PDF, so the speed-up stands.
     """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
+    out = SimpleNamespace(**vars(pdf))
+    for _k, _v in vars(out).items():
+        if isinstance(_v, np.ndarray):
+            setattr(out, _k, _v.copy())
+    return out
+
+
+def _get_PSDs__get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
+    _arr = np.ascontiguousarray(np.asarray(input_vector, dtype=float))
+    _key = (_hashlib.blake2b(_arr.tobytes(), digest_size=16).digest(),
+            int(L), float(BinSize), int(FAST_NOISE_CONV))
+    _hit = _PDF_CACHE.get(_key)
+    if _hit is not None:
+        _PDF_CACHE.move_to_end(_key)
+        return _get_PSDs__detach(_hit)
+    _res = _pdf_uncached(input_vector, L, BinSize, FAST_NOISE_CONV)
+    _PDF_CACHE[_key] = _res
+    if len(_PDF_CACHE) > _PDF_CACHE_MAX:
+        _PDF_CACHE.popitem(last=False)
+    return _get_PSDs__detach(_res)
 
 
 def _get_PSDs__S_RN(fvec, G_DC, G_DC2, param):
@@ -12653,96 +10470,6 @@ def _get_PSDs__fold_psd(full_psd, num_ui, M):
 # Faithful copies of the audited canonical get_pdf_from_sampled_signal / conv_fct /
 # CDF_inv_ev (and their sub-helpers). No cross-py_impl imports per build protocol.
 # ---------------------------------------------------------------------------
-def _get_PSDs__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below stops at the
-        # shorter of the two and silently normalised whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _get_PSDs__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
-    # support empty and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _get_PSDs__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _get_PSDs__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _get_PSDs__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _get_PSDs__mround(p1.Min + p2.Min)   # MATLAB round: half AWAY FROM ZERO
-    p.y = _get_PSDs__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _get_PSDs__colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
-    return p
-
-
-def _get_PSDs__normal_dist(sigma, nsigma, binsize):
-    eps = np.finfo(float).eps
-    p = SimpleNamespace()
-    p.BinSize = binsize
-    p.Min = -_get_PSDs__mround(2 * nsigma * sigma / binsize)
-    p.x = np.arange(p.Min, -p.Min + 1) * binsize
-    p.y = np.exp(-p.x ** 2 / (2 * sigma ** 2 + eps))
-    p.y = p.y / np.sum(p.y)
-    return p
 
 
 # The ADC-clip signal PDF depends only on the sampled pulse response, which is a
@@ -12752,78 +10479,6 @@ def _get_PSDs__normal_dist(sigma, nsigma, binsize):
 # vector, so memoising them is worthwhile. Keyed on the input bytes, so a hit is
 # bit-identical by construction; small LRU because repeats are temporally local
 # (within one equalizer setting's tick sweep).
-_PDF_CACHE = _collections.OrderedDict()
-_PDF_CACHE_MAX = 64
-
-
-def _get_PSDs__detach(pdf):
-    """Hand out a PDF that shares nothing mutable with the cached entry.
-
-    Copying the namespace alone is not enough: the arrays inside would still be
-    shared, so a caller doing `pdf.y *= k` (rather than `pdf.y = pdf.y * k`)
-    would corrupt the cache and silently poison every later hit. Copying the
-    arrays costs far less than recomputing the PDF, so the speed-up stands.
-    """
-    out = SimpleNamespace(**vars(pdf))
-    for _k, _v in vars(out).items():
-        if isinstance(_v, np.ndarray):
-            setattr(out, _k, _v.copy())
-    return out
-
-
-def _get_PSDs__get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
-    _arr = np.ascontiguousarray(np.asarray(input_vector, dtype=float))
-    _key = (_hashlib.blake2b(_arr.tobytes(), digest_size=16).digest(),
-            int(L), float(BinSize), int(FAST_NOISE_CONV))
-    _hit = _PDF_CACHE.get(_key)
-    if _hit is not None:
-        _PDF_CACHE.move_to_end(_key)
-        return _get_PSDs__detach(_hit)
-    _res = _get_PSDs__get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize,
-                                                 FAST_NOISE_CONV)
-    _PDF_CACHE[_key] = _res
-    if len(_PDF_CACHE) > _PDF_CACHE_MAX:
-        _PDF_CACHE.popitem(last=False)
-    return _get_PSDs__detach(_res)
-
-
-def _get_PSDs__get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FAST_NOISE_CONV=0):
-    input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if _get_PSDs__mmax(np.abs(input_vector)) > BinSize:
-        input_vector = input_vector[np.abs(input_vector) > BinSize]
-    else:
-        return _get_PSDs__d_cpdf(BinSize, 0, 1)
-    input_vector[np.abs(input_vector) < BinSize] = 0.0
-    b = np.sign(input_vector)
-    sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]
-    input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
-    res_pdf = None
-    if FAST_NOISE_CONV:
-        small = np.where(np.abs(input_vector) < 0.001)[0]
-        if len(small) > 0:
-            first_small = int(small[0])
-            sig_res = float(np.linalg.norm(input_vector[first_small + 1:]))
-            res_pdf = _get_PSDs__normal_dist(sig_res, 5, BinSize)
-            input_vector = input_vector[:first_small + 1]
-    values = 2.0 * np.arange(L) / (L - 1) - 1.0
-    prob = np.ones(L) / L
-    pdf = _get_PSDs__d_cpdf(BinSize, 0, 1)
-    empty_pdf = pdf
-    for v in input_vector:
-        pdfn = _get_PSDs__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _get_PSDs__conv_fct(pdf, pdfn)
-    if res_pdf is not None:
-        pdf = _get_PSDs__conv_fct(pdf, res_pdf)
-    return pdf
-
-
-def _get_PSDs__CDF_inv_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    CDF = np.asarray(CDF, dtype=float)
-    indices = np.where(CDF >= val)[0]
-    if len(indices) == 0:
-        return float(x[-1])
-    return float(x[indices[0]])
 
 
 def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
@@ -13069,10 +10724,10 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
                 noise_pdf = SimpleNamespace(**vars(sig_pdf))   # copy x-axis/Min/BinSize, replace y
                 noise_pdf.y = (1.0 / (np.sqrt(2 * np.pi) * sigma_noise)
                                * np.exp(-sig_pdf.x**2 / (2 * sigma_noise**2)) * OP.BinSize)
-                sig_noise_pdf = _get_PSDs__conv_fct(sig_pdf, noise_pdf)
+                sig_noise_pdf = _conv_fct(sig_pdf, noise_pdf)
                 sig_noise_cdf = np.cumsum(sig_noise_pdf.y)
                 ctle_signal_sigma = float(np.sqrt(np.sum(sig_noise_pdf.x**2 * sig_noise_pdf.y)))
-                adc_clip = float(-_get_PSDs__CDF_inv_ev(param.P_qc, sig_noise_pdf, sig_noise_cdf))
+                adc_clip = float(-_CDF_inv_ev(param.P_qc, sig_noise_pdf, sig_noise_cdf))
                 result.ctle_signal_sigma = ctle_signal_sigma
             else:
                 adc_clip = float(np.sum(np.abs(sampled_pr)))
@@ -14075,18 +11730,6 @@ def _get_cm_noise__mmin(a):
     return np.nanmin(a)
 
 
-def _get_cm_noise__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 # ── Inlined helpers (from Group 3 implementations; no sibling imports) ────────
@@ -14097,148 +11740,13 @@ def _get_cm_noise__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _get_cm_noise__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _get_cm_noise__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _get_cm_noise__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the limit only when accumulation overshoots it; the product form
-    (pmin:pmax)*binsize builds each element as one product instead, and the two
-    differ by 1 ulp on most bins.  Swept over 7920 (Min, length, BinSize)
-    combinations against COM Octave, the product form got 24.6% of elements
-    wrong; this form got none.
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _get_cm_noise__d_cpdf(binsize, values, probs):
-    """Create a discrete PDF struct from values and probabilities."""
-    values = np.asarray(values, dtype=float).ravel()
-    probs = np.asarray(probs, dtype=float).ravel()
-    if np.all(values == 0):
-        p = SimpleNamespace(BinSize=binsize, Min=0,
-                            y=np.array([1.0]), x=np.array([0.0]))
-        return p
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _get_cm_noise__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, pr) in enumerate(zip(values, probs)):
-        if k == 0:
-            bi = 0
-        elif k == len(values) - 1:
-            bi = len(t) - 1
-        else:
-            bi = int(np.argmin(np.abs(t - v)))
-        pdf_y[bi] += pr
-    pdf_y /= np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
-    # support empty and raised instead of answering.
-    # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns
-    # Min=-1, x=[-1 0 1], y=[NaN NaN NaN]; likewise probs=[0 0 0].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(
-        BinSize=binsize, Min=pdf_min, y=pdf_y,
-        x=np.arange(pdf_min, -pdf_min + 1) * binsize
-    )
-
-
-def _get_cm_noise__Init_PDF_Fast(EmptyPDF, values, probs):
-    """Fast PDF initialisation from an EmptyPDF template."""
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float).ravel()
-    probs = np.asarray(probs, dtype=float).ravel()
-    rvd = _get_cm_noise__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _get_cm_noise__conv_fct(p1, p2):
-    """Convolve two PDF structs."""
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _get_cm_noise__mround(p1.Min + p2.Min)         # MATLAB round: half away from zero
-    p.y = _get_cm_noise__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _get_cm_noise__colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
-    return p
 
 
 def _get_cm_noise__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     """Build PDF from sampled-signal ISI via successive delta-set convolutions."""
     input_vector = np.asarray(input_vector, dtype=float).ravel()
     if _get_cm_noise__mmax(np.abs(input_vector)) <= BinSize:
-        return _get_cm_noise__d_cpdf(BinSize, 0.0, 1.0)
+        return _d_cpdf(BinSize, 0.0, 1.0)
     input_vector = input_vector[np.abs(input_vector) > BinSize]
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
@@ -14248,11 +11756,11 @@ def _get_cm_noise__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     values = 2 * np.arange(L) / (L - 1) - 1   # Eq. 93A-39
     prob = np.ones(L) / L
 
-    pdf = _get_cm_noise__d_cpdf(BinSize, 0.0, 1.0)
+    pdf = _d_cpdf(BinSize, 0.0, 1.0)
     empty_pdf = SimpleNamespace(**vars(pdf))
     for val in input_vector:
-        pdfn = _get_cm_noise__Init_PDF_Fast(empty_pdf, np.abs(val) * values, prob)
-        pdf = _get_cm_noise__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(val) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -14331,7 +11839,7 @@ def get_cm_noise(M, PR, L, BER, OP=None):
 # else: loop over phases, compute sigma of each pdf, pick max.
 # dfe_delta: quantization step. If ==0, ideal_cancelled_cursors_q = ideal_cancelled_cursors.
 # bmax_vec/bmin_vec: [cursor, bmax*cursor] for non-floating; [cursor, use_bmax*cursor] for floating.
-# dfe_clipper inlined as _get_pdf__dfe_clipper.
+# dfe_clipper inlined as _dfe_clipper.
 # get_pdf_from_sampled_signal inlined as _get_pdf__get_pdf_from_sampled_signal.
 # ============================================================
 
@@ -14369,31 +11877,6 @@ def _get_pdf__mmax(a):
     return np.nanmax(a)
 
 
-def _get_pdf__mmin(a):
-    """MATLAB min(): the mirror of _get_pdf__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _get_pdf__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _get_pdf__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 
@@ -14402,7 +11885,6 @@ def _get_pdf__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
 
 
 
@@ -14429,192 +11911,26 @@ def _get_pdf__mround(x):
     # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
     return int(round(x))
 
-def _get_pdf__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _get_pdf__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the limit only when accumulation overshoots it; the product form
-    (pmin:pmax)*binsize builds each element as one product instead, and the two
-    differ by 1 ulp on most bins.  Swept over 7920 (Min, length, BinSize)
-    combinations against COM Octave, the product form got 24.6% of elements
-    wrong; this form got none.
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _get_pdf__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _get_pdf__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
-    # support empty and raised instead of answering.
-    # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns
-    # Min=-1, x=[-1 0 1], y=[NaN NaN NaN]; likewise probs=[0 0 0].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _get_pdf__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _get_pdf__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _get_pdf__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _get_pdf__mround(p1.Min + p2.Min)         # MATLAB round: half away from zero
-    p.y = _get_pdf__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _get_pdf__colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
-    return p
-
-
 def _get_pdf__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
-        return _get_pdf__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     if _get_pdf__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
-        return _get_pdf__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    pdf = _get_pdf__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
-        pdfn = _get_pdf__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _get_pdf__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
-
-
-def _get_pdf__dfe_clipper(input_arr, max_threshold, min_threshold):
-    inp = np.asarray(input_arr, dtype=float)
-    hi = np.asarray(max_threshold, dtype=float)
-    lo = np.asarray(min_threshold, dtype=float)
-
-    # MATLAB isrow(input): true for 1-D or 2-D with shape[0]==1
-    is_row = inp.ndim <= 1 or (inp.ndim == 2 and inp.shape[0] == 1)
-    if is_row:
-        hi = hi.ravel()                 # (:).' in MATLAB
-        lo = lo.ravel()
-    else:
-        hi = hi.ravel().reshape(-1, 1)  # (:) in MATLAB — column vector
-        lo = lo.ravel().reshape(-1, 1)
-
-    out = inp.copy()
-    # Both masks are taken from the ORIGINAL input: MATLAB computes
-    # input<min_threshold, not clip_output<min_threshold, so with crossed
-    # bounds (min>max) an element can be raised after being lowered.
-    # Octave: dfe_clipper([0 1.5 3],[1 1 1],[2 2 2]) -> [2 2 1].
-    # NaN compares false both ways and passes through unclipped.
-    mask_hi = inp > hi
-    mask_lo = inp < lo
-
-    # MATLAB writes max_threshold(input>max_threshold): a logical index into
-    # the THRESHOLD array. It errors as soon as a true position falls past the
-    # end of that array, so a scalar threshold works only while nothing beyond
-    # the first element is clipped. Octave:
-    #     dfe_clipper([3 1 1], 2, -9) -> [2 1 1]      (only position 1 true)
-    #     dfe_clipper([1 3 1], 2, -9) -> error: max_threshold(2): out of bound 1
-    # numpy would instead broadcast the scalar and return a plausible answer
-    # for a call MATLAB refuses.  Assigning POSITIONALLY rather than with a
-    # boolean mask is what makes that emulation possible: numpy requires a
-    # boolean index to match the array's shape exactly, while MATLAB only
-    # requires every TRUE position to be in range.
-    out_f = out.ravel(order='F')
-    for mask, thr, nm in ((mask_hi, hi, 'max_threshold'),
-                          (mask_lo, lo, 'min_threshold')):
-        where = np.nonzero(np.asarray(mask).ravel(order='F'))[0]
-        if where.size == 0:
-            continue
-        if where.max() >= thr.size:
-            raise IndexError(
-                'dfe_clipper: %s(%d): out of bound %d -- MATLAB indexes the '
-                'threshold array with the input-shaped logical mask, so it '
-                'errors here rather than broadcasting.'
-                % (nm, where.max() + 1, thr.size))
-        out_f[where] = thr.ravel(order='F')[where]
-    return out_f.reshape(inp.shape, order='F')
 
 
 def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
@@ -14652,7 +11968,7 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
             bmin_v = cursor * np.concatenate([[1.0], np.asarray(param.bmin, dtype=float).ravel()])
 
         n_iq = len(ideal_cancelled_cursors_q)
-        effective_cancelled_cursors = _get_pdf__dfe_clipper(
+        effective_cancelled_cursors = _dfe_clipper(
             ideal_cancelled_cursors_q,
             bmax_v[:n_iq],
             bmin_v[:n_iq]
@@ -14753,42 +12069,6 @@ def _get_pdf_from_sampled_signal__mmax(a):
     return np.nanmax(a)
 
 
-def _get_pdf_from_sampled_signal__mmin(a):
-    """MATLAB min(): the mirror of _get_pdf_from_sampled_signal__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _get_pdf_from_sampled_signal__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _get_pdf_from_sampled_signal__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _get_pdf_from_sampled_signal__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 
@@ -14797,139 +12077,6 @@ def _get_pdf_from_sampled_signal__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _get_pdf_from_sampled_signal__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _get_pdf_from_sampled_signal__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit, where (pmin:pmax)*binsize forms each element
-    as one product. Swept over 7920 (Min, length, BinSize) combinations against
-    Octave, the product form got 24.6% of the elements wrong, all by 1 ulp;
-    this form got none. The last element is pinned only when accumulation
-    overshoots the limit -- pinning unconditionally is wrong, e.g. COM Octave
-    Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004, -0.20000000000000004].
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _get_pdf_from_sampled_signal__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        p = SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-        return p
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _get_pdf_from_sampled_signal__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    p = SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                        x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-    return p
-
-
-def _get_pdf_from_sampled_signal__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _get_pdf_from_sampled_signal__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _get_pdf_from_sampled_signal__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _get_pdf_from_sampled_signal__mround(p1.Min + p2.Min)   # MATLAB round: halves go away from zero
-    p.y = _get_pdf_from_sampled_signal__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    # (p.Min*BinSize : BinSize : pMax*BinSize) -- a floating-point colon, which
-    # is NOT (p.Min:pMax)*BinSize.
-    p.x = _get_pdf_from_sampled_signal__colon_x(p.Min, pMax, p.BinSize)
-    return p
-
-
-def _get_pdf_from_sampled_signal__normal_dist(sigma, nsigma, binsize):
-    """MATLAB normal_dist (L8410-8415): discretised zero-mean Gaussian PDF."""
-    eps = np.finfo(float).eps
-    p = SimpleNamespace()
-    p.BinSize = binsize
-    p.Min = -_get_pdf_from_sampled_signal__mround(2 * nsigma * sigma / binsize)
-    p.x = np.arange(p.Min, -p.Min + 1) * binsize
-    p.y = np.exp(-p.x ** 2 / (2 * sigma ** 2 + eps))
-    p.y = p.y / np.sum(p.y)
-    return p
 
 
 def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
@@ -14949,7 +12096,7 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     if _get_pdf_from_sampled_signal__mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
-        return _get_pdf_from_sampled_signal__d_cpdf(BinSize, 0, 1)
+        return _d_cpdf(BinSize, 0, 1)
 
     input_vector[np.abs(input_vector) < BinSize] = 0.0
     b = np.sign(input_vector)
@@ -14963,7 +12110,7 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
         if len(small) > 0:
             first_small = int(small[0])  # MATLAB find(...,1), 0-based here
             sig_res = float(np.linalg.norm(input_vector[first_small + 1:]))
-            res_pdf = _get_pdf_from_sampled_signal__normal_dist(sig_res, 5, BinSize)
+            res_pdf = _normal_dist(sig_res, 5, BinSize)
             input_vector = input_vector[:first_small + 1]
         # (no small taps -> nothing to approximate; keep all taps exact)
 
@@ -14971,14 +12118,14 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
 
-    pdf = _get_pdf_from_sampled_signal__d_cpdf(BinSize, 0, 1)
+    pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in input_vector:
-        pdfn = _get_pdf_from_sampled_signal__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _get_pdf_from_sampled_signal__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
 
     if res_pdf is not None:  # MATLAB L7515-7517 (conv_fct_TEST -> conv_fct)
-        pdf = _get_pdf_from_sampled_signal__conv_fct(pdf, res_pdf)
+        pdf = _conv_fct(pdf, res_pdf)
 
     return pdf
 
@@ -15012,18 +12159,6 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
 
 
 
-def _get_pdf_full__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 
 
 
@@ -15032,7 +12167,6 @@ def _get_pdf_full__mround_arr(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
 
 
 
@@ -15059,181 +12193,18 @@ def _get_pdf_full__mround(x):
     # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
     return int(round(x))
 
-def _get_pdf_full__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _get_pdf_full__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit, where (pmin:pmax)*binsize forms each element
-    as one product. Swept over 7920 (Min, length, BinSize) combinations against
-    Octave, the product form got 24.6% of the elements wrong, all by 1 ulp;
-    this form got none. The last element is pinned only when accumulation
-    overshoots the limit -- pinning unconditionally is wrong, e.g. COM Octave
-    Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004, -0.20000000000000004].
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
 def _get_pdf_full__get_center_of_UI(samp_UI):
     M = int(samp_UI)
     return M // 2 + 1  # 1-based MATLAB half_UI
 
 
-def _get_pdf_full__dfe_clipper(ideal, bmax, bmin):
-    inp = np.asarray(ideal, dtype=float)
-    hi = np.asarray(bmax, dtype=float)
-    lo = np.asarray(bmin, dtype=float)
-
-    # MATLAB isrow(input): true for 1-D or 2-D with shape[0]==1
-    is_row = inp.ndim <= 1 or (inp.ndim == 2 and inp.shape[0] == 1)
-    if is_row:
-        hi = hi.ravel()                 # (:).' in MATLAB
-        lo = lo.ravel()
-    else:
-        hi = hi.ravel().reshape(-1, 1)  # (:) in MATLAB
-        lo = lo.ravel().reshape(-1, 1)
-
-    out = inp.copy()
-    # Both masks are taken from the ORIGINAL input: MATLAB computes
-    # input<min_threshold, not clip_output<min_threshold, so with crossed
-    # bounds (min>max) an element can be raised after being lowered.
-    # Octave: dfe_clipper([0 1.5 3],[1 1 1],[2 2 2]) -> [2 2 1].
-    # NaN compares false both ways and passes through unclipped.
-    mask_hi = inp > hi
-    mask_lo = inp < lo
-
-    # MATLAB writes max_threshold(input>max_threshold): a logical index into
-    # the THRESHOLD array. It errors as soon as a true position falls past the
-    # end of that array, so a scalar threshold works only while nothing beyond
-    # the first element is clipped. Octave:
-    #     dfe_clipper([3 1 1], 2, -9) -> [2 1 1]      (only position 1 true)
-    #     dfe_clipper([1 3 1], 2, -9) -> error: max_threshold(2): out of bound 1
-    # Assigning POSITIONALLY rather than with a boolean mask is what makes that
-    # emulation possible: numpy requires a boolean index to match the array's
-    # shape exactly, while MATLAB only requires every TRUE position to be in
-    # range. MATLAB linear indexing is column-major, hence order='F'.
-    out_f = out.ravel(order='F')
-    for mask, thr, nm in ((mask_hi, hi, 'max_threshold'),
-                          (mask_lo, lo, 'min_threshold')):
-        where = np.nonzero(np.asarray(mask).ravel(order='F'))[0]
-        if where.size == 0:
-            continue
-        if where.max() >= thr.size:
-            raise IndexError(
-                'dfe_clipper: %s(%d): out of bound %d -- MATLAB indexes the '
-                'threshold array with the input-shaped logical mask, so it '
-                'errors here rather than broadcasting.'
-                % (nm, where.max() + 1, thr.size))
-        out_f[where] = thr.ravel(order='F')[where]
-    return out_f.reshape(inp.shape, order='F')
-
-
-def _get_pdf_full__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _get_pdf_full__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        bin_idx = (0 if k == 0 else len(t) - 1 if k == len(values) - 1
-                   else int(np.argmin(np.abs(t - v))))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _get_pdf_full__Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _get_pdf_full__mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _get_pdf_full__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _get_pdf_full__mround(p1.Min + p2.Min)   # MATLAB round: halves go away from zero
-    p.y = _get_pdf_full__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    # (p.Min*BinSize : BinSize : pMax*BinSize) -- a floating-point colon, which
-    # is NOT (p.Min:pMax)*BinSize.
-    p.x = _get_pdf_full__colon_x(p.Min, pMax, p.BinSize)
-    return p
-
-
 def _get_pdf_full__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
-        return _get_pdf_full__d_cpdf(BinSize, 0.0, 1.0)
+        return _d_cpdf(BinSize, 0.0, 1.0)
     mask = np.abs(iv) > BinSize
     if not np.any(mask):
-        return _get_pdf_full__d_cpdf(BinSize, 0.0, 1.0)
+        return _d_cpdf(BinSize, 0.0, 1.0)
     iv = iv[mask]
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
@@ -15241,11 +12212,11 @@ def _get_pdf_full__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
     prob = np.ones(L) / L
-    empty_pdf = _get_pdf_full__d_cpdf(BinSize, 0.0, 1.0)
+    empty_pdf = _d_cpdf(BinSize, 0.0, 1.0)
     pdf = empty_pdf
     for v in iv:
-        pdfn = _get_pdf_full__Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _get_pdf_full__conv_fct(pdf, pdfn)
+        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
+        pdf = _conv_fct(pdf, pdfn)
     return pdf
 
 
@@ -15317,7 +12288,7 @@ def get_pdf_full(chdata, delta_y, t_s, param, OP, pdf_range=None):
         else:
             ideal_cancelled_cursors_q = ideal_cancelled_cursors
 
-        effective_cancelled_cursors = _get_pdf_full__dfe_clipper(ideal_cancelled_cursors_q, bmax_vec, bmin_vec)
+        effective_cancelled_cursors = _dfe_clipper(ideal_cancelled_cursors_q, bmax_vec, bmin_vec)
         effective_cancellation_samples = np.repeat(effective_cancelled_cursors, samp_UI)
 
         # MATLAB L8035: start_cancel = t_s - half_UI + 1 + samp_UI, with t_s
@@ -15876,49 +12847,6 @@ def _interp_Sparam__interp_extrap(fout, fin, y):
     return out
 
 
-def _interp_Sparam__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _interp_Sparam__Tukey_Window(f, param, fr=None, fb=None):
-    """Inlined Tukey_Window (MATLAB lines 4677-4696)."""
-    f = np.asarray(f, dtype=float)
-    if fr is None and fb is None:
-        fb = float(param.fb)
-        fr = float(param.f_r) * float(param.fb)
-    fperiod = 2.0 * (float(fb) - float(fr))
-    # MATLAB CONCATENATES three counted pieces — ones(1,n<fr), the raised
-    # cosine of the in-band values, zeros(1,n>fb) — so the answer is grouped by
-    # category and only lines up with f when f ascends.  Element-wise np.where
-    # silently returned a different vector for any other order.  COM Octave,
-    # fr=1e9 fb=3e9:
-    #   f=[1e9 1e9 3e9 3e9 0 9e9] -> [1 1 1 0 0 0]   (element-wise: [1 1 0 0 1 0])
-    flat = np.atleast_1d(f).ravel(order='F')   # MATLAB linear-index order
-    n_lo = int(np.count_nonzero(flat < fr))
-    n_hi = int(np.count_nonzero(flat > fb))
-    band = flat[(flat >= fr) & (flat <= fb)]
-    mid = 0.5 * np.cos(2 * np.pi * (band - fb) / fperiod - np.pi) + 0.5
-    # Only the middle piece keeps the orientation of f, so for a column or a
-    # matrix MATLAB's horizontal concatenation fails unless that piece has at
-    # most one element or is the only non-empty one.  COM Octave, column f:
-    # "horizontal dimensions mismatch (1x2 vs 5x1)".
-    if f.ndim > 1 and f.shape[0] != 1 and mid.size > 1 and (n_lo or n_hi):
-        raise ValueError('Tukey_Window: horizontal dimensions mismatch '
-                         '(1x%d vs %dx1)' % (n_lo or n_hi, mid.size))
-    H_tw = np.concatenate([np.ones(n_lo), mid, np.zeros(n_hi)])
-    n = _interp_Sparam__length(f)
-    # The pieces cover every element of f only while each one lands in exactly
-    # one category.  A NaN lands in none, so H_tw comes up short and MATLAB's
-    # H_tw(1:length(f)) is an out-of-bound read.  COM Octave, f=[0 1.5e9 NaN
-    # 3.5e9]: "H_tw(4): out of bound 3".  np.where answered 0 for the NaN.
-    if H_tw.size < n:
-        raise IndexError('Tukey_Window: H_tw(%d): out of bound %d' % (n, H_tw.size))
-    return H_tw[:n]
-
-
 def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase, OP, param):
     """Interpolate S-parameters from fin to fout (MATLAB lines 7950-8165).
 
@@ -16164,10 +13092,10 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             H_tw = np.ones(len(fout))
         else:
             if zero_pad_tukey > 0:
-                H_tw = _interp_Sparam__Tukey_Window(fout, param, fin[-1], tukey_limit)
+                H_tw = _Tukey_Window(fout, param, fin[-1], tukey_limit)
                 zp_freq = tukey_limit
             else:
-                H_tw = _interp_Sparam__Tukey_Window(fout, param, tukey_limit, fin[-1])
+                H_tw = _Tukey_Window(fout, param, tukey_limit, fin[-1])
 
         H_i = H_tw * H_i
         H_i[fout > zp_freq] = np.finfo(float).tiny
@@ -16199,45 +13127,6 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
 
 
 
-def _make_full_pkg__synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    """Inlined synth_tline (MATLAB lines 11292-11316)."""
-    f = np.asarray(f, dtype=complex)
-    f_r = f.real
-    with np.errstate(divide='ignore', invalid='ignore'):
-        f_GHz = f_r / 1e9
-    eps = np.finfo(float).tiny
-    f_GHz_safe = np.where(f_GHz == 0, eps, f_GHz)
-
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float).ravel()
-    gamma0, a1, a2 = gamma_coeff[0], gamma_coeff[1], gamma_coeff[2]
-
-    gamma_1 = a1 * (1.0 + 1j)
-    gamma_2 = a2 * (1.0 - 2j / np.pi * np.log(f_GHz_safe)) + 2j * np.pi * float(tau)
-    gamma = gamma0 + gamma_1 * np.sqrt(f_GHz_safe) + gamma_2 * f_GHz_safe
-    gamma = np.where(f_GHz == 0, gamma0, gamma)
-
-    if float(d) == 0.0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (Z_c - 2.0 * Z_0) / (Z_c + 2.0 * Z_0)
-
-    exp_gd = np.exp(-float(d) * gamma)
-    denom = 1.0 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1.0 - exp_gd ** 2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21, s21, s11  # s11, s12, s21, s22
-
-
-def _make_full_pkg__combines4p(s11_1, s12_1, s21_1, s22_1, s11_2, s12_2, s21_2, s22_2):
-    """Inlined combines4p (MATLAB lines 5327-5370)."""
-    N = 1.0 - s22_1 * s11_2
-    s11 = s11_1 + s12_1 * s21_1 * s11_2 / N
-    s12 = s12_1 * s12_2 / N
-    s21 = s21_2 * s21_1 / N
-    s22 = s22_2 + s12_2 * s21_2 * s22_1 / N
-    return s11, s12, s21, s22
-
-
 def _make_full_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     """Inlined make_pkg (MATLAB lines 8359-8405)."""
     f = np.asarray(f, dtype=float)
@@ -16259,7 +13148,7 @@ def _make_full_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.
         jw_lcomp_z = 1j * 2 * np.pi * f * float(lcomp) / zref
         s11comp = jw_lcomp_z / (2.0 + jw_lcomp_z)
         s21comp = 2.0 / (2.0 + jw_lcomp_z)
-        s11pad, s12pad, s21pad, s22pad = _make_full_pkg__combines4p(
+        s11pad, s12pad, s21pad, s22pad = _combines4p(
             s11pad, s12pad, s21pad, s22pad,
             s11comp, s21comp, s21comp, s11comp)
 
@@ -16268,13 +13157,13 @@ def _make_full_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.
         jw_cbump_z = 1j * 2 * np.pi * f * float(cbump) * zref
         s11bump = -jw_cbump_z / (2.0 + jw_cbump_z)
         s21bump = 2.0 / (2.0 + jw_cbump_z)
-        s11pad, s12pad, s21pad, s22pad = _make_full_pkg__combines4p(
+        s11pad, s12pad, s21pad, s22pad = _combines4p(
             s11pad, s12pad, s21pad, s22pad,
             s11bump, s21bump, s21bump, s11bump)
 
     # Transmission line: Eqs 93A-9 to 93A-14
-    S11, S12, S21, S22 = _make_full_pkg__synth_tline(f, float(pkg_z), zref, gamma_coeff, tau, float(pkg_len))
-    s11out1, s12out1, s21out1, s22out1 = _make_full_pkg__combines4p(
+    S11, S12, S21, S22 = _synth_tline(f, float(pkg_z), zref, gamma_coeff, tau, float(pkg_len))
+    s11out1, s12out1, s21out1, s22out1 = _combines4p(
         s11pad, s12pad, s21pad, s22pad,
         S11, S12, S21, S22)
 
@@ -16282,7 +13171,7 @@ def _make_full_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.
     jw_cball_z = 1j * 2 * np.pi * f * float(cball) * zref
     s11ball = -jw_cball_z / (2.0 + jw_cball_z)
     s21ball = 2.0 / (2.0 + jw_cball_z)
-    s11out, s12out, s21out, s22out = _make_full_pkg__combines4p(
+    s11out, s12out, s21out, s22out = _combines4p(
         s11out1, s12out1, s21out1, s22out1,
         s11ball, s21ball, s21ball, s11ball)
 
@@ -16486,7 +13375,7 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             if j == 0:
                 s11out, s12out, s21out, s22out = sp11, sp12, sp21, sp22
             else:
-                s11out, s12out, s21out, s22out = _make_full_pkg__combines4p(
+                s11out, s12out, s21out, s22out = _combines4p(
                     s11out, s12out, s21out, s22out,
                     sp11, sp12, sp21, sp22)
 
@@ -16495,33 +13384,6 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
 
 
 # --- make_pkg (MATLAB lines 8359–8405) ---
-
-def _make_pkg__synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float).ravel()
-    gc = np.asarray(gamma_coeff, dtype=float)
-    f_GHz = f / 1e9
-    gamma_1 = gc[1] * (1.0 + 1j)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        gamma_2 = gc[2] * (1.0 - 2j / np.pi * np.log(f_GHz)) + 2j * np.pi * tau
-    gamma = gc[0] + gamma_1 * np.sqrt(f_GHz) + gamma_2 * f_GHz
-    gamma[f_GHz == 0] = gc[0]
-    rho_rl = 0.0 if d == 0 else (Z_c - 2.0 * Z_0) / (Z_c + 2.0 * Z_0)
-    exp_gd = np.exp(-d * gamma)
-    exp_gd2 = exp_gd ** 2
-    denom = 1.0 - rho_rl ** 2 * exp_gd2
-    s11 = rho_rl * (1.0 - exp_gd2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21.copy(), s21.copy(), s11.copy()
-
-
-def _make_pkg__combines4p(a11, a12, a21, a22, b11, b12, b21, b22):
-    def sq(x): return np.asarray(x, dtype=complex).ravel()
-    a11, a12, a21, a22 = sq(a11), sq(a12), sq(a21), sq(a22)
-    b11, b12, b21, b22 = sq(b11), sq(b12), sq(b21), sq(b22)
-    Nv = 1 - a22 * b11
-    return (a11 + a12 * a21 * b11 / Nv, a12 * b12 / Nv,
-            b21 * a21 / Nv, b22 + b12 * b21 * a22 / Nv)
-
 
 def make_pkg(f, pkg_len, cpad, cball, pkg_z, param, *varargin):
     """Build package S-parameters: pad capacitor + transmission line + ball capacitor (MATLAB lines 8359-8405).
@@ -16551,7 +13413,7 @@ def make_pkg(f, pkg_len, cpad, cball, pkg_z, param, *varargin):
             denom_c = 2 + 1j * 2 * np.pi * f * lcomp / zref
             s11comp = (1j * 2 * np.pi * f * lcomp / zref) / denom_c
             s21comp = 2.0 / denom_c
-            s11pad, s12pad, s21pad, s22pad = _make_pkg__combines4p(
+            s11pad, s12pad, s21pad, s22pad = _combines4p(
                 s11pad, s12pad, s21pad, s22pad, s11comp, s21comp, s21comp, s11comp)
 
     # Optional bump capacitor
@@ -16561,12 +13423,12 @@ def make_pkg(f, pkg_len, cpad, cball, pkg_z, param, *varargin):
             denom_b = 2 + 1j * 2 * np.pi * f * cbump * zref
             s11bump = -1j * 2 * np.pi * f * cbump * zref / denom_b
             s21bump = 2.0 / denom_b
-            s11pad, s12pad, s21pad, s22pad = _make_pkg__combines4p(
+            s11pad, s12pad, s21pad, s22pad = _combines4p(
                 s11pad, s12pad, s21pad, s22pad, s11bump, s21bump, s21bump, s11bump)
 
     # Transmission line segment
-    S11, S12, S21, S22 = _make_pkg__synth_tline(f, float(pkg_z), zref, gc, tau, Lenscale)
-    s11out1, s12out1, s21out1, s22out1 = _make_pkg__combines4p(
+    S11, S12, S21, S22 = _synth_tline(f, float(pkg_z), zref, gc, tau, Lenscale)
+    s11out1, s12out1, s21out1, s22out1 = _combines4p(
         s11pad, s12pad, s21pad, s22pad, S11, S21, S21, S11)
 
     # Ball capacitor (Eq. 93A-8)
@@ -16574,7 +13436,7 @@ def make_pkg(f, pkg_len, cpad, cball, pkg_z, param, *varargin):
     s11ball = -1j * 2 * np.pi * f * float(cball) * zref / denom_ball
     s21ball = 2.0 / denom_ball
 
-    s11out, s12out, s21out, s22out = _make_pkg__combines4p(
+    s11out, s12out, s21out, s22out = _combines4p(
         s11out1, s12out1, s21out1, s22out1, s11ball, s21ball, s21ball, s11ball)
 
     return s11out, s12out, s21out, s22out
@@ -17334,30 +14196,6 @@ def pdf_to_cdf(pdf):
 # ============================================================
 
 
-def _plot_bathtub_curves__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
-
-def _plot_bathtub_curves__mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's.
-
-    COM Octave: p1.Min=0.5, p2.Min=0 -> p.Min=1 (Python round() gives 0).
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
 
 
 
@@ -17366,111 +14204,16 @@ def _plot_bathtub_curves__mround(x):
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _plot_bathtub_curves__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _plot_bathtub_curves__colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the stated limit, where (pmin:pmax)*binsize forms each element
-    as one product. Swept over 7920 (Min, length, BinSize) combinations against
-    Octave, the product form got 24.6% of the elements wrong, all by 1 ulp;
-    this form got none. The last element is pinned only when accumulation
-    overshoots the limit -- pinning unconditionally is wrong, e.g. COM Octave
-    Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004, -0.20000000000000004].
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _plot_bathtub_curves__conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _plot_bathtub_curves__mround(p1.Min + p2.Min)   # MATLAB round: halves go away from zero
-    p.y = _plot_bathtub_curves__conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    # (p.Min*BinSize : BinSize : pMax*BinSize) -- a floating-point colon, which
-    # is NOT (p.Min:pMax)*BinSize.
-    p.x = _plot_bathtub_curves__colon_x(p.Min, pMax, p.BinSize)
-    return p
-
-
-def _plot_bathtub_curves__d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below would stop at
-        # the shorter of the two and silently normalise whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _plot_bathtub_curves__mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector left the support empty
-    # and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
 
 
 def plot_bathtub_curves(hax, max_signal, sci_pdf, cci_pdf, isi_and_xtalk_pdf,
                         noise_pdf, jitt_pdf, combined_interference_and_noise_pdf, bin_size):
-    cursors = _plot_bathtub_curves__d_cpdf(bin_size, max_signal * np.array([-1.0, 1.0]), np.array([0.5, 0.5]))
-    signal_and_isi_pdf = _plot_bathtub_curves__conv_fct(cursors, sci_pdf)
-    signal_and_xtalk_pdf = _plot_bathtub_curves__conv_fct(cursors, cci_pdf)
-    signal_and_channel_noise_pdf = _plot_bathtub_curves__conv_fct(cursors, isi_and_xtalk_pdf)
-    signal_and_system_noise_pdf = _plot_bathtub_curves__conv_fct(cursors, noise_pdf)
-    signal_and_system_jitt_pdf = _plot_bathtub_curves__conv_fct(cursors, jitt_pdf)
+    cursors = _d_cpdf(bin_size, max_signal * np.array([-1.0, 1.0]), np.array([0.5, 0.5]))
+    signal_and_isi_pdf = _conv_fct(cursors, sci_pdf)
+    signal_and_xtalk_pdf = _conv_fct(cursors, cci_pdf)
+    signal_and_channel_noise_pdf = _conv_fct(cursors, isi_and_xtalk_pdf)
+    signal_and_system_noise_pdf = _conv_fct(cursors, noise_pdf)
+    signal_and_system_jitt_pdf = _conv_fct(cursors, jitt_pdf)
 
     cursors_l = copy.copy(cursors)
     cursors_l.y = cursors_l.y.copy()
@@ -17480,8 +14223,8 @@ def plot_bathtub_curves(hax, max_signal, sci_pdf, cci_pdf, isi_and_xtalk_pdf,
     cursors_r.y = cursors_r.y.copy()
     cursors_r.y[cursors_r.x < 0] = 0
 
-    signal_and_total_noise_pdf_l = _plot_bathtub_curves__conv_fct(cursors_l, combined_interference_and_noise_pdf)
-    signal_and_total_noise_pdf_r = _plot_bathtub_curves__conv_fct(cursors_r, combined_interference_and_noise_pdf)
+    signal_and_total_noise_pdf_l = _conv_fct(cursors_l, combined_interference_and_noise_pdf)
+    signal_and_total_noise_pdf_r = _conv_fct(cursors_r, combined_interference_and_noise_pdf)
 
     hax.semilogy(signal_and_isi_pdf.x, np.abs(np.cumsum(signal_and_isi_pdf.y) - 0.5),
                  'r', label='ISI')
@@ -18122,75 +14865,6 @@ def rangelimit(sch, schFreqAxis, param, OP=None):
 
 
 
-def _read_Nport_touchstone__mround(x):
-    """MATLAB round(): half away from zero."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _read_Nport_touchstone__auto_port_order(sch, F, flip_victim=0):
-    """Inlined auto_port_order (MATLAB lines 4932-5057, r4p15p0). Returns 1-based list."""
-    sch = np.asarray(sch)
-    F = np.asarray(F, dtype=float).ravel()
-    MinThruEnergy = 0.1
-    if sch.shape[2] != 4:
-        raise ValueError('Auto Port Order routine only works for 4 port S-parameters')
-    LowFreq_Matrix = np.abs(sch[0, :, :])
-    Raw_LowFreq_Matrix = LowFreq_Matrix.copy()
-    LowFreq_Matrix = LowFreq_Matrix - np.diag(np.diag(LowFreq_Matrix))
-    max_matrix = np.maximum(np.triu(LowFreq_Matrix), np.tril(LowFreq_Matrix).T)
-    LowFreq_Matrix = max_matrix + np.triu(max_matrix).T
-    ConnectedPorts = np.zeros(4, dtype=int)
-    for k in range(4):
-        col = LowFreq_Matrix[:, k]
-        idx = int(np.argmax(col))
-        if col[idx] < MinThruEnergy:
-            raise ValueError('Unable to determine port connections:  Low Energy')
-        ConnectedPorts[k] = idx + 1
-    for k in range(1, 5):
-        if ConnectedPorts[ConnectedPorts[k - 1] - 1] != k:
-            raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    port_order = [0, 0, 0, 0]
-    port_order[0] = 1
-    port_order[2] = int(ConnectedPorts[0])
-    others = sorted(set(range(1, 5)) - {1, int(ConnectedPorts[0])})
-    port_order[1] = others[0]
-    port_order[3] = others[-1]
-    if ConnectedPorts[port_order[1] - 1] != port_order[3]:
-        raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    try:
-        TxN, RxN = port_order[1], port_order[3]
-        vector1 = sch[:, TxN - 1, 0] if Raw_LowFreq_Matrix[TxN - 1, 0] > Raw_LowFreq_Matrix[0, TxN - 1] else sch[:, 0, TxN - 1]
-        vector2 = sch[:, RxN - 1, 0] if Raw_LowFreq_Matrix[RxN - 1, 0] > Raw_LowFreq_Matrix[0, RxN - 1] else sch[:, 0, RxN - 1]
-        Floc = F.copy()
-        if Floc[0] == 0:
-            vector1, vector2, Floc = vector1[1:], vector2[1:], Floc[1:]
-        pd1 = -1.0 * np.unwrap(np.angle(vector1)) / (Floc * 2 * np.pi)
-        pd2 = -1.0 * np.unwrap(np.angle(vector2)) / (Floc * 2 * np.pi)
-        qs = _read_Nport_touchstone__mround(len(Floc) / 4.0)
-        tqs = _read_Nport_touchstone__mround(len(Floc) * 3.0 / 4.0)
-        m1 = float(np.mean(pd1[qs - 1:tqs]))
-        m2 = float(np.mean(pd2[qs - 1:tqs]))
-        if max(m1, m2) > min(m1, m2) * 2:
-            if int(np.argmax([m1, m2])) + 1 == 1:
-                port_order[1], port_order[3] = port_order[3], port_order[1]
-        else:
-            print('Did not use phase delay in auto-port discovery since the phase delay '
-                  'of Near End and Far End are similar')
-    except Exception as ME_msg:
-        print(str(ME_msg))
-        print('Unable to use phase delay to determine port order')
-    if flip_victim:
-        port_order = [port_order[2], port_order[3], port_order[0], port_order[1]]
-    print(f'Auto Port Order: [{" ".join(str(p) for p in port_order)}]')
-    return port_order
-
-
 def read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
     """Read N-port Touchstone file (MATLAB lines 9414-9568).
 
@@ -18315,7 +14989,7 @@ def read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
 
     # r4p15p0: auto-detect port order when none supplied (empty port_order)
     if len(port_order) == 0:
-        port_order = _read_Nport_touchstone__auto_port_order(sch, freq)
+        port_order = _auto_port_order(sch, freq)
 
     # Port reordering (port_order is 1-based)
     po = [p - 1 for p in port_order]  # 0-based
@@ -19470,70 +16144,6 @@ def read_p2_s2params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
 
 
 
-def _read_p4_s4params__mround(x):
-    """MATLAB round(): half away from zero."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _read_p4_s4params__auto_port_order(sch, F, flip_victim=0):
-    """Inlined auto_port_order (MATLAB lines 4932-5057, r4p15p0). Returns 1-based list."""
-    sch = np.asarray(sch)
-    F = np.asarray(F, dtype=float).ravel()
-    MinThruEnergy = 0.1
-    if sch.shape[2] != 4:
-        raise ValueError('Auto Port Order routine only works for 4 port S-parameters')
-    LowFreq_Matrix = np.abs(sch[0, :, :])
-    Raw_LowFreq_Matrix = LowFreq_Matrix.copy()
-    LowFreq_Matrix = LowFreq_Matrix - np.diag(np.diag(LowFreq_Matrix))
-    max_matrix = np.maximum(np.triu(LowFreq_Matrix), np.tril(LowFreq_Matrix).T)
-    LowFreq_Matrix = max_matrix + np.triu(max_matrix).T
-    ConnectedPorts = np.zeros(4, dtype=int)
-    for k in range(4):
-        col = LowFreq_Matrix[:, k]
-        idx = int(np.argmax(col))
-        if col[idx] < MinThruEnergy:
-            raise ValueError('Unable to determine port connections:  Low Energy')
-        ConnectedPorts[k] = idx + 1
-    for k in range(1, 5):
-        if ConnectedPorts[ConnectedPorts[k - 1] - 1] != k:
-            raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    port_order = [1, 0, int(ConnectedPorts[0]), 0]
-    others = sorted(set(range(1, 5)) - {1, int(ConnectedPorts[0])})
-    port_order[1], port_order[3] = others[0], others[-1]
-    if ConnectedPorts[port_order[1] - 1] != port_order[3]:
-        raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    try:
-        TxN, RxN = port_order[1], port_order[3]
-        vector1 = sch[:, TxN - 1, 0] if Raw_LowFreq_Matrix[TxN - 1, 0] > Raw_LowFreq_Matrix[0, TxN - 1] else sch[:, 0, TxN - 1]
-        vector2 = sch[:, RxN - 1, 0] if Raw_LowFreq_Matrix[RxN - 1, 0] > Raw_LowFreq_Matrix[0, RxN - 1] else sch[:, 0, RxN - 1]
-        Floc = F.copy()
-        if Floc[0] == 0:
-            vector1, vector2, Floc = vector1[1:], vector2[1:], Floc[1:]
-        pd1 = -1.0 * np.unwrap(np.angle(vector1)) / (Floc * 2 * np.pi)
-        pd2 = -1.0 * np.unwrap(np.angle(vector2)) / (Floc * 2 * np.pi)
-        qs, tqs = _read_p4_s4params__mround(len(Floc) / 4.0), _read_p4_s4params__mround(len(Floc) * 3.0 / 4.0)
-        m1, m2 = float(np.mean(pd1[qs - 1:tqs])), float(np.mean(pd2[qs - 1:tqs]))
-        if max(m1, m2) > min(m1, m2) * 2:
-            if int(np.argmax([m1, m2])) + 1 == 1:
-                port_order[1], port_order[3] = port_order[3], port_order[1]
-        else:
-            print('Did not use phase delay in auto-port discovery since the phase delay '
-                  'of Near End and Far End are similar')
-    except Exception as ME_msg:
-        print(str(ME_msg))
-        print('Unable to use phase delay to determine port order')
-    if flip_victim:
-        port_order = [port_order[2], port_order[3], port_order[0], port_order[1]]
-    print(f'Auto Port Order: [{" ".join(str(p) for p in port_order)}]')
-    return port_order
-
-
 def _read_p4_s4params__read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
     """Inlined read_Nport_touchstone."""
     import re, os
@@ -19624,7 +16234,7 @@ def _read_p4_s4params__read_Nport_touchstone(touchstone_file, port_order, Z_reno
     sch = np.transpose(sp, (2, 0, 1))
     # r4p15p0: auto-detect port order when none supplied
     if len(port_order) == 0:
-        port_order = _read_p4_s4params__auto_port_order(sch, freq)
+        port_order = _auto_port_order(sch, freq)
     po = [p - 1 for p in port_order]
     if len(po) == nport:
         sch = sch[:, po, :][:, :, po]
@@ -19882,116 +16492,9 @@ def _read_s4p_files__mmax(a):
     return np.nanmax(a)
 
 
-def _read_s4p_files__mmin(a):
-    """MATLAB min(): the mirror of _read_s4p_files__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _read_s4p_files__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-
-def _read_s4p_files__mround(x):
-    """MATLAB round(): half away from zero."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _read_s4p_files__auto_port_order(sch, F, flip_victim=0):
-    """Inlined auto_port_order (MATLAB lines 4932-5057, r4p15p0). Returns 1-based list."""
-    sch = np.asarray(sch)
-    F = np.asarray(F, dtype=float).ravel()
-    MinThruEnergy = 0.1
-    if sch.shape[2] != 4:
-        raise ValueError('Auto Port Order routine only works for 4 port S-parameters')
-    LowFreq_Matrix = np.abs(sch[0, :, :])
-    Raw_LowFreq_Matrix = LowFreq_Matrix.copy()
-    LowFreq_Matrix = LowFreq_Matrix - np.diag(np.diag(LowFreq_Matrix))
-    max_matrix = np.maximum(np.triu(LowFreq_Matrix), np.tril(LowFreq_Matrix).T)
-    LowFreq_Matrix = max_matrix + np.triu(max_matrix).T
-    ConnectedPorts = np.zeros(4, dtype=int)
-    for k in range(4):
-        col = LowFreq_Matrix[:, k]
-        idx = int(np.argmax(col))
-        if col[idx] < MinThruEnergy:
-            raise ValueError('Unable to determine port connections:  Low Energy')
-        ConnectedPorts[k] = idx + 1
-    for k in range(1, 5):
-        if ConnectedPorts[ConnectedPorts[k - 1] - 1] != k:
-            raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    port_order = [1, 0, int(ConnectedPorts[0]), 0]
-    others = sorted(set(range(1, 5)) - {1, int(ConnectedPorts[0])})
-    port_order[1], port_order[3] = others[0], others[-1]
-    if ConnectedPorts[port_order[1] - 1] != port_order[3]:
-        raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    try:
-        TxN, RxN = port_order[1], port_order[3]
-        vector1 = sch[:, TxN - 1, 0] if Raw_LowFreq_Matrix[TxN - 1, 0] > Raw_LowFreq_Matrix[0, TxN - 1] else sch[:, 0, TxN - 1]
-        vector2 = sch[:, RxN - 1, 0] if Raw_LowFreq_Matrix[RxN - 1, 0] > Raw_LowFreq_Matrix[0, RxN - 1] else sch[:, 0, RxN - 1]
-        Floc = F.copy()
-        if Floc[0] == 0:
-            vector1, vector2, Floc = vector1[1:], vector2[1:], Floc[1:]
-        pd1 = -1.0 * np.unwrap(np.angle(vector1)) / (Floc * 2 * np.pi)
-        pd2 = -1.0 * np.unwrap(np.angle(vector2)) / (Floc * 2 * np.pi)
-        qs, tqs = _read_s4p_files__mround(len(Floc) / 4.0), _read_s4p_files__mround(len(Floc) * 3.0 / 4.0)
-        m1, m2 = float(np.mean(pd1[qs - 1:tqs])), float(np.mean(pd2[qs - 1:tqs]))
-        if max(m1, m2) > min(m1, m2) * 2:
-            if int(np.argmax([m1, m2])) + 1 == 1:
-                port_order[1], port_order[3] = port_order[3], port_order[1]
-        else:
-            print('Did not use phase delay in auto-port discovery since the phase delay '
-                  'of Near End and Far End are similar')
-    except Exception as ME_msg:
-        print(str(ME_msg))
-        print('Unable to use phase delay to determine port order')
-    if flip_victim:
-        port_order = [port_order[2], port_order[3], port_order[0], port_order[1]]
-    print(f'Auto Port Order: [{" ".join(str(p) for p in port_order)}]')
-    return port_order
 
 
 # ---- inlined helpers (from synth_tline, combines4p, make_pkg, make_full_pkg, s21_pkg, add_brd) ---
-
-def _read_s4p_files__synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float)
-    f_GHz = f / 1e9
-    eps_val = np.finfo(float).tiny
-    f_GHz_s = np.where(f_GHz == 0, eps_val, f_GHz)
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float).ravel()
-    gamma0, a1, a2 = gamma_coeff[0], gamma_coeff[1], gamma_coeff[2]
-    gamma_1 = a1 * (1.0 + 1j)
-    gamma_2 = a2 * (1.0 - 2j / np.pi * np.log(f_GHz_s)) + 2j * np.pi * float(tau)
-    gamma = gamma0 + gamma_1 * np.sqrt(f_GHz_s) + gamma_2 * f_GHz_s
-    gamma = np.where(f_GHz == 0, gamma0, gamma)
-    if float(d) == 0.0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (float(Z_c) - 2.0 * float(Z_0)) / (float(Z_c) + 2.0 * float(Z_0))
-    exp_gd = np.exp(-float(d) * gamma)
-    denom = 1.0 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1.0 - exp_gd ** 2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21, s21, s11
-
-
-def _read_s4p_files__combines4p(s11_1, s12_1, s21_1, s22_1, s11_2, s12_2, s21_2, s22_2):
-    N = 1.0 - s22_1 * s11_2
-    s11 = s11_1 + s12_1 * s21_1 * s11_2 / N
-    s12 = s12_1 * s12_2 / N
-    s21 = s21_2 * s21_1 / N
-    s22 = s22_2 + s12_2 * s21_2 * s22_1 / N
-    return s11, s12, s21, s22
-
 
 def _read_s4p_files__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     f = np.asarray(f, dtype=float)
@@ -20010,7 +16513,7 @@ def _read_s4p_files__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0
         jw_lcomp_z = 1j * 2 * np.pi * f * float(lcomp) / zref
         s11comp = jw_lcomp_z / (2.0 + jw_lcomp_z)
         s21comp = 2.0 / (2.0 + jw_lcomp_z)
-        s11pad, s12pad, s21pad, s22pad = _read_s4p_files__combines4p(
+        s11pad, s12pad, s21pad, s22pad = _combines4p(
             s11pad, s12pad, s21pad, s22pad,
             s11comp, s21comp, s21comp, s11comp)
 
@@ -20018,18 +16521,18 @@ def _read_s4p_files__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0
         jw_cbump_z = 1j * 2 * np.pi * f * float(cbump) * zref
         s11bump = -jw_cbump_z / (2.0 + jw_cbump_z)
         s21bump = 2.0 / (2.0 + jw_cbump_z)
-        s11pad, s12pad, s21pad, s22pad = _read_s4p_files__combines4p(
+        s11pad, s12pad, s21pad, s22pad = _combines4p(
             s11pad, s12pad, s21pad, s22pad,
             s11bump, s21bump, s21bump, s11bump)
 
-    S11, S12, S21, S22 = _read_s4p_files__synth_tline(f, float(pkg_z), zref, gamma_coeff, tau, float(pkg_len))
-    s11out1, s12out1, s21out1, s22out1 = _read_s4p_files__combines4p(
+    S11, S12, S21, S22 = _synth_tline(f, float(pkg_z), zref, gamma_coeff, tau, float(pkg_len))
+    s11out1, s12out1, s21out1, s22out1 = _combines4p(
         s11pad, s12pad, s21pad, s22pad, S11, S12, S21, S22)
 
     jw_cball_z = 1j * 2 * np.pi * f * float(cball) * zref
     s11ball = -jw_cball_z / (2.0 + jw_cball_z)
     s21ball = 2.0 / (2.0 + jw_cball_z)
-    s11out, s12out, s21out, s22out = _read_s4p_files__combines4p(
+    s11out, s12out, s21out, s22out = _combines4p(
         s11out1, s12out1, s21out1, s22out1,
         s11ball, s21ball, s21ball, s11ball)
     return s11out, s12out, s21out, s22out
@@ -20187,60 +16690,8 @@ def _read_s4p_files__make_full_pkg(type_, faxis, param, channel_type, mode='dd',
             if j == 0:
                 s11o, s12o, s21o, s22o = sp11, sp12, sp21, sp22
             else:
-                s11o, s12o, s21o, s22o = _read_s4p_files__combines4p(s11o, s12o, s21o, s22o, sp11, sp12, sp21, sp22)
+                s11o, s12o, s21o, s22o = _combines4p(s11o, s12o, s21o, s22o, sp11, sp12, sp21, sp22)
     return s11o, s12o, s21o, s22o
-
-
-def _read_s4p_files__factorial(k):
-    """MATLAB factorial(): a double, so it overflows to Inf above 170!.
-
-    COM Octave, bessel(90): a(1:10) are Inf, a(11) = 2.31e157.  Python's exact
-    math.factorial made the first ten finite (~1.09e164) instead.
-    """
-    return np.inf if k > 170 else factorial(k)
-
-
-def _read_s4p_files__bessel(n):
-    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
-    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
-    # assignment is undefined".  Returning an empty array answered a call the
-    # reference refuses.
-    if n < 0:
-        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
-    # MATLAB factorial() rejects non-integers.  COM Octave: bessel(2.5) ->
-    # "factorial: all N must be real non-negative integers".
-    if n != int(n):
-        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
-    n = int(n)
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        a[ii] = _read_s4p_files__factorial(2 * n - ii) / (2 ** (n - ii) * _read_s4p_files__factorial(ii) * _read_s4p_files__factorial(n - ii))
-    return a
-
-
-def _read_s4p_files__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _read_s4p_files__Bessel_Thomson_Filter(param, f, use_BT):
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
-    # ALL non-zero, and length() is the LONGEST dimension, not the first.
-    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
-    # f scalar -> 1 (len(f) raised TypeError).
-    use = np.asarray(use_BT)
-    if not (use.size and np.all(use)):
-        return np.ones(_read_s4p_files__length(f))
-    if use_BT:
-        a = _read_s4p_files__bessel(int(param.BTorder))
-        acoef = a[::-1]
-        H_bt = a[0] / np.polyval(acoef, 1j * f / (float(param.fb_BT_cutoff) * float(param.fb)))
-    else:
-        H_bt = np.ones(len(f))
-    return H_bt
 
 
 def _read_s4p_files__s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
@@ -20335,7 +16786,7 @@ def _read_s4p_files__s21_pkg(chdata, param, OP, channel_number, mode='dd', inclu
         return s21p, SCH, sigma_ACCM_at_tp0
 
     if rx_cal == 1 and channel_number == 2:
-        s11rx, s12rx, s21rx, s22rx = _read_s4p_files__combines4p(
+        s11rx, s12rx, s21rx, s22rx = _combines4p(
             s11, s12, s21, s22,
             s22out, s12out, s21out, s11out)
         SCH = SimpleNamespace(
@@ -20357,7 +16808,7 @@ def _read_s4p_files__s21_pkg(chdata, param, OP, channel_number, mode='dd', inclu
         return s21p, SCH, sigma_ACCM_at_tp0
 
     if not ideal_tx:
-        s11, s12, s21, s22 = _read_s4p_files__combines4p(
+        s11, s12, s21, s22 = _combines4p(
             s11out, s12out, s21out, s22out,
             s11, s12, s21, s22)
 
@@ -20381,7 +16832,7 @@ def _read_s4p_files__s21_pkg(chdata, param, OP, channel_number, mode='dd', inclu
                 H_t = np.exp(-2 * (np.pi * f9 * tr / 1.6832) ** 2) * np.exp(-1j * 2 * np.pi * f9 * tr * 3)
 
     if not ideal_rx:
-        s11, s12, s21, s22 = _read_s4p_files__combines4p(
+        s11, s12, s21, s22 = _combines4p(
             s11, s12, s21, s22,
             s22in, s21in, s12in, s11in)
 
@@ -20394,7 +16845,7 @@ def _read_s4p_files__s21_pkg(chdata, param, OP, channel_number, mode='dd', inclu
         s21p = s21.copy()
 
     if mode.lower() == 'dc':
-        H_bt = _read_s4p_files__Bessel_Thomson_Filter(param, faxis, 1)
+        H_bt = _Bessel_Thomson_Filter(param, faxis, 1)
         if channel_number == 1:
             ACCM_max_freq = float(getattr(param, 'ACCM_MAX_Freq', faxis[-1]))
             f_int = faxis[faxis <= ACCM_max_freq]
@@ -20446,11 +16897,11 @@ def _read_s4p_files__add_brd(chdata, param, OP):
     s11pad2t = -1j * 2 * np.pi * f * c2[0] * zref / (2 + 1j * 2 * np.pi * f * c2[0] * zref)
     s21pad2t = 2 / (2 + 1j * 2 * np.pi * f * c2[0] * zref)
 
-    s11tx, s12tx, s21tx, s22tx = _read_s4p_files__synth_tline(
+    s11tx, s12tx, s21tx, s22tx = _synth_tline(
         chdata.faxis, param.brd_Z_c[0], param.Z0, param.brd_gamma0_a1_a2, param.brd_tau, z_bp_tx)
-    s11tx, s12tx, s21tx, s22tx = _read_s4p_files__combines4p(
+    s11tx, s12tx, s21tx, s22tx = _combines4p(
         s11pad1t, s21pad1t, s21pad1t, s11pad1t, s11tx, s12tx, s21tx, s22tx)
-    s11tx, s12tx, s21tx, s22tx = _read_s4p_files__combines4p(
+    s11tx, s12tx, s21tx, s22tx = _combines4p(
         s11tx, s12tx, s21tx, s22tx, s11pad2t, s21pad2t, s21pad2t, s11pad2t)
 
     s11pad1r = -1j * 2 * np.pi * f * c1[1] * zref / (2 + 1j * 2 * np.pi * f * c1[1] * zref)
@@ -20458,21 +16909,21 @@ def _read_s4p_files__add_brd(chdata, param, OP):
     s11pad2r = -1j * 2 * np.pi * f * c2[1] * zref / (2 + 1j * 2 * np.pi * f * c2[1] * zref)
     s21pad2r = 2 / (2 + 1j * 2 * np.pi * f * c2[1] * zref)
 
-    s11rx, s12rx, s21rx, s22rx = _read_s4p_files__synth_tline(
+    s11rx, s12rx, s21rx, s22rx = _synth_tline(
         chdata.faxis, param.brd_Z_c[1], param.Z0, param.brd_gamma0_a1_a2, param.brd_tau, z_bp_rx)
-    s11rx, s12rx, s21rx, s22rx = _read_s4p_files__combines4p(
+    s11rx, s12rx, s21rx, s22rx = _combines4p(
         s11pad2r, s21pad2r, s21pad2r, s11pad2r, s11rx, s12rx, s21rx, s22rx)
-    s11rx, s12rx, s21rx, s22rx = _read_s4p_files__combines4p(
+    s11rx, s12rx, s21rx, s22rx = _combines4p(
         s11rx, s12rx, s21rx, s22rx, s11pad1r, s21pad1r, s21pad1r, s11pad1r)
 
     if OP.include_pcb == 1:
-        s11o1, s12o1, s21o1, s22o1 = _read_s4p_files__combines4p(
+        s11o1, s12o1, s21o1, s22o1 = _combines4p(
             s11tx, s12tx, s21tx, s22tx,
             chdata.sdd11_raw, chdata.sdd12_raw, chdata.sdd21_raw, chdata.sdd22_raw)
-        s11out, s12out, s21out, s22out = _read_s4p_files__combines4p(
+        s11out, s12out, s21out, s22out = _combines4p(
             s11o1, s12o1, s21o1, s22o1, s11rx, s12rx, s21rx, s22rx)
     elif OP.include_pcb == 2:
-        s11out, s12out, s21out, s22out = _read_s4p_files__combines4p(
+        s11out, s12out, s21out, s22out = _combines4p(
             chdata.sdd11_raw, chdata.sdd12_raw, chdata.sdd21_raw, chdata.sdd22_raw,
             s11rx, s12rx, s21rx, s22rx)
     else:
@@ -20568,7 +17019,7 @@ def _read_s4p_files__read_p4_s4params_inline(infile, ports, param, OP):
     sch = np.transpose(sp, (2, 0, 1))
     # r4p15p0: auto-detect port order when none supplied (before range-limiting)
     if len(port_order) == 0:
-        port_order = _read_s4p_files__auto_port_order(sch, freq)
+        port_order = _auto_port_order(sch, freq)
     po = [p - 1 for p in port_order]
     if len(po) == nport:
         sch = sch[:, po, :][:, :, po]
@@ -21039,37 +17490,6 @@ def recolor_plots(ax=None):
 
 # ---- inlined helpers --------------------------------------------------------
 
-def _s21_pkg__synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float)
-    f_GHz = f / 1e9
-    eps_val = np.finfo(float).tiny
-    f_GHz_s = np.where(f_GHz == 0, eps_val, f_GHz)
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float).ravel()
-    gamma0, a1, a2 = gamma_coeff[0], gamma_coeff[1], gamma_coeff[2]
-    gamma_1 = a1 * (1.0 + 1j)
-    gamma_2 = a2 * (1.0 - 2j / np.pi * np.log(f_GHz_s)) + 2j * np.pi * float(tau)
-    gamma = gamma0 + gamma_1 * np.sqrt(f_GHz_s) + gamma_2 * f_GHz_s
-    gamma = np.where(f_GHz == 0, gamma0, gamma)
-    if float(d) == 0.0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (float(Z_c) - 2.0 * float(Z_0)) / (float(Z_c) + 2.0 * float(Z_0))
-    exp_gd = np.exp(-float(d) * gamma)
-    denom = 1.0 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1.0 - exp_gd ** 2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21, s21, s11
-
-
-def _s21_pkg__combines4p(s11_1, s12_1, s21_1, s22_1, s11_2, s12_2, s21_2, s22_2):
-    N = 1.0 - s22_1 * s11_2
-    s11 = s11_1 + s12_1 * s21_1 * s11_2 / N
-    s12 = s12_1 * s12_2 / N
-    s21 = s21_2 * s21_1 / N
-    s22 = s22_2 + s12_2 * s21_2 * s22_1 / N
-    return s11, s12, s21, s22
-
-
 def _s21_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     f = np.asarray(f, dtype=float)
     eps_val = np.finfo(float).tiny
@@ -21087,7 +17507,7 @@ def _s21_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbu
         jw_lcomp_z = 1j * 2 * np.pi * f * float(lcomp) / zref
         s11comp = jw_lcomp_z / (2.0 + jw_lcomp_z)
         s21comp = 2.0 / (2.0 + jw_lcomp_z)
-        s11pad, s12pad, s21pad, s22pad = _s21_pkg__combines4p(
+        s11pad, s12pad, s21pad, s22pad = _combines4p(
             s11pad, s12pad, s21pad, s22pad,
             s11comp, s21comp, s21comp, s11comp)
 
@@ -21095,18 +17515,18 @@ def _s21_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbu
         jw_cbump_z = 1j * 2 * np.pi * f * float(cbump) * zref
         s11bump = -jw_cbump_z / (2.0 + jw_cbump_z)
         s21bump = 2.0 / (2.0 + jw_cbump_z)
-        s11pad, s12pad, s21pad, s22pad = _s21_pkg__combines4p(
+        s11pad, s12pad, s21pad, s22pad = _combines4p(
             s11pad, s12pad, s21pad, s22pad,
             s11bump, s21bump, s21bump, s11bump)
 
-    S11, S12, S21, S22 = _s21_pkg__synth_tline(f, float(pkg_z), zref, gamma_coeff, tau, float(pkg_len))
-    s11out1, s12out1, s21out1, s22out1 = _s21_pkg__combines4p(
+    S11, S12, S21, S22 = _synth_tline(f, float(pkg_z), zref, gamma_coeff, tau, float(pkg_len))
+    s11out1, s12out1, s21out1, s22out1 = _combines4p(
         s11pad, s12pad, s21pad, s22pad, S11, S12, S21, S22)
 
     jw_cball_z = 1j * 2 * np.pi * f * float(cball) * zref
     s11ball = -jw_cball_z / (2.0 + jw_cball_z)
     s21ball = 2.0 / (2.0 + jw_cball_z)
-    s11out, s12out, s21out, s22out = _s21_pkg__combines4p(
+    s11out, s12out, s21out, s22out = _combines4p(
         s11out1, s12out1, s21out1, s22out1,
         s11ball, s21ball, s21ball, s11ball)
     return s11out, s12out, s21out, s22out
@@ -21263,62 +17683,8 @@ def _s21_pkg__make_full_pkg(type_, faxis, param, channel_type, mode='dd', includ
             if j == 0:
                 s11o, s12o, s21o, s22o = sp11, sp12, sp21, sp22
             else:
-                s11o, s12o, s21o, s22o = _s21_pkg__combines4p(s11o, s12o, s21o, s22o, sp11, sp12, sp21, sp22)
+                s11o, s12o, s21o, s22o = _combines4p(s11o, s12o, s21o, s22o, sp11, sp12, sp21, sp22)
     return s11o, s12o, s21o, s22o
-
-
-def _s21_pkg__factorial(k):
-    """MATLAB factorial(): a double, so it overflows to Inf above 170!."""
-    return math.inf if k > 170 else factorial(k)
-
-
-def _s21_pkg__bessel(n):
-    """Bessel polynomial coefficients (MATLAB lines 4926-4930)."""
-    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
-    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
-    # assignment is undefined".
-    if n < 0:
-        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
-    # MATLAB factorial() rejects non-integers.  COM Octave: bessel(2.5) ->
-    # "factorial: all N must be real non-negative integers"; int(n) silently
-    # answered bessel(2) instead.
-    if n != int(n):
-        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
-    n = int(n)
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        # COM Octave, bessel(90): a(1:10) are Inf, a(11) = 2.31e157.  Python's
-        # exact math.factorial made the first ten finite (~1.09e164) instead.
-        a[ii] = _s21_pkg__factorial(2 * n - ii) / (
-            2 ** (n - ii) * _s21_pkg__factorial(ii) * _s21_pkg__factorial(n - ii)
-        )
-    return a
-
-
-def _s21_pkg__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _s21_pkg__Bessel_Thomson_Filter(param, f, use_BT):
-    """Bessel-Thomson filter (MATLAB lines 1028-1035)."""
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
-    # ALL non-zero, and length() is the LONGEST dimension, not the first.
-    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
-    # f scalar -> 1 (len(f) raised TypeError).
-    use = np.asarray(use_BT)
-    if not (use.size and np.all(use)):
-        return np.ones(_s21_pkg__length(f))
-    if use_BT:
-        a = _s21_pkg__bessel(int(param.BTorder))
-        acoef = a[::-1]
-        H_bt = a[0] / np.polyval(acoef, 1j * f / (float(param.fb_BT_cutoff) * float(param.fb)))
-    else:
-        H_bt = np.ones(len(f))
-    return H_bt
 
 
 # ---- main function ----------------------------------------------------------
@@ -21426,7 +17792,7 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
 
     if rx_cal == 1 and channel_number == 2:
         # Only RX pkg: channel + RX pkg
-        s11rx, s12rx, s21rx, s22rx = _s21_pkg__combines4p(
+        s11rx, s12rx, s21rx, s22rx = _combines4p(
             s11, s12, s21, s22,
             s22out, s12out, s21out, s11out)
         SCH = SimpleNamespace(
@@ -21449,7 +17815,7 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
 
     # Normal path
     if not ideal_tx:
-        s11, s12, s21, s22 = _s21_pkg__combines4p(
+        s11, s12, s21, s22 = _combines4p(
             s11out, s12out, s21out, s22out,
             s11, s12, s21, s22)
 
@@ -21474,7 +17840,7 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
                 H_t = np.exp(-2 * (np.pi * f9 * tr / 1.6832) ** 2) * np.exp(-1j * 2 * np.pi * f9 * tr * 3)
 
     if not ideal_rx:
-        s11, s12, s21, s22 = _s21_pkg__combines4p(
+        s11, s12, s21, s22 = _combines4p(
             s11, s12, s21, s22,
             s22in, s21in, s12in, s11in)
 
@@ -21490,7 +17856,7 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
     if mode.lower() == 'dc':
         OP_bt = copy.copy(OP)
         OP_bt.TX_BesselThomson = 1
-        H_bt = _s21_pkg__Bessel_Thomson_Filter(param, faxis, 1)
+        H_bt = _Bessel_Thomson_Filter(param, faxis, 1)
         if channel_number == 1:
             ACCM_max_freq = float(getattr(param, 'ACCM_MAX_Freq', faxis[-1]))
             f_int = faxis[faxis <= ACCM_max_freq]
@@ -21563,62 +17929,6 @@ def _s21_to_impulse_DC__mmax(a):
     if not nan.any() or nan.all():
         return np.max(a)
     return np.nanmax(a)
-
-
-def _s21_to_impulse_DC__mmin(a):
-    """MATLAB min(): the mirror of _s21_to_impulse_DC__mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _s21_to_impulse_DC__mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-
-def _s21_to_impulse_DC__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _s21_to_impulse_DC__Tukey_Window(f, param, fr=None, fb=None):
-    f = np.asarray(f, dtype=float)
-    if fr is None and fb is None:
-        fb = float(param.fb)
-        fr = float(param.f_r) * float(param.fb)
-    fperiod = 2.0 * (float(fb) - float(fr))
-    # MATLAB CONCATENATES three counted pieces — ones(1,n<fr), the raised
-    # cosine of the in-band values, zeros(1,n>fb) — so the answer is grouped by
-    # category and only lines up with f when f ascends.  Element-wise np.where
-    # silently returned a different vector for any other order.  COM Octave,
-    # fr=1e9 fb=3e9: f=[1e9 1e9 3e9 3e9 0 9e9] -> [1 1 1 0 0 0]
-    # (element-wise gave [1 1 0 0 1 0]).
-    flat = np.atleast_1d(f).ravel(order='F')   # MATLAB linear-index order
-    n_lo = int(np.count_nonzero(flat < fr))
-    n_hi = int(np.count_nonzero(flat > fb))
-    band = flat[(flat >= fr) & (flat <= fb)]
-    mid = 0.5 * np.cos(2 * np.pi * (band - fb) / fperiod - np.pi) + 0.5
-    # Only the middle piece keeps the orientation of f, so for a column or a
-    # matrix MATLAB's horizontal concatenation fails unless that piece has at
-    # most one element or is the only non-empty one.  COM Octave, column f:
-    # "horizontal dimensions mismatch (1x2 vs 5x1)".
-    if f.ndim > 1 and f.shape[0] != 1 and mid.size > 1 and (n_lo or n_hi):
-        raise ValueError('Tukey_Window: horizontal dimensions mismatch '
-                         '(1x%d vs %dx1)' % (n_lo or n_hi, mid.size))
-    H_tw = np.concatenate([np.ones(n_lo), mid, np.zeros(n_hi)])
-    n = _s21_to_impulse_DC__length(f)
-    # The pieces cover every element of f only while each one lands in exactly
-    # one category.  A NaN lands in none, so H_tw comes up short and MATLAB's
-    # H_tw(1:length(f)) is an out-of-bound read.  COM Octave, f=[0 1.5e9 NaN
-    # 3.5e9]: "H_tw(4): out of bound 3".  np.where answered 0 for the NaN.
-    if H_tw.size < n:
-        raise IndexError('Tukey_Window: H_tw(%d): out of bound %d' % (n, H_tw.size))
-    return H_tw[:n]
 
 
 def _s21_to_impulse_DC__interp_extrap(fout, fin, y):
@@ -21821,9 +18131,9 @@ def _s21_to_impulse_DC__interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, pa
         if zpf == 0:
             H_tw = np.ones(len(fout))
         elif zpf > 0:
-            H_tw = _s21_to_impulse_DC__Tukey_Window(fout, param, fin[-1], tl); zp = tl
+            H_tw = _Tukey_Window(fout, param, fin[-1], tl); zp = tl
         else:
-            H_tw = _s21_to_impulse_DC__Tukey_Window(fout, param, tl, fin[-1])
+            H_tw = _Tukey_Window(fout, param, tl, fin[-1])
         H_i = H_tw * H_i; H_i[fout > zp] = np.finfo(float).tiny
     return H_i
 
@@ -22463,83 +18773,6 @@ def varargin_extractor(*args):
 
 # --- vma (MATLAB lines 11337–11365) ---
 
-def _vma__mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
-
-
-def _vma__lfsr(s, t):
-    s = [int(b) for b in s]
-    n = len(s)
-    t = [int(x) - 1 for x in t]  # 1-based → 0-based
-    m = len(t)
-    c = [s[:]]
-    for _ in range(2 ** n - 2):
-        b = [0] * m
-        b[0] = s[t[0]] ^ s[t[1]]
-        for i in range(m - 2):
-            b[i + 1] = s[t[i + 2]] ^ b[i]
-        for j in range(n - 1):
-            s[n - 1 - j] = s[n - 2 - j]
-        s[0] = b[m - 2]
-        c.append(s[:])
-    c_arr = np.array(c, dtype=int)
-    return c_arr[:, n - 1]  # output bit column
-
-
-def _vma__pam(data):
-    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
-    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
-    # auto-grow then fills it with 0 -- but only if some LATER index is
-    # assigned, because the array only ever grows to the highest assigned
-    # index. Verified against Octave:
-    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
-    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
-    #     pam([1]), pam([]) -> error: value on right hand side is undefined
-    data = np.asarray(data, dtype=float)
-    n_pairs = int(np.floor(len(data) / 2))
-    assigned = {}
-    for i in range(n_pairs):
-        pair = data[2 * i: 2 * i + 2]
-        if np.array_equal(pair, [-1, -1]):
-            assigned[i] = -1.0
-        elif np.array_equal(pair, [-1, 1]):
-            assigned[i] = -1.0 / 3.0
-        elif np.array_equal(pair, [1, 1]):
-            assigned[i] = 1.0 / 3.0
-        elif np.array_equal(pair, [1, -1]):
-            assigned[i] = 1.0
-    if not assigned:
-        raise ValueError(
-            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
-            'assigns dataout and errors with "Output argument dataout (and '
-            'maybe others) not assigned". Got %d sample(s).' % len(data))
-    dataout = np.zeros(max(assigned) + 1)
-    for i, v in assigned.items():
-        dataout[i] = v
-    return dataout
-
-
-def _vma__PRBS13Q():
-    seq_bits = _vma__lfsr([0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1], [13, 12, 2, 1])
-    seq_nrz = 2.0 * (seq_bits - 0.5)
-    seq = _vma__pam(seq_nrz)
-    syms = np.zeros(len(seq), dtype=int)
-    syms[_vma__mround_arr(2 * (seq + 1)) / 2 == 2] = 3
-    syms[_vma__mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[_vma__mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
-    return seq, syms, seq_nrz
-
-
 def _vma__strfind_int(arr, pattern):
     """Find all 0-based positions where pattern occurs in arr."""
     arr = np.asarray(arr)
@@ -22557,7 +18790,7 @@ def vma(PR, M):
     PR = np.asarray(PR, dtype=float).ravel()
     M = int(M)
 
-    seq, syms, _ = _vma__PRBS13Q()
+    seq, syms, _ = _PRBS13Q()
     symbols = seq
 
     imaxPR = int(np.argmax(PR))  # 0-based
@@ -22776,9 +19009,117 @@ def zzz_list_of_changes():
 
 
 # --- cross-module import aliases (resolved after all functions) ---
+_FFE = FFE
+_TD_CTLE = TD_CTLE
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_bessel = bessel
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_get_center_of_UI = get_center_of_UI
+_normal_dist = normal_dist
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_CDF_ev = CDF_ev
+_CDF_inv_ev = CDF_inv_ev
+_CDF_ev = CDF_ev
+_CDF_inv_ev = CDF_inv_ev
+_scaleCDF = scaleCDF
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_Full_Grid_Matrix = Full_Grid_Matrix
+_compute_hard_cap = compute_hard_cap
 _normal_dist = normal_dist
 _COM_eye_width = COM_eye_width
 _get_xtlk_noise = get_xtlk_noise
+_FD_CTLE = FD_CTLE
+_TD_CTLE = TD_CTLE
+_dfe_clipper = dfe_clipper
+_findbankloc = findbankloc
+_floatingDFE = floatingDFE
+_FFE_Fast = FFE_Fast
+_FD_CTLE = FD_CTLE
+_dfe_clipper = dfe_clipper
+_FFE = FFE
+_FFE = FFE
+_Init_PDF_Fast_b = Init_PDF_Fast
+_conv_fct_b = conv_fct
+_d_cpdf_b = d_cpdf
+_PRBS13Q = PRBS13Q
+_pam = pam
+_pdf2sgm = pdf2sgm
+_vma = vma
+_pam = pam
+_Bessel_Thomson_Filter = Bessel_Thomson_Filter
+_Butterworth_Filter = Butterworth_Filter
+_normal_dist = normal_dist
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_combines4p = combines4p
+_FFE = FFE
+_Bessel_Thomson_Filter = Bessel_Thomson_Filter
+_Butterworth_Filter = Butterworth_Filter
+_bessel = bessel
+_combines4p = combines4p
+_synth_tline = synth_tline
+_combines4p = combines4p
+_synth_tline = synth_tline
+_combines4p = combines4p
+_CDF_inv_ev = CDF_inv_ev
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_scalePDF = scalePDF
+_findbankloc = findbankloc
+_FFE = FFE
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_CDF_inv_ev = CDF_inv_ev
+_pdf_uncached = get_pdf_from_sampled_signal
+_normal_dist = normal_dist
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_dfe_clipper = dfe_clipper
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_normal_dist = normal_dist
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_dfe_clipper = dfe_clipper
+_Init_PDF_Fast = Init_PDF_Fast
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_Tukey_Window = Tukey_Window
+_combines4p = combines4p
+_synth_tline = synth_tline
+_combines4p = combines4p
+_synth_tline = synth_tline
+_conv_fct = conv_fct
+_d_cpdf = d_cpdf
+_auto_port_order = auto_port_order
+_auto_port_order = auto_port_order
+_Bessel_Thomson_Filter = Bessel_Thomson_Filter
+_auto_port_order = auto_port_order
+_bessel = bessel
+_combines4p = combines4p
+_synth_tline = synth_tline
+_Bessel_Thomson_Filter = Bessel_Thomson_Filter
+_bessel = bessel
+_combines4p = combines4p
+_synth_tline = synth_tline
+_Tukey_Window = Tukey_Window
+_PRBS13Q = PRBS13Q
+_pam = pam
 
 
 

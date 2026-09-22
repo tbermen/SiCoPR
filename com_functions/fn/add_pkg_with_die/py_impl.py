@@ -2,18 +2,9 @@
 
 import copy
 import numpy as np
+from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
 
 from com_functions.fn.make_full_pkg.py_impl import make_full_pkg
-
-
-def _combines4p(a11, a12, a21, a22, b11, b12, b21, b22):
-    N = 1.0 - a22 * b11
-    return (
-        a11 + a12 * a21 * b11 / N,
-        a12 * b12 / N,
-        b21 * a21 / N,
-        b22 + b12 * b21 * a22 / N,
-    )
 
 
 def _R_series2(zref, nfreq, R):

@@ -1,4 +1,5 @@
 import numpy as np
+from com_functions.fn.FFE_Fast.py_impl import FFE_Fast as _FFE_Fast
 from types import SimpleNamespace
 
 
@@ -10,14 +11,6 @@ def _OptFom_FD_or_TD_Fields(TDMODE):
 
 
 # --- inline from FFE_Fast (MATLAB 2049-2062) ---
-def _FFE_Fast(C, V_shift):
-    C = np.asarray(C, dtype=float)
-    V_shift = np.asarray(V_shift, dtype=float)
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            V0 = V_shift[:, i] * c + V0
-    return V0
 
 
 def OptFom_Compute_TXFFE(chdata, pulse_struc, txffe, ctle_response_updated, param, OP):

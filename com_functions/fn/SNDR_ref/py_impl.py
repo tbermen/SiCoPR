@@ -1,19 +1,6 @@
 import numpy as np
+from com_functions.fn.FFE.py_impl import FFE as _FFE
 from types import SimpleNamespace
-
-
-def _FFE(C, cmx, spui, V):
-    """Inline copy of FFE (MATLAB lines 2026-2048). cmx is 0-based cursor index."""
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
 
 
 def SNDR_ref(PR_Ref, param):

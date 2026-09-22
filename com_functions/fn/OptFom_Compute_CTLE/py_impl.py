@@ -12,6 +12,8 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.FD_CTLE.py_impl import FD_CTLE as _FD_CTLE
+from com_functions.fn.TD_CTLE.py_impl import TD_CTLE as _TD_CTLE
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -45,53 +47,8 @@ def _mmax(a):
     return np.nanmax(a)
 
 
-def _mmin(a):
-    """MATLAB min(): the mirror of _mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
 from scipy.signal import lfilter
 from types import SimpleNamespace
-
-
-def _FD_CTLE(freq, f_z, f_p1, f_p2, kacdc_dB):
-    freq = np.asarray(freq, dtype=float)
-    num = 10 ** (kacdc_dB / 20) + 1j * freq / f_z
-    den = (1 + 1j * freq / f_p1) * (1 + 1j * freq / f_p2)
-    return num / den
-
-
-def _TD_CTLE(ir_in, fb, f_z, f_p1, f_p2, kacdc_dB, oversampling):
-    # No dtype=float: MATLAB's filter() carries a complex input through, and
-    # the cast silently DISCARDED the imaginary part.  atleast_1d because
-    # MATLAB filters a scalar (1x1) and returns a scalar, where lfilter raised
-    # "selected axis is out of range" on a 0-d array.
-    ir_in = np.atleast_1d(np.asarray(ir_in))
-    p1_ctle = -2 * np.pi * f_p1
-    p2_ctle = -2 * np.pi * f_p2
-    z_ctle = -2 * np.pi * f_z * 10 ** (kacdc_dB / 20)
-    k_ctle = -p2_ctle
-    bilinear_fs = 2 * fb * oversampling
-    p2d = (1 + p2_ctle / bilinear_fs) / (1 - p2_ctle / bilinear_fs)
-    p1d = (1 + p1_ctle / bilinear_fs) / (1 - p1_ctle / bilinear_fs)
-    zd = (1 + z_ctle / bilinear_fs) / (1 - z_ctle / bilinear_fs)
-    kd = ((bilinear_fs - z_ctle)
-          / ((bilinear_fs - p1_ctle) * (bilinear_fs - p2_ctle))
-          * f_p1 / f_z)
-    B_filt = k_ctle * kd * np.poly([zd, -1])
-    A_filt = np.poly([p1d, p2d])
-    # MATLAB filter() runs along the first NON-singleton dimension: down the
-    # columns of a matrix, along a row vector.  lfilter defaults to axis=-1,
-    # which filtered a matrix along its rows instead.
-    axis = 0 if (ir_in.ndim >= 2 and ir_in.shape[0] != 1) else -1
-    return lfilter(B_filt, A_filt, ir_in, axis=axis), p1_ctle, p2_ctle, z_ctle
 
 
 def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):

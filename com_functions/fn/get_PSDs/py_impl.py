@@ -19,74 +19,12 @@ import collections as _collections
 import hashlib as _hashlib
 
 import numpy as np
-
-def _mextreme_complex(a, take):
-    """MATLAB orders complex values by magnitude, then by angle; numpy orders
-    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
-    and 5 in numpy. take is -1 for max, 0 for min."""
-    f = np.asarray(a).ravel()
-    good = ~np.isnan(np.abs(f))
-    if not good.any():
-        return f[0]
-    g = f[good]
-    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
-
-
-def _mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
-
-
-def _mmin(a):
-    """MATLAB min(): the mirror of _mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+from com_functions.fn.CDF_inv_ev.py_impl import CDF_inv_ev as _CDF_inv_ev
+from com_functions.fn.get_pdf_from_sampled_signal.py_impl import get_pdf_from_sampled_signal as _pdf_uncached
+from com_functions.fn.normal_dist.py_impl import normal_dist as _normal_dist
+from com_functions.fn.Init_PDF_Fast.py_impl import Init_PDF_Fast as _Init_PDF_Fast
+from com_functions.fn.conv_fct.py_impl import conv_fct as _conv_fct
+from com_functions.fn.d_cpdf.py_impl import d_cpdf as _d_cpdf
 
 from scipy.signal import lfilter, fftconvolve
 from types import SimpleNamespace
@@ -102,44 +40,53 @@ from types import SimpleNamespace
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
 
 
-def _conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
+# get_PSDs calls get_pdf_from_sampled_signal once per tick per EQ setting, and
+# consecutive ticks feed it the SAME sampled vector, so most builds are exact
+# repeats. Each build costs ~120 convolutions over a 4096-point vector, so
+# memoising them is worthwhile. Keyed on the input bytes, so a hit is
+# bit-identical by construction; small LRU because repeats are temporally local
+# (within one equalizer setting's tick sweep).
+#
+# This wrapper is the reason get_PSDs keeps a local name for the function
+# rather than calling the canonical directly. It is NOT a duplicate
+# translation: it returns exactly what the canonical returns, which is why the
+# differential in tests/test_inlined_copies.py reports it as identical. It was
+# collapsed onto a bare import on 2026-09-22 and had to be restored -- a copy
+# being behaviourally equivalent does not make it redundant.
+_PDF_CACHE = _collections.OrderedDict()
+_PDF_CACHE_MAX = 64
 
 
-def _colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
+def _detach(pdf):
+    """Hand out a PDF that shares nothing mutable with the cached entry.
 
-    The MATLAB comment calls this "equivalent to (p.Min:p.Min+length(p.y)-1)*
-    p.BinSize", and it is not: the colon accumulates from the first element as
-    a+k*d and pins the last element to the stated limit, while (a:b)*d forms
-    each element as one product.  Swept over 7920 (Min, length, BinSize)
-    combinations against Octave: the product form got 24.6% of the elements
-    wrong, all by 1 ulp; this form got none.  The last element is pinned only
-    when accumulation overshoots the limit -- pinning unconditionally is wrong,
-    e.g. Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004,
-    -0.20000000000000004], not [..., -0.2].
+    Copying the namespace alone is not enough: the arrays inside would still be
+    shared, so a caller doing `pdf.y *= k` (rather than `pdf.y = pdf.y * k`)
+    would corrupt the cache and silently poison every later hit. Copying the
+    arrays costs far less than recomputing the PDF, so the speed-up stands.
     """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
+    out = SimpleNamespace(**vars(pdf))
+    for _k, _v in vars(out).items():
+        if isinstance(_v, np.ndarray):
+            setattr(out, _k, _v.copy())
+    return out
+
+
+def _get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
+    _arr = np.ascontiguousarray(np.asarray(input_vector, dtype=float))
+    _key = (_hashlib.blake2b(_arr.tobytes(), digest_size=16).digest(),
+            int(L), float(BinSize), int(FAST_NOISE_CONV))
+    _hit = _PDF_CACHE.get(_key)
+    if _hit is not None:
+        _PDF_CACHE.move_to_end(_key)
+        return _detach(_hit)
+    _res = _pdf_uncached(input_vector, L, BinSize, FAST_NOISE_CONV)
+    _PDF_CACHE[_key] = _res
+    if len(_PDF_CACHE) > _PDF_CACHE_MAX:
+        _PDF_CACHE.popitem(last=False)
+    return _detach(_res)
 
 
 def _S_RN(fvec, G_DC, G_DC2, param):
@@ -198,96 +145,6 @@ def _fold_psd(full_psd, num_ui, M):
 # Faithful copies of the audited canonical get_pdf_from_sampled_signal / conv_fct /
 # CDF_inv_ev (and their sub-helpers). No cross-py_impl imports per build protocol.
 # ---------------------------------------------------------------------------
-def _d_cpdf(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer.  zip() below stops at the
-        # shorter of the two and silently normalised whatever it collected.
-        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
-        # "probs(3): out of bound 2 (dimensions are 1x2)".
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # ~issorted(values): MATLAB requires every element <= the next, which is
-    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
-    # NaN, so that form called [-1 NaN 1] sorted where MATLAB does not.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
-    # support empty and raised instead of answering.  COM Octave 4p16p0:
-    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _Init_PDF_Fast(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
-        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
-        # that span (i.e. `values` is not ascending) makes bin_placement fall
-        # off the array and MATLAB stops.  A negative index is legal in numpy,
-        # so Python wrapped round and added the probability to the wrong bin.
-        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
-        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
-        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
-
-
-def _conv_fct(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _mround(p1.Min + p2.Min)   # MATLAB round: half AWAY FROM ZERO
-    p.y = _conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
-    return p
-
-
-def _normal_dist(sigma, nsigma, binsize):
-    eps = np.finfo(float).eps
-    p = SimpleNamespace()
-    p.BinSize = binsize
-    p.Min = -_mround(2 * nsigma * sigma / binsize)
-    p.x = np.arange(p.Min, -p.Min + 1) * binsize
-    p.y = np.exp(-p.x ** 2 / (2 * sigma ** 2 + eps))
-    p.y = p.y / np.sum(p.y)
-    return p
 
 
 # The ADC-clip signal PDF depends only on the sampled pulse response, which is a
@@ -297,78 +154,6 @@ def _normal_dist(sigma, nsigma, binsize):
 # vector, so memoising them is worthwhile. Keyed on the input bytes, so a hit is
 # bit-identical by construction; small LRU because repeats are temporally local
 # (within one equalizer setting's tick sweep).
-_PDF_CACHE = _collections.OrderedDict()
-_PDF_CACHE_MAX = 64
-
-
-def _detach(pdf):
-    """Hand out a PDF that shares nothing mutable with the cached entry.
-
-    Copying the namespace alone is not enough: the arrays inside would still be
-    shared, so a caller doing `pdf.y *= k` (rather than `pdf.y = pdf.y * k`)
-    would corrupt the cache and silently poison every later hit. Copying the
-    arrays costs far less than recomputing the PDF, so the speed-up stands.
-    """
-    out = SimpleNamespace(**vars(pdf))
-    for _k, _v in vars(out).items():
-        if isinstance(_v, np.ndarray):
-            setattr(out, _k, _v.copy())
-    return out
-
-
-def _get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
-    _arr = np.ascontiguousarray(np.asarray(input_vector, dtype=float))
-    _key = (_hashlib.blake2b(_arr.tobytes(), digest_size=16).digest(),
-            int(L), float(BinSize), int(FAST_NOISE_CONV))
-    _hit = _PDF_CACHE.get(_key)
-    if _hit is not None:
-        _PDF_CACHE.move_to_end(_key)
-        return _detach(_hit)
-    _res = _get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize,
-                                                 FAST_NOISE_CONV)
-    _PDF_CACHE[_key] = _res
-    if len(_PDF_CACHE) > _PDF_CACHE_MAX:
-        _PDF_CACHE.popitem(last=False)
-    return _detach(_res)
-
-
-def _get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FAST_NOISE_CONV=0):
-    input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if _mmax(np.abs(input_vector)) > BinSize:
-        input_vector = input_vector[np.abs(input_vector) > BinSize]
-    else:
-        return _d_cpdf(BinSize, 0, 1)
-    input_vector[np.abs(input_vector) < BinSize] = 0.0
-    b = np.sign(input_vector)
-    sort_idx = np.argsort(np.abs(input_vector), kind='stable')[::-1]
-    input_vector = np.abs(input_vector[sort_idx]) * b[sort_idx]
-    res_pdf = None
-    if FAST_NOISE_CONV:
-        small = np.where(np.abs(input_vector) < 0.001)[0]
-        if len(small) > 0:
-            first_small = int(small[0])
-            sig_res = float(np.linalg.norm(input_vector[first_small + 1:]))
-            res_pdf = _normal_dist(sig_res, 5, BinSize)
-            input_vector = input_vector[:first_small + 1]
-    values = 2.0 * np.arange(L) / (L - 1) - 1.0
-    prob = np.ones(L) / L
-    pdf = _d_cpdf(BinSize, 0, 1)
-    empty_pdf = pdf
-    for v in input_vector:
-        pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
-        pdf = _conv_fct(pdf, pdfn)
-    if res_pdf is not None:
-        pdf = _conv_fct(pdf, res_pdf)
-    return pdf
-
-
-def _CDF_inv_ev(val, PDF, CDF):
-    x = np.asarray(PDF.x, dtype=float)
-    CDF = np.asarray(CDF, dtype=float)
-    indices = np.where(CDF >= val)[0]
-    if len(indices) == 0:
-        return float(x[-1])
-    return float(x[indices[0]])
 
 
 def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,

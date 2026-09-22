@@ -10,37 +10,8 @@
 # ============================================================
 
 import numpy as np
-
-
-def _synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float)
-    f_GHz = f / 1e9
-    gamma_1 = gamma_coeff[1] * (1 + 1j)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        log_f = np.where(f_GHz > 0, np.log(f_GHz), 0.0)
-    gamma_2 = gamma_coeff[2] * (1 - 2j / np.pi * log_f) + 2j * np.pi * tau
-    gamma = gamma_coeff[0] + gamma_1 * np.sqrt(f_GHz) + gamma_2 * f_GHz
-    gamma = np.where(f_GHz == 0, float(gamma_coeff[0]), gamma)
-
-    if d == 0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (Z_c - 2 * Z_0) / (Z_c + 2 * Z_0)
-
-    exp_gd = np.exp(-d * gamma)
-    denom = 1 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1 - exp_gd ** 2) / denom
-    s21 = (1 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21.copy(), s21.copy(), s11.copy()
-
-
-def _combines4p(s11in1, s12in1, s21in1, s22in1, s11in2, s12in2, s21in2, s22in2):
-    N = 1 - s22in1 * s11in2
-    s11out = s11in1 + s12in1 * s21in1 * s11in2 / N
-    s12out = s12in1 * s12in2 / N
-    s21out = s21in2 * s21in1 / N
-    s22out = s22in2 + s12in2 * s21in2 * s22in1 / N
-    return s11out, s12out, s21out, s22out
+from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
+from com_functions.fn.synth_tline.py_impl import synth_tline as _synth_tline
 
 
 def add_brd(chdata, param, OP):

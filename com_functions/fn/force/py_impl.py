@@ -22,6 +22,7 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.FFE.py_impl import FFE as _FFE
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -33,26 +34,6 @@ def _mextreme_complex(a, take):
         return f[0]
     g = f[good]
     return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
-
-
-def _mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
 
 
 def _mmin(a):
@@ -68,18 +49,6 @@ def _mmin(a):
     return np.nanmin(a)
 
 from types import SimpleNamespace
-
-
-def _FFE(C, cmx, spui, V):
-    """Inline FFE: apply taps C (length num_taps) to signal V."""
-    V = np.asarray(V, dtype=float).ravel()
-    C = np.asarray(C, dtype=float).ravel()
-    V0 = np.zeros(len(V))
-    for i, ci in enumerate(C):
-        if ci != 0.0:
-            ishift = (i - cmx) * spui
-            V0 += np.roll(V, ishift) * ci
-    return V0
 
 
 def _fb_mask(ndiff, positions, value):

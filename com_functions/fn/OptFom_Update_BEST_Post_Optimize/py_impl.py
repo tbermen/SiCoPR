@@ -1,31 +1,13 @@
 import math
 import numpy as np
+from com_functions.fn.FD_CTLE.py_impl import FD_CTLE as _FD_CTLE
+from com_functions.fn.dfe_clipper.py_impl import dfe_clipper as _dfe_clipper
 
 
 # --- inline from dfe_clipper (MATLAB 5531-5544) ---
-def _dfe_clipper(input_arr, max_threshold, min_threshold):
-    inp = np.asarray(input_arr, dtype=float)
-    hi = np.asarray(max_threshold, dtype=float)
-    lo = np.asarray(min_threshold, dtype=float)
-    is_row = inp.ndim <= 1 or (inp.ndim == 2 and inp.shape[0] == 1)
-    if is_row:
-        hi = hi.ravel()
-        lo = lo.ravel()
-    else:
-        hi = hi.ravel().reshape(-1, 1)
-        lo = lo.ravel().reshape(-1, 1)
-    out = inp.copy()
-    out[inp > hi] = hi[inp > hi]
-    out[inp < lo] = lo[inp < lo]
-    return out
 
 
 # --- inline from FD_CTLE (MATLAB 1681-1683) ---
-def _FD_CTLE(freq, f_z, f_p1, f_p2, kacdc_dB):
-    freq = np.asarray(freq, dtype=float)
-    num = 10 ** (kacdc_dB / 20) + 1j * freq / f_z
-    den = (1 + 1j * freq / f_p1) * (1 + 1j * freq / f_p2)
-    return num / den
 
 
 # --- inline from OptFom_Calc_Hr (MATLAB 2874-2880) with its helpers ---

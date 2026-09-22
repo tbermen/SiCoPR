@@ -25,43 +25,16 @@
 import math
 
 import numpy as np
+from com_functions.fn.Bessel_Thomson_Filter.py_impl import Bessel_Thomson_Filter as _Bessel_Thomson_Filter
+from com_functions.fn.bessel.py_impl import bessel as _bessel
+from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
+from com_functions.fn.synth_tline.py_impl import synth_tline as _synth_tline
 import copy
 from types import SimpleNamespace
 from math import factorial
 
 
 # ---- inlined helpers --------------------------------------------------------
-
-def _synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
-    f = np.asarray(f, dtype=float)
-    f_GHz = f / 1e9
-    eps_val = np.finfo(float).tiny
-    f_GHz_s = np.where(f_GHz == 0, eps_val, f_GHz)
-    gamma_coeff = np.asarray(gamma_coeff, dtype=float).ravel()
-    gamma0, a1, a2 = gamma_coeff[0], gamma_coeff[1], gamma_coeff[2]
-    gamma_1 = a1 * (1.0 + 1j)
-    gamma_2 = a2 * (1.0 - 2j / np.pi * np.log(f_GHz_s)) + 2j * np.pi * float(tau)
-    gamma = gamma0 + gamma_1 * np.sqrt(f_GHz_s) + gamma_2 * f_GHz_s
-    gamma = np.where(f_GHz == 0, gamma0, gamma)
-    if float(d) == 0.0:
-        rho_rl = 0.0
-    else:
-        rho_rl = (float(Z_c) - 2.0 * float(Z_0)) / (float(Z_c) + 2.0 * float(Z_0))
-    exp_gd = np.exp(-float(d) * gamma)
-    denom = 1.0 - rho_rl ** 2 * exp_gd ** 2
-    s11 = rho_rl * (1.0 - exp_gd ** 2) / denom
-    s21 = (1.0 - rho_rl ** 2) * exp_gd / denom
-    return s11, s21, s21, s11
-
-
-def _combines4p(s11_1, s12_1, s21_1, s22_1, s11_2, s12_2, s21_2, s22_2):
-    N = 1.0 - s22_1 * s11_2
-    s11 = s11_1 + s12_1 * s21_1 * s11_2 / N
-    s12 = s12_1 * s12_2 / N
-    s21 = s21_2 * s21_1 / N
-    s22 = s22_2 + s12_2 * s21_2 * s22_1 / N
-    return s11, s12, s21, s22
-
 
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     f = np.asarray(f, dtype=float)
@@ -258,60 +231,6 @@ def _make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             else:
                 s11o, s12o, s21o, s22o = _combines4p(s11o, s12o, s21o, s22o, sp11, sp12, sp21, sp22)
     return s11o, s12o, s21o, s22o
-
-
-def _factorial(k):
-    """MATLAB factorial(): a double, so it overflows to Inf above 170!."""
-    return math.inf if k > 170 else factorial(k)
-
-
-def _bessel(n):
-    """Bessel polynomial coefficients (MATLAB lines 4926-4930)."""
-    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
-    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
-    # assignment is undefined".
-    if n < 0:
-        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
-    # MATLAB factorial() rejects non-integers.  COM Octave: bessel(2.5) ->
-    # "factorial: all N must be real non-negative integers"; int(n) silently
-    # answered bessel(2) instead.
-    if n != int(n):
-        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
-    n = int(n)
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        # COM Octave, bessel(90): a(1:10) are Inf, a(11) = 2.31e157.  Python's
-        # exact math.factorial made the first ten finite (~1.09e164) instead.
-        a[ii] = _factorial(2 * n - ii) / (
-            2 ** (n - ii) * _factorial(ii) * _factorial(n - ii)
-        )
-    return a
-
-
-def _length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _Bessel_Thomson_Filter(param, f, use_BT):
-    """Bessel-Thomson filter (MATLAB lines 1028-1035)."""
-    f = np.asarray(f, dtype=float)
-    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
-    # ALL non-zero, and length() is the LONGEST dimension, not the first.
-    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
-    # f scalar -> 1 (len(f) raised TypeError).
-    use = np.asarray(use_BT)
-    if not (use.size and np.all(use)):
-        return np.ones(_length(f))
-    if use_BT:
-        a = _bessel(int(param.BTorder))
-        acoef = a[::-1]
-        H_bt = a[0] / np.polyval(acoef, 1j * f / (float(param.fb_BT_cutoff) * float(param.fb)))
-    else:
-        H_bt = np.ones(len(f))
-    return H_bt
 
 
 # ---- main function ----------------------------------------------------------

@@ -12,6 +12,13 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.Init_PDF_Fast.py_impl import Init_PDF_Fast as _Init_PDF_Fast_b
+from com_functions.fn.conv_fct.py_impl import conv_fct as _conv_fct_b
+from com_functions.fn.d_cpdf.py_impl import d_cpdf as _d_cpdf_b
+from com_functions.fn.PRBS13Q.py_impl import PRBS13Q as _PRBS13Q
+from com_functions.fn.pam.py_impl import pam as _pam
+from com_functions.fn.pdf2sgm.py_impl import pdf2sgm as _pdf2sgm
+from com_functions.fn.vma.py_impl import vma as _vma
 
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
@@ -45,31 +52,6 @@ def _mmax(a):
     return np.nanmax(a)
 
 
-def _mmin(a):
-    """MATLAB min(): the mirror of _mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
-
-def _mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
-
 from scipy.signal import lfilter, fftconvolve
 from types import SimpleNamespace
 
@@ -81,147 +63,6 @@ from types import SimpleNamespace
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
 # (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
 # size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
-def _conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    # conv2 with an empty operand returns empty; np.convolve raises instead.
-    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
-    if a.size == 0 or b.size == 0:
-        return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
-    return np.convolve(a, b)
-
-
-def _mround(x):
-    """MATLAB round(): half away from zero, where Python's round() is banker's.
-
-    COM Octave: round(0.5)=1, round(-0.5)=-1, round(2.5)=3; Python gives
-    0, 0, 2.
-    """
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    return int(round(x))
-
-
-def _colon_x(pmin, pmax, binsize):
-    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
-
-    The colon accumulates from the first element as a+k*d and pins the last
-    element to the limit only when accumulation overshoots it; the product form
-    (pmin:pmax)*binsize builds each element as one product instead, and the two
-    differ by 1 ulp on most bins.  Swept over 7920 (Min, length, BinSize)
-    combinations against COM Octave, the product form got 24.6% of elements
-    wrong; this form got none.
-    """
-    n = pmax - pmin + 1
-    if n <= 0:
-        return np.zeros(0)
-    a = pmin * binsize
-    b = pmax * binsize
-    x = a + np.arange(n) * binsize
-    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
-        x[-1] = b
-    return x
-
-
-def _lfsr(s, t):
-    s = [int(b) for b in s]
-    n = len(s)
-    t = [int(x) - 1 for x in t]
-    m = len(t)
-    c = [s[:]]
-    for _ in range(2 ** n - 2):
-        b = [0] * m
-        b[0] = s[t[0]] ^ s[t[1]]
-        for i in range(m - 2):
-            b[i + 1] = s[t[i + 2]] ^ b[i]
-        for j in range(n - 1):
-            s[n - 1 - j] = s[n - 2 - j]
-        s[0] = b[m - 2]
-        c.append(s[:])
-    c_arr = np.array(c, dtype=int)
-    return c_arr[:, n - 1]
-
-
-def _pam(data):
-    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
-    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
-    # auto-grow then fills it with 0 -- but only if some LATER index is
-    # assigned, because the array only ever grows to the highest assigned
-    # index. Verified against Octave:
-    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
-    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
-    #     pam([1]), pam([]) -> error: value on right hand side is undefined
-    data = np.asarray(data, dtype=float)
-    n_pairs = int(np.floor(len(data) / 2))
-    assigned = {}
-    for i in range(n_pairs):
-        pair = data[2 * i:2 * i + 2]
-        if np.array_equal(pair, [-1, -1]):
-            assigned[i] = -1.0
-        elif np.array_equal(pair, [-1, 1]):
-            assigned[i] = -1.0 / 3.0
-        elif np.array_equal(pair, [1, 1]):
-            assigned[i] = 1.0 / 3.0
-        elif np.array_equal(pair, [1, -1]):
-            assigned[i] = 1.0
-    if not assigned:
-        raise ValueError(
-            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
-            'assigns dataout and errors with "Output argument dataout (and '
-            'maybe others) not assigned". Got %d sample(s).' % len(data))
-    out = np.zeros(max(assigned) + 1)
-    for i, v in assigned.items():
-        out[i] = v
-    return out
-
-
-def _PRBS13Q():
-    seq_bits = _lfsr([0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1], [13, 12, 2, 1])
-    seq_nrz = 2.0 * (seq_bits - 0.5)
-    seq = _pam(seq_nrz)
-    syms = np.zeros(len(seq), dtype=int)
-    syms[_mround_arr(2 * (seq + 1)) / 2 == 2] = 3
-    syms[_mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[_mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
-    return seq, syms, seq_nrz
-
-
-def _strfind_int(arr, pattern):
-    arr = np.asarray(arr)
-    n, m = len(arr), len(pattern)
-    return np.array([i for i in range(n - m + 1) if np.array_equal(arr[i:i + m], pattern)], dtype=int)
-
-
-def _vma(PR, M):
-    PR = np.asarray(PR, dtype=float).ravel()
-    M = int(M)
-    seq, syms, _ = _PRBS13Q()
-    symbols = seq
-    imaxPR = int(np.argmax(PR))
-    pos_3x7 = _strfind_int(syms, [3, 3, 3, 3, 3, 3, 3])
-    indx_S3x7_start = M * pos_3x7 + imaxPR
-    indx_S3x7_end = M * (pos_3x7 + 6) + imaxPR
-    pos_0x6 = _strfind_int(syms, [0, 0, 0, 0, 0, 0])
-    indx_S0x6_start = M * (pos_0x6 + 1) + imaxPR - 1
-    indx_S0x6_end = M * (pos_0x6 + 5) + imaxPR
-    unit_pulse = np.zeros(M)
-    unit_pulse[0] = 1
-    shifting_vector = np.kron(symbols, unit_pulse)
-    Bit_stream_response = lfilter(PR, [1.0], shifting_vector)
-    icent3 = int(np.floor((indx_S3x7_end - indx_S3x7_start) / 2 + indx_S3x7_start)[0])
-    icent0 = int(np.floor((indx_S0x6_end - indx_S0x6_start) / 2 + indx_S0x6_start)[0])
-    P_3 = float(np.mean(Bit_stream_response[icent3 - M:icent3 + M + 1]))
-    P_0 = float(np.mean(Bit_stream_response[icent0 - M:icent0 + M + 1]))
-    VMA = P_3 - P_0
-    return SimpleNamespace(P_3=P_3, P_0=P_0, VMA=VMA)
 
 
 # --- inline str2csv ---
@@ -230,87 +71,9 @@ def _str2csv(c):
 
 
 # --- inline pdf2sgm ---
-def _pdf2sgm(pdf):
-    x = np.asarray(pdf.x, dtype=float)
-    y = np.asarray(pdf.y, dtype=float)
-    avg = np.sum(x * y)
-    return float(np.sqrt(np.sum((x - avg) ** 2 * y)))
 
 
 # --- inline Burst_Probability_Calc helpers ---
-def _conv_fct_b(p1, p2):
-    if p1.BinSize != p2.BinSize:
-        raise ValueError('bin size must be equal')
-    p = SimpleNamespace(**vars(p1))
-    p.Min = _mround(p1.Min + p2.Min)         # MATLAB round: half away from zero
-    p.y = _conv1d(p1.y, p2.y)
-    pMax = p.Min + len(p.y) - 1
-    p.x = _colon_x(p.Min, pMax, p.BinSize)   # MATLAB colon, not (Min:pMax)*BinSize
-    return p
-
-
-def _d_cpdf_b(binsize, values, probs):
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    if np.all(values == 0):
-        return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.size(probs) < np.size(values):
-        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
-        # out-of-bound error, not a shorter answer. zip() below stopped at the
-        # shorter of the two and silently normalised what it had.
-        raise IndexError('d_cpdf: probs is shorter than values')
-    # MATLAB issorted() needs every element <= the next, which is FALSE across
-    # a NaN. np.diff(values) < 0 is also false across a NaN, so [-1 NaN 1] was
-    # called sorted and answered instead of being rejected.
-    if not np.all(values[:-1] <= values[1:]):
-        si = np.argsort(values, kind='stable')
-        values, probs = values[si], probs[si]
-    values = binsize * _mround_arr(values / binsize)
-    t_start = int(round(values[0] / binsize))
-    t_end = int(round(values[-1] / binsize))
-    t = np.arange(t_start, t_end + 1) * binsize
-    pdf_y = np.zeros(len(t))
-    for k, (v, prob) in enumerate(zip(values, probs)):
-        if k == 0:
-            bin_idx = 0
-        elif k == len(values) - 1:
-            bin_idx = len(t) - 1
-        else:
-            bin_idx = int(np.argmin(np.abs(t - v)))
-        pdf_y[bin_idx] += prob
-    pdf_y = pdf_y / np.sum(pdf_y)
-
-    if np.any(pdf_y < 0):
-        raise ValueError('PDF must be real and nonnegative')
-    # find(pdf.y) selects NONZERO, and NaN counts as nonzero. `> 0` drops
-    # NaN, so an all-zero or NaN-bearing probs vector left the support
-    # empty and raised instead of answering.
-    support = np.where(pdf_y != 0)[0]
-    pdf_y = pdf_y[support[0]:support[-1] + 1]
-    pdf_min = t_start + int(support[0])
-    return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
-                           x=np.arange(pdf_min, -pdf_min + 1) * binsize)
-
-
-def _Init_PDF_Fast_b(EmptyPDF, values, probs):
-    pdf = SimpleNamespace(**vars(EmptyPDF))
-    values = np.asarray(values, dtype=float)
-    probs = np.asarray(probs, dtype=float)
-    rvd = _mround_arr(values / pdf.BinSize).astype(int)
-    pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
-    pdf.Min = int(rvd[0])
-    pdf.y = np.zeros(len(pdf.x))
-    bp = rvd - rvd[0]
-    # pdf.x spans rvd[0]..rvd[-1]; a value outside that span (i.e.
-    # `values` is not ascending) makes bin_placement fall off the array
-    # and MATLAB stops. A negative index is legal in numpy, so Python
-    # wrapped round and added the probability to the wrong bin.
-    if bp.size and (bp.min() < 0 or bp.max() >= pdf.y.size):
-        raise IndexError('Init_PDF_Fast: values must be ascending')
-    pdf.y[bp[0]] = probs[0]
-    for k in range(1, len(values)):
-        pdf.y[bp[k]] += probs[k]
-    return pdf
 
 
 def _get_pdf_b(iv, L, BinSize):

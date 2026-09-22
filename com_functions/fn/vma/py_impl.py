@@ -1,82 +1,9 @@
 import numpy as np
-
-def _mround_arr(x):
-    """MATLAB round() on an array: halves go away from zero, where np.round
-    takes them to even.
-
-    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
-    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
-    rounds the largest double below a half up to 1 where MATLAB gives 0.
-    """
-    x = np.asarray(x, dtype=float)
-    tie = np.abs(x - np.trunc(x)) == 0.5
-    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+from com_functions.fn.PRBS13Q.py_impl import PRBS13Q as _PRBS13Q
+from com_functions.fn.pam.py_impl import pam as _pam
 
 from scipy.signal import lfilter
 from types import SimpleNamespace
-
-
-def _lfsr(s, t):
-    s = [int(b) for b in s]
-    n = len(s)
-    t = [int(x) - 1 for x in t]  # 1-based → 0-based
-    m = len(t)
-    c = [s[:]]
-    for _ in range(2 ** n - 2):
-        b = [0] * m
-        b[0] = s[t[0]] ^ s[t[1]]
-        for i in range(m - 2):
-            b[i + 1] = s[t[i + 2]] ^ b[i]
-        for j in range(n - 1):
-            s[n - 1 - j] = s[n - 2 - j]
-        s[0] = b[m - 2]
-        c.append(s[:])
-    c_arr = np.array(c, dtype=int)
-    return c_arr[:, n - 1]  # output bit column
-
-
-def _pam(data):
-    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
-    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
-    # auto-grow then fills it with 0 -- but only if some LATER index is
-    # assigned, because the array only ever grows to the highest assigned
-    # index. Verified against Octave:
-    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
-    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
-    #     pam([1]), pam([]) -> error: value on right hand side is undefined
-    data = np.asarray(data, dtype=float)
-    n_pairs = int(np.floor(len(data) / 2))
-    assigned = {}
-    for i in range(n_pairs):
-        pair = data[2 * i: 2 * i + 2]
-        if np.array_equal(pair, [-1, -1]):
-            assigned[i] = -1.0
-        elif np.array_equal(pair, [-1, 1]):
-            assigned[i] = -1.0 / 3.0
-        elif np.array_equal(pair, [1, 1]):
-            assigned[i] = 1.0 / 3.0
-        elif np.array_equal(pair, [1, -1]):
-            assigned[i] = 1.0
-    if not assigned:
-        raise ValueError(
-            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
-            'assigns dataout and errors with "Output argument dataout (and '
-            'maybe others) not assigned". Got %d sample(s).' % len(data))
-    dataout = np.zeros(max(assigned) + 1)
-    for i, v in assigned.items():
-        dataout[i] = v
-    return dataout
-
-
-def _PRBS13Q():
-    seq_bits = _lfsr([0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1], [13, 12, 2, 1])
-    seq_nrz = 2.0 * (seq_bits - 0.5)
-    seq = _pam(seq_nrz)
-    syms = np.zeros(len(seq), dtype=int)
-    syms[_mround_arr(2 * (seq + 1)) / 2 == 2] = 3
-    syms[_mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[_mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
-    return seq, syms, seq_nrz
 
 
 def _strfind_int(arr, pattern):

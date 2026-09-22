@@ -48,6 +48,21 @@ sys.path.insert(0, os.path.dirname(_here))
 from audit_check import check, xcheck, finish  # noqa: E402
 import sicopr  # noqa: E402
 
+
+def _helper(stem):
+    """Any surviving definition of a helper: the canonical if there is one,
+    otherwise an inlined copy. Named copies come and go as the assembler's
+    inlining changes, and this test is about the helper's SEMANTICS, not about
+    which caller happens to carry it."""
+    fn = getattr(sicopr, stem, None)
+    if fn is not None:
+        return fn
+    for a in sorted(dir(sicopr)):
+        if a.endswith('__' + stem):
+            return getattr(sicopr, a)
+    raise AttributeError('no definition of %s survives in sicopr.py' % stem)
+
+
 TOL = 1e-12  # element-wise identity tolerance for the FD filter cross-path check
 
 
@@ -302,8 +317,8 @@ check("als_l1l2_rule_skips",
       "candidate outside L1/L2 limits was not skipped")
 
 # (g) compute_hard_cap helper: off -> NaN; on -> max(min_radius, round(mul*LSV)).
-hc_off = sicopr._OptFom_Adaptive_Local_Search__compute_hard_cap(False, 1.2, 3, 1)
-hc_on = sicopr._OptFom_Adaptive_Local_Search__compute_hard_cap(True, 1.2, 3, 1)
+hc_off = _helper('compute_hard_cap')(False, 1.2, 3, 1)
+hc_on = _helper('compute_hard_cap')(True, 1.2, 3, 1)
 check("als_compute_hard_cap",
       np.isnan(hc_off) and hc_on == 4,
       "compute_hard_cap off=%s on=%s (expected NaN, 4)" % (hc_off, hc_on))

@@ -15,71 +15,8 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.auto_port_order.py_impl import auto_port_order as _auto_port_order
 from types import SimpleNamespace
-
-
-def _mround(x):
-    """MATLAB round(): half away from zero."""
-    x = float(x)
-    t = int(x)                      # int() truncates toward zero
-    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
-        return t + (1 if x > 0 else -1)
-    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
-    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
-    return int(round(x))
-
-
-def _auto_port_order(sch, F, flip_victim=0):
-    """Inlined auto_port_order (MATLAB lines 4932-5057, r4p15p0). Returns 1-based list."""
-    sch = np.asarray(sch)
-    F = np.asarray(F, dtype=float).ravel()
-    MinThruEnergy = 0.1
-    if sch.shape[2] != 4:
-        raise ValueError('Auto Port Order routine only works for 4 port S-parameters')
-    LowFreq_Matrix = np.abs(sch[0, :, :])
-    Raw_LowFreq_Matrix = LowFreq_Matrix.copy()
-    LowFreq_Matrix = LowFreq_Matrix - np.diag(np.diag(LowFreq_Matrix))
-    max_matrix = np.maximum(np.triu(LowFreq_Matrix), np.tril(LowFreq_Matrix).T)
-    LowFreq_Matrix = max_matrix + np.triu(max_matrix).T
-    ConnectedPorts = np.zeros(4, dtype=int)
-    for k in range(4):
-        col = LowFreq_Matrix[:, k]
-        idx = int(np.argmax(col))
-        if col[idx] < MinThruEnergy:
-            raise ValueError('Unable to determine port connections:  Low Energy')
-        ConnectedPorts[k] = idx + 1
-    for k in range(1, 5):
-        if ConnectedPorts[ConnectedPorts[k - 1] - 1] != k:
-            raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    port_order = [1, 0, int(ConnectedPorts[0]), 0]
-    others = sorted(set(range(1, 5)) - {1, int(ConnectedPorts[0])})
-    port_order[1], port_order[3] = others[0], others[-1]
-    if ConnectedPorts[port_order[1] - 1] != port_order[3]:
-        raise ValueError('Unable to determine port connections:  Ambiguous connections')
-    try:
-        TxN, RxN = port_order[1], port_order[3]
-        vector1 = sch[:, TxN - 1, 0] if Raw_LowFreq_Matrix[TxN - 1, 0] > Raw_LowFreq_Matrix[0, TxN - 1] else sch[:, 0, TxN - 1]
-        vector2 = sch[:, RxN - 1, 0] if Raw_LowFreq_Matrix[RxN - 1, 0] > Raw_LowFreq_Matrix[0, RxN - 1] else sch[:, 0, RxN - 1]
-        Floc = F.copy()
-        if Floc[0] == 0:
-            vector1, vector2, Floc = vector1[1:], vector2[1:], Floc[1:]
-        pd1 = -1.0 * np.unwrap(np.angle(vector1)) / (Floc * 2 * np.pi)
-        pd2 = -1.0 * np.unwrap(np.angle(vector2)) / (Floc * 2 * np.pi)
-        qs, tqs = _mround(len(Floc) / 4.0), _mround(len(Floc) * 3.0 / 4.0)
-        m1, m2 = float(np.mean(pd1[qs - 1:tqs])), float(np.mean(pd2[qs - 1:tqs]))
-        if max(m1, m2) > min(m1, m2) * 2:
-            if int(np.argmax([m1, m2])) + 1 == 1:
-                port_order[1], port_order[3] = port_order[3], port_order[1]
-        else:
-            print('Did not use phase delay in auto-port discovery since the phase delay '
-                  'of Near End and Far End are similar')
-    except Exception as ME_msg:
-        print(str(ME_msg))
-        print('Unable to use phase delay to determine port order')
-    if flip_victim:
-        port_order = [port_order[2], port_order[3], port_order[0], port_order[1]]
-    print(f'Auto Port Order: [{" ".join(str(p) for p in port_order)}]')
-    return port_order
 
 
 def _read_Nport_touchstone(touchstone_file, port_order, Z_renorm):

@@ -48,6 +48,21 @@ sys.path.insert(0, _HERE)
 from audit_check import check, xcheck, finish   # noqa: E402
 import sicopr                                    # noqa: E402
 
+
+def _helper(stem):
+    """Any surviving definition of a helper: the canonical if there is one,
+    otherwise an inlined copy. Named copies come and go as the assembler's
+    inlining changes, and this test is about the helper's SEMANTICS, not about
+    which caller happens to carry it."""
+    fn = getattr(sicopr, stem, None)
+    if fn is not None:
+        return fn
+    for a in sorted(dir(sicopr)):
+        if a.endswith('__' + stem):
+            return getattr(sicopr, a)
+    raise AttributeError('no definition of %s survives in sicopr.py' % stem)
+
+
 X = np.array([2, 4, 4, 4, 5, 5, 7, 9], dtype=float)
 R = np.array([0.5, 1.5, 2.5, 3.5, -0.5, -1.5, -2.5])
 N = np.array([1.0, np.nan, 3.0])
@@ -102,7 +117,7 @@ CONTRACTS = [
         numpy='np.max propagates NaN; np.nanmax ignores it',
         spec=lambda: max(v for v in N if not math.isnan(v)),
         octave=3.0,
-        port=lambda: sicopr._get_PSDs__mmax(N),
+        port=lambda: _helper('mmax')(N),
         separates=lambda: np.max(N),
     ),
     dict(
@@ -111,7 +126,7 @@ CONTRACTS = [
         numpy='np.min propagates NaN; np.nanmin ignores it',
         spec=lambda: min(v for v in N if not math.isnan(v)),
         octave=1.0,
-        port=lambda: sicopr._get_PSDs__mmin(N),
+        port=lambda: _helper('mmin')(N),
         separates=lambda: np.min(N),
     ),
     dict(
@@ -207,16 +222,16 @@ for name, doc, want, got in AGREEING:
 # np.max/np.min remains.
 _cx = np.array([3 + 4j, 5 + 0j])
 check('maxmin_port_orders_complex_like_matlab',
-      sicopr._get_PSDs__mmax(_cx) == (3 + 4j)
-      and sicopr._get_PSDs__mmin(_cx) == (5 + 0j),
+      _helper('mmax')(_cx) == (3 + 4j)
+      and _helper('mmin')(_cx) == (5 + 0j),
       'both elements have magnitude 5, so MATLAB breaks the tie on angle: '
       'max is 3+4i and min is 5 (checked against COM Octave). numpy compares '
       'the real part first and would give 5 for max. Got max %s min %s'
-      % (sicopr._get_PSDs__mmax(_cx), sicopr._get_PSDs__mmin(_cx)))
+      % (_helper('mmax')(_cx), _helper('mmin')(_cx)))
 
 check('maxmin_port_returns_nan_only_when_all_nan',
-      np.isnan(sicopr._get_PSDs__mmax(np.array([np.nan, np.nan])))
-      and sicopr._get_PSDs__mmax(np.array([1.0, np.nan])) == 1.0,
+      np.isnan(_helper('mmax')(np.array([np.nan, np.nan])))
+      and _helper('mmax')(np.array([1.0, np.nan])) == 1.0,
       'MATLAB max of an all-NaN vector is NaN, and of [1 NaN] is 1')
 
 # ---- a trap with no site yet, pinned before one appears -------------------

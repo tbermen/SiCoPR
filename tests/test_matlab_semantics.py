@@ -41,6 +41,21 @@ sys.path.insert(0, _HERE)
 from audit_check import check, finish   # noqa: E402
 import sicopr                                   # noqa: E402
 
+
+def _helper(stem):
+    """Any surviving definition of a helper: the canonical if there is one,
+    otherwise an inlined copy. Named copies come and go as the assembler's
+    inlining changes, and this test is about the helper's SEMANTICS, not about
+    which caller happens to carry it."""
+    fn = getattr(sicopr, stem, None)
+    if fn is not None:
+        return fn
+    for a in sorted(dir(sicopr)):
+        if a.endswith('__' + stem):
+            return getattr(sicopr, a)
+    raise AttributeError('no definition of %s survives in sicopr.py' % stem)
+
+
 SRC = open(os.path.join(_ROOT, 'sicopr.py'), encoding='utf-8').read()
 
 
@@ -199,7 +214,7 @@ check('round_every_site_uses_matlab_semantics',
 # earlier version of this check guessed them by hand and guessed the *shape*
 # wrong -- it assumed bins 0..4 where the reference gives Min=1 and four bins.
 # That is the argument for the oracle in one line.
-_d_cpdf = sicopr._Bathtub_Contribution_Wrapper__d_cpdf
+_d_cpdf = _helper('d_cpdf')
 _r = _d_cpdf(1.0, np.array([0.5, 1.5, 2.5, 3.5]), np.full(4, 0.25))
 _y_got, _min_got = np.asarray(_r.y), _r.Min
 _OCT_Y, _OCT_MIN = np.array([0.25, 0.25, 0.25, 0.25]), 1
@@ -233,10 +248,15 @@ check('maxmin_every_site_uses_matlab_nan_semantics',
 # exists for.
 _mmaxes = [n for n in dir(sicopr) if n.endswith('__mmax')]
 _mmins = [n for n in dir(sicopr) if n.endswith('__mmin')]
-check('every_inlined_maxmin_copy_is_present',
-      len(_mmaxes) == len(_mmins) and len(_mmaxes) >= 20,
-      'expected a _mmax/_mmin pair per calling function, found %d and %d'
-      % (len(_mmaxes), len(_mmins)))
+# The counts do NOT have to match. This used to require one _mmax per _mmin,
+# which held only because the callers that needed one happened to need both;
+# collapsing the duplicate helper copies onto imports (2026-09-22) left 23 and
+# 12. What matters is that at least one of each survives to be driven, and that
+# EVERY surviving copy behaves -- which the probes below check one by one.
+check('inlined_maxmin_copies_exist_to_check',
+      _mmaxes and _mmins,
+      'no inlined _mmax/_mmin copies found (%d and %d), so the per-copy checks '
+      'below are vacuous' % (len(_mmaxes), len(_mmins)))
 _mmax = getattr(sicopr, _mmaxes[0])
 _mmin = getattr(sicopr, _mmins[0])
 _nan_probes = [([1.0, np.nan, 3.0], 3.0, 1.0),

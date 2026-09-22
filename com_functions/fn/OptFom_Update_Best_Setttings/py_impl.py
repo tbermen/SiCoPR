@@ -1,4 +1,5 @@
 import numpy as np
+from com_functions.fn.FFE.py_impl import FFE as _FFE
 from types import SimpleNamespace
 
 def _value_copy(obj):
@@ -37,17 +38,6 @@ def _value_copy(obj):
 
 
 # --- inline from FFE (MATLAB 2026-2048) ---
-def _FFE(C, cmx, spui, V):
-    C = np.asarray(C, dtype=float)
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 2 and V.shape[1] == 1:
-        V = V.ravel()
-    V0 = 0.0
-    for i, c in enumerate(C):
-        if c != 0:
-            ishift = (i - cmx) * spui
-            V0 = np.roll(V, ishift) * c + V0
-    return V0
 
 
 def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
