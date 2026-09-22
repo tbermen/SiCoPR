@@ -15,6 +15,51 @@
 
 import numpy as np
 
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -77,7 +122,7 @@ def _s21_to_impulse_DC_zero(freq_array, time_step, OP, param):
     impulse_response = np.real(np.fft.ifft(IL_symmetric))
     L = len(impulse_response)
     t_base = np.arange(L) / (freq_step * L)
-    ir_peak = np.max(np.abs(impulse_response))
+    ir_peak = _mmax(np.abs(impulse_response))
     thresh = getattr(OP, 'impulse_response_truncation_threshold', 1e-7)
     last_arr = np.where(np.abs(impulse_response) > ir_peak * thresh)[0]
     ir_last = int(last_arr[-1]) if len(last_arr) > 0 else L - 1
@@ -139,7 +184,7 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
         return _d_cpdf(BinSize, 0, 1)
-    if np.max(np.abs(iv)) > BinSize:
+    if _mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _d_cpdf(BinSize, 0, 1)
@@ -237,7 +282,7 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
                                   causality_correction_dB=caus_f, truncation_dB=trunc_f)
     TD_ILN.FIT.PR = lfilter(np.ones(M), [1.0], fir_f)
 
-    ipeak = int(np.where(TD_ILN.REF.PR == np.max(TD_ILN.REF.PR))[0][0])
+    ipeak = int(np.where(TD_ILN.REF.PR == _mmax(TD_ILN.REF.PR))[0][0])
     range_end = min(len(TD_ILN.REF.PR), len(TD_ILN.FIT.PR))
     irange = slice(ipeak, range_end)
 

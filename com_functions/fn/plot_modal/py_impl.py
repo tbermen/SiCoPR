@@ -12,6 +12,51 @@
 # ============================================================
 
 import numpy as np
+
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
 from types import SimpleNamespace
 
 
@@ -67,13 +112,13 @@ def plot_modal(param, OP, chdata):
         sdc22 = np.asarray(getattr(ch0, 'sdc22' + Sfield, np.zeros(len(f))), dtype=complex)
 
         rs.Rlcc_179mm = _RLcc_mask(f_ghz) - _dB(scc11)
-        rs.Rlcc_179mm_fail = bool(np.min(rs.Rlcc_179mm) < 0)
+        rs.Rlcc_179mm_fail = bool(_mmin(rs.Rlcc_179mm) < 0)
         rs.Rlcc_178mm = _RLcc178(f_ghz) - _dB(scc11)
-        rs.Rlcc_178mm_fail = bool(np.min(rs.Rlcc_178mm) < 0)
+        rs.Rlcc_178mm_fail = bool(_mmin(rs.Rlcc_178mm) < 0)
         rs.Rlcd_179mm = _RLdc_mask(f_ghz) - _dB(scd22)
-        rs.Rlcd_179mm_fail = bool(np.min(rs.Rlcd_179mm) < 0)
+        rs.Rlcd_179mm_fail = bool(_mmin(rs.Rlcd_179mm) < 0)
         rs.Rldc_179mm = _RLdc_mask(f_ghz) - _dB(sdc22)
-        rs.Rldc_179mm_fail = bool(np.min(rs.Rldc_179mm) < 0)
+        rs.Rldc_179mm_fail = bool(_mmin(rs.Rldc_179mm) < 0)
         return rs
 
     return None

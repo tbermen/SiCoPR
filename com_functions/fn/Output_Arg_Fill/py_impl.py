@@ -13,6 +13,51 @@
 
 import numpy as np
 
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _mround_arr(x):
     """MATLAB round() on an array: halves go away from zero, where np.round
     takes them to even.
@@ -194,7 +239,7 @@ def _Init_PDF_Fast_b(EmptyPDF, values, probs):
 
 def _get_pdf_b(iv, L, BinSize):
     iv = np.asarray(iv, dtype=float).ravel()
-    if np.max(np.abs(iv)) > BinSize:
+    if _mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _d_cpdf_b(BinSize, 0, 1)
@@ -225,7 +270,7 @@ def _Burst_Probability_Calc(COM_SNR_Struct, DFE_taps, param, OP):
     ndfe = int(param.ndfe)
     for k in range(1, min(ndfe, nburst)):
         if OP.use_simple_EP_model:
-            tap_val = 2.0 * A_s * float(np.max(sorted_abs_taps))
+            tap_val = 2.0 * A_s * float(_mmax(sorted_abs_taps))
             post_pdf = _get_pdf_b(tap_val, param.levels, param.delta_y)
             new_pdf = _conv_fct_b(ep_noise_pdf[0], post_pdf)
         else:
@@ -275,20 +320,20 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
     output_args.tail_RSS = fom_result.tail_RSS
     output_args.channel_operating_margin_dB = COM_SNR_Struct.COM
     output_args.available_signal_after_eq_mV = 1000 * COM_SNR_Struct.A_s
-    output_args.peak_uneq_pulse_mV = 1000 * float(np.max(np.abs(
+    output_args.peak_uneq_pulse_mV = 1000 * float(_mmax(np.abs(
         np.asarray(chdata[0].uneq_pulse_response, dtype=float))))
 
     try:
         uneq_ir = np.asarray(chdata[0].uneq_imp_response, dtype=float)
         t_arr = np.asarray(chdata[0].t, dtype=float)
-        output_args.uneq_FIR_peak_time = float(t_arr[uneq_ir == np.max(uneq_ir)][0])
+        output_args.uneq_FIR_peak_time = float(t_arr[uneq_ir == _mmax(uneq_ir)][0])
     except Exception:
         output_args.uneq_FIR_peak_time = []
 
     output_args.steady_state_voltage_mV = 1000 * fom_result.A_f
 
     eq_pr = np.asarray(chdata[0].eq_pulse_response, dtype=float)
-    its_eq = int(np.where(eq_pr >= np.max(eq_pr))[0][0])  # 0-based
+    its_eq = int(np.where(eq_pr >= _mmax(eq_pr))[0][0])  # 0-based
     # MATLAB: isumend = min(its+N_v*M, len); its is 1-based → its_py+1+N_v*M
     isumend = min(its_eq + int(param.N_v) * M + 1, len(eq_pr))
     output_args.steady_state_voltage_weq_mV = 1000 * float(np.sum(eq_pr[:isumend]) / M)

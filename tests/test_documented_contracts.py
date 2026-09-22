@@ -102,7 +102,7 @@ CONTRACTS = [
         numpy='np.max propagates NaN; np.nanmax ignores it',
         spec=lambda: max(v for v in N if not math.isnan(v)),
         octave=3.0,
-        port=None,                       # see the xcheck below
+        port=lambda: sicopr._get_PSDs__mmax(N),
         separates=lambda: np.max(N),
     ),
     dict(
@@ -111,7 +111,7 @@ CONTRACTS = [
         numpy='np.min propagates NaN; np.nanmin ignores it',
         spec=lambda: min(v for v in N if not math.isnan(v)),
         octave=1.0,
-        port=None,
+        port=lambda: sicopr._get_PSDs__mmin(N),
         separates=lambda: np.min(N),
     ),
     dict(
@@ -199,19 +199,25 @@ for name, doc, want, got in AGREEING:
           '%s -- SiCoPR/numpy returns %r, expected %r. A default changed.'
           % (doc, got(), want))
 
-# ---- the open one: max/min and NaN ----------------------------------------
-# The contract above shows MATLAB omits NaN and numpy propagates it. The engine
-# uses plain np.max/np.min throughout, so where a NaN can reach one, the port
-# and the reference part company. No site has been shown to receive a NaN, and
-# none has been shown not to.
-_nanaware = 'np.nanmax(' in open(os.path.join(_ROOT, 'sicopr.py'),
-                                 encoding='utf-8').read()
-xcheck('maxmin_port_omits_nan_like_matlab',
-       _nanaware,
-       'OPEN: MATLAB max/min omit NaN (proved above against COM Octave: '
-       'max([1 NaN 3]) = 3). SiCoPR uses plain np.max/np.min, which return NaN. '
-       'Needs a per-site review rather than a blanket swap -- some sites should '
-       'still let a NaN poison the result.')
+# ---- max/min and NaN: closed 2026-09-22 ---------------------------------
+# The contracts above prove MATLAB omits NaN and numpy propagates it. Every
+# max/min in the engine now goes through _mmax/_mmin, which skip NaN, return
+# NaN quietly when every element is one, and order complex by magnitude then
+# angle the way MATLAB does. test_matlab_semantics.py lints that no bare
+# np.max/np.min remains.
+_cx = np.array([3 + 4j, 5 + 0j])
+check('maxmin_port_orders_complex_like_matlab',
+      sicopr._get_PSDs__mmax(_cx) == (3 + 4j)
+      and sicopr._get_PSDs__mmin(_cx) == (5 + 0j),
+      'both elements have magnitude 5, so MATLAB breaks the tie on angle: '
+      'max is 3+4i and min is 5 (checked against COM Octave). numpy compares '
+      'the real part first and would give 5 for max. Got max %s min %s'
+      % (sicopr._get_PSDs__mmax(_cx), sicopr._get_PSDs__mmin(_cx)))
+
+check('maxmin_port_returns_nan_only_when_all_nan',
+      np.isnan(sicopr._get_PSDs__mmax(np.array([np.nan, np.nan])))
+      and sicopr._get_PSDs__mmax(np.array([1.0, np.nan])) == 1.0,
+      'MATLAB max of an all-NaN vector is NaN, and of [1 NaN] is 1')
 
 # ---- a trap with no site yet, pinned before one appears -------------------
 # MATLAB and Python's ** both give a complex cube root of a negative number;

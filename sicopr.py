@@ -1089,6 +1089,51 @@ def Bread_Crumb_Chdata_Reduction(chdata, fields_file):
 
 # --- Burst_Probability_Calc (MATLAB lines 1083–1132) ---
 
+def _Burst_Probability_Calc__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _Burst_Probability_Calc__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _Burst_Probability_Calc__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _Burst_Probability_Calc__mmin(a):
+    """MATLAB min(): the mirror of _Burst_Probability_Calc__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _Burst_Probability_Calc__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _Burst_Probability_Calc__mround_arr(x):
     """MATLAB round() on an array: halves go away from zero, where np.round
     takes them to even.
@@ -1183,7 +1228,7 @@ def _Burst_Probability_Calc__get_pdf_from_sampled_signal(input_vector, L, BinSiz
         iv = np.asarray(input_vector, dtype=float).ravel()
     else:
         iv = np.array([float(input_vector)])
-    if np.max(np.abs(iv)) > BinSize:
+    if _Burst_Probability_Calc__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _Burst_Probability_Calc__d_cpdf(BinSize, 0, 1)
@@ -1220,7 +1265,7 @@ def Burst_Probability_Calc(COM_SNR_Struct, DFE_taps, param, OP):
     ndfe = int(param.ndfe)
     for k in range(1, min(ndfe, nburst)):
         if OP.use_simple_EP_model:
-            tap_val = 2.0 * A_s * float(np.max(sorted_abs_taps))
+            tap_val = 2.0 * A_s * float(_Burst_Probability_Calc__mmax(sorted_abs_taps))
             post_pdf = _Burst_Probability_Calc__get_pdf_from_sampled_signal(tap_val, param.levels, param.delta_y)
             new_pdf = _Burst_Probability_Calc__conv_fct(error_propagation_noise_pdf[0], post_pdf)
         else:
@@ -1686,6 +1731,51 @@ def COM_FD_to_TD(chdata, param, OP,
 # ============================================================
 
 
+def _COM_eye_width__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _COM_eye_width__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _COM_eye_width__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _COM_eye_width__mmin(a):
+    """MATLAB min(): the mirror of _COM_eye_width__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _COM_eye_width__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 # ---------------------------------------------------------------------------
 # Callee stubs
@@ -1999,7 +2089,7 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         # curve reaches its ~0.5 shoulders.
         v_lo = min(float(A_ni_top[n + 1][half_UI]) for n in range(n_eyes))
         v_hi = max(float(A_ni_bot[n][half_UI]) for n in range(n_eyes))
-        vth_min, vth_max = float(np.min(vth_eyes)), float(np.max(vth_eyes))
+        vth_min, vth_max = float(_COM_eye_width__mmin(vth_eyes)), float(_COM_eye_width__mmax(vth_eyes))
         if n_eyes > 1:
             pad = (vth_max - vth_min) / (n_eyes - 1)      # one eye spacing
         else:
@@ -2121,6 +2211,51 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
 # ============================================================
 
 
+def _Create_Noise_PDF__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _Create_Noise_PDF__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _Create_Noise_PDF__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _Create_Noise_PDF__mmin(a):
+    """MATLAB min(): the mirror of _Create_Noise_PDF__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _Create_Noise_PDF__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _Create_Noise_PDF__mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -2232,7 +2367,7 @@ def _Create_Noise_PDF__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
         return _Create_Noise_PDF__d_cpdf(BinSize, 0, 1)
-    if np.max(np.abs(iv)) > BinSize:
+    if _Create_Noise_PDF__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _Create_Noise_PDF__d_cpdf(BinSize, 0, 1)
@@ -3384,6 +3519,51 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
 # ============================================================
 
 
+def _MMSE__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _MMSE__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _MMSE__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _MMSE__mmin(a):
+    """MATLAB min(): the mirror of _MMSE__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _MMSE__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 
 # Nb is fixed for a run; these are rebuilt ~130k times per case otherwise.
@@ -3507,7 +3687,7 @@ def _MMSE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
                         ii_found = ii_vs
                         break
 
-                if (not found_goodV) and len(badV_pos) and np.min(badV_pos) < ii_found:
+                if (not found_goodV) and len(badV_pos) and _MMSE__mmin(badV_pos) < ii_found:
                     do_it_again = True
                     ndiff[new_bank[0]] = MIN_E
                     new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
@@ -4142,6 +4322,51 @@ def OptFom_Build_TXFFE(param):
 # ============================================================
 
 
+def _OptFom_Adaptive_Local_Search__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Adaptive_Local_Search__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Adaptive_Local_Search__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Adaptive_Local_Search__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Adaptive_Local_Search__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Adaptive_Local_Search__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 # --- persistent state (MATLAB `persistent`) and optional logging knob ---
 _ALS_STATE = {'adaptive_radius': None, 'no_improve_count': 0, 'initialized': False}
 ALS_LOG_CSV = None  # path -> enable per-candidate CSV logging (feature 3)
@@ -4270,7 +4495,7 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     # ---- ADAPTIVE shrink ----
     if FOM_history.size >= adaptation_window:
         recent = FOM_history[-adaptation_window:]
-        improvement = float(np.max(recent) - np.min(recent))
+        improvement = float(_OptFom_Adaptive_Local_Search__mmax(recent) - _OptFom_Adaptive_Local_Search__mmin(recent))
         if improvement < min_improvement_threshold:
             st['no_improve_count'] += 1
         else:
@@ -4725,6 +4950,51 @@ def OptFom_Calc_Noise_XC(H_low_xc, ctle_gain_xc, SETTINGS, param, OP):
 # ============================================================
 
 
+def _OptFom_Calculate_Settings__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Calculate_Settings__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Calculate_Settings__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Calculate_Settings__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Calculate_Settings__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Calculate_Settings__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 _BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
 
 
@@ -4838,8 +5108,8 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
                         g2hi = g2qual_pairs[kk, 0]
                         if g_DC_HP_values[jj] >= g2lo and g_DC_HP_values[jj] < g2hi:
                             row = gqual_s[kk] if gqual_s.ndim == 1 else gqual_s[kk, :]
-                            glo = float(np.min(row))
-                            ghi = float(np.max(row))
+                            glo = float(_OptFom_Calculate_Settings__mmin(row))
+                            ghi = float(_OptFom_Calculate_Settings__mmax(row))
                             if gdc_values[ii] >= glo and gdc_values[ii] < ghi:
                                 qual[jj, ii] = 1
                                 break
@@ -4903,6 +5173,51 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
 #   exclusive end = ir_last + 1.
 # RX_CALIBRATION: uses chdata[1] (index 1 = MATLAB chdata(2)).
 # ============================================================
+
+
+def _OptFom_Compute_CTLE__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Compute_CTLE__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Compute_CTLE__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Compute_CTLE__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Compute_CTLE__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Compute_CTLE__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
 
 
 
@@ -4974,7 +5289,7 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     if OP.INCLUDE_CTLE == 1:
         for k in range(param.num_s4p_files):
             ir = np.asarray(getattr(chdata[k], uneq_field), dtype=float)
-            ir_peak = float(np.max(np.abs(ir)))
+            ir_peak = float(_OptFom_Compute_CTLE__mmax(np.abs(ir)))
             last_arr = np.where(np.abs(ir) > ir_peak * OP.impulse_response_truncation_threshold)[0]
             if len(last_arr) > 0:
                 ir = ir[:int(last_arr[-1]) + 1]
@@ -5028,6 +5343,51 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
 # N_tail_start: 1-based in MATLAB config → subtract 1 for 0-based array access.
 # dfe_clipper and floatingDFE inlined as _OptFom_Compute_DFE__dfe_clipper and _OptFom_Compute_DFE__floatingDFE.
 # ============================================================
+
+
+def _OptFom_Compute_DFE__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Compute_DFE__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Compute_DFE__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Compute_DFE__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Compute_DFE__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Compute_DFE__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
 
 
 
@@ -5139,7 +5499,7 @@ def _OptFom_Compute_DFE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg
                     if not np.any(val_sort[ii_vs] == checkV):
                         ii_found = ii_vs
                         break
-                if (not found_goodV) and len(badV_pos) > 0 and np.min(badV_pos) < ii_found:
+                if (not found_goodV) and len(badV_pos) > 0 and _OptFom_Compute_DFE__mmin(badV_pos) < ii_found:
                     do_it_again = True
                     ndiff[new_bank[0]] = MIN_E
                     new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
@@ -5411,6 +5771,51 @@ def OptFom_Compute_TXFFE(chdata, pulse_struc, txffe, ctle_response_updated, para
 # ============================================================
 
 
+def _OptFom_Create_Output__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Create_Output__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Create_Output__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Create_Output__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Create_Output__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Create_Output__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def OptFom_Create_Output(result, BEST, t, chdata, param, OP):
     M = int(param.samples_per_ui)
@@ -5452,8 +5857,8 @@ def OptFom_Create_Output(result, BEST, t, chdata, param, OP):
             result.MMSE_results = BEST.MMSE_results
 
     PR = np.asarray(chdata[0].uneq_pulse_response, dtype=float)
-    result.A_p = float(np.max(PR))
-    its = int(np.where(PR >= np.max(PR))[0][0])  # 0-based
+    result.A_p = float(_OptFom_Create_Output__mmax(PR))
+    its = int(np.where(PR >= _OptFom_Create_Output__mmax(PR))[0][0])  # 0-based
 
     # Equation 163A-3 window around peak
     iend = its + int(param.N_v) * M - M // 2
@@ -5724,6 +6129,51 @@ def OptFom_Local_Search(LocalSearch_Value, BEST, THIS, txffe_sweep_indices):
 # ============================================================
 
 
+def _OptFom_Plot_Best_Results__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Plot_Best_Results__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Plot_Best_Results__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Plot_Best_Results__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Plot_Best_Results__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Plot_Best_Results__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def OptFom_Plot_Best_Results(BEST, t, f, chdata, param, OP):
     """Display/plot best equalizer results (MATLAB lines 3674-3784).
@@ -5759,7 +6209,7 @@ def OptFom_Plot_Best_Results(BEST, t, f, chdata, param, OP):
         except Exception:
             pass
         try:
-            print(f'CTF peaking gain:  {20*np.log10(float(np.max(np.abs(BEST.ctle_gain)))):.2g} dB')
+            print(f'CTF peaking gain:  {20*np.log10(float(_OptFom_Plot_Best_Results__mmax(np.abs(BEST.ctle_gain)))):.2g} dB')
         except Exception:
             pass
         try:
@@ -6012,6 +6462,51 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 
 # --- OptFom_Update_Best_Settings_EQ_Failed (MATLAB lines 3891–3934) ---
 
+def _OptFom_Update_Best_Settings_EQ_Failed__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _OptFom_Update_Best_Settings_EQ_Failed__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Update_Best_Settings_EQ_Failed__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _OptFom_Update_Best_Settings_EQ_Failed__mmin(a):
+    """MATLAB min(): the mirror of _OptFom_Update_Best_Settings_EQ_Failed__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _OptFom_Update_Best_Settings_EQ_Failed__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _OptFom_Update_Best_Settings_EQ_Failed__value_copy(obj):
     """MATLAB assigns structs and arrays BY VALUE; Python binds a reference.
 
@@ -6100,7 +6595,7 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
 
     BEST.sigma_N = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.sigma_N)
     BEST.h_J = _OptFom_Update_Best_Settings_EQ_Failed__value_copy(THIS.h_J)
-    BEST.A_p = float(np.max(sbr))
+    BEST.A_p = float(_OptFom_Update_Best_Settings_EQ_Failed__mmax(sbr))
     BEST.ISI = 1.0
 
     # DFE taps: UI-spaced postcursors 1..ndfe, normalized by cursor
@@ -6239,6 +6734,51 @@ def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
 # steady_state_voltage_weq: its_eq 0-based, isumend exclusive.
 # Pre2Pmax: -taps[-3]/taps[-2] when len>=3.
 # ============================================================
+
+
+def _Output_Arg_Fill__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _Output_Arg_Fill__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _Output_Arg_Fill__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _Output_Arg_Fill__mmin(a):
+    """MATLAB min(): the mirror of _Output_Arg_Fill__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _Output_Arg_Fill__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
 
 
 def _Output_Arg_Fill__mround_arr(x):
@@ -6420,7 +6960,7 @@ def _Output_Arg_Fill__Init_PDF_Fast_b(EmptyPDF, values, probs):
 
 def _Output_Arg_Fill__get_pdf_b(iv, L, BinSize):
     iv = np.asarray(iv, dtype=float).ravel()
-    if np.max(np.abs(iv)) > BinSize:
+    if _Output_Arg_Fill__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _Output_Arg_Fill__d_cpdf_b(BinSize, 0, 1)
@@ -6451,7 +6991,7 @@ def _Output_Arg_Fill__Burst_Probability_Calc(COM_SNR_Struct, DFE_taps, param, OP
     ndfe = int(param.ndfe)
     for k in range(1, min(ndfe, nburst)):
         if OP.use_simple_EP_model:
-            tap_val = 2.0 * A_s * float(np.max(sorted_abs_taps))
+            tap_val = 2.0 * A_s * float(_Output_Arg_Fill__mmax(sorted_abs_taps))
             post_pdf = _Output_Arg_Fill__get_pdf_b(tap_val, param.levels, param.delta_y)
             new_pdf = _Output_Arg_Fill__conv_fct_b(ep_noise_pdf[0], post_pdf)
         else:
@@ -6501,20 +7041,20 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
     output_args.tail_RSS = fom_result.tail_RSS
     output_args.channel_operating_margin_dB = COM_SNR_Struct.COM
     output_args.available_signal_after_eq_mV = 1000 * COM_SNR_Struct.A_s
-    output_args.peak_uneq_pulse_mV = 1000 * float(np.max(np.abs(
+    output_args.peak_uneq_pulse_mV = 1000 * float(_Output_Arg_Fill__mmax(np.abs(
         np.asarray(chdata[0].uneq_pulse_response, dtype=float))))
 
     try:
         uneq_ir = np.asarray(chdata[0].uneq_imp_response, dtype=float)
         t_arr = np.asarray(chdata[0].t, dtype=float)
-        output_args.uneq_FIR_peak_time = float(t_arr[uneq_ir == np.max(uneq_ir)][0])
+        output_args.uneq_FIR_peak_time = float(t_arr[uneq_ir == _Output_Arg_Fill__mmax(uneq_ir)][0])
     except Exception:
         output_args.uneq_FIR_peak_time = []
 
     output_args.steady_state_voltage_mV = 1000 * fom_result.A_f
 
     eq_pr = np.asarray(chdata[0].eq_pulse_response, dtype=float)
-    its_eq = int(np.where(eq_pr >= np.max(eq_pr))[0][0])  # 0-based
+    its_eq = int(np.where(eq_pr >= _Output_Arg_Fill__mmax(eq_pr))[0][0])  # 0-based
     # MATLAB: isumend = min(its+N_v*M, len); its is 1-based → its_py+1+N_v*M
     isumend = min(its_eq + int(param.N_v) * M + 1, len(eq_pr))
     output_args.steady_state_voltage_weq_mV = 1000 * float(np.sum(eq_pr[:isumend]) / M)
@@ -6839,6 +7379,51 @@ def pam(data):
 # ============================================================
 
 
+def _RILN_TD__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _RILN_TD__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _RILN_TD__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _RILN_TD__mmin(a):
+    """MATLAB min(): the mirror of _RILN_TD__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _RILN_TD__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _RILN_TD__mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -6966,7 +7551,7 @@ def _RILN_TD__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
         return _RILN_TD__d_cpdf(BinSize, 0, 1)
-    if np.max(np.abs(iv)) > BinSize:
+    if _RILN_TD__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _RILN_TD__d_cpdf(BinSize, 0, 1)
@@ -7033,7 +7618,7 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
     REF_PR = result.REF.PR
     FIT_PR = result.FIT.PR
 
-    ipeak = int(np.where(REF_PR == np.max(REF_PR))[0][0])  # 0-based
+    ipeak = int(np.where(REF_PR == _RILN_TD__mmax(REF_PR))[0][0])  # 0-based
     NrangeUI = 1000
     range_end = min(ipeak + M * NrangeUI,
                     min(len(FIT_FIR), len(REF_FIR)) - 1)
@@ -7064,7 +7649,7 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
                 result.FOM_PDF = float(-pdf_x[idx_ber[0]])
             result.PDF = pdf
 
-    result.FOM = float(np.max([
+    result.FOM = float(_RILN_TD__mmax([
         float(np.linalg.norm(ILN[im::M])) for im in range(M)
     ]))
 
@@ -8072,6 +8657,51 @@ def add_pkg_with_die(S, mode, param, OP):
 
 # --- adjust_Rx_noise_for_quantization (MATLAB lines 4858–4896) ---
 
+def _adjust_Rx_noise_for_quantization__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _adjust_Rx_noise_for_quantization__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _adjust_Rx_noise_for_quantization__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _adjust_Rx_noise_for_quantization__mmin(a):
+    """MATLAB min(): the mirror of _adjust_Rx_noise_for_quantization__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _adjust_Rx_noise_for_quantization__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _adjust_Rx_noise_for_quantization__mround_arr(x):
     """MATLAB round() on an array: halves go away from zero, where np.round
     takes them to even.
@@ -8184,7 +8814,7 @@ def _adjust_Rx_noise_for_quantization__Init_PDF_Fast(EmptyPDF, values, probs):
 
 def _adjust_Rx_noise_for_quantization__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if np.max(np.abs(input_vector)) > BinSize:
+    if _adjust_Rx_noise_for_quantization__mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
         return _adjust_Rx_noise_for_quantization__d_cpdf(BinSize, 0, 1)
@@ -9439,6 +10069,52 @@ def find_eye_width(eye_contour, half_UI, samples_per_UI, vref):
 
 # --- findbankloc (MATLAB lines 5786–5937) ---
 
+def _findbankloc__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _findbankloc__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _findbankloc__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _findbankloc__mmin(a):
+    """MATLAB min(): the mirror of _findbankloc__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _findbankloc__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
+
 def findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     """Find optimal DFE bank locations within hisi[idx_st-1 : idx_en].
 
@@ -9535,7 +10211,7 @@ def findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
                         ii_found = ii_vs
                         break
 
-                if (not found_goodV) and (len(badV_pos) > 0) and (np.min(badV_pos) < ii_found):
+                if (not found_goodV) and (len(badV_pos) > 0) and (_findbankloc__mmin(badV_pos) < ii_found):
                     do_it_again = True
                     ndiff[new_bank[0]] = MIN_E
                     new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
@@ -9623,6 +10299,52 @@ def compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
 
 
 # --- floatingDFE (MATLAB lines 5938–5972) ---
+
+def _floatingDFE__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _floatingDFE__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _floatingDFE__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _floatingDFE__mmin(a):
+    """MATLAB min(): the mirror of _floatingDFE__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _floatingDFE__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def _floatingDFE__fb_mask(ndiff, positions, value):
     """ndiff[positions] = value, growing ndiff the way MATLAB would.
@@ -9717,7 +10439,7 @@ def _floatingDFE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg)
                     if not np.any(val_sort[ii_vs] == checkV):
                         ii_found = ii_vs
                         break
-                if (not found_goodV) and len(badV_pos) > 0 and np.min(badV_pos) < ii_found:
+                if (not found_goodV) and len(badV_pos) > 0 and _floatingDFE__mmin(badV_pos) < ii_found:
                     do_it_again = True
                     ndiff[new_bank[0]] = MIN_E
                     new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
@@ -9908,6 +10630,51 @@ def floating_taps_1sttest(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, COOP=0):
 # ============================================================
 
 
+def _force__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _force__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _force__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _force__mmin(a):
+    """MATLAB min(): the mirror of _force__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _force__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def _force__FFE(C, cmx, spui, V):
     """Inline FFE: apply taps C (length num_taps) to signal V."""
@@ -10038,7 +10805,7 @@ def _force__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
                         ii_found = ii_vs
                         break
 
-                if (not found_goodV) and len(badV_pos) and np.min(badV_pos) < ii_found:
+                if (not found_goodV) and len(badV_pos) and _force__mmin(badV_pos) < ii_found:
                     do_it_again = True
                     ndiff[new_bank[0]] = MIN_E
                     new_bank = np.arange(val_sort[1], val_sort[1] + tap_bk)
@@ -10280,6 +11047,51 @@ def get_ILN(sdd21, faxis_f2):
 # ============================================================
 
 
+def _get_ILN_cmp_td__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _get_ILN_cmp_td__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_ILN_cmp_td__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _get_ILN_cmp_td__mmin(a):
+    """MATLAB min(): the mirror of _get_ILN_cmp_td__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_ILN_cmp_td__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _get_ILN_cmp_td__mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -10340,7 +11152,7 @@ def _get_ILN_cmp_td__s21_to_impulse_DC_zero(freq_array, time_step, OP, param):
     impulse_response = np.real(np.fft.ifft(IL_symmetric))
     L = len(impulse_response)
     t_base = np.arange(L) / (freq_step * L)
-    ir_peak = np.max(np.abs(impulse_response))
+    ir_peak = _get_ILN_cmp_td__mmax(np.abs(impulse_response))
     thresh = getattr(OP, 'impulse_response_truncation_threshold', 1e-7)
     last_arr = np.where(np.abs(impulse_response) > ir_peak * thresh)[0]
     ir_last = int(last_arr[-1]) if len(last_arr) > 0 else L - 1
@@ -10402,7 +11214,7 @@ def _get_ILN_cmp_td__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
         return _get_ILN_cmp_td__d_cpdf(BinSize, 0, 1)
-    if np.max(np.abs(iv)) > BinSize:
+    if _get_ILN_cmp_td__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _get_ILN_cmp_td__d_cpdf(BinSize, 0, 1)
@@ -10500,7 +11312,7 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
                                   causality_correction_dB=caus_f, truncation_dB=trunc_f)
     TD_ILN.FIT.PR = lfilter(np.ones(M), [1.0], fir_f)
 
-    ipeak = int(np.where(TD_ILN.REF.PR == np.max(TD_ILN.REF.PR))[0][0])
+    ipeak = int(np.where(TD_ILN.REF.PR == _get_ILN_cmp_td__mmax(TD_ILN.REF.PR))[0][0])
     range_end = min(len(TD_ILN.REF.PR), len(TD_ILN.FIT.PR))
     irange = slice(ipeak, range_end)
 
@@ -10557,6 +11369,51 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
 # Output: result SimpleNamespace with S_rn, S_xn, S_tn, S_jn, S_qn, S_n, etc.
 # ============================================================
 
+
+
+def _get_PSDs__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _get_PSDs__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_PSDs__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _get_PSDs__mmin(a):
+    """MATLAB min(): the mirror of _get_PSDs__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_PSDs__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
 
 
 def _get_PSDs__mround(x):
@@ -10772,7 +11629,7 @@ def _get_PSDs__get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_
 
 def _get_PSDs__get_pdf_from_sampled_signal_uncached(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if np.max(np.abs(input_vector)) > BinSize:
+    if _get_PSDs__mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
         return _get_PSDs__d_cpdf(BinSize, 0, 1)
@@ -12000,6 +12857,51 @@ def get_center_of_UI(samples_per_UI):
 
 # --- get_cm_noise (MATLAB lines 7331–7376) ---
 
+def _get_cm_noise__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _get_cm_noise__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_cm_noise__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _get_cm_noise__mmin(a):
+    """MATLAB min(): the mirror of _get_cm_noise__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_cm_noise__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _get_cm_noise__mround_arr(x):
     """MATLAB round() on an array: halves go away from zero, where np.round
     takes them to even.
@@ -12099,7 +13001,7 @@ def _get_cm_noise__conv_fct(p1, p2):
 def _get_cm_noise__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     """Build PDF from sampled-signal ISI via successive delta-set convolutions."""
     input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if np.max(np.abs(input_vector)) <= BinSize:
+    if _get_cm_noise__mmax(np.abs(input_vector)) <= BinSize:
         return _get_cm_noise__d_cpdf(BinSize, 0.0, 1.0)
     input_vector = input_vector[np.abs(input_vector) > BinSize]
     input_vector[np.abs(input_vector) < BinSize] = 0.0
@@ -12162,7 +13064,7 @@ def get_cm_noise(M, PR, L, BER, OP=None):
             results.CMn_cdf = cdf_test
         else:
             results.CMn = PR_fom_best
-        results.CMn_p2p = float(np.max(PR) - np.min(PR))
+        results.CMn_p2p = float(_get_cm_noise__mmax(PR) - _get_cm_noise__mmin(PR))
 
     return results
 
@@ -12197,6 +13099,51 @@ def get_cm_noise(M, PR, L, BER, OP=None):
 # get_pdf_from_sampled_signal inlined as _get_pdf__get_pdf_from_sampled_signal.
 # ============================================================
 
+
+
+def _get_pdf__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _get_pdf__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_pdf__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _get_pdf__mmin(a):
+    """MATLAB min(): the mirror of _get_pdf__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_pdf__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
 
 
 def _get_pdf__mround_arr(x):
@@ -12312,7 +13259,7 @@ def _get_pdf__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
         return _get_pdf__d_cpdf(BinSize, 0, 1)
-    if np.max(np.abs(iv)) > BinSize:
+    if _get_pdf__mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _get_pdf__d_cpdf(BinSize, 0, 1)
@@ -12444,6 +13391,51 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
 
 # --- get_pdf_from_sampled_signal (MATLAB lines 7473–7519) ---
 
+def _get_pdf_from_sampled_signal__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _get_pdf_from_sampled_signal__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_pdf_from_sampled_signal__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _get_pdf_from_sampled_signal__mmin(a):
+    """MATLAB min(): the mirror of _get_pdf_from_sampled_signal__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_pdf_from_sampled_signal__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _get_pdf_from_sampled_signal__mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -12570,7 +13562,7 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     """
     input_vector = np.asarray(input_vector, dtype=float).ravel()
 
-    if np.max(np.abs(input_vector)) > BinSize:
+    if _get_pdf_from_sampled_signal__mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
         return _get_pdf_from_sampled_signal__d_cpdf(BinSize, 0, 1)
@@ -13127,6 +14119,51 @@ def get_sigma_noise(H_ctf, param, chdata, sigma_bn):
 # ============================================================
 
 
+def _get_xtlk_noise__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _get_xtlk_noise__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_xtlk_noise__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _get_xtlk_noise__mmin(a):
+    """MATLAB min(): the mirror of _get_xtlk_noise__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _get_xtlk_noise__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None, C=None):
     """Compute crosstalk noise (MATLAB lines 7844-7938).
@@ -13150,7 +14187,7 @@ def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None,
 
     # Build PWF_tx
     PWF_tx = np.ones(len(f), dtype=complex)
-    if np.max(upsampled_txffe) > 0:
+    if _get_xtlk_noise__mmax(upsampled_txffe) > 0:
         PWF_tx = np.zeros(len(f), dtype=complex)
         icur = int(np.argmax(upsampled_txffe))  # 0-based
         pre_calc = phase_memory is not None and len(phase_memory) > 0
@@ -14545,6 +15582,51 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
 # ============================================================
 
 
+def _parameter_size_adjustment__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _parameter_size_adjustment__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _parameter_size_adjustment__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _parameter_size_adjustment__mmin(a):
+    """MATLAB min(): the mirror of _parameter_size_adjustment__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _parameter_size_adjustment__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def parameter_size_adjustment(param, OP):
     make_length2 = ['C_pkg_board', 'C_diepad', 'L_comp', 'C_bump', 'tfx',
@@ -14560,7 +15642,7 @@ def parameter_size_adjustment(param, OP):
     if OP.WC_PORTZ:
         PORTZ_mult = np.ones(2, dtype=float)
     else:
-        PORTZ_mult = np.ones(int(np.max(pkg_sel)), dtype=float)
+        PORTZ_mult = np.ones(int(_parameter_size_adjustment__mmax(pkg_sel)), dtype=float)
 
     for field in make_length2:
         raw = getattr(param, field, None)
@@ -14826,6 +15908,51 @@ def plot_bathtub_curves(hax, max_signal, sci_pdf, cci_pdf, isi_and_xtalk_pdf,
 # ============================================================
 
 
+def _plot_modal__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _plot_modal__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _plot_modal__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _plot_modal__mmin(a):
+    """MATLAB min(): the mirror of _plot_modal__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _plot_modal__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def _plot_modal__RLcc_mask(f_ghz):
     f = np.asarray(f_ghz, dtype=float)
@@ -14879,13 +16006,13 @@ def plot_modal(param, OP, chdata):
         sdc22 = np.asarray(getattr(ch0, 'sdc22' + Sfield, np.zeros(len(f))), dtype=complex)
 
         rs.Rlcc_179mm = _plot_modal__RLcc_mask(f_ghz) - _plot_modal__dB(scc11)
-        rs.Rlcc_179mm_fail = bool(np.min(rs.Rlcc_179mm) < 0)
+        rs.Rlcc_179mm_fail = bool(_plot_modal__mmin(rs.Rlcc_179mm) < 0)
         rs.Rlcc_178mm = _plot_modal__RLcc178(f_ghz) - _plot_modal__dB(scc11)
-        rs.Rlcc_178mm_fail = bool(np.min(rs.Rlcc_178mm) < 0)
+        rs.Rlcc_178mm_fail = bool(_plot_modal__mmin(rs.Rlcc_178mm) < 0)
         rs.Rlcd_179mm = _plot_modal__RLdc_mask(f_ghz) - _plot_modal__dB(scd22)
-        rs.Rlcd_179mm_fail = bool(np.min(rs.Rlcd_179mm) < 0)
+        rs.Rlcd_179mm_fail = bool(_plot_modal__mmin(rs.Rlcd_179mm) < 0)
         rs.Rldc_179mm = _plot_modal__RLdc_mask(f_ghz) - _plot_modal__dB(sdc22)
-        rs.Rldc_179mm_fail = bool(np.min(rs.Rldc_179mm) < 0)
+        rs.Rldc_179mm_fail = bool(_plot_modal__mmin(rs.Rldc_179mm) < 0)
         return rs
 
     return None
@@ -17093,6 +18220,51 @@ def read_package_parameters(parameter, param_struct=None):
 # ============================================================
 
 
+def _read_s4p_files__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _read_s4p_files__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _read_s4p_files__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _read_s4p_files__mmin(a):
+    """MATLAB min(): the mirror of _read_s4p_files__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _read_s4p_files__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def _read_s4p_files__mround(x):
     """MATLAB round(): half away from zero."""
@@ -17974,7 +19146,7 @@ def read_s4p_files(param, OP, chdata):
                 fax0 = np.asarray(chdata[0].faxis)
                 if len(ch.faxis) != len(fax0):
                     raise ValueError(f'Crosstalk file {ch.filename!r} has different number of frequency points')
-                if np.max(np.abs(ch.faxis - fax0)) > 1:
+                if _read_s4p_files__mmax(np.abs(ch.faxis - fax0)) > 1:
                     raise ValueError(f'Crosstalk file {ch.filename!r} has a different frequency axis')
         else:
             SDDch = np.zeros((len(ch.faxis), 2, 2), dtype=complex)
@@ -18662,6 +19834,51 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
 # ============================================================
 
 
+def _s21_to_impulse_DC__mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _s21_to_impulse_DC__mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _s21_to_impulse_DC__mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _s21_to_impulse_DC__mmin(a):
+    """MATLAB min(): the mirror of _s21_to_impulse_DC__mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _s21_to_impulse_DC__mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def _s21_to_impulse_DC__Tukey_Window(f, param, fr=None, fb=None):
     f = np.asarray(f, dtype=float)
@@ -18943,7 +20160,7 @@ def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
 
     abs_ir = np.abs(impulse_response)
     half = L // 2
-    candidates = np.where(abs_ir[:half] > np.max(abs_ir[:half]) * OP.EC_PULSE_TOL)[0]
+    candidates = np.where(abs_ir[:half] > _s21_to_impulse_DC__mmax(abs_ir[:half]) * OP.EC_PULSE_TOL)[0]
     start_ind = int(candidates[0]) if len(candidates) > 0 else 0
 
     err = np.inf
@@ -18959,8 +20176,8 @@ def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
         err_prev = err
         # fix B03-D6 (MATLAB line 11267): err = max(delta)/max(impulse_response) uses the
         # SIGNED max, not max(abs(.)).
-        peak = np.max(impulse_response)
-        err = np.max(delta) / peak if peak != 0 else 0.0
+        peak = _s21_to_impulse_DC__mmax(impulse_response)
+        err = _s21_to_impulse_DC__mmax(delta) / peak if peak != 0 else 0.0
         if err < OP.EC_REL_TOL or abs(err_prev - err) < OP.EC_DIFF_TOL:
             break
         impulse_response = ir_modified
@@ -18973,7 +20190,7 @@ def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
     if not OP.ENFORCE_CAUSALITY:
         impulse_response = original_impulse_response
 
-    ir_peak = np.max(np.abs(impulse_response))
+    ir_peak = _s21_to_impulse_DC__mmax(np.abs(impulse_response))
     last_arr = np.where(np.abs(impulse_response) > ir_peak * OP.impulse_response_truncation_threshold)[0]
     ir_last = int(last_arr[-1]) if len(last_arr) > 0 else L - 1
 

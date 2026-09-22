@@ -38,7 +38,7 @@ _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
 
-from audit_check import check, xcheck, finish   # noqa: E402
+from audit_check import check, finish   # noqa: E402
 import sicopr                                   # noqa: E402
 
 SRC = open(os.path.join(_ROOT, 'sicopr.py'), encoding='utf-8').read()
@@ -73,7 +73,8 @@ def calls(name):
 # std, var     normalise by N-1           N (ddof=0)                 pass ddof=1
 # sort         stable                     quicksort                  kind='stable'
 # round        half away from zero        half to even               _mround
-# max, min     ignore NaN                 propagate NaN              OPEN
+# max, min     skip NaN; complex by       propagate NaN; complex     _mmax/_mmin
+#              magnitude then angle       lexicographic by real
 # interp1      'extrap' extrapolates      np.interp clamps           _interp_extrap
 # unwrap       tol = pi                   discont = pi               same, no action
 # mean, sum    propagate NaN              propagate NaN              same, no action
@@ -205,15 +206,44 @@ check('round_pdf_bin_snap_matches_matlab',
 # ---- max / min and NaN ----------------------------------------------------
 maxmin = sites(r'np\.(?:max|min)\(')
 nanaware = sites(r'np\.nan(?:max|min)\(')
-xcheck('maxmin_nan_semantics_reviewed',
-       bool(nanaware) or not maxmin,
-       'OPEN: %d np.max/np.min sites and %d nan-aware ones. MATLAB max/min '
-       'ignore NaN, numpy propagates it, and NaN does occur in the pipeline '
-       '(interp_Sparam repairs NaNs in IL before use). No site has been shown '
-       'to receive a NaN, and none has been shown not to. Needs a per-site '
-       'review, not a blanket swap: np.nanmax where MATLAB would skip, plain '
-       'np.max where a NaN should still poison the result.'
-       % (len(maxmin), len(nanaware)))
+# Every max/min must take MATLAB's view of NaN. Inside the two helpers the bare
+# numpy calls are the implementation, so those lines are the only exception.
+_MAXMIN_ALLOWED = (r'return np\.n?(?:max|min)\(a\)',)
+_bare_maxmin = [s for s in _code_lines(SRC)
+                if re.search(r'(?<![\w.])np\.(?:max|min)\(', s)
+                and not any(re.search(p, s) for p in _MAXMIN_ALLOWED)]
+check('maxmin_every_site_uses_matlab_nan_semantics',
+      not _bare_maxmin,
+      'MATLAB max/min skip NaN; np.max/np.min propagate it, so one bad sample '
+      'swallows the result. Use _mmax/_mmin: %s' % _bare_maxmin[:6])
+
+# ...and the helpers must behave, on the cases that separate the two.
+_mmax = sicopr._get_PSDs__mmax
+_mmin = sicopr._get_PSDs__mmin
+_nan_probes = [([1.0, np.nan, 3.0], 3.0, 1.0),
+               ([1.0, 2.0, np.nan], 2.0, 1.0),
+               ([-5.0, np.nan, -1.0], -1.0, -5.0)]
+_nan_bad = ['%s -> max %s want %s, min %s want %s'
+            % (p, _mmax(np.array(p)), wx, _mmin(np.array(p)), wn)
+            for p, wx, wn in _nan_probes
+            if _mmax(np.array(p)) != wx or _mmin(np.array(p)) != wn]
+check('mmax_mmin_skip_nan_like_matlab',
+      not _nan_bad,
+      'checked against COM Octave: max([1 NaN 3]) is 3, min is 1. %s' % _nan_bad)
+# MATLAB orders complex by magnitude then angle; numpy by real part first.
+# Verified against COM Octave: max([3+4i, 5]) is 3+4i, min is 5.
+_cx = np.array([3 + 4j, 5 + 0j])
+check('mmax_mmin_order_complex_by_magnitude_then_angle',
+      _mmax(_cx) == (3 + 4j) and _mmin(_cx) == (5 + 0j),
+      'both elements have magnitude 5, so MATLAB breaks the tie on angle and '
+      'returns 3+4i for max and 5 for min; numpy compares the real part first '
+      'and returns 5 for max. Got max %s min %s' % (_mmax(_cx), _mmin(_cx)))
+
+check('mmax_mmin_return_nan_when_all_nan',
+      np.isnan(_mmax(np.array([np.nan, np.nan])))
+      and np.isnan(_mmin(np.array([np.nan, np.nan]))),
+      'MATLAB max of an all-NaN vector is NaN; the helpers must return it '
+      'quietly rather than warn or raise')
 
 
 # ---- conventions that happen to agree -------------------------------------

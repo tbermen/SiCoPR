@@ -23,6 +23,51 @@
 import math
 import numpy as np
 
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 def _mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's."""
     x = float(x)
@@ -152,7 +197,7 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     iv = np.asarray(input_vector, dtype=float).ravel()
     if len(iv) == 0:
         return _d_cpdf(BinSize, 0, 1)
-    if np.max(np.abs(iv)) > BinSize:
+    if _mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _d_cpdf(BinSize, 0, 1)
@@ -219,7 +264,7 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
     REF_PR = result.REF.PR
     FIT_PR = result.FIT.PR
 
-    ipeak = int(np.where(REF_PR == np.max(REF_PR))[0][0])  # 0-based
+    ipeak = int(np.where(REF_PR == _mmax(REF_PR))[0][0])  # 0-based
     NrangeUI = 1000
     range_end = min(ipeak + M * NrangeUI,
                     min(len(FIT_FIR), len(REF_FIR)) - 1)
@@ -250,7 +295,7 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
                 result.FOM_PDF = float(-pdf_x[idx_ber[0]])
             result.PDF = pdf
 
-    result.FOM = float(np.max([
+    result.FOM = float(_mmax([
         float(np.linalg.norm(ILN[im::M])) for im in range(M)
     ]))
 

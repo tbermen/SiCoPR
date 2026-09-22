@@ -13,6 +13,51 @@
 
 import numpy as np
 
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def _Tukey_Window(f, param, fr=None, fb=None):
     f = np.asarray(f, dtype=float)
@@ -294,7 +339,7 @@ def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
 
     abs_ir = np.abs(impulse_response)
     half = L // 2
-    candidates = np.where(abs_ir[:half] > np.max(abs_ir[:half]) * OP.EC_PULSE_TOL)[0]
+    candidates = np.where(abs_ir[:half] > _mmax(abs_ir[:half]) * OP.EC_PULSE_TOL)[0]
     start_ind = int(candidates[0]) if len(candidates) > 0 else 0
 
     err = np.inf
@@ -310,8 +355,8 @@ def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
         err_prev = err
         # fix B03-D6 (MATLAB line 11267): err = max(delta)/max(impulse_response) uses the
         # SIGNED max, not max(abs(.)).
-        peak = np.max(impulse_response)
-        err = np.max(delta) / peak if peak != 0 else 0.0
+        peak = _mmax(impulse_response)
+        err = _mmax(delta) / peak if peak != 0 else 0.0
         if err < OP.EC_REL_TOL or abs(err_prev - err) < OP.EC_DIFF_TOL:
             break
         impulse_response = ir_modified
@@ -324,7 +369,7 @@ def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
     if not OP.ENFORCE_CAUSALITY:
         impulse_response = original_impulse_response
 
-    ir_peak = np.max(np.abs(impulse_response))
+    ir_peak = _mmax(np.abs(impulse_response))
     last_arr = np.where(np.abs(impulse_response) > ir_peak * OP.impulse_response_truncation_threshold)[0]
     ir_last = int(last_arr[-1]) if len(last_arr) > 0 else L - 1
 

@@ -24,6 +24,51 @@
 
 import numpy as np
 
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 
 def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None, C=None):
     """Compute crosstalk noise (MATLAB lines 7844-7938).
@@ -47,7 +92,7 @@ def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None,
 
     # Build PWF_tx
     PWF_tx = np.ones(len(f), dtype=complex)
-    if np.max(upsampled_txffe) > 0:
+    if _mmax(upsampled_txffe) > 0:
         PWF_tx = np.zeros(len(f), dtype=complex)
         icur = int(np.argmax(upsampled_txffe))  # 0-based
         pre_calc = phase_memory is not None and len(phase_memory) > 0

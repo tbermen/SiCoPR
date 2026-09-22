@@ -12,6 +12,51 @@
 # ============================================================
 
 import numpy as np
+
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
 from scipy.signal import lfilter
 from types import SimpleNamespace
 
@@ -84,7 +129,7 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     if OP.INCLUDE_CTLE == 1:
         for k in range(param.num_s4p_files):
             ir = np.asarray(getattr(chdata[k], uneq_field), dtype=float)
-            ir_peak = float(np.max(np.abs(ir)))
+            ir_peak = float(_mmax(np.abs(ir)))
             last_arr = np.where(np.abs(ir) > ir_peak * OP.impulse_response_truncation_threshold)[0]
             if len(last_arr) > 0:
                 ir = ir[:int(last_arr[-1]) + 1]

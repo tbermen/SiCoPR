@@ -28,6 +28,51 @@
 
 import numpy as np
 
+def _mextreme_complex(a, take):
+    """MATLAB orders complex values by magnitude, then by angle; numpy orders
+    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
+    and 5 in numpy. take is -1 for max, 0 for min."""
+    f = np.asarray(a).ravel()
+    good = ~np.isnan(np.abs(f))
+    if not good.any():
+        return f[0]
+    g = f[good]
+    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
+
+
+def _mmax(a):
+    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
+    values are ordered by magnitude then angle.
+
+    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
+    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
+    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
+    case on np.max's faster path.
+    """
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, -1)
+    if a.dtype.kind != 'f':
+        return np.max(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.max(a)
+    return np.nanmax(a)
+
+
+def _mmin(a):
+    """MATLAB min(): the mirror of _mmax."""
+    a = np.asarray(a)
+    if a.dtype.kind == 'c':
+        return _mextreme_complex(a, 0)
+    if a.dtype.kind != 'f':
+        return np.min(a)
+    nan = np.isnan(a)
+    if not nan.any() or nan.all():
+        return np.min(a)
+    return np.nanmin(a)
+
+
 # --- persistent state (MATLAB `persistent`) and optional logging knob ---
 _ALS_STATE = {'adaptive_radius': None, 'no_improve_count': 0, 'initialized': False}
 ALS_LOG_CSV = None  # path -> enable per-candidate CSV logging (feature 3)
@@ -156,7 +201,7 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     # ---- ADAPTIVE shrink ----
     if FOM_history.size >= adaptation_window:
         recent = FOM_history[-adaptation_window:]
-        improvement = float(np.max(recent) - np.min(recent))
+        improvement = float(_mmax(recent) - _mmin(recent))
         if improvement < min_improvement_threshold:
             st['no_improve_count'] += 1
         else:
