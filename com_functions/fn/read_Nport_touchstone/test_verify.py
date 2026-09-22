@@ -79,3 +79,76 @@ def test_MA_format(tmp_path):
     sch, _, _ = read_Nport_touchstone(str(tmp_path / 'test.s2p'), [1, 2], 50.0)
     val = sch[0, 0, 1] if abs(sch[0, 0, 1]) > 0.1 else sch[0, 1, 0]
     assert abs(abs(val) - mag) < 1e-4
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave, on a Touchstone file the test writes itself -- synthetic,
+# so it ships, and no IEEE channel is involved.
+#
+# This reader has a defect history (Octave's textscan silently truncating large
+# files), and its coverage was 48%. The values below are COM Octave's own
+# read_Nport_touchstone on the same file, including the [1 3 2 4] port swap and
+# renormalisation to 100 ohms.
+# ---------------------------------------------------------------------------
+
+_TS_FREQ = [0.0, 1e9, 5e9, 10e9, 20e9]
+_OCT_ROW0_F0 = [0.05 + 0j,
+                0.019923893961834912 + 0.0017431148549531634j,
+                0.90 + 0j,
+                0.019923893961834912 + 0.0017431148549531634j]
+_OCT_ROW0_F1 = [0.050999300904618759 - 0.00026703415540239856j,
+                0.019923893961834912 + 0.0017431148549531634j,
+                0.88458511418682484 - 0.030890392868349451j,
+                0.019923893961834912 + 0.0017431148549531634j]
+
+
+def _write_touchstone(path):
+    """A 4-port in magnitude/angle form, 100 ohm reference, starting at DC."""
+    lines = ['! synthetic 4-port for unit testing', '# Hz S MA R 100']
+    for fi in _TS_FREQ:
+        row = ['%.6g' % fi]
+        for i in range(4):
+            for j in range(4):
+                if i == j:
+                    m, a = 0.05 + 0.001 * fi / 1e9, -3.0 * fi / 1e10
+                elif abs(i - j) == 1:
+                    m, a = 0.9 * np.exp(-fi / 6e10), -20.0 * fi / 1e10
+                else:
+                    m, a = 0.02, 5.0
+                row += ['%.9g' % m, '%.6g' % a]
+        lines.append(' '.join(row))
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return str(path)
+
+
+def test_matches_com_octave(tmp_path):
+    p = _write_touchstone(tmp_path / 'synth4.s4p')
+    out = read_Nport_touchstone(p, [1, 3, 2, 4], 100)
+    sch, fx = np.asarray(out[0]), np.asarray(out[1]).ravel()
+
+    assert list(fx) == _TS_FREQ, 'frequency axis is %r' % list(fx)
+    assert sch.shape == (len(_TS_FREQ), 4, 4), 'sch shape is %s' % (sch.shape,)
+    for k, want in ((0, _OCT_ROW0_F0), (1, _OCT_ROW0_F1)):
+        got = sch[k, 0, :]
+        worst = float(np.max(np.abs(got - np.array(want))))
+        assert worst < 1e-13, (
+            'sch[%d,0,:] worst difference from COM Octave is %.2e: %r'
+            % (k, worst, list(got)))
+
+
+def test_reads_every_frequency_in_the_file(tmp_path):
+    """The defect this reader is known for is silent truncation, so the row
+    count is worth asserting on its own."""
+    p = _write_touchstone(tmp_path / 'synth4.s4p')
+    fx = np.asarray(read_Nport_touchstone(p, [1, 3, 2, 4], 100)[1]).ravel()
+    assert fx.size == len(_TS_FREQ), (
+        'read %d frequencies from a %d-row file' % (fx.size, len(_TS_FREQ)))
+
+
+def test_port_order_actually_swaps(tmp_path):
+    """[1 3 2 4] must not return the same matrix as [1 2 3 4]."""
+    p = _write_touchstone(tmp_path / 'synth4.s4p')
+    a = np.asarray(read_Nport_touchstone(p, [1, 3, 2, 4], 100)[0])
+    b = np.asarray(read_Nport_touchstone(p, [1, 2, 3, 4], 100)[0])
+    assert not np.allclose(a, b), 'the port order had no effect on the matrix'
