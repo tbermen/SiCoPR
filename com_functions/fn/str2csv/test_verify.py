@@ -50,3 +50,24 @@ def test_comma_count():
     """n elements → n-1 commas."""
     result = str2csv(['a', 'b', 'c', 'd'])
     assert result.count(',') == 3
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave.
+# ---------------------------------------------------------------------------
+
+def test_matches_com_octave():
+    assert str2csv(['alpha', 'beta', 'gamma']) == 'alpha,beta,gamma'
+    assert str2csv(['only']) == 'only'
+
+
+def test_empty_input_returns_empty_where_matlab_errors():
+    """A deliberate difference, pinned so it stays deliberate.
+
+    MATLAB's str2csv indexes cell_tmp{2,end} unconditionally, so an empty cell
+    raises there. SiCoPR returns the empty string instead. Nothing in the
+    engine calls it with an empty list today; if that ever changes, MATLAB
+    would stop the run and SiCoPR would carry on with an empty field, so the
+    difference is worth being visible rather than incidental.
+    """
+    assert str2csv([]) == ''
