@@ -80,3 +80,69 @@ def test_mod_mm_different_from_mm():
     for ci in (cursor_mm, cursor_mod):
         if ci is not None:
             assert 0 <= ci < len(sbr)
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave. This function sets the sampling phase, so an error here
+# shifts every downstream quantity; none of the assertions above pinned a
+# value. MATLAB indexes from 1, so each reference value is stated and the
+# expected 0-based one derived from it.
+# ---------------------------------------------------------------------------
+
+_M, _PEAK = 32, 320
+_OCT_1BASED = {'cursor_i': 308, 'sbr_peak_i': 321, 'zxi': 268}
+
+
+def _pulse():
+    n = _M * 20
+    t = np.arange(n, dtype=float)
+    p = 0.60 * np.exp(-((t - _PEAK) / 9.0) ** 2)
+    p += 0.20 * np.exp(-((t - (_PEAK + _M)) / 14.0) ** 2)
+    p += 0.07 * np.exp(-((t - (_PEAK + 2 * _M)) / 18.0) ** 2)
+    p += 0.05 * np.exp(-((t - (_PEAK - _M)) / 14.0) ** 2)
+    p[t < _PEAK - 4 * _M] = 0.0
+    return p
+
+
+def _run():
+    p = _pulse()
+    par = SimpleNamespace(samples_per_ui=_M, ndfe=2,
+                          bmax=np.array([0.85, 0.85]))
+    return cursor_sample_index(p, par, SimpleNamespace(CDR='MM'),
+                               np.arange(len(p)))
+
+
+def _scalar(v):
+    a = np.asarray(v).ravel()
+    return int(a[0]) if a.size else None
+
+
+def test_matches_com_octave_one_based_minus_one():
+    cursor_i, no_zx, peak_i, zxi = _run()
+    got = {'cursor_i': _scalar(cursor_i), 'sbr_peak_i': _scalar(peak_i),
+           'zxi': _scalar(zxi)}
+    assert _scalar(no_zx) == 0, 'no_zero_crossing should be clear on this pulse'
+    for name, want1 in _OCT_1BASED.items():
+        assert got[name] == want1 - 1, (
+            '%s is %r; COM Octave gives %d 1-based, so %d is expected here'
+            % (name, got[name], want1, want1 - 1))
+
+
+def test_cursor_sits_before_the_peak_by_part_of_a_UI():
+    """The sampling phase is found from the zero crossing, not the peak, so it
+    must land below the peak but within one UI of it."""
+    cursor_i, _n, peak_i, _z = _run()
+    c, pk = _scalar(cursor_i), _scalar(peak_i)
+    assert 0 < pk - c < _M, 'cursor %d and peak %d are %d samples apart' % (c, pk, pk - c)
+
+
+def test_moving_the_pulse_moves_the_cursor():
+    """A shifted pulse must give a shifted cursor, or the value above is being
+    produced by something other than the input."""
+    p = _pulse()
+    shifted = np.roll(p, _M)
+    par = SimpleNamespace(samples_per_ui=_M, ndfe=2, bmax=np.array([0.85, 0.85]))
+    a = _scalar(_run()[0])
+    b = _scalar(cursor_sample_index(shifted, par, SimpleNamespace(CDR='MM'),
+                                    np.arange(len(shifted)))[0])
+    assert b != a, 'the cursor stayed at %d for a pulse shifted by one UI' % a
