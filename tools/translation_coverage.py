@@ -132,7 +132,7 @@ def survey(ref=DEFAULT_REF):
              'translated': os.path.isfile(impl) or name.lower() in inlined,
              'inlined_only': (not os.path.isfile(impl)) and name.lower() in inlined,
              'has_test': os.path.isfile(test),
-             'oracle': False, 'value_checks': 0, 'checks': 0}
+             'oracle': False, 'value_checks': 0, 'shape_checks': 0, 'checks': 0}
         if r['has_test']:
             src = io.open(test, encoding='utf-8', errors='replace').read()
             checks = re.findall(r'assert [^\n]*|pytest\.raises\([^\n]*'
@@ -140,6 +140,13 @@ def survey(ref=DEFAULT_REF):
             r['checks'] = len(checks)
             r['value_checks'] = sum(1 for c in checks
                                     if VALUE.search(c) and not STRUCTURAL.search(c))
+            # Shape is a SEPARATE question from value, not a weaker version of
+            # it. A test can pin every number and still never say how many of
+            # them there are, or what orientation they come back in -- and
+            # MATLAB distinguishes a row from a column where numpy's 1-D array
+            # does not. pdf_to_cdf is the worked example: MATLAB returns y as a
+            # column while yB, yT and x stay rows.
+            r['shape_checks'] = sum(1 for c in checks if STRUCTURAL.search(c))
             r['oracle'] = any(k in src for k in ORACLE_MARKS)
         rows.append(r)
     return rows
@@ -228,6 +235,15 @@ def main(argv=None):
           % (len(c_leaf), len(b_leaf), 100.0 * len(c_leaf) / len(b_leaf)))
     print('  against the reference  : %d of %d (%.0f%%)'
           % (n_oracle, len(bearing), 100.0 * n_oracle / len(bearing)))
+
+    # Shape is tracked separately: pinning every number says nothing about how
+    # many there are or which way round they come back.
+    n_shape = sum(1 for r in bearing if r['shape_checks'])
+    n_both = sum(1 for r in bearing if r['shape_checks'] and r['value_checks'])
+    print('shape also checked       : %d of %d (%.0f%%)'
+          % (n_shape, len(bearing), 100.0 * n_shape / len(bearing)))
+    print('  value AND shape        : %d of %d (%.0f%%)'
+          % (n_both, len(bearing), 100.0 * n_both / len(bearing)))
 
     if a.gaps:
         for kind in ('leaf', 'composite'):

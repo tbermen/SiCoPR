@@ -311,6 +311,18 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
         VVt = VV.T
         if VV.shape[0] == VV.shape[1]:
+            # HELD FOR REVIEW (2026-09-22) -- the singular case has no single
+            # right answer, because the two references disagree with each other:
+            #   MATLAB  VV'\FV'  warns "Matrix is singular to working precision"
+            #                    and returns Inf.
+            #   Octave  VV'\FV'  returns a minimum-norm least-squares solution.
+            #                    Measured: [1 2; 2 4] \ [1; 3] -> [0.28 0.56].
+            #   here             LinAlgError -> lstsq, i.e. the Octave answer.
+            # So this matches COM Octave and not the MATLAB reference, and the
+            # Octave oracle cannot adjudicate it. VV is built square at L87
+            # (zeros(num_taps,num_taps)), so the else-branch below is dead in
+            # both languages and only this path matters. Do not "fix" either way
+            # without a decision on which reference wins here.
             try:
                 C_solved = np.linalg.solve(VVt, FV)
             except np.linalg.LinAlgError:

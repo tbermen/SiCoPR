@@ -70,4 +70,22 @@ check('composite_baseline_is_current',
       '%d so the gain is held. Remaining: %s'
       % (BASELINE_WEAK_COMPOSITES, len(weak_comp), len(weak_comp), weak_comp))
 
+# Shape is its own axis. A test that pins every number still need not say how
+# many there are, nor which orientation they come back in -- and MATLAB
+# distinguishes a row from a column where a 1-D numpy array does not. Ratcheted
+# rather than gated outright, because the leaf gap has to close first.
+BASELINE_SHAPE_CHECKED = 116
+n_shape = sum(1 for r in bearing if r['shape_checks'])
+no_shape = sorted(r['function'] for r in bearing if not r['shape_checks'])
+
+check('shape_coverage_does_not_fall',
+      n_shape >= BASELINE_SHAPE_CHECKED,
+      'functions whose tests check a shape fell from %d to %d. Still unchecked: '
+      '%s' % (BASELINE_SHAPE_CHECKED, n_shape, no_shape))
+
+check('shape_baseline_is_current',
+      n_shape <= BASELINE_SHAPE_CHECKED,
+      'shape coverage rose from %d to %d -- raise BASELINE_SHAPE_CHECKED to %d '
+      'so the gain is held' % (BASELINE_SHAPE_CHECKED, n_shape, n_shape))
+
 finish()
