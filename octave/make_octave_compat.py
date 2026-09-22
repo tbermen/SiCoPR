@@ -18,15 +18,38 @@ release gets the fixes. This script carries them into the release files instead,
 as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
 
   replaced functions (octave/patches/<name>.m, whole subfunction swapped)
-    CDF_ev                  lookup() when available; the speed fix
+    CDF_ev                  lookup() when available; the speed fix. CORRECTED
+                            2026-09-22: lookup(x,v)+1 is NOT find(x>=v,1) --
+                            lookup returns the LAST i with x(i)<=v, so the +1
+                            answered one bin high on an exact grid hit and ran
+                            off the end above the axis. It disagreed with find
+                            on 32.35% of 27200 probes; the current form on none
     COM_CommandLine_Parse   OP.OCTAVE, detected or forced with 'Octave'
     read_Nport_touchstone   whole file tokenized and parsed with str2double;
                             Octave's textscan can stop part way through a
                             file, silently
     writecsv_transposed     fprintf, since Octave has no writecell
+    H_interp                interp1(...,'pchip') given 'extrap'. MATLAB
+                            extrapolates for pchip; Octave returns NA without
+                            the flag, so out-of-band points came back NA and
+                            propagated into H_new. No-op inside the range
+    OptFom_Calc_Noise_XC    ifft(X,n,'symmetric') spelled out. Octave has no
+                            such flag; the operation is to pad to n, keep the
+                            first n/2+1 entries and mirror by conjugate
+                            symmetry, which is written explicitly here. NOT the
+                            same as real(ifft([X zeros])), which is the ifft of
+                            the Hermitian PART and disagrees by a non-constant
+                            ratio
   added functions
     csvread4com             a .csv config reader without xlsread
     com_octave_accel_on     whether the optional compiled kernels are in use
+    erfcinv                 shadows Octave's, which is ~1.1e-9 relative out in
+                            the tail where COM lives (specBER 1e-5 to 1e-9);
+                            MATLAB's is ~1e-15. Starts from erfinv(1-y) and
+                            refines with Newton on erfc, which is accurate in
+                            both languages, so the result does not depend on
+                            the starting accuracy. Bit-identical to
+                            scipy.special.erfcinv on every value tested
   line substitutions
     main                    verLessThan guarded by the Octave test
     MMSE                    Rn = real(Rn) after the ifft
@@ -51,6 +74,35 @@ floating-tap search, which is a speed rewrite of the release's own. Nothing here
 changes a number under MATLAB: each edit is a no-op there, which is what makes
 the result a reference and not a fork. The speed items are checked under Octave,
 by running whole cases before and after and comparing every field of the result.
+
+THE RULE FOR ADDING A PATCH HERE
+-------------------------------
+MATLAB is the reference. Octave is a proxy, and where the two disagree the
+Octave side is what gets corrected, so that it keeps earning the right to be
+used as an oracle for the Python port. A known divergence left in place does
+not merely sit there: it silently caps the accuracy of every unit test written
+against this file, and nothing downstream can be pinned tighter than the
+divergence.
+
+So when a difference is found:
+
+  1. Determine what MATLAB does. Read the documentation for the exact
+     semantics, not the shape of the call.
+  2. Express that in Octave. "Octave has no such function or flag" is almost
+     never the end of it. ifft(X,n,'symmetric') looked unreachable and is four
+     lines of explicit mirroring; erfcinv looked like a reimplementation job
+     and is a Newton step on a function both languages get right. Reach for a
+     documented hole only after trying to spell the operation out.
+  3. Where the shim can be checked against something independent, check it.
+     erfcinv is bit-identical to scipy; the ifft construction was measured
+     against the alternative reading and they differ by a non-constant ratio.
+  4. Record the measurement here, with numbers, not an adjective.
+  5. Take the divergence to the COM ad hoc. A portability defect in this port
+     is ours; a defect in the reference is theirs, and the two need separating.
+
+A patch that changes a number under MATLAB is not allowed. Each edit is either
+a no-op there or a correction of something Octave does differently, which is
+what makes the result a reference implementation rather than a fork.
 
 The generated files are committed, like sicopr.py, so a reader needs no build
 step. `--check` is the test that they were not edited by hand.
@@ -83,7 +135,7 @@ VERSIONS = {
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
             'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp',
             'OptFom_Calc_Noise_XC']
-ADDED = ['csvread4com', 'com_octave_accel_on']
+ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv']
 
 # (label, old, new, expected count). Exact text; a miss is an error, never a
 # silent skip, because a substitution that no longer matches means the release

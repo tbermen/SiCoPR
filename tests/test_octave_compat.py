@@ -33,8 +33,17 @@ import os
 import subprocess
 import sys
 import tempfile
+import importlib.util as _ilu
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+# The generator owns the list of shims it adds; read it from there so this
+# test cannot disagree with the thing it is testing.
+_gen_spec = _ilu.spec_from_file_location(
+    '_mkoct', os.path.join(os.path.dirname(_HERE), 'octave',
+                           'make_octave_compat.py'))
+_gen = _ilu.module_from_spec(_gen_spec)
+_gen_spec.loader.exec_module(_gen)
+_ADDED = list(_gen.ADDED)
 _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.join(_ROOT, 'tools'))
@@ -85,13 +94,19 @@ for ver, (src_rel, dst_rel) in FILES.items():
     missing = [m for m in markers if m not in dst]
     check("%s_compat_file_carries_every_named_change" % ver, not missing,
           "%s lacks: %s" % (dst_rel, missing))
-    check("%s_compat_file_keeps_the_release_function_count_plus_two" % ver,
-          dst.count('\nfunction') + dst.startswith('function')
-          == src.count('\nfunction') + src.startswith('function') + 2,
-          "expected the release's functions plus csvread4com and com_octave_accel_on; "
-          "got %d vs %d"
-          % (dst.count('\nfunction') + dst.startswith('function'),
-             src.count('\nfunction') + src.startswith('function')))
+    # Derived from the generator's ADDED list, not hardcoded. This said "plus
+    # two" and broke the moment a third shim was added (erfcinv, 2026-09-22),
+    # which is a check measuring its own staleness rather than the file. The
+    # property that matters is that the compat file adds EXACTLY the named
+    # shims and loses none of the release's own functions.
+    _n_dst = dst.count('\nfunction') + dst.startswith('function')
+    _n_src = src.count('\nfunction') + src.startswith('function')
+    check("%s_compat_file_adds_exactly_the_named_shims" % ver,
+          _n_dst == _n_src + len(_ADDED),
+          "expected the release's %d functions plus the %d added shims (%s); "
+          "got %d. A mismatch means a shim was added without being named in "
+          "ADDED, or a release function went missing."
+          % (_n_src, len(_ADDED), ', '.join(_ADDED), _n_dst))
 
 # -------------------------------------------------------- octave parses
 from xlsx_to_com_mat import find_octave       # noqa: E402
