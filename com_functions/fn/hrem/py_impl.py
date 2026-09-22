@@ -23,8 +23,26 @@ def hrem(h, index, N_bf, bmaxg):
     Elements outside [index, index+N_bf-1] are unchanged.
     Middle segment: x → x - sign(x)*min(bmaxg, |x|)  (shrink toward zero).
     """
-    h = np.asarray(h, dtype=float).ravel()
+    h = np.asarray(h, dtype=float)
+    # MATLAB L7941 builds the result with HORIZONTAL concatenation, so h must
+    # be a row. A column makes the three pieces 1x1 / Nx1 / Mx1 and MATLAB
+    # errors "horizontal dimensions mismatch". Verified against Octave.
+    if h.ndim == 2 and h.shape[1] == 1 and h.shape[0] > 1:
+        raise ValueError(
+            'hrem: h must be a row vector. MATLAB concatenates the three '
+            'pieces horizontally, so a %dx1 column errors there with '
+            '"horizontal dimensions mismatch".' % h.shape[0])
+    h = h.ravel()
     i = int(index) - 1                        # convert 1-based → 0-based
+
+    # MATLAB indexes h(index:index+N_bf-1) directly, so running past the end
+    # errors ("h(7): out of bound 5"). A numpy slice silently returns a SHORTER
+    # segment, handing back a result of the wrong length instead.
+    if i < 0 or i + int(N_bf) > h.size:
+        raise IndexError(
+            'hrem: h(%d:%d) is out of bounds for a length-%d h; MATLAB errors '
+            'here rather than shortening the result.'
+            % (int(index), int(index) + int(N_bf) - 1, h.size))
 
     seg = h[i:i + N_bf]
     shrunk = seg - np.sign(seg) * np.minimum(bmaxg, np.abs(seg))  # MATLAB line 7941

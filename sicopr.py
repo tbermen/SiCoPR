@@ -7359,11 +7359,31 @@ def pam(data):
     """
     data = np.asarray(data, dtype=float).ravel()
     n_pairs = len(data) // 2
-    dataout = np.empty(n_pairs, dtype=float)
+
+    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
+    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
+    # auto-grow then fills it with 0 -- but only if some LATER index is
+    # assigned, because the array only ever grows to the highest assigned
+    # index. Verified against Octave:
+    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
+    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
+    #     pam([1]), pam([]) -> error: value on right hand side is undefined
+    assigned = {}
     for k in range(n_pairs):                    # k = i_py // 2
         i = k * 2                               # 0-based start of pair
-        key = (int(data[i]), int(data[i + 1]))  # exact ±1 comparison
-        dataout[k] = _PAM_MAP[key]
+        key = (data[i], data[i + 1])            # exact ±1 comparison
+        if key in _PAM_MAP:
+            assigned[k] = _PAM_MAP[key]
+
+    if not assigned:
+        raise ValueError(
+            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
+            'assigns dataout and errors with "Output argument dataout (and '
+            'maybe others) not assigned". Got %d sample(s).' % data.size)
+
+    dataout = np.zeros(max(assigned) + 1, dtype=float)
+    for k, v in assigned.items():
+        dataout[k] = v
     return dataout
 
 
@@ -9847,11 +9867,44 @@ def dfe_clipper(input_arr, max_threshold, min_threshold):
         lo = lo.ravel().reshape(-1, 1)
 
     out = inp.copy()
+    # Both masks are taken from the ORIGINAL input: MATLAB computes
+    # input<min_threshold, not clip_output<min_threshold, so with crossed
+    # bounds (min>max) an element can be raised after being lowered.
+    # Octave: dfe_clipper([0 1.5 3],[1 1 1],[2 2 2]) -> [2 2 1].
+    # NaN compares false both ways and passes through unclipped:
+    # dfe_clipper([1 NaN 3],[2 2 2],[0 0 0]) -> [1 NaN 2].
     mask_hi = inp > hi
     mask_lo = inp < lo
-    out[mask_hi] = hi[mask_hi]
-    out[mask_lo] = lo[mask_lo]
-    return out
+
+    # MATLAB writes max_threshold(input>max_threshold): a logical index into
+    # the THRESHOLD array. It errors as soon as a true position falls past the
+    # end of that array, so a scalar threshold works only while nothing beyond
+    # the first element is clipped. Octave:
+    #     dfe_clipper([3 1 1], 2, -9) -> [2 1 1]      (only position 1 true)
+    #     dfe_clipper([1 3 1], 2, -9) -> error: max_threshold(2): out of bound 1
+    # numpy would instead broadcast the scalar and return a plausible answer
+    # for a call MATLAB refuses.
+    # Assigning positionally rather than with a boolean mask is what makes
+    # that emulation possible: numpy requires a boolean index to match the
+    # array's shape exactly, while MATLAB only requires every TRUE position to
+    # be in range -- so a threshold that is scalar, or simply longer than the
+    # input, is legal there and a shape error here.
+    # MATLAB linear indexing is column-major; identical to C order for the
+    # vectors every caller passes, but order='F' keeps 2-D honest.
+    out_f = out.ravel(order='F')
+    for mask, thr, nm in ((mask_hi, hi, 'max_threshold'),
+                          (mask_lo, lo, 'min_threshold')):
+        where = np.nonzero(np.asarray(mask).ravel(order='F'))[0]
+        if where.size == 0:
+            continue
+        if where.max() >= thr.size:
+            raise IndexError(
+                'dfe_clipper: %s(%d): out of bound %d -- MATLAB indexes the '
+                'threshold array with the input-shaped logical mask, so it '
+                'errors here rather than broadcasting.'
+                % (nm, where.max() + 1, thr.size))
+        out_f[where] = thr.ravel(order='F')[where]
+    return out_f.reshape(inp.shape, order='F')
 
 
 
@@ -14315,8 +14368,26 @@ def hrem(h, index, N_bf, bmaxg):
     Elements outside [index, index+N_bf-1] are unchanged.
     Middle segment: x → x - sign(x)*min(bmaxg, |x|)  (shrink toward zero).
     """
-    h = np.asarray(h, dtype=float).ravel()
+    h = np.asarray(h, dtype=float)
+    # MATLAB L7941 builds the result with HORIZONTAL concatenation, so h must
+    # be a row. A column makes the three pieces 1x1 / Nx1 / Mx1 and MATLAB
+    # errors "horizontal dimensions mismatch". Verified against Octave.
+    if h.ndim == 2 and h.shape[1] == 1 and h.shape[0] > 1:
+        raise ValueError(
+            'hrem: h must be a row vector. MATLAB concatenates the three '
+            'pieces horizontally, so a %dx1 column errors there with '
+            '"horizontal dimensions mismatch".' % h.shape[0])
+    h = h.ravel()
     i = int(index) - 1                        # convert 1-based → 0-based
+
+    # MATLAB indexes h(index:index+N_bf-1) directly, so running past the end
+    # errors ("h(7): out of bound 5"). A numpy slice silently returns a SHORTER
+    # segment, handing back a result of the wrong length instead.
+    if i < 0 or i + int(N_bf) > h.size:
+        raise IndexError(
+            'hrem: h(%d:%d) is out of bounds for a length-%d h; MATLAB errors '
+            'here rather than shortening the result.'
+            % (int(index), int(index) + int(N_bf) - 1, h.size))
 
     seg = h[i:i + N_bf]
     shrunk = seg - np.sign(seg) * np.minimum(bmaxg, np.abs(seg))  # MATLAB line 7941

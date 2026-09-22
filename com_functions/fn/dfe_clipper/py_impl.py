@@ -36,11 +36,44 @@ def dfe_clipper(input_arr, max_threshold, min_threshold):
         lo = lo.ravel().reshape(-1, 1)
 
     out = inp.copy()
+    # Both masks are taken from the ORIGINAL input: MATLAB computes
+    # input<min_threshold, not clip_output<min_threshold, so with crossed
+    # bounds (min>max) an element can be raised after being lowered.
+    # Octave: dfe_clipper([0 1.5 3],[1 1 1],[2 2 2]) -> [2 2 1].
+    # NaN compares false both ways and passes through unclipped:
+    # dfe_clipper([1 NaN 3],[2 2 2],[0 0 0]) -> [1 NaN 2].
     mask_hi = inp > hi
     mask_lo = inp < lo
-    out[mask_hi] = hi[mask_hi]
-    out[mask_lo] = lo[mask_lo]
-    return out
+
+    # MATLAB writes max_threshold(input>max_threshold): a logical index into
+    # the THRESHOLD array. It errors as soon as a true position falls past the
+    # end of that array, so a scalar threshold works only while nothing beyond
+    # the first element is clipped. Octave:
+    #     dfe_clipper([3 1 1], 2, -9) -> [2 1 1]      (only position 1 true)
+    #     dfe_clipper([1 3 1], 2, -9) -> error: max_threshold(2): out of bound 1
+    # numpy would instead broadcast the scalar and return a plausible answer
+    # for a call MATLAB refuses.
+    # Assigning positionally rather than with a boolean mask is what makes
+    # that emulation possible: numpy requires a boolean index to match the
+    # array's shape exactly, while MATLAB only requires every TRUE position to
+    # be in range -- so a threshold that is scalar, or simply longer than the
+    # input, is legal there and a shape error here.
+    # MATLAB linear indexing is column-major; identical to C order for the
+    # vectors every caller passes, but order='F' keeps 2-D honest.
+    out_f = out.ravel(order='F')
+    for mask, thr, nm in ((mask_hi, hi, 'max_threshold'),
+                          (mask_lo, lo, 'min_threshold')):
+        where = np.nonzero(np.asarray(mask).ravel(order='F'))[0]
+        if where.size == 0:
+            continue
+        if where.max() >= thr.size:
+            raise IndexError(
+                'dfe_clipper: %s(%d): out of bound %d -- MATLAB indexes the '
+                'threshold array with the input-shaped logical mask, so it '
+                'errors here rather than broadcasting.'
+                % (nm, where.max() + 1, thr.size))
+        out_f[where] = thr.ravel(order='F')[where]
+    return out_f.reshape(inp.shape, order='F')
 
 
 if __name__ == "__main__":
