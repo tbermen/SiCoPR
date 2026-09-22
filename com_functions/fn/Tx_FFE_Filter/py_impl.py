@@ -32,15 +32,23 @@ def Tx_FFE_Filter(param=None, f=None, Use_Tx_FFE=None):
             Tx_FFE = np.asarray(param.Pkg_TXFFE_preset, dtype=float)
 
     if f is None:
-        f = np.arange(0, fb + 10e6, 10e6)
+        # MATLAB f=0:10e6:param.fb stops at or below fb. np.arange(0, fb+10e6, 10e6)
+        # overshoots by one point whenever fb is not a multiple of 10e6.
+        # COM Octave, fb=53.125e9: numel(0:10e6:fb) == 5313, np.arange gave 5314.
+        f = np.arange(int(np.floor(fb / 10e6)) + 1) * 10e6
     else:
         f = np.asarray(f, dtype=float)
 
     if Use_Tx_FFE != 0:
-        icur = int(np.argmax(Tx_FFE))          # 0-based; mirrors MATLAB 1-based icur
         H_TxFFE = np.zeros(len(f), dtype=complex)
-        for ii, c in enumerate(Tx_FFE):        # ii 0-based → (ii-icur) == MATLAB (ii-icur)
-            H_TxFFE += c * np.exp(-1j * 2 * np.pi * (ii - icur) * f / fb)
+        if Tx_FFE.size:
+            # MATLAB max([]) returns an empty icur and `for ii=1:0` runs zero
+            # times, so an empty preset leaves H_TxFFE at zeros(1,length(f)).
+            # np.argmax([]) raises instead.  COM Octave, Pkg_TXFFE_preset=[]:
+            # H_TxFFE == [0 0 0].
+            icur = int(np.argmax(Tx_FFE))      # 0-based; mirrors MATLAB 1-based icur
+            for ii, c in enumerate(Tx_FFE):    # ii 0-based → (ii-icur) == MATLAB (ii-icur)
+                H_TxFFE += c * np.exp(-1j * 2 * np.pi * (ii - icur) * f / fb)
     else:
         H_TxFFE = np.ones(len(f))
 

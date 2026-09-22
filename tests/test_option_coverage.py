@@ -73,7 +73,6 @@ KNOWN_UNCOVERED = frozenset([
     'OptFom_Compute_CTLE:CL120e',
     'OptFom_Update_BEST_Post_Optimize:CL120d',
     'OptFom_Update_BEST_Post_Optimize:CL120e',
-    'Output_Arg_Fill:CL120d',
     'Output_Arg_Fill:CL120e',
     'Output_Arg_Fill:R_diepad',
     'Output_Arg_Fill:levels',

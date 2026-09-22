@@ -517,51 +517,6 @@
    ]
   },
   {
-   "copy": "_OptFom_Calc_Hr__bessel_poly",
-   "helper": "bessel_poly",
-   "inlined_into": "OptFom_Calc_Hr",
-   "inlined_into_matlab_lines": [
-    2874,
-    2880
-   ]
-  },
-  {
-   "copy": "_OptFom_Calc_Hr__bessel_thomson",
-   "helper": "bessel_thomson",
-   "inlined_into": "OptFom_Calc_Hr",
-   "inlined_into_matlab_lines": [
-    2874,
-    2880
-   ]
-  },
-  {
-   "copy": "_OptFom_Calc_Hr__butterworth",
-   "helper": "butterworth",
-   "inlined_into": "OptFom_Calc_Hr",
-   "inlined_into_matlab_lines": [
-    2874,
-    2880
-   ]
-  },
-  {
-   "copy": "_OptFom_Calc_Hr__raised_cosine",
-   "helper": "raised_cosine",
-   "inlined_into": "OptFom_Calc_Hr",
-   "inlined_into_matlab_lines": [
-    2874,
-    2880
-   ]
-  },
-  {
-   "copy": "_OptFom_Calc_Hr__tukey_window",
-   "helper": "tukey_window",
-   "inlined_into": "OptFom_Calc_Hr",
-   "inlined_into_matlab_lines": [
-    2874,
-    2880
-   ]
-  },
-  {
    "copy": "_OptFom_Calculate_Settings__OptFom_Calc_Hr",
    "helper": "OptFom_Calc_Hr",
    "inlined_into": "OptFom_Calculate_Settings",
@@ -935,8 +890,8 @@
    ]
   },
   {
-   "copy": "_Raised_Cosine_Filter__tukey_window",
-   "helper": "tukey_window",
+   "copy": "_Raised_Cosine_Filter__length",
+   "helper": "length",
    "inlined_into": "Raised_Cosine_Filter",
    "inlined_into_matlab_lines": [
     4362,
@@ -1647,6 +1602,42 @@
    "canonical_matlab_lines": [
     11076,
     11146
+   ]
+  },
+  {
+   "copy": "_get_TD_files__dirname",
+   "helper": "dirname",
+   "inlined_into": "get_TD_files",
+   "inlined_into_matlab_lines": [
+    7221,
+    7319
+   ]
+  },
+  {
+   "copy": "_get_TD_files__fileparts",
+   "helper": "fileparts",
+   "inlined_into": "get_TD_files",
+   "inlined_into_matlab_lines": [
+    7221,
+    7319
+   ]
+  },
+  {
+   "copy": "_get_TD_files__fullfile",
+   "helper": "fullfile",
+   "inlined_into": "get_TD_files",
+   "inlined_into_matlab_lines": [
+    7221,
+    7319
+   ]
+  },
+  {
+   "copy": "_get_TD_files__one",
+   "helper": "one",
+   "inlined_into": "get_TD_files",
+   "inlined_into_matlab_lines": [
+    7221,
+    7319
    ]
   },
   {
@@ -2395,6 +2386,33 @@
    "inlined_into_matlab_lines": [
     11384,
     11407
+   ]
+  },
+  {
+   "copy": "_xls_parameter_txffe__colon",
+   "helper": "colon",
+   "inlined_into": "xls_parameter_txffe",
+   "inlined_into_matlab_lines": [
+    11494,
+    11515
+   ]
+  },
+  {
+   "copy": "_xls_parameter_txffe__matlab_eval",
+   "helper": "matlab_eval",
+   "inlined_into": "xls_parameter_txffe",
+   "inlined_into_matlab_lines": [
+    11494,
+    11515
+   ]
+  },
+  {
+   "copy": "_xls_parameter_txffe__matlab_matrix",
+   "helper": "matlab_matrix",
+   "inlined_into": "xls_parameter_txffe",
+   "inlined_into_matlab_lines": [
+    11494,
+    11515
    ]
   }
  ]

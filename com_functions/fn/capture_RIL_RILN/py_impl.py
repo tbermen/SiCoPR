@@ -11,7 +11,7 @@
 #
 # Quadratic for rho_port2:
 #   a*rho^2 + b*rho + c = 0 → solutions via quadratic formula.
-#   Select solution with Re(Z) > 0.
+#   Exactly one solution must give Re(Z) > 0; MATLAB errors otherwise (L5211).
 # rho_port1 = conj(Sdd11 + rho_port2*Sdd21*Sdd12/(1 - rho_port2*Sdd22))
 # RIL formula: see equations in function body.
 # ============================================================
@@ -84,8 +84,15 @@ def capture_RIL_RILN(chdata):
         elif re2 > 0 and re1 <= 0:
             rho_port2[k] = solution_2[k]
         else:
-            # Ambiguous: pick solution with smaller |rho|
-            rho_port2[k] = solution_1[k] if abs(solution_1[k]) <= abs(solution_2[k]) else solution_2[k]
+            # MATLAB raises here (L5211); it does NOT choose between them.
+            # Picking the smaller |rho| continued past a point the reference
+            # refuses, and every number downstream of it was unverifiable --
+            # in the S11=S22=0 case it was literally NaN.
+            # COM Octave: S11=S22=0, S21=S12 lossy -> "error: An odd case has
+            # occured. Please contact the tool developer."; likewise for
+            # S11=S22=0.5 with S21=S12=sqrt(0.75).
+            raise ValueError('An odd case has occured. '
+                             'Please contact the tool developer.')
 
     rho_port1 = np.conj(S11 + (rho_port2 * S21 * S12) / (1 - rho_port2 * S22))
 
@@ -102,11 +109,18 @@ def capture_RIL_RILN(chdata):
 
     RIL = numer / denom
     RILN = RIL - S21
-    RILN_dB = 20 * np.log10(np.abs(S21) + np.finfo(float).eps) - 20 * np.log10(np.abs(RIL) + np.finfo(float).eps)
+    # No epsilon floor: MATLAB is 20*log10(abs(Sdd21)) - 20*log10(abs(RIL)).
+    # Adding eps moved every value, not just the zeros -- d(20*log10 x)/dx is
+    # 20/(x*ln10), so at |RIL| ~ 0.8 an eps shifts the dB by ~2.4e-15, and the
+    # measured gap on an ordinary lossy 2-port was 4.44e-15 dB. At a true zero
+    # it replaced the reference's answer outright.
+    # COM Octave, S21=S12=0: RIL_dB = -Inf (the eps form gave -313.07) and
+    # RILN_dB = NaN (-Inf minus -Inf; the eps form gave 0).
+    RILN_dB = 20 * np.log10(np.abs(S21)) - 20 * np.log10(np.abs(RIL))
 
     rs = SimpleNamespace()
     rs.RIL = RIL
-    rs.RIL_dB = 20 * np.log10(np.abs(RIL) + np.finfo(float).eps)
+    rs.RIL_dB = 20 * np.log10(np.abs(RIL))
     rs.RILN = RILN
     rs.RILN_dB = RILN_dB
     rs.Z_port1 = Z_port1

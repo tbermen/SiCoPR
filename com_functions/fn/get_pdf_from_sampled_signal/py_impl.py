@@ -56,13 +56,17 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     BinSize: PDF grid spacing
     FAST_NOISE_CONV: when set, the small (|tap|<0.001) residual taps are approximated as a
         single Gaussian (normal_dist) and convolved in once, instead of one delta-set
-        convolution per tap.  MATLAB calls conv_fct_TEST here, which is UNDEFINED in the
-        reference (the commented-out L7516 shows conv_fct was the intent) -> we use conv_fct.
-        This is an optional speed approximation; FAST_NOISE_CONV=0 (default) is exact.
+        convolution per tap.  It ends in a call to conv_fct_TEST, which is UNDEFINED in
+        the reference, so the reference cannot complete this branch -- see below.
+        Every call site in the reference hard-codes FAST_NOISE_CONV=0.
     """
     input_vector = np.asarray(input_vector, dtype=float).ravel()
 
-    if _mmax(np.abs(input_vector)) > BinSize:
+    # MATLAB max([]) is [], and `if []` is false, so an empty input falls
+    # straight through to the delta pdf.  COM Octave:
+    # get_pdf_from_sampled_signal([],4,1e-3) -> pdf.Min 0, one bin, y=1.
+    # np.max raised "zero-size array to reduction operation maximum".
+    if input_vector.size and _mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
         return _d_cpdf(BinSize, 0, 1)
@@ -81,7 +85,9 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
             sig_res = float(np.linalg.norm(input_vector[first_small + 1:]))
             res_pdf = _normal_dist(sig_res, 5, BinSize)
             input_vector = input_vector[:first_small + 1]
-        # (no small taps -> nothing to approximate; keep all taps exact)
+        # (MATLAB has no such guard: with no small tap, find(...) is empty and
+        # the two slices come out empty too.  Unobservable, because the branch
+        # cannot return -- see the raise below.)
 
     # Equation 93A-39: values uniformly spaced in [-1, 1]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
@@ -93,7 +99,18 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
         pdfn = _Init_PDF_Fast(empty_pdf, np.abs(v) * values, prob)
         pdf = _conv_fct(pdf, pdfn)
 
-    if res_pdf is not None:  # MATLAB L7515-7517 (conv_fct_TEST -> conv_fct)
-        pdf = _conv_fct(pdf, res_pdf)
+    if FAST_NOISE_CONV:
+        # MATLAB L7515-7517 calls conv_fct_TEST, which is defined NOWHERE in
+        # the reference, so this branch always stops here.  COM Octave,
+        # get_pdf_from_sampled_signal([0.03 0.02], 4, 1e-3, 1):
+        #   "error: 'conv_fct_TEST' undefined near line 45".
+        # Substituting conv_fct (the commented-out L7516) produced a pdf the
+        # reference cannot produce, and so cannot be checked against.  The
+        # early return above still runs first, exactly as in MATLAB: with
+        # every tap below BinSize, or none at all, FAST_NOISE_CONV=1 returns
+        # the delta pdf without error.
+        raise NameError(
+            "get_pdf_from_sampled_signal: 'conv_fct_TEST' undefined -- "
+            'FAST_NOISE_CONV is not implemented in the COM reference')
 
     return pdf

@@ -47,8 +47,17 @@ def floating_taps_1sttest(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, COOP=0):
     """
     hisi = np.asarray(hisi, dtype=float).ravel()
     if N_bg == 0:
-        bmax = np.zeros(len(hisi))
-        return bmax, np.array([], dtype=int)
+        # MATLAB returns on `bmax=0` -- the SCALAR zero, not a vector, and
+        # floating_tap_locations is never assigned.  This port always hands
+        # back both, which is the two-output call.  COM Octave:
+        #   [bmax,locs] = ... N_bg=0 -> "error: element number 2 undefined in
+        #                                return list"
+        #   bmax        = ... N_bg=0 -> 0   (1x1)
+        # The old code returned zeros(len(hisi)) and an empty location list,
+        # neither of which the reference ever produces.
+        raise ValueError('floating_taps_1sttest: N_bg=0 returns bmax=0 with '
+                         'floating_tap_locations unassigned; MATLAB errors on '
+                         'a two-output call ("element number 2 undefined")')
 
     # MATLAB end1 = N_bmax - N_bf (1-based); Python end1_py = N_bmax - N_bf - 1 (0-based inclusive)
     # MATLAB loop: ig1 = N_b+1:end1  (1-based)  → Python: range(N_b, N_bmax - N_bf)
@@ -65,11 +74,17 @@ def floating_taps_1sttest(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, COOP=0):
         end2_py = N_bmax - N_bf
         end3_py = N_bmax - N_bf
 
+    # MATLAB seeds best_ig1/2/3 = -1 and leaves best_hcap unset, so a group
+    # that never improves on best_sigma is NOT silently placed at N_b: the
+    # final bmax(best_ig:..) is an illegal subscript and MATLAB stops.
+    # COM Octave, hisi 20 taps, N_b=2 N_bf=3 N_bmax=16, bmaxg=0 (so no
+    # iteration can reduce the norm), N_bg=2 sequential:
+    #   "error: bmax(-1): subscripts must be either integers 1 to (2^63)-1".
+    # The pre-seeded N_b answered with a bank at 2..4 that was never evaluated.
+    UNSET = -1
     best_sigma = np.inf
-    best_ig1 = N_b
-    best_ig2 = N_b
-    best_ig3 = N_b
-    best_hcap = hisi.copy()
+    best_ig1 = best_ig2 = best_ig3 = UNSET
+    best_hcap = None
 
     if COOP:
         for ig1 in range(N_b, end1_py):
@@ -92,6 +107,14 @@ def floating_taps_1sttest(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, COOP=0):
                 best_sigma = sigma
                 best_ig1 = ig1
                 best_hcap = hcap
+        # MATLAB reads best_hcap here unconditionally.  When the ig1 loop
+        # never ran (N_bmax-N_bf < N_b+1) or every sigma was NaN, nothing
+        # assigned it.  COM Octave, N_b=6 N_bf=3 N_bmax=8 and again with a NaN
+        # in hisi: "error: 'best_hcap' undefined near line 69".  Python carried
+        # on from a copy of hisi and returned a bank it had never scored.
+        if best_hcap is None:
+            raise ValueError("floating_taps_1sttest: 'best_hcap' undefined -- "
+                             'no group improved on the initial sigma')
         hisi = best_hcap
         # Then best ig2
         for ig2 in range(N_b, end2_py):
@@ -110,6 +133,15 @@ def floating_taps_1sttest(hisi, N_b, N_bf, N_bg, N_bmax, bmaxg, COOP=0):
                 best_sigma = sigma
                 best_ig3 = ig3
                 best_hcap = hcap
+
+    # bmax(best_ig:...) with an unset best_ig is bmax(-1) in MATLAB, which
+    # stops.  A negative Python slice bound would instead index from the END
+    # of bmax and write the bank in the wrong place.
+    for used, ig in ((1, best_ig1), (2, best_ig2), (3, best_ig3)):
+        if used <= N_bg and ig == UNSET:
+            raise IndexError(
+                'floating_taps_1sttest: bmax(-1): group %d was never selected, '
+                'so its location is unset' % used)
 
     bmax = np.zeros(N_bmax)
     if N_bg == 1:

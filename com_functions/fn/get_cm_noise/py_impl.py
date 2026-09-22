@@ -65,7 +65,12 @@ from types import SimpleNamespace
 def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     """Build PDF from sampled-signal ISI via successive delta-set convolutions."""
     input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if _mmax(np.abs(input_vector)) <= BinSize:
+    # MATLAB guards with `if max(abs(input_vector)) > BinSize ... else <delta>`.
+    # On an empty vector max([]) is [] and `if []` is false, so MATLAB takes the
+    # else branch; np.max raises on an empty array instead.  Reachable whenever
+    # M exceeds the sample count, because then the late sub-phases are empty.
+    # COM Octave, get_cm_noise(5, PR(1:3), 4, 1e-5, OP): results.CMn == 0.0256.
+    if input_vector.size == 0 or _mmax(np.abs(input_vector)) <= BinSize:
         return _d_cpdf(BinSize, 0.0, 1.0)
     input_vector = input_vector[np.abs(input_vector) > BinSize]
     input_vector[np.abs(input_vector) < BinSize] = 0.0
@@ -73,8 +78,12 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     order = np.argsort(np.abs(input_vector), kind='stable')[::-1]
     input_vector = np.abs(input_vector)[order] * b[order]
 
-    values = 2 * np.arange(L) / (L - 1) - 1   # Eq. 93A-39
-    prob = np.ones(L) / L
+    # MATLAB ones(1,L) accepts a non-integer-typed L; np.ones does not, and
+    # param.levels arrives as a float (COM_FD_to_TD passes param.levels
+    # straight through), so np.ones(4.0) raised TypeError on the real path.
+    nlev = int(L)
+    values = 2 * np.arange(nlev) / (L - 1) - 1   # Eq. 93A-39
+    prob = np.ones(nlev) / L
 
     pdf = _d_cpdf(BinSize, 0.0, 1.0)
     empty_pdf = SimpleNamespace(**vars(pdf))
@@ -105,6 +114,13 @@ def get_cm_noise(M, PR, L, BER, OP=None):
     PR = np.asarray(PR, dtype=float).ravel()
     BinSize = 1e-5
 
+    if M < 1:
+        # MATLAB `for ki=1:M` runs zero times, so `results` is never created and
+        # the caller's assignment errors out.  COM Octave, M=0:
+        # "error: value on right hand side of assignment is undefined".
+        raise ValueError('get_cm_noise: M must be at least 1 '
+                         '(MATLAB leaves results undefined)')
+
     PR_fom_best = -np.inf
     results = SimpleNamespace()
 
@@ -115,11 +131,15 @@ def get_cm_noise(M, PR, L, BER, OP=None):
         else:
             testpdf = _get_pdf_from_sampled_signal(tps, L, BinSize * 10)
             cdf_test = np.cumsum(testpdf.y)
-            first_idx = int(np.argmax(cdf_test >= BER))
-            PRn_test = float(-testpdf.x[first_idx])
-            PR_fom = PRn_test
+            hit = np.flatnonzero(cdf_test >= BER)
+            # MATLAB find(...,1,'first') returns empty when the CDF never
+            # reaches BER, so PRn_test is empty and `if PR_fom > PR_fom_best`
+            # is false -- the best is left alone.  np.argmax on an all-false
+            # mask returns 0, which invented -testpdf.x(1) as the answer.
+            # COM Octave, BER=2: results.CMn == -Inf (Python gave 0.0701).
+            PR_fom = None if hit.size == 0 else float(-testpdf.x[hit[0]])
 
-        if PR_fom > PR_fom_best:
+        if PR_fom is not None and PR_fom > PR_fom_best:
             PR_fom_best = PR_fom
 
         if not OP.CM_norm_test:

@@ -86,8 +86,12 @@ def _get_pdf_b(iv, L, BinSize):
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
-    values = 2.0 * np.arange(L) / (L - 1) - 1.0
-    prob = np.ones(L) / L
+    # MATLAB ones(1,L) accepts a non-integer-typed L; np.ones does not, and
+    # param.levels arrives as a float, so np.ones(4.0) raised TypeError for
+    # every run with OP.nburst > 0.
+    nlev = int(L)
+    values = 2.0 * np.arange(nlev) / (L - 1) - 1.0
+    prob = np.ones(nlev) / L
     pdf = _d_cpdf_b(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
@@ -165,7 +169,12 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
     try:
         uneq_ir = np.asarray(chdata[0].uneq_imp_response, dtype=float)
         t_arr = np.asarray(chdata[0].t, dtype=float)
-        output_args.uneq_FIR_peak_time = float(t_arr[uneq_ir == _mmax(uneq_ir)][0])
+        # MATLAB t(uneq_imp_response==max(...)) returns EVERY tying sample time,
+        # not just the first.  COM Octave, an impulse response whose peak value
+        # occurs twice: uneq_FIR_peak_time == [1.2e-11 3.2e-11]; Python reported
+        # only 1.2e-11.  A single hit stays a scalar, as MATLAB's 1x1 is.
+        hits = t_arr[uneq_ir == _mmax(uneq_ir)]
+        output_args.uneq_FIR_peak_time = float(hits[0]) if hits.size == 1 else hits
     except Exception:
         output_args.uneq_FIR_peak_time = []
 
@@ -204,15 +213,17 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
         output_args.MDFEXT_ICN_92_47_mV = 0
         output_args.equivalent_ICN_assuming_PDF_is_Gaussian_mV = 0
 
-    if COM_SNR_Struct.A_s != 0 and Noise_Struct.peak_interference_at_BER != 0:
-        ber = float(param.specBER)
-        output_args.SNR_ISI_XTK_normalized_1_sigma = 20 * np.log10(
-            COM_SNR_Struct.A_s
-            / (Noise_Struct.peak_interference_at_BER / np.sqrt(2)
-               / float(np.real(np.arccos(1 - 2 * ber) if False else 0) or
-                       _erfc_inv_approx(2 * ber))))
-    else:
-        output_args.SNR_ISI_XTK_normalized_1_sigma = []
+    # MATLAB wraps this block in `if 1`, so the field is always written -- the
+    # degenerate cases give an infinity rather than no answer.  COM Octave:
+    #   Noise_Struct.peak_interference_at_BER = 0 -> SNR_... == +Inf
+    #   COM_SNR_Struct.A_s = 0                    -> SNR_... == -Inf
+    # The `if A_s != 0 and peak != 0` guard returned [] for both.
+    ber = float(param.specBER)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        denom = (np.float64(Noise_Struct.peak_interference_at_BER) / np.sqrt(2)
+                 / _erfc_inv_approx(2 * ber))
+        output_args.SNR_ISI_XTK_normalized_1_sigma = float(
+            20 * np.log10(np.float64(COM_SNR_Struct.A_s) / denom))
     output_args.SNR_ISI_est = fom_result.SNR_ISI
     output_args.Pmax_by_Vf_est = fom_result.Pmax_by_Vf
     output_args.Tr_measured_from_step_ps = fom_result.Tr_measured_from_step / 1e-12
@@ -250,7 +261,11 @@ def Output_Arg_Fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, 
     output_args.TXLE_taps = fom_result.txffe
     taps = np.asarray(fom_result.txffe).ravel()
     if len(taps) >= 3:
-        output_args.Pre2Pmax = float(-taps[-3] / taps[-2]) if taps[-2] != 0 else []
+        # MATLAB divides unconditionally.  COM Octave, txffe=[-0.02 0 -0.08]:
+        # Pre2Pmax == Inf, where the `if taps[-2] != 0` guard returned [].
+        with np.errstate(divide='ignore', invalid='ignore'):
+            output_args.Pre2Pmax = float(-np.float64(taps[-3])
+                                         / np.float64(taps[-2]))
     else:
         output_args.Pre2Pmax = []
 

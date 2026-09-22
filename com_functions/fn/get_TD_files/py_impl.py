@@ -3,8 +3,11 @@
 # MATLAB lines: 7221–7319
 # ============================================================
 # file_list: list of file path strings (no GUI mode; OP.DISPLAY_WINDOW path not implemented).
-# filepath/basename/fileext: Python os.path.splitext + os.path.split equivalent.
-# chdata[i].filename: full path.
+# filepath/basename/fileext come from _fileparts, MATLAB's fileparts, which is
+#   NOT os.path.split + os.path.splitext in two places -- see _fileparts and
+#   _dirname below.
+# chdata[i].filename: fullfile(filepath, [basename fileext]), i.e. the path
+#   REBUILT, not the caller's string.
 # chdata[i].base: RUNTAG + ' ' + dirname + '--' + basename.
 # chdata[i].type: 'THRU' (index 0), 'FEXT' (1..num_fext), 'NEXT' (num_fext+1..).
 # chdata[i].ftr: param.fb * param.f_v/f_f/f_n.
@@ -17,6 +20,69 @@ import os
 from types import SimpleNamespace
 
 
+def _fileparts(p):
+    """MATLAB fileparts(): (path, name, ext).
+
+    Splits at the LAST separator and drops exactly that one separator, where
+    os.path.split() strips ALL trailing separators from the head. The
+    difference shows on a doubled separator:
+      COM Octave  fileparts('C:\\data\\chan\\\\thru.s4p')
+        -> path 'C:\\data\\chan\\'  (os.path.split gives 'C:\\data\\chan')
+    and that trailing separator is what makes _dirname come out empty, as
+    MATLAB reports it.
+    """
+    i = max(p.rfind('\\'), p.rfind('/'))
+    if i >= 0:
+        head, tail = p[:i], p[i + 1:]
+    elif len(p) == 2 and p[1] == ':':
+        head, tail = p, ''      # a bare drive is all path and no name
+    else:
+        head, tail = '', p
+    name, ext = os.path.splitext(tail)
+    return head, name, ext
+
+
+def _dirname(filepath):
+    """MATLAB `[~, dirname] = fileparts(filepath)` -- the NAME of the directory.
+
+    fileparts splits an extension off the last component whether or not that
+    component is a file, so a dotted directory loses everything from its last
+    dot.  os.path.basename does not, and chdata.base (which names every report
+    file) carried the difference.
+      COM Octave  'C:\\data\\rev1.2\\thru.s4p' -> base 'RUN1 rev1--thru'
+                  (os.path.basename gave 'RUN1 rev1.2--thru')
+      COM Octave  'C:\\data\\chan\\\\thru.s4p' -> base 'RUN1 --thru'
+                  (os.path.basename gave 'RUN1 chan--thru')
+    """
+    return _fileparts(filepath)[1]
+
+
+def _fullfile(head, tail):
+    """MATLAB fullfile(): join with filesep, collapsing a duplicate separator,
+    and on Windows rewrite every forward slash as a backslash.
+
+    COM Octave  fullfile('C:/data/chan', 'thru.s4p')
+      -> 'C:\\data\\chan\\thru.s4p'   (os.path.join gives 'C:/data/chan\\thru.s4p')
+    """
+    if not head:
+        return tail
+    sep = os.sep
+    p = head + ('' if head.endswith(('\\', '/')) else sep) + tail
+    if sep == '\\':
+        p = p.replace('/', '\\')
+    return p
+
+
+def _one(fpath, runtag):
+    """Common per-file work: filename, ext and base, as MATLAB builds them."""
+    filepath, basename, fileext = _fileparts(fpath)
+    ch = SimpleNamespace()
+    ch.filename = _fullfile(filepath, basename + fileext)
+    ch.ext = fileext
+    ch.base = '%s %s--%s' % (runtag, _dirname(filepath), basename)
+    return ch
+
+
 def get_TD_files(param, OP, num_fext, num_next, file_list):
     """Parse file names and build chdata structure (MATLAB lines 7221-7319).
 
@@ -26,20 +92,10 @@ def get_TD_files(param, OP, num_fext, num_next, file_list):
         raise NotImplementedError('get_TD_files: GUI file selection not supported; provide file_list')
 
     chdata = []
-    nxi = 0  # 0-based index
-
-    # THRU file (index 0 in MATLAB = 0 in Python)
-    fpath = str(file_list[0]).replace('\\', os.sep)
-    filepath = os.path.dirname(fpath)
-    basename_ext = os.path.basename(fpath)
-    basename, fileext = os.path.splitext(basename_ext)
-    dirname = os.path.basename(filepath) if filepath else ''
     runtag = str(getattr(OP, 'RUNTAG', ''))
 
-    ch = SimpleNamespace()
-    ch.filename = fpath
-    ch.ext = fileext
-    ch.base = f'{runtag} {dirname}--{basename}'
+    # THRU file (index 0 in MATLAB = 0 in Python)
+    ch = _one(str(file_list[0]).replace('\\', os.sep), runtag)
     ch.type = 'THRU'
     ch.ftr = float(param.fb) * float(param.f_v)
     chdata.append(ch)
@@ -51,14 +107,7 @@ def get_TD_files(param, OP, num_fext, num_next, file_list):
         fi = nxi + i
         if fi >= len(file_list):
             raise ValueError(f'Not enough FEXT files; expected {num_fext}')
-        fpath_i = str(file_list[fi]).replace('\\', os.sep)
-        fp_i = os.path.dirname(fpath_i)
-        bn_i, ext_i = os.path.splitext(os.path.basename(fpath_i))
-        dn_i = os.path.basename(fp_i) if fp_i else ''
-        ch_i = SimpleNamespace()
-        ch_i.filename = fpath_i
-        ch_i.ext = ext_i
-        ch_i.base = f'{runtag} {dn_i}--{bn_i}'
+        ch_i = _one(str(file_list[fi]).replace('\\', os.sep), runtag)
         ch_i.ftr = float(param.fb) * float(param.f_f)
         ch_i.type = 'FEXT'
         chdata.append(ch_i)
@@ -70,14 +119,7 @@ def get_TD_files(param, OP, num_fext, num_next, file_list):
         fi = nxi + i
         if fi >= len(file_list):
             raise ValueError(f'Not enough NEXT files; expected {num_next}')
-        fpath_i = str(file_list[fi]).replace('\\', os.sep)
-        fp_i = os.path.dirname(fpath_i)
-        bn_i, ext_i = os.path.splitext(os.path.basename(fpath_i))
-        dn_i = os.path.basename(fp_i) if fp_i else ''
-        ch_i = SimpleNamespace()
-        ch_i.filename = fpath_i
-        ch_i.ext = ext_i
-        ch_i.base = f'{runtag} {dn_i}--{bn_i}'
+        ch_i = _one(str(file_list[fi]).replace('\\', os.sep), runtag)
         ch_i.ftr = float(param.fb) * float(param.f_n)
         ch_i.type = 'NEXT'
         chdata.append(ch_i)

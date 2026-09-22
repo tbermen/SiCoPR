@@ -64,7 +64,12 @@ def parameter_size_adjustment(param, OP):
     make_length_DCHP = ['f_HP']
     make_length_ncases = ['AC_CM_RMS']
 
-    ncases = np.asarray(param.z_p_tx_cases).shape[0]
+    # MATLAB [ncases, mele] = size(param.z_p_tx_cases).  Everything in MATLAB is
+    # at least 2-D, so a row vector is 1xN and counts as ONE case; a 1-D numpy
+    # array of length N gave N.  COM Octave, z_p_tx_cases=[1 2 3]:
+    # numel(param.AC_CM_RMS) == 1 after the call, where Python expanded it to 3.
+    ztx = np.asarray(param.z_p_tx_cases)
+    ncases = ztx.shape[0] if ztx.ndim >= 2 else 1
 
     pkg_sel = np.asarray(OP.pkg_len_select)
     if OP.WC_PORTZ:
@@ -72,6 +77,12 @@ def parameter_size_adjustment(param, OP):
     else:
         PORTZ_mult = np.ones(int(_mmax(pkg_sel)), dtype=float)
 
+    # A missing field is a divergence that is deliberately left open: MATLAB
+    # `numel(param.(name))` errors ("structure has no member 'tfx'", confirmed
+    # under COM Octave) where these loops skip.  Making Python raise would break
+    # every run today, because read_ParamConfigFile never sets param.C_0 /
+    # param.C_1 (MATLAB com_ieee8023_4p16p0.m L10379-10380) -- the skip is what
+    # hides that gap.  Close it there first, then turn these into errors.
     for field in make_length2:
         raw = getattr(param, field, None)
         if raw is None:

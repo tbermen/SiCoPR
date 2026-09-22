@@ -72,3 +72,76 @@ def test_returns_param():
     param = _param()
     result = parameter_size_adjustment(param, _op())
     assert result is param
+
+
+# ============================================================
+# COM Octave oracle values (tools/octave_oracle.py, 4p16p0 compat file,
+# parameter_size_adjustment).  Generated 2026-09-22.
+# ============================================================
+
+
+def _oracle_param():
+    """Every field the function touches, each a scalar so each gets expanded."""
+    names = ['C_pkg_board', 'C_diepad', 'L_comp', 'C_bump', 'tfx', 'C_v', 'C_0',
+             'C_1', 'pkg_Z_c', 'brd_Z_c', 'R_diepad', 'a_thru', 'a_fext',
+             'a_next', 'SNDR', 'CTLE_fp1', 'CTLE_fp2', 'CTLE_fz', 'f_HP_Z',
+             'f_HP_P', 'f_HP', 'AC_CM_RMS']
+    p = SimpleNamespace(**{n: 1.5 for n in names})
+    p.ctle_gdc_values = np.array([-5.0, -6.0, -7.0, -8.0])
+    p.g_DC_HP_values = np.array([-1.0, -2.0])
+    return p
+
+
+def test_ncases_counts_rows_not_elements():
+    """[ncases, mele] = size(param.z_p_tx_cases) counts ROWS.
+
+    A MATLAB row vector is 1xN, so z_p_tx_cases=[1 2 3] is ONE case, and the
+    make_length_ncases fields expand to length 1.
+
+    COM Octave, param.z_p_tx_cases=[1 2 3], param.AC_CM_RMS=1.5,
+    OP.pkg_len_select=[1 2 3], OP.WC_PORTZ=0:
+        size(param.AC_CM_RMS) == [1 1],  param.AC_CM_RMS == 1.5
+    np.asarray(...).shape[0] on a 1-D array gave 3, so Python expanded
+    AC_CM_RMS to [1.5 1.5 1.5].
+    """
+    p = _oracle_param()
+    p.z_p_tx_cases = np.array([1.0, 2.0, 3.0])          # 1-D: one MATLAB row
+    op = SimpleNamespace(pkg_len_select=np.array([1.0, 2.0, 3.0]), WC_PORTZ=0)
+    out = parameter_size_adjustment(p, op)
+    assert np.asarray(out.AC_CM_RMS).size == 1
+    assert np.asarray(out.AC_CM_RMS).ravel()[0] == 1.5
+
+
+def test_ncases_from_a_two_dimensional_case_table():
+    """The 2-D case (what the engine actually passes) is unchanged.
+
+    COM Octave, param.z_p_tx_cases=[1 2 3; 4 5 6]:
+        param.AC_CM_RMS == [1.5 1.5]
+        param.C_diepad  == [1.5 1.5]
+        param.CTLE_fp1  == [1.5 1.5 1.5 1.5]   (size of ctle_gdc_values)
+        param.f_HP      == [1.5 1.5]           (size of g_DC_HP_values)
+        param.a_thru    == [1.5 1.5 1.5]       (max(OP.pkg_len_select)=3)
+    """
+    p = _oracle_param()
+    p.z_p_tx_cases = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    op = SimpleNamespace(pkg_len_select=np.array([1.0, 2.0, 3.0]), WC_PORTZ=0)
+    out = parameter_size_adjustment(p, op)
+    np.testing.assert_array_equal(np.ravel(out.AC_CM_RMS), [1.5, 1.5])
+    np.testing.assert_array_equal(np.ravel(out.C_diepad), [1.5, 1.5])
+    np.testing.assert_array_equal(np.ravel(out.CTLE_fp1), [1.5] * 4)
+    np.testing.assert_array_equal(np.ravel(out.f_HP), [1.5, 1.5])
+    np.testing.assert_array_equal(np.ravel(out.a_thru), [1.5, 1.5, 1.5])
+
+
+def test_wc_portz_forces_length_two():
+    """OP.WC_PORTZ nonzero makes PORTZ_mult = [1 1] regardless of pkg_len_select.
+
+    COM Octave, OP.WC_PORTZ=1, OP.pkg_len_select=[1 2 3]:
+        param.a_thru == [1.5 1.5],  param.SNDR == [1.5 1.5]
+    """
+    p = _oracle_param()
+    p.z_p_tx_cases = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    op = SimpleNamespace(pkg_len_select=np.array([1.0, 2.0, 3.0]), WC_PORTZ=1)
+    out = parameter_size_adjustment(p, op)
+    np.testing.assert_array_equal(np.ravel(out.a_thru), [1.5, 1.5])
+    np.testing.assert_array_equal(np.ravel(out.SNDR), [1.5, 1.5])

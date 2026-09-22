@@ -82,3 +82,51 @@ def test_output_length_matches_input():
     f = np.linspace(0, 25e9, 30)
     H = Tx_FFE_Filter(make_param(taps=[0.2, 1.0, -0.1]), f, Use_Tx_FFE=1)
     assert len(H) == 30
+
+
+# ============================================================
+# COM Octave oracle values (tools/octave_oracle.py, 4p16p0 compat file,
+# Tx_FFE_Filter + varargin_extractor).  Generated 2026-09-22.
+# ============================================================
+
+
+def test_empty_preset_returns_zeros():
+    """Pkg_TXFFE_preset=[] : MATLAB max([]) gives an empty icur and `for ii=1:0`
+    runs zero times, so H stays at zeros(1,length(f)).
+
+    COM Octave, param.fb=25e9, param.Pkg_TXFFE_preset=[], f=[0 12.5e9 25e9],
+    Use_Tx_FFE=1  ->  H_TxFFE == [0 0 0].
+    np.argmax on an empty array raised ValueError instead.
+    """
+    f = np.array([0.0, 12.5e9, 25e9])
+    H = Tx_FFE_Filter(make_param(fb=25e9, taps=[]), f, Use_Tx_FFE=1)
+    assert len(H) == 3
+    np.testing.assert_array_equal(H, np.zeros(3))
+
+
+def test_default_f_axis_stops_at_or_below_fb():
+    """f omitted : MATLAB f=0:10e6:param.fb never passes fb.
+
+    COM Octave, param.Pkg_TXFFE_preset=[0.1 1.0 -0.2], Use_Tx_FFE=1, f=[]:
+        fb=53.125e9   -> numel(H_TxFFE) = 5313
+        fb=106.25e9   -> numel(H_TxFFE) = 10626
+        fb=26.5625e9  -> numel(H_TxFFE) = 2657
+    np.arange(0, fb+10e6, 10e6) overshot by one point whenever fb was not a
+    multiple of 10e6 (5314 / 2658).
+    """
+    for fb, n in ((53.125e9, 5313), (106.25e9, 10626), (26.5625e9, 2657)):
+        H = Tx_FFE_Filter(make_param(fb=fb, taps=[0.1, 1.0, -0.2]), None,
+                          Use_Tx_FFE=1)
+        assert len(H) == n, 'fb=%g' % fb
+
+
+def test_default_f_axis_last_point():
+    """The last default-f sample is floor(fb/10e6)*10e6, not the next step up.
+
+    COM Octave, param.fb=53.125e9, Pkg_TXFFE_preset=[0.1 1.0 -0.2], f=[]:
+        H_TxFFE(end) = 0.90000001748525005 - 0.00017740757480374955i
+    """
+    H = Tx_FFE_Filter(make_param(fb=53.125e9, taps=[0.1, 1.0, -0.2]), None,
+                      Use_Tx_FFE=1)
+    assert H[-1].real == pytest.approx(0.90000001748525005, rel=1e-13)
+    assert H[-1].imag == pytest.approx(-0.00017740757480374955, rel=1e-11)

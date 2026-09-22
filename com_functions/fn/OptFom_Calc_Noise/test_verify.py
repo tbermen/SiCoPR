@@ -121,3 +121,49 @@ def test_non_calibration_returns_sigma_xt_zero_without_aggressors():
     THIS, status = OptFom_Calc_Noise(_THIS(), 0.0, sbr, _SETTINGS(), _chdata(), _param(), op)
     assert hasattr(THIS, 'total_noise_rms')
     assert THIS.total_noise_rms >= 0
+
+
+# ---------------------------------------------------------------------------
+# Added 2026-09-22 to cover an implementation change that arrived without a
+# test (an agent was cut off mid-batch). The Octave evidence for the change is
+# in py_impl.py; these tests are written from the MATLAB indexing semantics and
+# deliberately carry no oracle marker, so this function still counts as needing
+# an oracle pass.
+#
+# MATLAB indexes sbr(cursor_i-1 + M*k) and sbr(cursor_i+1 + M*k) directly for
+# k = -1..ndfe, so a span reaching past either end of sbr is an error there.
+# Dropping the out-of-range entries, as the port did, silently shortened h_J
+# and so changed sigma_J.
+# ---------------------------------------------------------------------------
+
+def _op_dfe_span():
+    """The guarded branch only runs under LIMIT_JITTER_CONTRIB_TO_DFE_SPAN."""
+    op = _op_calibration()
+    op.LIMIT_JITTER_CONTRIB_TO_DFE_SPAN = True
+    return op
+
+
+def test_jitter_span_below_the_start_of_sbr_is_refused():
+    """cursor_i small enough that cursor_i-1-M lands before sample 1."""
+    with pytest.raises(IndexError):
+        OptFom_Calc_Noise(_THIS(cursor_i=3), 0.0, _sbr(cursor_i=3),
+                          _SETTINGS(), _chdata(), _param(), _op_dfe_span())
+
+
+def test_jitter_span_past_the_end_of_sbr_is_refused():
+    """cursor_i close enough to the end that cursor_i+1+M*ndfe runs off it."""
+    # cursor_i must be low enough that _sbr() can still write its 2*M tail
+    # (otherwise the helper raises and the test passes for the wrong reason)
+    # and high enough that cursor_i+1+M*ndfe runs past the end: 275..283.
+    N, ci = 300, 280
+    with pytest.raises(IndexError):
+        OptFom_Calc_Noise(_THIS(cursor_i=ci, N=N), 0.0, _sbr(cursor_i=ci, N=N),
+                          _SETTINGS(), _chdata(), _param(), _op_dfe_span())
+
+
+def test_jitter_span_well_inside_sbr_still_answers():
+    """The guard must not refuse an ordinary cursor position."""
+    THIS, abort = OptFom_Calc_Noise(_THIS(), 0.0, _sbr(), _SETTINGS(),
+                                    _chdata(), _param(), _op_dfe_span())
+    assert abort == 0
+    assert len(np.asarray(THIS.h_J)) == 5      # k = -1..ndfe with ndfe=3

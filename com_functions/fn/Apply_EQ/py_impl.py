@@ -43,9 +43,14 @@ def Apply_EQ(param, fom_result, chdata, OP):
     SBR_Len = len(fom_result.sbr)
     if len(np.asarray(chdata[0].uneq_imp_response)) < SBR_Len:
         n_add = SBR_Len - len(chdata[0].uneq_imp_response)
-        dt = 1.0 / (param.fb * param.samples_per_ui)
         t_end = float(np.asarray(chdata[0].t)[-1])
-        new_t = t_end + np.arange(1, n_add + 1) * dt
+        # MATLAB L927: (1:samples_added)/param.fb/param.samples_per_ui + t(end)
+        # -- TWO successive divisions, not one multiply by a pre-formed dt.
+        # (k/fb)/M and k*(1/(fb*M)) are not the same double: 2 of 7 and 3 of 13
+        # sample offsets differ at fb=25e9, M=8.  COM Octave, 7 added samples,
+        # t(end)=1.95e-10: last t is 2.3000000000000001e-10, where the
+        # pre-formed-dt version gave 2.2999999999999998e-10.
+        new_t = np.arange(1, n_add + 1) / param.fb / param.samples_per_ui + t_end
         chdata[0].uneq_imp_response = np.concatenate([np.asarray(chdata[0].uneq_imp_response), np.zeros(n_add)])
         chdata[0].uneq_pulse_response = np.concatenate([np.asarray(chdata[0].uneq_pulse_response), np.zeros(n_add)])
         chdata[0].t = np.concatenate([np.asarray(chdata[0].t), new_t])
@@ -64,7 +69,14 @@ def Apply_EQ(param, fom_result, chdata, OP):
                 eq_ir, _, _, _ = _TD_CTLE(uneq_ir, FB, FZ, FP1, FP2, GDC, M)
                 eq_ir, _, _, _ = _TD_CTLE(eq_ir, FB, FHPZ, FHPP, 1e99, 0, M)
             else:
-                eq_ir = uneq_ir
+                # MATLAB's switch (L933-942) has no `otherwise`, so an
+                # unrecognised CTLE_type leaves eq_ir undefined and the next
+                # line errors.  Falling through to the uneq response answered
+                # an un-equalised channel as though it were equalised.
+                # COM Octave, param.CTLE_type='NOSUCH', OP.INCLUDE_CTLE=1:
+                #   "error: 'eq_ir' undefined near line 46, column 31"
+                raise ValueError("Apply_EQ: unsupported param.CTLE_type %r "
+                                 "(MATLAB leaves eq_ir undefined)" % (ctle_type,))
         else:
             eq_ir = uneq_ir
 

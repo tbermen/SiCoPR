@@ -52,11 +52,21 @@ def OptFom_Calc_Noise(THIS, Best_FOM, sbr, SETTINGS, chdata, param, OP):
         ks = np.arange(-1, ndfe + 1)
         idx_early = cursor_i - 1 + M * ks  # 0-based
         idx_late = cursor_i + 1 + M * ks   # 0-based
-        valid_early = (idx_early >= 0) & (idx_early < len(sbr))
-        valid_late = (idx_late >= 0) & (idx_late < len(sbr))
-        valid = valid_early & valid_late
-        cursors_early = sbr[idx_early[valid]]
-        cursors_late = sbr[idx_late[valid]]
+        # MATLAB indexes sbr directly and refuses a span that runs off either
+        # end.  COM Octave, 200-sample sbr:
+        #   cursor_i=3   -> error: sbr(-6): subscripts must be either integers
+        #                   1 to (2^63)-1 or logicals
+        #   cursor_i=195 -> error: sbr(226): out of bound 200
+        # Dropping the out-of-range entries produced a shorter h_J, and so a
+        # quietly different sigma_J, where the reference declines to answer.
+        span = np.concatenate([idx_early, idx_late])
+        if span.min() < 0 or span.max() >= len(sbr):
+            raise IndexError(
+                'OptFom_Calc_Noise: jitter sample span reaches sbr(%d..%d), '
+                'outside the %d samples available'
+                % (int(span.min()) + 1, int(span.max()) + 1, len(sbr)))
+        cursors_early = sbr[idx_early]
+        cursors_late = sbr[idx_late]
     else:
         # MATLAB: sbr(sampling_offset-1:M:end) (1-based) → sbr[sampling_offset-2::M] (0-based)
         cursors_early = sbr[sampling_offset - 2 :: M]
@@ -113,8 +123,15 @@ def OptFom_Calc_Noise(THIS, Best_FOM, sbr, SETTINGS, chdata, param, OP):
             # MATLAB: [sigma_XT,~,~] = get_xtlk_noise(txffe,'FEXT',param,chdata,phase_memory)
             sigma_XT, _, _ = _get_xtlk_noise(txffe, 'both', param, chdata, phase_memory)
         else:
+            # MATLAB uses strcmp here, which is CASE SENSITIVE (the reference
+            # is inconsistent: other sites wrap it in upper()).  COM Octave
+            # with OP.RX_CALIBRATION=0, OP.RxFFE=1, OP.RxFFE_with_MMSE=0:
+            #   FFE_OPT_METHOD='MMSE' -> takes PSD_results.S_xn_rms
+            #   FFE_OPT_METHOD='mmse' -> calls get_xtlk_noise(...,C)
+            # `.upper()` sent both to the PSD branch, where PSD_results is None
+            # on that path.
             if not (hasattr(OP, 'FFE_OPT_METHOD')
-                    and str(OP.FFE_OPT_METHOD).upper() == 'MMSE'):
+                    and str(OP.FFE_OPT_METHOD) == 'MMSE'):
                 # MATLAB: [sigma_XT,~,~] = get_xtlk_noise(txffe,'FEXT',param,chdata,phase_memory,C)
                 sigma_XT, _, _ = _get_xtlk_noise(txffe, 'both', param, chdata, phase_memory, C)
             else:

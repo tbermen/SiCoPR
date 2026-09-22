@@ -9,7 +9,7 @@
     "4p15p0 for the correlation corpus, then gained 4p16p0 support, while every",
     "generated sicopr.py still announced 4p14p0."
   ],
-  "default_matlab_version": "4p15p0",
+  "default_matlab_version": "4p16p0",
   "supported_matlab_versions": [
     "4p15p0",
     "4p16p0"
