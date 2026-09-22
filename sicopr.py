@@ -7759,6 +7759,19 @@ def R_series2(zref, f, R):
     f = np.asarray(f, dtype=float).ravel()
     N = len(f)
 
+    # MATLAB L9383 builds r with `ones(1,length(f))*R`, which is a MATRIX
+    # PRODUCT, not a broadcast. It is a plain scalar multiply only while R is
+    # scalar; a 1xM R makes the inner dimensions disagree and MATLAB errors.
+    # COM Octave: R_series2(50, [1e9 2e9 3e9], [1 2 3]) ->
+    #     error: operator *: nonconformant arguments (op1 is 1x3, op2 is 1x3)
+    # numpy broadcasts instead and returns a per-frequency answer the reference
+    # cannot produce.
+    if np.asarray(R).size != 1:
+        raise ValueError(
+            'R_series2: R must be scalar. MATLAB computes ones(1,length(f))*R '
+            'as a matrix product, so a length-%d R is nonconformant there.'
+            % np.asarray(R).size)
+
     s11 = R / (R + 2.0 * zref)          # scalar (frequency-independent)
     s21 = (2.0 * zref) / (R + 2.0 * zref)
 
@@ -16540,9 +16553,24 @@ def r_parrelell2(zref, f, rpad):
     f = np.asarray(f, dtype=float).ravel()
     N = len(f)
 
-    denom = zref + 2.0 * rpad
-    s11 = -zref / denom                  # MATLAB line 9391
-    s21 = 2.0 * rpad / denom             # MATLAB line 9393
+    # MATLAB L9391/9393 written out exactly:
+    #     S(1,1,:) = -zref/(rpad*(zref/rpad + 2))
+    #     S(2,1,:) =  2/(zref/rpad + 2)
+    # The algebraically equivalent -zref/(zref+2*rpad) and 2*rpad/(zref+2*rpad)
+    # are NOT equivalent in floating point. They differ in the last bits for
+    # most finite rpad (5 of 9 sampled values), and diverge outright at the
+    # limits. Verified against COM Octave:
+    #     rpad=Inf -> S11 -0 (negative zero), S21 1     simplified: S21 NaN
+    #     rpad=0   -> S11 NaN, S21 0                    simplified: S11 -1
+    # rpad=Inf is the natural "no pad resistor" setting, so the simplified form
+    # put a NaN straight into the package cascade.
+    # np.float64 rather than Python floats: MATLAB's zref/0 is Inf, while
+    # Python's raises ZeroDivisionError. errstate keeps the Inf and NaN quiet,
+    # as MATLAB produces them without a warning.
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = np.float64(zref) / np.float64(rpad)
+        s11 = -np.float64(zref) / (np.float64(rpad) * (ratio + 2.0))
+        s21 = 2.0 / (ratio + 2.0)
 
     params = np.empty((2, 2, N), dtype=complex)
     params[0, 0, :] = s11

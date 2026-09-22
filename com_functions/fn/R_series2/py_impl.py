@@ -22,6 +22,19 @@ def R_series2(zref, f, R):
     f = np.asarray(f, dtype=float).ravel()
     N = len(f)
 
+    # MATLAB L9383 builds r with `ones(1,length(f))*R`, which is a MATRIX
+    # PRODUCT, not a broadcast. It is a plain scalar multiply only while R is
+    # scalar; a 1xM R makes the inner dimensions disagree and MATLAB errors.
+    # COM Octave: R_series2(50, [1e9 2e9 3e9], [1 2 3]) ->
+    #     error: operator *: nonconformant arguments (op1 is 1x3, op2 is 1x3)
+    # numpy broadcasts instead and returns a per-frequency answer the reference
+    # cannot produce.
+    if np.asarray(R).size != 1:
+        raise ValueError(
+            'R_series2: R must be scalar. MATLAB computes ones(1,length(f))*R '
+            'as a matrix product, so a length-%d R is nonconformant there.'
+            % np.asarray(R).size)
+
     s11 = R / (R + 2.0 * zref)          # scalar (frequency-independent)
     s21 = (2.0 * zref) / (R + 2.0 * zref)
 

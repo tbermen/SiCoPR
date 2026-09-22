@@ -69,3 +69,48 @@ def test_no_pre_or_post_taps_always_legal_if_cursor_ok():
     C = np.array([0.9, 0.8, 0.7])
     p = make_param(cmx=1, main_min=0.5, post_len=0, pre_len=0)
     assert RXFFE_Illegal(C, p) == 0
+
+
+# ---------------------------------------------------------------------------
+# Values below came from running RXFFE_Illegal() out of
+# octave/com_ieee8023_4p16p0_octave_compat.m under COM Octave via
+# tools/octave_oracle.py, rather than from reading the MATLAB.
+# ---------------------------------------------------------------------------
+
+def _oracle_param():
+    return SimpleNamespace(RxFFE_cmx=2, ffe_main_cursor_min=0.5,
+                           ffe_post_tap_len=2, ffe_pre_tap_len=2,
+                           ffe_tapn_max=0.2, ffe_post_tap1_max=0.3,
+                           ffe_pre_tap1_max=0.3)
+
+
+_LEGAL = [0.1, 0.2, 1.0, -0.25, 0.15]
+
+
+@pytest.mark.parametrize('label,C,last_index,expect', [
+    ('legal, last_index given',    _LEGAL,                      5,    0),
+    ('legal, last_index omitted',  _LEGAL,                      None, 0),
+    ('cursor below min',           [0.1, 0.2, 0.1, -0.25, 0.15], None, 1),
+    ('post tap1 over max',         [0.1, 0.2, 1.0, -0.4, 0.15],  None, 1),
+    ('post tapn over max',         [0.1, 0.2, 1.0, -0.25, 0.9],  None, 1),
+    ('pre tap1 over max',          [0.1, 0.9, 1.0, -0.25, 0.15], None, 1),
+    ('pre tapn over max',          [0.9, 0.2, 1.0, -0.25, 0.15], None, 1),
+    # strict comparisons: a tap sitting exactly on a limit is LEGAL
+    ('tapn exactly at max',        [0.2, 0.2, 1.0, -0.25, 0.2],  None, 0),
+    ('cursor exactly at min',      [0.1, 0.2, 0.5, -0.25, 0.15], None, 0),
+    # last_index keeps the Backoff region out of the check
+    ('last_index hides bad tap',   [0.1, 0.2, 1.0, -0.25, 0.9],  4,    0),
+])
+def test_oracle_legality_table(label, C, last_index, expect):
+    P = _oracle_param()
+    arr = np.array(C, dtype=float)
+    got = (RXFFE_Illegal(arr, P) if last_index is None
+           else RXFFE_Illegal(arr, P, last_index))
+    assert int(got) == expect, label
+
+
+def test_oracle_column_input_matches_row():
+    """COM Octave accepts a column C and returns the same verdict as a row."""
+    P = _oracle_param()
+    arr = np.array(_LEGAL, dtype=float)
+    assert int(RXFFE_Illegal(arr.reshape(-1, 1), P)) == int(RXFFE_Illegal(arr, P))

@@ -68,3 +68,72 @@ def test_roundtrip_with_ttos():
     s_orig[1, 0, :] += 0.5   # ensure s21 != 0
     s_recovered = ttos(stot(s_orig))
     np.testing.assert_allclose(s_recovered, s_orig, rtol=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# Values below came from running stot() out of
+# octave/com_ieee8023_4p16p0_octave_compat.m under COM Octave via
+# tools/octave_oracle.py, rather than from reading the MATLAB.
+# ---------------------------------------------------------------------------
+
+def _S_nominal():
+    S = np.zeros((2, 2, 2), dtype=complex)
+    S[0, 0, :] = [0.1 + 0.02j, 0.05 - 0.01j]
+    S[0, 1, :] = [0.8 - 0.1j, 0.7 - 0.2j]
+    S[1, 0, :] = [0.8 - 0.1j, 0.7 - 0.2j]
+    S[1, 1, :] = [0.12 + 0.03j, 0.06 - 0.02j]
+    return S
+
+
+def test_oracle_nominal_2x2x2():
+    """COM Octave, first frequency slice of stot() on a reciprocal 2-port."""
+    t = stot(_S_nominal())
+    assert t.shape == (2, 2, 2)
+    np.testing.assert_allclose(
+        t[:, :, 0].ravel(order='F'),
+        [1.2307692307692308 + 0.15384615384615385j,
+         0.12000000000000001 + 0.040000000000000001j,
+         -0.14307692307692307 - 0.055384615384615379j,
+         0.78680000000000017 - 0.1084j])
+
+
+def test_oracle_delta_uses_the_original_s21_not_eps():
+    """MATLAB computes delta BEFORE substituting eps for a zero s21.
+
+    With s11 = s22 = 0 the determinant is -s12*s21, which is exactly zero for
+    the original s21 and -s12*eps if the substitution has already happened.
+    t22 = -delta/s21 therefore comes out as 0 one way and as a whole s12 the
+    other -- not a rounding difference.
+
+    COM Octave: s12 = 0.7-0.2j, s21 = 0, rest 0  ->  t22 = -0
+    """
+    S = np.zeros((2, 2, 1), dtype=complex)
+    S[0, 1, 0] = 0.7 - 0.2j
+    t = stot(S)
+    assert t[1, 1, 0] == 0, 'delta must be formed before s21 is replaced by eps'
+
+
+def test_oracle_zero_s21_divides_by_eps():
+    """COM Octave: a zero s21 becomes eps, so t11 = 1/eps = 4503599627370496."""
+    S = _S_nominal()
+    S[1, 0, 1] = 0.0
+    t = stot(S)
+    np.testing.assert_allclose(t[0, 0, 1].real, 4503599627370496.0, rtol=0, atol=0)
+    np.testing.assert_allclose(t[1, 1, 1],
+                               -12610078956637.389 + 7205759403792.793j, rtol=1e-12)
+
+
+def test_oracle_plain_2x2_keeps_its_shape():
+    """COM Octave returns a plain 2x2 for a 2x2 input, not 2x2x1."""
+    t = stot(_S_nominal()[:, :, 0])
+    assert t.shape == (2, 2)
+    np.testing.assert_allclose(t.ravel(order='F')[0],
+                               1.2307692307692308 + 0.15384615384615385j)
+
+
+def test_oracle_input_is_not_mutated():
+    """MATLAB passes by value, so s21(s21==0)=eps cannot reach the caller."""
+    S = _S_nominal()
+    S[1, 0, 1] = 0.0
+    stot(S)
+    assert S[1, 0, 1] == 0.0

@@ -59,3 +59,56 @@ def test_frequency_independent():
     f = np.array([1e9, 5e9, 10e9])
     S = R_series2(50.0, f, 50.0)
     assert np.all(S.Parameters[0, 0, :] == S.Parameters[0, 0, 0])
+
+
+# ---------------------------------------------------------------------------
+# Values below came from running R_series2() out of
+# octave/com_ieee8023_4p16p0_octave_compat.m under COM Octave via
+# tools/octave_oracle.py, rather than from reading the MATLAB.
+# ---------------------------------------------------------------------------
+
+_F = np.array([1e9, 2e9, 3e9])
+
+
+def test_oracle_nominal():
+    """COM Octave: zref=50, R=50 -> S11 1/3, S21 2/3, flat over frequency."""
+    P = R_series2(50.0, _F, 50.0).Parameters
+    assert P.shape == (2, 2, 3)
+    np.testing.assert_allclose(P[:, :, 0].ravel(order='F'),
+                               [1 / 3, 2 / 3, 2 / 3, 1 / 3])
+    np.testing.assert_allclose(P[:, :, 2], P[:, :, 0])
+
+
+def test_oracle_zero_and_infinite_R():
+    """COM Octave: R=0 -> S11 0, S21 1.  R=Inf -> S11 NaN, S21 0.
+
+    The open case is worth pinning because the intuitive answer is S11=1: the
+    reference computes Inf/(Inf+100), which is NaN.
+    """
+    P0 = R_series2(50.0, _F, 0.0).Parameters
+    assert P0[0, 0, 0] == 0.0 and P0[1, 0, 0] == 1.0
+    Pi = R_series2(50.0, _F, np.inf).Parameters
+    assert np.isnan(Pi[0, 0, 0].real) and Pi[1, 0, 0] == 0.0
+
+
+def test_oracle_negative_R():
+    """COM Octave: R=-25, zref=50 -> S11 -1/3, S21 4/3."""
+    P = R_series2(50.0, _F, -25.0).Parameters
+    np.testing.assert_allclose(P[:, :, 0].ravel(order='F'),
+                               [-1 / 3, 4 / 3, 4 / 3, -1 / 3])
+
+
+def test_oracle_empty_frequency_axis():
+    """COM Octave returns a 2x2x0 rather than erroring."""
+    assert R_series2(50.0, np.array([]), 50.0).Parameters.shape == (2, 2, 0)
+
+
+def test_oracle_vector_R_is_rejected():
+    """COM Octave: R_series2(50, [1e9 2e9 3e9], [1 2 3]) errors with
+    'operator *: nonconformant arguments (op1 is 1x3, op2 is 1x3)'.
+
+    MATLAB builds r as ones(1,length(f))*R, a matrix product. numpy would
+    broadcast and return a per-frequency answer the reference cannot produce.
+    """
+    with pytest.raises(ValueError):
+        R_series2(50.0, _F, np.array([1.0, 2.0, 3.0]))
