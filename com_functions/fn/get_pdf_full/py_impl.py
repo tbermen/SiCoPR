@@ -235,8 +235,14 @@ def get_pdf_full(chdata, delta_y, t_s, param, OP, pdf_range=None):
         effective_cancelled_cursors = _dfe_clipper(ideal_cancelled_cursors_q, bmax_vec, bmin_vec)
         effective_cancellation_samples = np.repeat(effective_cancelled_cursors, samp_UI)
 
-        start_cancel = t_s - half_UI + 1 + samp_UI  # 1-based like MATLAB
-        start_cancel -= 1  # convert to 0-based
+        # MATLAB L8035: start_cancel = t_s - half_UI + 1 + samp_UI, with t_s
+        # and half_UI both 1-based. Here t_s is the 0-based argmin of the
+        # resampled time axis and half_UI is still MATLAB's 1-based centre,
+        # so substituting t_s_ml = t_s + 1 and taking one off for 0-based
+        # leaves exactly this expression. Subtracting a further 1 -- as this
+        # did until 2026-09-22 -- put the cancellation window and A_s_vec one
+        # sample early.
+        start_cancel = t_s - half_UI + 1 + samp_UI
         n_cancel = len(post_indices) * samp_UI
         end_cancel = start_cancel + n_cancel  # exclusive
 

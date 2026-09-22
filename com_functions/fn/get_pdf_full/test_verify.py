@@ -147,11 +147,11 @@ def _run(t_s):
                         SimpleNamespace(force_pdf_bin_size=0), None)
 
 
-def test_first_seven_phase_pdfs_match_com_octave():
+def test_every_phase_pdf_matches_com_octave():
     pdfs, _h, _a = _run(_T_S1 - 1)
     bad = ['[%d] Min %s/%s bins %d/%d' % (i, pdfs[i].Min, mn,
                                           np.asarray(pdfs[i].y).size, ln)
-           for i, (mn, ln) in enumerate(_OCT_PDF[:7])
+           for i, (mn, ln) in enumerate(_OCT_PDF)
            if pdfs[i].Min != mn or np.asarray(pdfs[i].y).size != ln]
     assert not bad, 'phases disagreeing with COM Octave: %s' % bad
 
@@ -163,23 +163,19 @@ def test_h_j_full_matches_com_octave():
         'h_j_full[0] is %r, COM Octave gives %r' % (got, _OCT_HJ0))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    'HELD FOR REVIEW 2026-09-22: A_s_vec starts one sample early. Given the '
-    'cursor the PDFs agree with, SiCoPR returns [0.0331795, 0.0568476, ...] '
-    'where COM Octave returns [0.0568476, 0.0932374, ...] -- the same values, '
-    'a shifted starting index. get_pdf_full has no call site in the engine, so '
-    'this reaches no result today; the fix depends on which index convention '
-    'the function is meant to take.'))
 def test_A_s_vec_starts_at_the_matlab_sample():
+    """A_s_vec carries the per-phase signal amplitude that COM_eye_width adds
+    to each phase's PDF (MATLAB L1430), so a one-sample shift misaligns the
+    C2M eye. It was shifted until the double 0-based correction was removed
+    from start_cancel on 2026-09-22."""
     _p, _h, A_s = _run(_T_S1 - 1)
     assert np.allclose(np.asarray(A_s).ravel()[:4], _OCT_AS, rtol=0, atol=1e-15)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    'HELD FOR REVIEW 2026-09-22: the eighth phase PDF has Min -2830 and 5661 '
-    'bins where COM Octave gives -1692 and 3385, consistent with '
-    'residual_response being zeroed over the same shifted window as A_s_vec.'))
 def test_eighth_phase_pdf_matches_com_octave():
+    """The same shift moved the DFE cancellation window. The cancellation is
+    piecewise constant over each UI, so a one-sample slip changed only the
+    phase at the UI boundary -- which is why seven of eight agreed."""
     pdfs, _h, _a = _run(_T_S1 - 1)
     assert pdfs[7].Min == _OCT_PDF[7][0]
     assert np.asarray(pdfs[7].y).size == _OCT_PDF[7][1]
