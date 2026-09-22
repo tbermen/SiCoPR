@@ -65,3 +65,57 @@ def test_full_sweep_sets_box_search_zero():
     r = np.arange(5)
     _, _, ms, bs, _, _ = OptFom_Setup_Sampler_Sweep(r, _best(), _op('full-sweep'))
     assert bs == 0 and ms == 0
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave. This decides the ORDER the sampling phases are tried in,
+# which the middle-search termination depends on; none of the assertions above
+# pinned that order. MATLAB indexes from 1, so each reference sequence is
+# stated and the 0-based one derived from it.
+# ---------------------------------------------------------------------------
+
+_SWEEP_RANGE = np.arange(-16, 16)
+_OCT_FULL_1BASED = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+_OCT_MIDDLE_1BASED = [17, 16, 18, 15, 19, 14, 20, 13, 21, 12]
+
+
+def _sweep(mode):
+    OP = SimpleNamespace(TS_SRCH_MODE=mode, itick_box_size=5)
+    return OptFom_Setup_Sampler_Sweep(_SWEEP_RANGE, SimpleNamespace(), OP)
+
+
+def test_full_sweep_order_matches_com_octave():
+    loop_range, _b, middle, box = _sweep('full-sweep')[:4]
+    lr = np.asarray(loop_range).ravel()
+    assert lr.size == _SWEEP_RANGE.size
+    assert list(lr[:10]) == [v - 1 for v in _OCT_FULL_1BASED], (
+        'full-sweep order is %r; COM Octave gives %r 1-based'
+        % (list(lr[:10]), _OCT_FULL_1BASED))
+    assert int(middle) == 0 and int(box) == 0
+
+
+def test_middle_search_works_outward_from_the_centre():
+    loop_range, _b, middle, box = _sweep('middle')[:4]
+    lr = np.asarray(loop_range).ravel()
+    assert list(lr[:10]) == [v - 1 for v in _OCT_MIDDLE_1BASED], (
+        'middle order is %r; COM Octave gives %r 1-based'
+        % (list(lr[:10]), _OCT_MIDDLE_1BASED))
+    assert int(middle) == 1 and int(box) == 0
+    # the point of the mode, stated: each step moves further from itick 0
+    picked = _SWEEP_RANGE[lr]
+    assert np.all(np.diff(np.abs(picked)) >= 0), (
+        'middle search did not move monotonically outward: %r' % list(picked[:8]))
+
+
+def test_every_phase_is_visited_exactly_once():
+    for mode in ('full-sweep', 'middle'):
+        lr = np.asarray(_sweep(mode)[0]).ravel()
+        assert sorted(lr) == list(range(_SWEEP_RANGE.size)), (
+            '%s visits %r' % (mode, sorted(lr)[:6]))
+
+
+def test_unknown_mode_is_rejected():
+    """COM Octave errors with 'unsuported TS_SRCH_MODE'; the port must not
+    quietly fall through to a default order."""
+    with pytest.raises(ValueError, match='TS_SRCH_MODE'):
+        _sweep('box')
