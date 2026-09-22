@@ -106,3 +106,80 @@ if __name__ == '__main__':
     test_idx_convention_and_no_overlap()
     test_integration_real_mmse_fom()
     print('FOM_rxffe_floating_taps: ALL TESTS PASSED')
+
+
+# --------------------------------------------------------------------------
+# The bank search, against COM Octave's own FOM_rxffe_floating_taps.
+#
+# None of the assertions above pins a value: they check lengths, sortedness
+# and membership, all of which hold for a search that picks the wrong taps.
+# This is the floating-tap search, so picking the wrong taps is the failure
+# that matters.
+#
+# The expected locations are COM Octave's, via tools/octave_oracle.py, on the
+# ISI vector _isi_case() rebuilds. That vector carries deliberate bumps, and
+# test_search_follows_the_isi_bumps checks the answer actually tracks them --
+# a search that returned the first N locations regardless would otherwise sail
+# through.
+# --------------------------------------------------------------------------
+
+import scipy.linalg  # noqa: E402
+
+from com_functions.fn.MMSE_FOM.py_impl import MMSE_FOM as _MMSE_FOM  # noqa: E402
+
+_F_CMX, _F_CPX, _F_NB = 2, 3, 2
+_F_NBG, _F_NBF, _F_NBMAX = 2, 2, 12
+_F_NCOL, _F_D, _F_L = 16, 5, 4
+_F_SIGMA_X2 = (_F_L ** 2 - 1) / (3.0 * (_F_L - 1) ** 2)
+_OCT_IDX = [5, 6, 8, 9]
+
+
+def _isi_case(bumps=((9, 0.16), (10, 0.12), (17, 0.10))):
+    rng = np.random.default_rng(7)
+    n = 24
+    k = np.arange(n, dtype=float)
+    h = 0.35 * np.exp(-k / 5.0) + 0.02 * rng.standard_normal(n)
+    for i, a in bumps:
+        h[i] += a
+    H = scipy.linalg.toeplitz(
+        np.concatenate([h, np.zeros(_F_NCOL - 1)]),
+        np.concatenate([[h[0]], np.zeros(_F_NCOL - 1)]))
+    rn = 0.01 ** 2 * (0.5 ** np.arange(_F_NCOL))
+    Rnn = scipy.linalg.toeplitz(rn, rn)
+    p = SimpleNamespace(RxFFE_cmx=_F_CMX, RxFFE_cpx=_F_CPX, N_bg=_F_NBG,
+                        N_bf=_F_NBF, N_bmax=_F_NBMAX, levels=_F_L, R_LM=1,
+                        bmax=np.full(_F_NB, 1.5), bmin=np.full(_F_NB, -1.5))
+    return dict(param=p, h=h, H=H, Nb=_F_NB, Rnn=Rnn, dw=_F_CMX, d=_F_D,
+                wmax=np.full(_F_NCOL, 50.0), wmin=np.full(_F_NCOL, -50.0),
+                bmin=np.full(_F_NB, -1.5), bmax=np.full(_F_NB, 1.5),
+                sigma_X2=_F_SIGMA_X2, isi_start=0, isi_end=n)
+
+
+def _search(a):
+    return np.asarray(FOM_rxffe_floating_taps(
+        a['param'], a['h'], a['H'], a['Nb'], a['Rnn'], a['dw'], a['d'],
+        a['wmax'], a['wmin'], a['bmin'], a['bmax'], a['sigma_X2'],
+        a['isi_start'], a['isi_end'], _MMSE_FOM_fn=_MMSE_FOM)).ravel()
+
+
+def test_bank_search_matches_com_octave():
+    got = _search(_isi_case())
+    assert list(got) == _OCT_IDX, (
+        'the search chose taps %r; COM Octave chooses %r on the same ISI'
+        % (list(got), _OCT_IDX))
+
+
+def test_search_follows_the_isi_bumps():
+    """Move the ISI energy and the chosen taps must move with it, or the
+    comparison above is pinning a search that ignores its input."""
+    moved = _search(_isi_case(bumps=((4, 0.16), (5, 0.12), (17, 0.10))))
+    assert list(moved) != _OCT_IDX, (
+        'the search returned %r for a different ISI profile too, so it is not '
+        'responding to the input it is given' % list(moved))
+
+
+def test_returns_two_banks_of_the_configured_size():
+    got = _search(_isi_case())
+    assert got.size == _F_NBG * _F_NBF, (
+        '%d taps for %d groups of %d' % (got.size, _F_NBG, _F_NBF))
+    assert list(got) == sorted(got), 'locations must come back sorted: %r' % list(got)
