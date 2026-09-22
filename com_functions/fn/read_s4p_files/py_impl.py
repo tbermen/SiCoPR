@@ -63,7 +63,11 @@ from math import factorial
 
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     f = np.asarray(f, dtype=float)
-    eps_val = np.finfo(float).tiny
+    # MATLAB `f(f<eps)=eps` is eps(1) = 2.220446049250313e-16, not the
+    # smallest positive double. np.finfo(float).tiny is 292 orders out,
+    # and it is the DC point that gets it, which then goes into
+    # synth_tline's sqrt and log. Matches com_functions/fn/make_pkg.
+    eps_val = np.finfo(float).eps
     f = np.where(f < eps_val, eps_val, f)
     zref = float(pkg_param.Z0)
     tau = float(pkg_param.pkg_tau)
@@ -820,7 +824,23 @@ def read_s4p_files(param, OP, chdata):
             if len(freq) > 1:
                 freqstep = np.diff(freq)
                 if max(freqstep) - min(freqstep) > 1:
-                    warnings.warn(f'In {ch.filename}: non-uniform frequency steps', stacklevel=2)
+                    warnings.warn(
+                        f'In {ch.filename}: non-uniform frequency steps: '
+                        f'min={min(freqstep)/1e9:.3g} GHz, '
+                        f'max={max(freqstep)/1e9:.3g} GHz', stacklevel=2)
+                # MATLAB also warns COM:read_s4p:FreqStepTooHigh here; the port
+                # dropped the check entirely, so an under-sampled channel went
+                # through without a word.
+                # COM Octave: f=0:100e6:1e9, max_freq_step=50e6 ->
+                #   max(diff(f)) - max_freq_step > 1 is TRUE;
+                #   f=0:50e6:1e9 with the same limit is FALSE (exactly at it).
+                max_freq_step = float(getattr(param, 'max_freq_step', np.inf))
+                if max(freqstep) - max_freq_step > 1:
+                    warnings.warn(
+                        f'In {ch.filename}: frequency step, '
+                        f'{max(freqstep)/1e9:.2g} GHz, is larger than the '
+                        f'recommended {max_freq_step/1e9:.2g} GHz',
+                        stacklevel=2)
 
             if i > 0 and chdata[0].faxis is not None:
                 fax0 = np.asarray(chdata[0].faxis)
@@ -852,13 +872,15 @@ def read_s4p_files(param, OP, chdata):
                     s21p_nodie, _, _ = _s21_pkg(ch, param, OP, i + 1, 'dd', 0)
                     ch.sdd21p_nodie = s21p_nodie
                     ch.sdd21 = ch.sdd21p.copy()
-                    try:
-                        sdc21p, _, sigma_ac = _s21_pkg(ch, param, OP, i + 1, 'cd')
-                        ch.sdc21p = sdc21p
-                        ch.sdc21 = sdc21p.copy()
-                        ch.sigma_ACCM_at_tp0 = sigma_ac
-                    except Exception:
-                        pass
+                    # MATLAB runs this under a bare `if 1` with no error
+                    # handling, so a failure here stops the run.  The port
+                    # swallowed every exception and left sigma_ACCM_at_tp0 at
+                    # 0, turning a broken AC-common-mode calculation into a
+                    # silent zero contribution.
+                    sdc21p, _, sigma_ac = _s21_pkg(ch, param, OP, i + 1, 'cd')
+                    ch.sdc21p = sdc21p
+                    ch.sdc21 = sdc21p.copy()
+                    ch.sigma_ACCM_at_tp0 = sigma_ac
             else:
                 ch.sdd21 = ch.sdd21_raw.copy()
 

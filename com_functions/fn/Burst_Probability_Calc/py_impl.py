@@ -56,7 +56,10 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
         iv = np.asarray(input_vector, dtype=float).ravel()
     else:
         iv = np.array([float(input_vector)])
-    if _mmax(np.abs(iv)) > BinSize:
+    # MATLAB max([]) is [], and `if []` is false, so an empty input falls
+    # straight through to the delta pdf.  np.max raises
+    # "zero-size array to reduction operation maximum" instead.
+    if iv.size and _mmax(np.abs(iv)) > BinSize:
         iv = iv[np.abs(iv) > BinSize]
     else:
         return _d_cpdf(BinSize, 0, 1)
@@ -64,8 +67,14 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     b = np.sign(iv)
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
-    values = 2.0 * np.arange(L) / (L - 1) - 1.0
-    prob = np.ones(L) / L
+    # MATLAB ones(1,L) takes a double L happily -- every Octave number is a
+    # double, so the reference has only ever been run this way -- while
+    # np.ones(4.0) raises "expected a sequence of integers or a single
+    # integer".  param.levels arrives as a float from the config workbook, so
+    # this crashed for every run with OP.nburst > 0.
+    nlev = int(L)
+    values = 2.0 * np.arange(nlev) / (L - 1) - 1.0
+    prob = np.ones(nlev) / L
     pdf = _d_cpdf(BinSize, 0, 1)
     empty_pdf = pdf
     for v in iv:
@@ -93,7 +102,14 @@ def Burst_Probability_Calc(COM_SNR_Struct, DFE_taps, param, OP):
     ndfe = int(param.ndfe)
     for k in range(1, min(ndfe, nburst)):
         if OP.use_simple_EP_model:
-            tap_val = 2.0 * A_s * float(_mmax(sorted_abs_taps))
+            # An empty DFE_taps is legal here: MATLAB max([]) is [], 2*A_s*[]
+            # stays empty, and get_pdf_from_sampled_signal([]) returns the
+            # delta pdf, so every burst probability repeats the uncorrelated
+            # one.  COM Octave 4p16p0, DFE_taps=[] with ndfe=nburst=3:
+            # p_error_propagation = 1.386500771629333e-45 three times.
+            # float(_mmax([])) raised instead.
+            tap_val = (sorted_abs_taps if sorted_abs_taps.size == 0
+                       else 2.0 * A_s * float(_mmax(sorted_abs_taps)))
             post_pdf = _get_pdf_from_sampled_signal(tap_val, param.levels, param.delta_y)
             new_pdf = _conv_fct(error_propagation_noise_pdf[0], post_pdf)
         else:

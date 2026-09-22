@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 from scipy.signal import lfilter
 
@@ -10,8 +12,20 @@ def read_PR_files(param, OP, chdata):
     """
     M = int(param.samples_per_ui)
     for i, cd in enumerate(chdata):
-        if cd.ext.lower() == '.csv':
-            vt = np.loadtxt(cd.filename)
+        # MATLAB's `switch chdata(i).ext; case '.csv'` is CASE SENSITIVE, so a
+        # file named .CSV falls through and the channel keeps no pulse
+        # response at all.  COM Octave 4p16p0 with ext '.CSV': chdata comes
+        # back with only filename and ext.  .lower() read it instead.
+        if cd.ext == '.csv':
+            # MATLAB reads it with load(), which takes space, comma OR tab as
+            # the delimiter -- and the extension is .csv, so commas are the
+            # expected case.  np.loadtxt splits on whitespace only and stopped
+            # with "could not convert string '0,4.98910939279e-20' to
+            # float64" on a genuinely comma-separated file that COM Octave
+            # read without complaint.
+            with open(cd.filename, 'r') as fh:
+                text = fh.read().replace(',', ' ')
+            vt = np.loadtxt(io.StringIO(text))
             t_col = vt[:, 0]
             v_col = vt[:, 1]
             dt = float(t_col[1] - t_col[0])

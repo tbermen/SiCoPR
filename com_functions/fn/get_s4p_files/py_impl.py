@@ -24,17 +24,24 @@ def get_s4p_files(param, OP, num_fext, num_next, file_list):
     runtag = str(getattr(OP, 'RUNTAG', ''))
 
     def _parse(fpath_raw):
-        fpath = str(fpath_raw).replace('\\', os.sep)
+        # MATLAB stores fullfile(filepath, [basename fileext]), and fullfile
+        # rewrites every separator to filesep.  COM Octave on Windows,
+        # 'a/b\c/ch0.s4p' -> chdata(1).filename 'a\b\c\ch0.s4p', where this
+        # kept the mixture the caller passed.
+        fpath = str(fpath_raw).replace('\\', os.sep).replace('/', os.sep)
         filepath = os.path.dirname(fpath)
         base_ext = os.path.basename(fpath)
         basename, fileext = os.path.splitext(base_ext)
         dirname = os.path.basename(filepath) if filepath else ''
-        return fpath, filepath, basename, fileext, dirname
+        return filepath, base_ext, basename, fileext, dirname
 
-    # THRU (index 0 in Python)
-    fpath, filepath, basename, fileext, dirname = _parse(file_list[0])
+    def _fullfile(filepath, base_ext):
+        return os.path.join(filepath, base_ext) if base_ext else filepath
+
+    # THRU (index 0 in Python).  The thru has no lastfilepath fallback.
+    filepath, base_ext, basename, fileext, dirname = _parse(file_list[0])
     ch = SimpleNamespace()
-    ch.filename = fpath
+    ch.filename = _fullfile(filepath, base_ext)
     ch.ext = fileext
     ch.base = f'{runtag} {dirname}--{basename}'
     ch.type = 'THRU'
@@ -43,48 +50,44 @@ def get_s4p_files(param, OP, num_fext, num_next, file_list):
     param.base = ch.base
     nxi = 1
 
-    # FEXT channels
-    for i in range(int(num_fext)):
-        fi = nxi + i
+    def _aggressor(fi, kind, what):
+        """One FEXT/NEXT/NOISE entry, carrying the directory forward.
+
+        MATLAB keeps `filepath` alive across the loops and, for every channel
+        after the thru, does `if isempty(filepath), filepath=lastfilepath; end`
+        -- so a bare file name is opened from the PREVIOUS channel's
+        directory, and that inheritance propagates down the list.  COM Octave,
+        file_list {'d1/ch0.s4p','ch1.s4p','ch2.s4p'} with one FEXT and one
+        NEXT: chdata(2).filename 'd1\\ch1.s4p' and chdata(3).filename
+        'd1\\ch2.s4p', base 'run1 d1--ch1' and 'run1 d1--ch2'.  Parsing each
+        entry independently opened 'ch1.s4p' from the working directory.
+        """
+        nonlocal filepath
         if fi >= len(file_list):
-            raise ValueError(f'Not enough FEXT files; expected {num_fext}')
-        fp, fpe, bn, ext, dn = _parse(file_list[fi])
+            raise ValueError(f'Not enough {what} files')
+        fp, be, bn, ext, dn = _parse(file_list[fi])
+        if not fp:
+            fp = filepath                       # lastfilepath
+            dn = os.path.basename(fp) if fp else ''
+        filepath = fp
         ch_i = SimpleNamespace()
-        ch_i.filename = fp
+        ch_i.filename = _fullfile(fp, be)
         ch_i.ext = ext
         ch_i.base = f'{runtag} {dn}--{bn}'
         ch_i.ftr = float(param.fb) * float(param.f_v)
-        ch_i.type = 'FEXT'
+        ch_i.type = kind
         chdata.append(ch_i)
+
+    for i in range(int(num_fext)):
+        _aggressor(nxi + i, 'FEXT', 'FEXT')
     nxi += int(num_fext)
 
-    # NEXT channels
     for i in range(int(num_next)):
-        fi = nxi + i
-        if fi >= len(file_list):
-            raise ValueError(f'Not enough NEXT files; expected {num_next}')
-        fp, fpe, bn, ext, dn = _parse(file_list[fi])
-        ch_i = SimpleNamespace()
-        ch_i.filename = fp
-        ch_i.ext = ext
-        ch_i.base = f'{runtag} {dn}--{bn}'
-        ch_i.ftr = float(param.fb) * float(param.f_v)
-        ch_i.type = 'NEXT'
-        chdata.append(ch_i)
+        _aggressor(nxi + i, 'NEXT', 'NEXT')
     nxi += int(num_next)
 
     # Optional noise channel for PSDRXCAL
     if getattr(OP, 'PSDRXCAL', False):
-        noise_idx = nxi  # 0-based
-        if noise_idx >= len(file_list):
-            raise ValueError('Not enough files: PSDRXCAL requires a noise channel file')
-        fp, fpe, bn, ext, dn = _parse(file_list[noise_idx])
-        ch_n = SimpleNamespace()
-        ch_n.filename = fp
-        ch_n.ext = ext
-        ch_n.base = f'{runtag} {dn}--{bn}'
-        ch_n.ftr = float(param.fb) * float(param.f_v)
-        ch_n.type = 'NOISE'
-        chdata.append(ch_n)
+        _aggressor(nxi, 'NOISE', 'noise channel')
 
     return chdata, param

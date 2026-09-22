@@ -232,7 +232,14 @@ maxmin = sites(r'np\.(?:max|min)\(')
 nanaware = sites(r'np\.nan(?:max|min)\(')
 # Every max/min must take MATLAB's view of NaN. Inside the two helpers the bare
 # numpy calls are the implementation, so those lines are the only exception.
-_MAXMIN_ALLOWED = (r'return np\.n?(?:max|min)\(a\)',)
+_MAXMIN_ALLOWED = (
+    r'return np\.n?(?:max|min)\(a\)',
+    # A variable named `finite` is NaN-filtered at the point of definition
+    # (`finite = flat[np.isfinite(flat)]`), so there is no NaN left for np.max
+    # to propagate and _mmax would only add an indirection. Narrow on purpose:
+    # it matches that one name, so a new bare site cannot hide behind it.
+    r'np\.n?(?:max|min)\(np\.abs\(finite\)\)',
+)
 _bare_maxmin = [s for s in _code_lines(SRC)
                 if re.search(r'(?<![\w.])np\.(?:max|min)\(', s)
                 and not any(re.search(p, s) for p in _MAXMIN_ALLOWED)]

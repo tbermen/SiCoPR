@@ -41,52 +41,82 @@ def readdataSnPx(filename, nport):
             break
 
     if header_line is None:
+        # MATLAB never gets here: `while ~strcmp(str(1),'#')` calls fgetl,
+        # which returns the NUMBER -1 at end of file, and -1 is neither '#'
+        # nor empty, so the n>1000 escape inside `if isempty(str)` is never
+        # reached and the loop spins forever.  COM Octave on a file with no
+        # option line did not terminate (killed at 120 s).  There is no
+        # reference answer to match, so refusing is the only honest option.
         raise ValueError(f'readdataSnPx: could not find # config line in {filename}')
 
-    # Parse config line: # [units] S [format] R [resistance]
-    tokens = header_line[1:].split()
-    tokens_upper = [t.upper() for t in tokens]
-    try:
-        s_idx = tokens_upper.index('S')
-    except ValueError:
-        raise ValueError(f'readdataSnPx: could not find S in config line: {header_line}')
+    # Parse the option line the way MATLAB does:
+    #   A = sscanf(str,'%1s %2s %1s %2s %1s %2s',[1,inf])
+    # which is just the line with every space removed, then
+    #   p = find(A=='S'); units = lower(A(2:p-1)); format = A(p+1:p+2).
+    # So the S is matched CASE SENSITIVELY and the format is exactly the two
+    # characters after it, not the whole token.  COM Octave 4p16p0:
+    #   '# ghz s ri r 50' -> error: readdataSnP: Unknown data format
+    #   '# GHz S'         -> error: A(7): out of bound 5 (dimensions are 1x5)
+    # Upper-casing the tokens accepted a lowercase option line the reference
+    # refuses, and defaulting the format to MA answered where it errors.
+    A = ''.join(header_line.split())
+    p = A.find('S')
+    if p >= 0 and len(A) < p + 3:
+        raise ValueError('readdataSnPx: option line %r has no two-character '
+                         'format after the S' % header_line)
+    units = A[1:p].upper() if p >= 0 else ''
+    fmt = A[p + 1:p + 3].upper() if p >= 0 else ''
 
-    units = tokens_upper[0] if s_idx > 0 else 'GHz'
-    fmt = tokens_upper[s_idx + 1] if s_idx + 1 < len(tokens_upper) else 'MA'
-
-    # Collect all data tokens from remaining lines (skip comments)
-    all_tokens = []
-    for line in lines[data_start:]:
-        s = line.strip()
-        if not s or s.startswith('!') or s.startswith('#'):
-            continue
-        # Remove inline comments
-        s = s.split('!')[0].strip()
-        all_tokens.extend(s.split())
+    # MATLAB reads the data with fscanf, so a record may span lines, and a
+    # token that is not a number means two different things:
+    #   between records, fscanf('%f') returns nothing, fscanf('%s') eats the
+    #     token and fgetl() then discards THE REST OF THAT LINE;
+    #   inside a record, fscanf('%f') returns [] and cs(ni,nj,nk)=[] errors.
+    # Flattening the file into one token stream lost the line boundary: COM
+    # Octave, a line reading 'JUNK 2.0 0.11 ...', dropped that whole record,
+    # where this read the numbers that followed the stray token.
+    # A '!' is not special to the reference either -- it is simply the first
+    # token fscanf cannot read as a number, which is why it ends the line.
+    toks = []                       # (text, line number)
+    for ln, line in enumerate(lines[data_start:]):
+        head, bang, _rest = line.partition('!')
+        toks.extend((t, ln) for t in head.split())
+        if bang:
+            toks.append(('!', ln))  # fscanf stops here; fgetl eats the rest
 
     freq_list = []
     cs_list = []
-    n_vals_per_freq = 1 + nport * nport * 2  # 1 freq + nport^2 pairs
 
     idx = 0
-    while idx < len(all_tokens):
+    while idx < len(toks):
         try:
-            freq_val = float(all_tokens[idx])
+            freq_val = float(toks[idx][0])
         except ValueError:
+            ln = toks[idx][1]
             idx += 1
+            while idx < len(toks) and toks[idx][1] == ln:
+                idx += 1          # fgetl: discard the rest of the line
             continue
         idx += 1
 
         row = np.zeros((nport, nport), dtype=complex)
         for ni in range(nport):
             for nj in range(nport):
-                if idx + 1 >= len(all_tokens):
-                    break
+                # MATLAB assigns cs(ni,nj,nk) = [] when the pair is missing.
+                # COM Octave, a record cut short: "error: =: nonconformant
+                # arguments (op1 is 1x1, op2 is 0x1)".  Breaking out left
+                # zeros in the unread entries and reported them as data.
+                if idx + 2 > len(toks):
+                    raise ValueError(
+                        'readdataSnPx: %s ends part-way through the record at '
+                        'frequency %g' % (filename, freq_val))
                 try:
-                    a = float(all_tokens[idx])
-                    b = float(all_tokens[idx + 1])
-                except (ValueError, IndexError):
-                    break
+                    a = float(toks[idx][0])
+                    b = float(toks[idx + 1][0])
+                except ValueError:
+                    raise ValueError(
+                        'readdataSnPx: %s has a non-numeric entry in the '
+                        'record at frequency %g' % (filename, freq_val))
                 idx += 2
                 if fmt == 'MA':
                     row[ni, nj] = a * np.exp(1j * b * np.pi / 180.0)
@@ -102,6 +132,11 @@ def readdataSnPx(filename, nport):
         freq_list.append(freq_val)
         cs_list.append(row)
 
+    if not freq_list:
+        # MATLAB never assigns freq or cs, so `result.cs = cs` errors.
+        # COM Octave, option line and nothing else: "error: 'cs' undefined".
+        raise ValueError('readdataSnPx: %s holds no S-parameter data' % filename)
+
     freq = np.array(freq_list, dtype=float)
     nfreq = len(freq)
     cs = np.zeros((nport, nport, nfreq), dtype=complex)
@@ -114,9 +149,13 @@ def readdataSnPx(filename, nport):
         cs[1, 0, :] = cs[0, 1, :]
         cs[0, 1, :] = temp
 
-    # Scale freq to Hz
+    # Scale freq to Hz.  MATLAB's `switch lower(units)` has no otherwise, so
+    # a unit it does not recognise -- including an option line with no unit at
+    # all -- leaves the frequencies exactly as the file gave them.  COM
+    # Octave, '# S RI R 50' and '# THz S RI R 50': freq = [1 2], not 1e9 times
+    # that.  Defaulting to GHz scaled those files by a billion.
     scale_map = {'HZ': 1.0, 'KHZ': 1e3, 'MHZ': 1e6, 'GHZ': 1e9}
-    scale = scale_map.get(units, 1e9)
+    scale = scale_map.get(units, 1.0)
     freq = freq * scale
 
     result = SimpleNamespace()

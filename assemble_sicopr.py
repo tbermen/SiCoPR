@@ -8,6 +8,7 @@ then re-run this script.
 # Copyright 2026 Todd Bermensolo (Python port)
 # SPDX-License-Identifier: BSD-3-Clause
 
+import ast
 import os
 import json
 import re
@@ -495,6 +496,23 @@ output = '\n'.join(collected_lines)
 # "\n" to the host line ending, so a Windows run emits CRLF and a Linux run
 # emits LF -- and CI's byte-for-byte diff of the generated engine would then
 # depend on who ran the assembler rather than on what the sources say.
+# Refuse to write an engine that does not parse. The import stripper matches a
+# single-line `from X import Y as _Z`; a PARENTHESISED import has its first
+# line removed and its continuation left behind, which produced an unmatched
+# ')' in sicopr.py on 2026-09-22 and was only noticed when three unrelated test
+# files failed to import. Assembling is the last step that can catch this, and
+# a silent bad write costs far more to diagnose downstream than it does here.
+try:
+    ast.parse(output)
+except SyntaxError as _e:
+    _bad = output.split('\n')[max(0, (_e.lineno or 1) - 1)].strip()
+    raise SystemExit(
+        'assemble_sicopr.py: the generated engine does not parse, so it was '
+        'NOT written.\n  line %s: %s\n  %s\n'
+        'A cross-module import must be written on ONE line:\n'
+        '    from com_functions.fn.X.py_impl import X as _X'
+        % (_e.lineno, _bad, _e.msg))
+
 with open('sicopr.py', 'w', encoding='utf-8', newline='\n') as f:
     f.write(output)
 

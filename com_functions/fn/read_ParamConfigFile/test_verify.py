@@ -51,6 +51,9 @@ R_LM,1
 Include PCB,0
 g_DC,-1
 SNR_TX,30
+M,32
+R_0,50
+RESULT_DIR,results
 '''
 
 FULL_CSV = '''\
@@ -83,6 +86,8 @@ A_fe,0.4
 A_ne,0.4
 kappa1,1
 kappa2,1
+M,32
+RESULT_DIR,results
 '''
 
 
@@ -271,6 +276,9 @@ R_LM,1
 Include PCB,0
 g_DC,-1
 SNR_TX,30
+M,32
+R_0,50
+RESULT_DIR,results
 PKG_NAME,TXPKG RXPKG
 .START,TXPKG
 C_p,0.1
@@ -296,3 +304,126 @@ A_v,0.45
         assert abs(float(np.atleast_1d(param.C_pkg_board)[1]) - 0.2e-9) < 1e-20
     finally:
         os.unlink(fname)
+
+
+# ============================================================
+# COM Octave oracle values (2026-09-22)
+# read_ParamConfigFile run verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m via tools/octave_oracle.py, with
+# xls_parameter, read_package_parameters, xls_parameter_txffe and csvread4com
+# as its subfunctions, on the example workbook
+# examples/akinwale_CR_22dB_VendorX/config_com_dj_..._Case1.xlsx exported to
+# CSV, and then on that config broken in one way at a time.
+#
+# The whole-config run now agrees on 210 of 210 param fields and 100 of 100 OP
+# fields. Before this pass it differed in these ways:
+#   1. param.C_0 and param.C_1 were never set. They were the only two fields
+#      the reference had and the port did not, and their absence was what made
+#      parameter_size_adjustment's make_length2 loop skip a missing field
+#      rather than error (see the note at sicopr.py L14234);
+#   2. M, R_0 and RESULT_DIR are MANDATORY in the reference and the port gave
+#      them defaults. ML 10235 reads `xls_parameter(parameter,'M',32)` and ML
+#      10273 `xls_parameter(parameter,'R_0',50)`: the third argument of
+#      xls_parameter is eval_if_string, not default_value, so those numbers
+#      are truthy eval flags and neither keyword has a default. R_0's flag
+#      also means a string value is evaluated, which the port did not do;
+#   3. a blank value cell came back as '' instead of NaN, so the first
+#      arithmetic on it raised TypeError where the reference carries NaN;
+#   4. param.c, param.alen and param.az were Python lists, not vectors.
+#
+# NOT reproduced, reported instead: a non-numeric value in a numeric keyword.
+# COM Octave, f_b = abc: param.fb = [9.7e10 9.8e10 9.9e10], because MATLAB
+# multiplies the char's ASCII codes. Matching that would mean emulating
+# implicit char->double arithmetic through the whole parser for a value that
+# is meaningless either way, so the port still raises there.
+# ============================================================
+
+
+def _write_csv(tmp_path, text, name='cfg.csv'):
+    p = tmp_path / name
+    p.write_text(text, encoding='utf-8')
+    return str(p)
+
+
+def test_octave_C_0_and_C_1_default_to_zero(minimal_csv_file):
+    """COM Octave: param.C_0 and param.C_1 exist on every read and are 0 when
+    the keywords are absent. The port set neither."""
+    param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
+    assert float(np.atleast_1d(param.C_0)[0]) == 0.0
+    assert float(np.atleast_1d(param.C_1)[0]) == 0.0
+
+
+def test_octave_C_0_and_C_1_scale_by_1e9(tmp_path):
+    """COM Octave: C_0 and C_1 are given in nF, so 0.3 -> 3e-10."""
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'C_0,0.3\nC_1,0.25\n')
+    param, _ = read_ParamConfigFile(path, make_op())
+    assert float(np.atleast_1d(param.C_0)[0]) == pytest.approx(0.3e-9)
+    assert float(np.atleast_1d(param.C_1)[0]) == pytest.approx(0.25e-9)
+
+
+@pytest.mark.parametrize('keyword', ['M,32\n', 'R_0,50\n', 'RESULT_DIR,results\n'])
+def test_octave_mandatory_keywords(tmp_path, keyword):
+    """COM Octave: dropping any of M, R_0 or RESULT_DIR stops the reference
+    (it reaches its own missing-parameter path, which calls the undefined
+    missingParameter). The port supplied 32, 50 and '' instead."""
+    path = _write_csv(tmp_path, MINIMAL_CSV.replace(keyword, ''))
+    with pytest.raises(KeyError):
+        read_ParamConfigFile(path, make_op())
+
+
+def test_octave_R_0_string_is_evaluated(tmp_path):
+    """COM Octave: R_0 = '[50 50]' gives param.Z0 = [50 50], because
+    xls_parameter's eval_if_string argument is the truthy 50."""
+    path = _write_csv(tmp_path, MINIMAL_CSV.replace('R_0,50\n', 'R_0,[50 50]\n'))
+    param, _ = read_ParamConfigFile(path, make_op())
+    np.testing.assert_array_equal(np.atleast_1d(param.Z0), [50.0, 50.0])
+
+
+def test_octave_blank_value_cell_is_nan(tmp_path):
+    """COM Octave: f_b with an empty value cell gives param.fb = NaN, not an
+    error. xlsread's raw output is NaN for a blank, which is also why ML 9660
+    can ask `if isnan(param.PKG_NAME)`."""
+    path = _write_csv(tmp_path, MINIMAL_CSV.replace('f_b,53.125\n', 'f_b,\n'))
+    param, _ = read_ParamConfigFile(path, make_op())
+    assert np.isnan(float(np.atleast_1d(param.fb)[0]))
+
+
+def test_octave_placeholder_vectors_are_arrays(minimal_csv_file):
+    """ML 10161-10163: param.c, param.alen and param.az are double row
+    vectors. A Python list multiplies by repeating instead of scaling."""
+    param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
+    for name, want in (('c', [0.4e-12, 0.4e-12]), ('alen', [20.0, 30.0, 550.0]),
+                       ('az', [100.0, 120.0, 100.0])):
+        got = getattr(param, name)
+        assert isinstance(got, np.ndarray), '%s is %r' % (name, type(got))
+        np.testing.assert_array_equal(got, want)
+
+
+def test_octave_duplicate_keyword_is_an_error(tmp_path):
+    """COM Octave: 2 occurrences of "f_b" found. Please recheck spreadsheet."""
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'f_b,99\n')
+    with pytest.raises(ValueError):
+        read_ParamConfigFile(path, make_op())
+
+
+def test_octave_start_without_end_is_an_error(tmp_path):
+    """COM Octave: Number of .START and .END must be the same."""
+    path = _write_csv(tmp_path, MINIMAL_CSV + '.START,BLK\nC_p,0.1\n')
+    with pytest.raises(ValueError):
+        read_ParamConfigFile(path, make_op())
+
+
+def test_octave_pkg_name_without_blocks_is_an_error(tmp_path):
+    """COM Octave: PKG_NAME can only be used if .START blocks for package
+    parameters are used."""
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'PKG_NAME,NOSUCH\n')
+    with pytest.raises(ValueError):
+        read_ParamConfigFile(path, make_op())
+
+
+def test_octave_pkg_name_unknown_block_is_an_error(tmp_path):
+    """COM Octave: Package Block "NOSUCH" not found."""
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'PKG_NAME,NOSUCH\n'
+                      '.START,TXPKG\nC_p,0.1\n.END,TXPKG\n')
+    with pytest.raises(ValueError):
+        read_ParamConfigFile(path, make_op())

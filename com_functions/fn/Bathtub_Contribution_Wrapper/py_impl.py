@@ -96,7 +96,11 @@ def Bathtub_Contribution_Wrapper(COM_SNR_Struct, Noise_Struct, param, chdata, OP
         hax.set_ylim([param.specBER / 10, 1])
         xlims = hax.get_xlim()
         hax.plot(list(xlims), [param.specBER, param.specBER], 'r:')
-        base_str = chdata[0].base.replace('_', ' ')
+        # MATLAB appends the space BEFORE regexprep and the format adds another,
+        # so the title ends in TWO spaces.  COM Octave:
+        #   sprintf('case %d VBC: %s ',1,regexprep(['Case_1_port_A',' '],'_',' '))
+        #   -> 'case 1 VBC: Case 1 port A  '  (27 chars)
+        base_str = (chdata[0].base + ' ').replace('_', ' ')
         hax.set_title(f'case {case_number} VBC: {base_str} ')
     else:
         # MATLAB L1003-1021: COM contribution (rough allocation) branch.
@@ -123,5 +127,5 @@ def Bathtub_Contribution_Wrapper(COM_SNR_Struct, Noise_Struct, param, chdata, OP
             param.delta_y,
             param,
         )
-        base_str = chdata[0].base.replace('_', ' ')
+        base_str = (chdata[0].base + ' ').replace('_', ' ')   # see VBC branch
         hax.set_title(f'case {case_number} rough COM impact: {base_str} ')

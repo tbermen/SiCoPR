@@ -123,3 +123,66 @@ def test_rank_truncating_solver_would_fail_this_fixture():
     assert rank < 4 or np.max(np.abs(LGw - efit_ls)) > 1e-6, (
         'lstsq solved this system at full rank %d with a good fit, so the '
         'fixture is too well conditioned to catch defect #2' % rank)
+
+
+# ---------------------------------------------------------------------------
+# COM Octave oracle — get_ILN run verbatim under Octave.
+#
+# Nominal fit, 12 points from 1 to 45 GHz. Pinned to 1e-9, not to the bit:
+# cond(fmbg'*fmbg) overflows to inf, so a last-bit difference in abs() of a
+# complex number (numpy and Octave disagree on 14 of 40 sampled magnitudes)
+# is amplified to ~1e-12 in efit. 1e-9 is still four orders tighter than any
+# solver-choice error: a rank-truncating lstsq is wrong by 3.6-14.4 dB here.
+# ---------------------------------------------------------------------------
+_ORACLE_F = np.array([1e9, 5e9, 9e9, 13e9, 17e9, 21e9, 25e9, 29e9, 33e9, 37e9,
+                      41e9, 45e9])
+_ORACLE_MAG = np.array([
+    1.1034124223443182, 0.95505195038794033, 0.91419223397514238,
+    0.87867716068104229, 0.85339609782545101, 0.7923632932293726,
+    0.74656644815753692, 0.71495736609538985, 0.72398705823708043,
+    0.71990424201689651, 0.6717389736367565, 0.62391912571182562])
+
+
+def test_octave_oracle_nominal_fit():
+    sdd21 = _ORACLE_MAG * np.exp(-1j * _ORACLE_F / 1e10)
+    ILN, efit = get_ILN(sdd21, _ORACLE_F)
+    np.testing.assert_allclose(efit, [
+        0.82261526946545516, -0.24031849626559204, -0.81541358993353297,
+        -1.2471528352777577, -1.6128130934891733, -1.9452365038520267,
+        -2.2620323149769481, -2.5739452112305679, -2.8881035687239329,
+        -3.2095238657359824, -3.5418949212370689, -3.8880232377563759],
+        rtol=0, atol=1e-9)
+    np.testing.assert_allclose(ILN, [
+        0.032142110266793367, -0.15914158717620452, 0.036164143043359687,
+        0.12373959525691092, 0.23582614760283427, -0.076276529266491089,
+        -0.27659832166267861, -0.34045188901525369, 0.082719627847610333,
+        0.35501851854486821, 0.085905848632915394, -0.209410786972553],
+        rtol=0, atol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# COM Octave oracle — an exactly singular normal matrix.
+#
+# MATLAB's inv() does not raise there: it warns and returns Inf everywhere,
+# and the Inf (or the NaN that Inf*0 makes of it) comes out in efit and ILN.
+#
+#   get_ILN(s(1), f(1))            Octave: efit  Inf,  ILN -Inf
+#   get_ILN(zeros(1,6), f(1:6))    Octave: efit  NaN,  ILN  NaN
+#     warning: inverse: matrix singular to machine precision, rcond = 0
+#
+# The port used to catch LinAlgError and re-solve with np.linalg.lstsq, which
+# answered the first with efit 1.0662767 and the second with efit 0 — finite
+# numbers the reference never produces, on inputs where it is telling the
+# caller the fit does not exist.
+# ---------------------------------------------------------------------------
+def test_octave_oracle_single_point_is_infinite():
+    sdd21 = _ORACLE_MAG[:1] * np.exp(-1j * _ORACLE_F[:1] / 1e10)
+    ILN, efit = get_ILN(sdd21, _ORACLE_F[:1])
+    assert efit[0] == np.inf
+    assert ILN[0] == -np.inf
+
+
+def test_octave_oracle_all_zero_sdd21_is_nan():
+    ILN, efit = get_ILN(np.zeros(6, dtype=complex), _ORACLE_F[:6])
+    assert np.all(np.isnan(efit))
+    assert np.all(np.isnan(ILN))

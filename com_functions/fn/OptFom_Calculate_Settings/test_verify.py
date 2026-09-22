@@ -98,3 +98,74 @@ def test_peak_search_range_within_data():
     n = len(chdata[0].uneq_pulse_response)
     assert S.Peak_Search_Range[0] >= 0
     assert S.Peak_Search_Range[-1] < n
+
+
+# ============================================================
+# COM Octave oracle — the CL120d GDC-qual matrix, built by running
+# OptFom_Calculate_Settings verbatim under Octave with
+#   param.ctle_gdc_values = [-1 -3 -5 -7 -9 -11]
+#   param.g_DC_HP_values  = [0 -1 -2 -3]
+#   param.CTLE_type       = 'CL120d'
+# and the gqual / g2qual below.
+#
+# Two things in this block do not survive a naive translation:
+#
+#   sort(g2qual,'descend') is STABLE, so tied values keep their input order.
+#   np.argsort(a,'stable')[::-1] reverses them. Octave:
+#       sort([3 1 3 2 1],'descend') -> index [1 3 4 2 5]
+#   Reversing the stable ascending sort gives [3 1 4 5 2] instead, which
+#   pairs each qual row with the wrong g2 window.
+#
+#   The gdc test reads gqual(kk,2) and gqual(kk,1) of the row after it is
+#   sorted descending — the two LARGEST entries. min() and max() of the row
+#   agree only while gqual has exactly two columns.
+#
+# And gqual(si,:) treats a bare [0 -6] as one row of two columns, where
+# indexing a 1-D array picks out single elements.
+# ============================================================
+_OR_GDC = np.array([-1.0, -3, -5, -7, -9, -11])
+_OR_GHP = np.array([0.0, -1, -2, -3])
+
+
+def _qual_param(gqual, g2qual, M=8, fb=53.125e9):
+    p = _param(M=M, fb=fb)
+    p.CTLE_type = 'CL120d'
+    p.ctle_gdc_values = _OR_GDC.copy()
+    p.g_DC_HP_values = _OR_GHP.copy()
+    p.gqual = np.asarray(gqual, dtype=float)
+    p.g2qual = np.asarray(g2qual, dtype=float)
+    return p
+
+
+@pytest.mark.parametrize('gqual,g2qual,expected', [
+    # tied g2qual: rows 2 and 3 of qual depend on the tie order
+    ([[0, -6], [-6, -12], [-3, -9]], [0, -2, -2],
+     [[1, 1, 1, 0, 0, 0], [0, 0, 0, 1, 1, 1],
+      [0, 0, 0, 1, 1, 1], [0, 0, 0, 0, 0, 0]]),
+    ([[-1, -5], [-2, -8], [-4, -10], [0, -6]], [-1, -1, -2, -1],
+     [[0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0],
+      [0, 0, 1, 1, 1, 0], [0, 0, 0, 0, 0, 0]]),
+    # three columns: the test uses the two largest, not min and max
+    ([[0, -3, -6], [-6, -9, -12]], [0, -2],
+     [[1, 1, 0, 0, 0, 0], [0, 0, 0, 1, 1, 0],
+      [0, 0, 0, 1, 1, 0], [0, 0, 0, 0, 0, 0]]),
+    # one qual pair, written as a bare row
+    ([0, -6], [0],
+     [[1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0]]),
+    # no ties, for the ordinary case
+    ([[0, -6], [-6, -12], [-3, -9]], [0, -2, -1],
+     [[1, 1, 1, 0, 0, 0], [0, 0, 1, 1, 1, 0],
+      [0, 0, 0, 1, 1, 1], [0, 0, 0, 0, 0, 0]]),
+])
+def test_octave_oracle_cl120d_qual(gqual, g2qual, expected):
+    S = OptFom_Calculate_Settings(np.zeros((1, 5)), _chdata(),
+                                  _qual_param(gqual, g2qual), _op())
+    np.testing.assert_array_equal(S.qual, np.asarray(expected, dtype=float))
+
+
+def test_octave_oracle_single_column_gqual_refused():
+    """Octave: gqual(_,2): out of bound 1 (dimensions are 2x1)."""
+    with pytest.raises(IndexError):
+        OptFom_Calculate_Settings(np.zeros((1, 5)), _chdata(),
+                                  _qual_param([[0], [-6]], [0, -2]), _op())

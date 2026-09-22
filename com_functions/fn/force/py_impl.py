@@ -218,44 +218,68 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
         Vfiltered = _FFE(C, cmx, spui, V)
         return Vfiltered, np.asarray(C, dtype=float).ravel(), idx
 
-    # Build vsampled_raw: samples at spui spacing starting at ix
+    # Build vsampled_raw: samples at spui spacing starting at ix.
+    #
+    # MATLAB's ix is 1-BASED and ours is 0-based, so mod(ix,spui) there is
+    # (ix+1) % spui here. Taking the modulus of the 0-based ix instead put the
+    # first pre-cursor sample one UI late whenever mod(ix_MATLAB,spui)==1, and
+    # dropped V(1) from the sampled vector. COM Octave, spui=4, cmx=2, cpx=3,
+    # V = exp(-(t-17)^2/12) + 0.4*exp(-t/6) on t=0:39:
+    #   ix=5  -> Cmod(1) = -341.8916096927, the port gave 1.3240864760e-16
+    #   ix=9  -> Cmod(1) =   -1.2321309684, the port gave -1.6655157754
+    #   ix=13 -> Cmod(1) =   -0.1151234261, the port gave 0.3764832703
+    #   ix=17 -> Cmod(6) = -7.9658626843e-08, the port gave 9.0392051417e-05
+    # Every ix with mod(ix,spui)~=1 already agreed to 1e-14.
+    #
+    # Both MATLAB branches end the pre-cursor run at 1-based ix-spui, because
+    # mod(ix,spui) + spui*(floor(ix/spui)-1) is ix-spui either way.
+    #
+    # `ix < length(V)` is on the 1-BASED ix, so the last sample of V takes the
+    # else branch in MATLAB and took the if branch here. COM Octave, same V and
+    # params, ix = length(V) = 64:
+    #   Cmod = [-0.180678956 0.117026343 1 -0.23555319 0.209619484 -0.239829445]
+    #   the port gave [0.02850437 -0.19691076 1 -0.091935245 0.131560803 -0.04219104]
     N = len(V)
     ix = int(ix)
-    mod_ix = ix % spui
-    if ix < N:
-        if mod_ix == 0:
-            pre_start = spui
-        else:
-            pre_start = mod_ix
-        # pre-cursor part
-        pre_idx = np.arange(pre_start, ix, spui)
+    mod_ix = (ix + 1) % spui                       # MATLAB mod(ix, spui)
+    first = (spui if mod_ix == 0 else mod_ix) - 1  # 0-based first pre sample
+    ix_before_end = (ix + 1) < N                   # MATLAB ix < length(V)
+    if ix_before_end:
+        pre_idx = np.arange(first, ix - spui + 1, spui)
         post_idx = np.arange(ix, N, spui)
         vsampled_raw = np.concatenate([V[pre_idx], V[post_idx]])
     else:
-        if mod_ix == 0:
-            start = spui
-        else:
-            start = mod_ix
-        vsampled_raw = V[start::spui]
+        vsampled_raw = V[first::spui]
 
     # Zero-pad: [zeros(num_taps), vsampled_raw, zeros(cpx)]
     vsampled = np.concatenate([np.zeros(num_taps), vsampled_raw, np.zeros(cpx)])
 
     # Find ivs: index in vsampled matching V[ix]
-    if ix < N:
+    if ix_before_end:
         matches = np.where(vsampled == V[ix])[0]
         ivs = int(matches[0]) if len(matches) > 0 else num_taps
     else:
         ivs = int(np.argmax(vsampled))
 
-    # Build VV matrix (num_taps x num_taps)
+    # Build VV matrix (num_taps x num_taps).
+    # A window that runs off either end of vsampled is a subscript error in
+    # MATLAB, not a short column zero-filled to length. Silently padding meant
+    # the solve ran on a VV the reference never produces. COM Octave, spui=4,
+    # cmx=2, cpx=3, length(V)=64, ix=63:
+    #   error: vsampled(26): out of bound 25 (dimensions are 1x25)
+    #   force at line 90 column 5
+    nvs = len(vsampled)
     VV = np.zeros((num_taps, num_taps))
     for i in range(num_taps):
         start_idx = ivs + i
         end_idx = start_idx - num_taps + 1
-        if end_idx >= 0 and start_idx < len(vsampled):
-            col = vsampled[start_idx:end_idx - 1 if end_idx > 0 else None:-1][:num_taps]
-            VV[:len(col), i] = col
+        if start_idx >= nvs:
+            raise IndexError('vsampled(%d): out of bound %d (dimensions are '
+                             '1x%d)' % (start_idx + 1, nvs, nvs))
+        if end_idx < 0:
+            raise IndexError('vsampled(%d): subscripts must be either integers '
+                             '1 to (2^63)-1 or logicals' % (end_idx + 1))
+        VV[:, i] = vsampled[start_idx:end_idx - 1 if end_idx > 0 else None:-1]
 
     if C is None or len(np.asarray(C)) == 0:
         ffe_opt = str(getattr(OP, 'FFE_OPT_METHOD', 'FORCE')).upper()
@@ -305,7 +329,17 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
         Cmod = C_solved[:num_taps]
 
-        # Floating taps
+        # Floating taps.
+        # DIVERGENCE, REPORTED NOT FIXED (2026-09-22): MATLAB calls findbankloc
+        # unconditionally, this guard skips it when N_bg==0. With N_bg==0 the
+        # routine returns an empty idx, so the outputs agree -- unless
+        # param.N_bmax exceeds the length of the vector it indexes, where the
+        # reference stops and this does not. COM Octave, cmx=2, cpx=3
+        # (num_taps=6), N_bg=0, N_bmax=10:
+        #   error: hisi(10): out of bound 6 (dimensions are 6x1)
+        #   findbankloc at line 12 column 1 / force at line 127 column 14
+        # The bound belongs in findbankloc, which is a shared helper, so this
+        # is for the owner of com_functions/fn/findbankloc to place.
         N_bg = int(getattr(param, 'N_bg', 0))
         if N_bg != 0:
             N_tail_start = int(getattr(param, 'N_tail_start', cpx))
@@ -322,6 +356,14 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
         tap_constraint = str(getattr(OP, 'RXFFE_TAP_CONSTRAINT', 'unity cursor')).lower()
         if tap_constraint == 'unity cursor':
+            # DIVERGENCE, REPORTED NOT FIXED (2026-09-22): ML 6238 is
+            # `Cmod=Cmod/Cmod(cmx+1)` with no guard, so a vanishing cursor tap
+            # gives Inf/NaN taps, while the 1e-12 floor below silently leaves
+            # the taps UNNORMALISED -- and for a small-but-legal cursor tap the
+            # two answers differ by the whole scale factor. No oracle case was
+            # found: Cmod(cmx+1) only collapses when VV is degenerate, which is
+            # the very case the HELD decision above covers, so this is left for
+            # the same ruling rather than resolved here.
             cursor_val = float(Cmod[cmx]) if abs(Cmod[cmx]) > 1e-12 else 1.0
             Cmod = Cmod / cursor_val
         else:

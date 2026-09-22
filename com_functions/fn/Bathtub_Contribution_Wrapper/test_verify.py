@@ -104,3 +104,59 @@ def test_plot_bathtub_adds_lines():
     _plot_bathtub_curves(ax, 0.5, d, d, g, g, d, g, bs)
     assert len(ax.lines) > 0
     plt.close('all')
+
+
+# ============================================================
+# COM Octave oracle values — this function is display-only: every MATLAB
+# statement in it is figure/subplot/plot/title/ylim/linkaxes, and it returns
+# nothing, so there is no numeric output to pin.  The one piece that IS a pure
+# function of the inputs is the axes title, and it diverged.
+#
+# MATLAB appends the trailing space BEFORE regexprep and the sprintf format
+# adds a second one, so the title ends in TWO spaces; the port emitted one.
+#
+# COM Octave:
+#   sprintf('case %d VBC: %s ', 1, regexprep(['Case_1_port_A',' '],'_',' '))
+#     -> 'case 1 VBC: Case 1 port A  '   (27 chars)
+#   ... regexprep(['no_underscore',' '],'_',' ')
+#     -> 'case 1 VBC: no underscore  '   (27 chars)
+#   ... regexprep(['trailing_',' '],'_',' ')
+#     -> 'case 1 VBC: trailing   '       (23 chars)
+# ============================================================
+
+@pytest.mark.parametrize('base,expected', [
+    ('Case_1_port_A', 'case 1 VBC: Case 1 port A  '),
+    ('no_underscore', 'case 1 VBC: no underscore  '),
+    ('trailing_',     'case 1 VBC: trailing   '),
+])
+def test_octave_vbc_title_has_two_trailing_spaces(base, expected):
+    mpl = pytest.importorskip('matplotlib')
+    mpl.use('Agg')
+    import matplotlib.pyplot as plt
+    SNR, Noise, param, OP, chdata = _make_structs()
+    chdata = [SimpleNamespace(base=base)]
+    Bathtub_Contribution_Wrapper(SNR, Noise, param, chdata, OP)
+    titles = [ax.get_title() for f in map(plt.figure, plt.get_fignums())
+              for ax in f.axes if ax.get_title()]
+    assert expected in titles, titles
+    assert len(expected) == {'Case_1_port_A': 27, 'no_underscore': 27,
+                             'trailing_': 23}[base]
+    plt.close('all')
+
+
+def test_octave_pie_title_has_two_trailing_spaces(monkeypatch):
+    """COM Octave: sprintf('case %d rough COM impact: %s ', 1,
+    regexprep(['Case_1_port_A',' '],'_',' ')) is the same construction."""
+    mpl = pytest.importorskip('matplotlib')
+    mpl.use('Agg')
+    import matplotlib.pyplot as plt
+    import com_functions.fn.Bathtub_Contribution_Wrapper.py_impl as mod
+    monkeypatch.setattr(mod, 'plot_pie_com', lambda *a, **k: None, raising=False)
+    SNR, Noise, param, OP, chdata = _make_structs()
+    OP.COM_CONTRIBUTION_CURVES = True
+    chdata = [SimpleNamespace(base='Case_1_port_A')]
+    mod.Bathtub_Contribution_Wrapper(SNR, Noise, param, chdata, OP)
+    titles = [ax.get_title() for f in map(plt.figure, plt.get_fignums())
+              for ax in f.axes if ax.get_title()]
+    assert 'case 1 rough COM impact: Case 1 port A  ' in titles, titles
+    plt.close('all')

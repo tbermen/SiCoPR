@@ -57,6 +57,11 @@ MUT_NPFUNCS = {'place', 'put', 'putmask', 'copyto', 'fill_diagonal',
 # Accepted sites, each with the reason it is not a defect. Anything not here
 # fails the run.
 KNOWN = {
+    ('COM_CommandLine_Parse', '_pop', 'args'):
+        'args is a fresh local list, built at COM_CommandLine_Parse L81 as '
+        'list(varargin), so args.pop(0) cannot reach the caller. This is the '
+        'varargin_extractor idiom, where consuming the leading argument is the '
+        'whole point of the helper.',
     ('COM_eye_width', 'COM_eye_width', 'chdata'):
         'timing_bathtub is a SiCoPR-only plotting side-channel with no MATLAB '
         'counterpart (grep: absent from com_ieee8023_4p16p0.m). com_plots.py '

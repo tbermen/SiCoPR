@@ -43,14 +43,22 @@ COM_MATLAB_VERSION = '4p15p0'
 # ---------------------------------------------------------------------------
 
 def _parse_cell(cell):
-    """Convert a CSV cell to float if possible, else keep as string."""
+    """Convert a CSV cell to float if possible, else keep as string.
+
+    An empty cell is NaN, not '': that is what xlsread's raw output gives for
+    a blank, and the reference depends on it -- ML 9660 reads PKG_NAME with a
+    '' default and then asks `if isnan(param.PKG_NAME)`, which only makes
+    sense if a blank cell arrives as NaN. COM Octave, f_b with a blank value
+    cell: param.fb = NaN, where the port raised
+    "TypeError: can't multiply sequence by non-int of type float" on '' * 1e9.
+    """
     if cell is None:
-        return ''
+        return float('nan')
     if isinstance(cell, (int, float)):
         return cell
     s = str(cell).strip()
     if not s:
-        return ''
+        return float('nan')
     try:
         return float(s)
     except ValueError:
@@ -223,7 +231,12 @@ def _xls_param(parameter, param_name, eval_if_string=False, default_value=_SENTI
     if len(matches) > 1:
         raise ValueError(f'{len(matches)} occurrences of "{param_name}" found in spreadsheet')
     r, c = matches[0]
-    p = parameter[r][c + 1] if c + 1 < len(parameter[r]) else ''
+    # A short row: xlsread pads the sheet to a rectangle, so the cell past the
+    # end of a row is a blank one, i.e. NaN, not ''. Not measured directly --
+    # Octave's csvread4com (SiCoPR's own, not the reference) leaves '' there --
+    # but '' guaranteed a TypeError on the first arithmetic, which is neither
+    # reference's answer.
+    p = parameter[r][c + 1] if c + 1 < len(parameter[r]) else float('nan')
     return _eval_matlab_value(p, eval_if_string)
 
 
@@ -362,9 +375,11 @@ def read_ParamConfigFile(paramFile, OP):
             raise ValueError(f'Package Block "{pkg_n}" not found')
 
     # ---- Legacy layout parameters ----
-    param.c = [0.4e-12, 0.4e-12]
-    param.alen = [20, 30, 550]
-    param.az = [100, 120, 100]
+    # ML 10161-10163 makes these double row vectors, not lists; a Python list
+    # multiplies by repeating, which is not what a MATLAB vector does.
+    param.c = np.array([0.4e-12, 0.4e-12])
+    param.alen = np.array([20.0, 30.0, 550.0])
+    param.az = np.array([100.0, 120.0, 100.0])
 
     param.kappa1 = _xls_param(parameter, 'kappa1', True, 1)
     param.kappa2 = _xls_param(parameter, 'kappa2', True, 1)
@@ -533,7 +548,12 @@ def read_ParamConfigFile(paramFile, OP):
     param.SNDR = _xls_param(parameter, 'SNR_TX', True)
     param.S_tn_w_AM = _xls_param(parameter, 'S_tn_w_AM', False, 0)
     param.R_LM = _xls_param(parameter, 'R_LM')
-    param.samples_per_ui = _xls_param(parameter, 'M', True, 32)
+    # ML 10235 is `xls_parameter(parameter, 'M', 32)`: the THIRD argument of
+    # xls_parameter is eval_if_string, not default_value, so the 32 is a
+    # truthy eval flag and M has NO default -- it is mandatory. COM Octave,
+    # a config without M: error (the reference's own missing-parameter path,
+    # which calls the undefined missingParameter). The port quietly used 32.
+    param.samples_per_ui = _xls_param(parameter, 'M', True)
     param.ts_sample_adj_range = _xls_param(parameter, 'sample_adjustment', True, [0, 0])
     param.ts_anchor = _xls_param(parameter, 'ts_anchor', True, 0)
 
@@ -575,7 +595,11 @@ def read_ParamConfigFile(paramFile, OP):
     param.C_diepad = _xls_param(parameter, 'C_d', True, 0) * 1e-9
     param.L_comp = _xls_param(parameter, 'L_s', True, 0) * 1e-9
     param.C_bump = _xls_param(parameter, 'C_b', True, 0) * 1e-9
-    param.Z0 = _xls_param(parameter, 'R_0', False, 50)
+    # ML 10273 is `xls_parameter(parameter, 'R_0', 50)`, the same shape as M:
+    # mandatory, and eval_if_string is the truthy 50, so a string value IS
+    # evaluated. COM Octave, R_0 = '[50 50]': param.Z0 = [50 50]; without
+    # R_0 at all: error. The port used 50 as a default and did not eval.
+    param.Z0 = _xls_param(parameter, 'R_0', True)
     param.C_v = _xls_param(parameter, 'C_v', True, 0) * 1e-9
     param.R_diepad = _xls_param(parameter, 'R_d', True, [50, 50])
     param.Z_t = _xls_param(parameter, 'Z_t', True, param.Z0)
@@ -602,6 +626,16 @@ def read_ParamConfigFile(paramFile, OP):
         param.flex = 1
     else:
         raise ValueError('config file syntax error: z_p (TX) must have 1, 2, or 4 columns')
+
+    # board parameters. MATLAB L10379-10380 sets these on EVERY read, whatever
+    # Include PCB says, and the port set neither. COM Octave, this config:
+    # param.C_0 and param.C_1 are present and 0, and were the only two fields
+    # of 210 that the reference had and the port did not.
+    # Their absence is what made parameter_size_adjustment's make_length2 loop
+    # skip a missing field instead of erroring, and it would have crashed
+    # add_brd (sicopr.py L7549) on any config with Include PCB set.
+    param.C_0 = _xls_param(parameter, 'C_0', True, 0) * 1e-9
+    param.C_1 = _xls_param(parameter, 'C_1', True, 0) * 1e-9
 
     def _load_zp_check(key):
         arr = _load_zp_cases(key)
@@ -747,7 +781,9 @@ def read_ParamConfigFile(paramFile, OP):
     OP.TDMODE = _xls_param(parameter, 'TDMODE', False, OP.TDMODE)
     OP.FT_COOP = _xls_param(parameter, 'FT_COOP', False, False)
 
-    result_dir = _xls_param(parameter, 'RESULT_DIR', False, '')
+    # ML 10459 passes no default, so RESULT_DIR is mandatory. COM Octave, a
+    # config without it: error. The port defaulted to ''.
+    result_dir = _xls_param(parameter, 'RESULT_DIR')
     if isinstance(result_dir, (int, float)):
         result_dir = ''
     OP.RESULT_DIR = str(result_dir).replace('\\', os.sep)

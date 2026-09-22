@@ -75,3 +75,51 @@ def test_case_insensitive_method():
     S = _settings(N, M)
     out = OptFom_Calc_Noise_XC(np.ones(N), np.ones(N), S, _param(M=M), _op('wiener-hopf'))
     assert len(out) > 0
+
+
+# ============================================================
+# COM Octave oracle values (2026-09-22)
+# OptFom_Calc_Noise_XC run verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m via tools/octave_oracle.py.
+#
+# The WIENER-HOPF branch itself is NOT oracle-able: it calls
+# ifft(X,n,'symmetric'), an option Octave does not implement, so the reference
+# stops there with "invalid conversion from string to real scalar" at line 16.
+# That error is itself the evidence for the case-insensitivity tests below:
+# reaching line 16 proves the case label was taken.
+# ============================================================
+
+
+def test_octave_settings_read_before_the_switch():
+    """COM Octave: H_r_xc/f_xc/N_fft_by2 are read above the switch, so a
+    SETTINGS without them errors for every method:
+        OP.FFE_OPT_METHOD='MMSE', SETTINGS without H_r_xc ->
+        error: structure has no member 'H_r_xc'
+        OptFom_Calc_Noise_XC at line 4 column 1
+    """
+    S = SimpleNamespace(f_xc=np.linspace(0, 10e9, 8), N_fft_by2=8)
+    with pytest.raises(AttributeError):
+        OptFom_Calc_Noise_XC(np.ones(8), np.ones(8), S, _param(), _op('MMSE'))
+
+
+def test_octave_mmse_returns_empty():
+    """COM Octave: OP.FFE_OPT_METHOD='MMSE' -> Noise_XC = [] (0x0)."""
+    out = OptFom_Calc_Noise_XC(np.ones(8), np.ones(8), _settings(8, 2),
+                               _param(M=2), _op('MMSE'))
+    assert len(out) == 0
+
+
+def test_octave_empty_method_returns_empty():
+    """COM Octave: OP.FFE_OPT_METHOD='' -> Noise_XC = [] (0x0)."""
+    out = OptFom_Calc_Noise_XC(np.ones(8), np.ones(8), _settings(8, 2),
+                               _param(M=2), _op(''))
+    assert len(out) == 0
+
+
+@pytest.mark.parametrize('method', ['wiener-hopf', 'Wiener-Hopf', 'WIENER-HOPF'])
+def test_octave_method_label_is_case_insensitive(method):
+    """COM Octave: each spelling reaches the ifft on line 16, so upper() makes
+    the case label case-insensitive and none of them fall through to []."""
+    out = OptFom_Calc_Noise_XC(np.ones(8), np.ones(8), _settings(8, 2),
+                               _param(M=2), _op(method))
+    assert len(out) > 0

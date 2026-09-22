@@ -52,6 +52,20 @@ def vma(PR, M):
     icent3 = int(np.floor((indx_S3x7_end - indx_S3x7_start) / 2 + indx_S3x7_start)[0])
     icent0 = int(np.floor((indx_S0x6_end - indx_S0x6_start) / 2 + indx_S0x6_start)[0])
 
+    # MATLAB indexes Bit_stream_response((icent-M):(icent+M)) directly, so a
+    # window that runs off either end is an error there, not a shorter mean.
+    # COM Octave, M=1 with a 9000-sample PR peaking at sample 8901:
+    #   "error: Bit_stream_response(11732): out of bound 4095".
+    # A numpy slice clips instead, and an empty slice made P_3 and P_0 NaN
+    # with no sign that the measurement had left the bit stream.
+    n_bsr = len(Bit_stream_response)
+    for icent in (icent3, icent0):
+        if icent - M < 0 or icent + M >= n_bsr:
+            raise IndexError(
+                'vma: measurement window Bit_stream_response(%d..%d) lies '
+                'outside the %d-sample bit stream'
+                % (icent - M + 1, icent + M + 1, n_bsr))
+
     P_3 = float(np.mean(Bit_stream_response[icent3 - M:icent3 + M + 1]))
     P_0 = float(np.mean(Bit_stream_response[icent0 - M:icent0 + M + 1]))
     VMA = P_3 - P_0

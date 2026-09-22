@@ -9,6 +9,8 @@
 # S2P: sdd11_raw only; S4P: all four 2×2 mixed-mode sub-matrices.
 # ============================================================
 """
+import warnings
+
 import pytest
 import numpy as np
 from types import SimpleNamespace
@@ -197,3 +199,71 @@ def test_second_file_different_freq_raises(tmp_path):
     OP = _make_OP()
     with pytest.raises(ValueError, match='frequency axis'):
         read_s4p_files(param, OP, [ch1, ch2])
+
+
+# ============================================================
+# COM Octave oracle values — the reference's own predicates evaluated under
+# Octave on the same operands (the body around them is file I/O, which an
+# Octave probe cannot say anything useful about).  Pinned 2026-09-22.
+#
+# Two divergences these pin:
+#  * MATLAB warns COM:read_s4p:FreqStepTooHigh when
+#    max(diff(freq)) - param.max_freq_step > 1.  The port had no such check at
+#    all, so an under-sampled channel was read without a word.
+#  * The sdc21 package call sits under a bare `if 1` in MATLAB with no error
+#    handling, so a failure stops the run.  The port wrapped it in
+#    `except Exception: pass`, turning a broken AC-common-mode calculation
+#    into sigma_ACCM_at_tp0 == 0 -- a silent zero noise contribution.
+#
+# COM Octave:
+#   f=0:100e6:1e9, max_freq_step=50e6 -> max(diff(f))-max_freq_step > 1 TRUE
+#   f=0:50e6:1e9,  max_freq_step=50e6 -> FALSE   (exactly at the limit)
+#   f=0:10e6:1e9,  max_freq_step=50e6 -> FALSE
+#   f a single point -> diff is 0x0, the comparison is empty and `if` is false
+# ============================================================
+
+def _uniform_s4p(tmp_path, step_GHz, n=11, name='fs.s4p'):
+    freqs = np.arange(n) * step_GHz + step_GHz
+    p = str(tmp_path / name)
+    _write_s4p(p, freqs, _s4p_identity(freqs))
+    return p, freqs
+
+
+def test_octave_freq_step_too_high_warns(tmp_path):
+    """max(diff(f)) = 100 MHz against max_freq_step = 50 MHz must warn."""
+    p, _ = _uniform_s4p(tmp_path, 0.1)          # 100 MHz steps
+    param = _make_param(tmp_path)
+    param.max_freq_step = 50e6
+    with pytest.warns(UserWarning, match='larger than the recommended'):
+        read_s4p_files(param, _make_OP(), [_make_chdata(p)])
+
+
+def test_octave_freq_step_exactly_at_limit_does_not_warn(tmp_path):
+    """Guard the other side: a 50 MHz step against a 50 MHz limit is FALSE."""
+    p, _ = _uniform_s4p(tmp_path, 0.05)         # 50 MHz steps
+    param = _make_param(tmp_path)
+    param.max_freq_step = 50e6
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter('always')
+        read_s4p_files(param, _make_OP(), [_make_chdata(p)])
+    assert not [w for w in rec if 'larger than the recommended' in str(w.message)]
+
+
+def test_octave_sdc21_package_failure_is_not_swallowed(tmp_path, monkeypatch):
+    """MATLAB has no try/catch around the 'cd' s21_pkg call."""
+    import com_functions.fn.read_s4p_files.py_impl as mod
+
+    def _fake_s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
+        if mode == 'cd':
+            raise RuntimeError('AC-CM package construction failed')
+        n = len(chdata.faxis)
+        return np.ones(n, dtype=complex), np.zeros((n, 2, 2), dtype=complex), 0.0
+
+    monkeypatch.setattr(mod, '_s21_pkg', _fake_s21_pkg)
+    freqs = np.array([1.0, 5.0, 10.0])
+    p = str(tmp_path / 'cd.s4p')
+    _write_s4p(p, freqs, _s4p_identity(freqs))
+    OP = _make_OP()
+    OP.INC_PACKAGE = 1
+    with pytest.raises(RuntimeError, match='AC-CM package construction failed'):
+        read_s4p_files(_make_param(tmp_path), OP, [_make_chdata(p)])

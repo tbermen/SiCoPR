@@ -31,26 +31,39 @@ def synth_tline(f, Z_c, Z_0, gamma_coeff, tau, d):
     gamma_coeff = np.asarray(gamma_coeff, dtype=float)
 
     f_GHz = f / 1e9                                  # MATLAB line 11293
+    # MATLAB's sqrt() and log() of a negative real return a complex value;
+    # numpy's on a float array return NaN.  Casting makes the port answer as
+    # the reference does for f<0, and is bit-neutral for f>=0.
+    # COM Octave: synth_tline(f=[-53e9 -1e9 -1 0 1 1e9 53e9], Z_c=100, Z_0=50,
+    #   gamma_coeff=[2e-4 3.4e-3 1e-4], tau=1e-11, d=0.15) returns finite
+    #   complex s21 at f<0 (1.006069830981237-0.0057570668335386373i at -53GHz),
+    #   where the float path gave NaN.
+    f_GHz_c = f_GHz.astype(complex)
 
     # Eq 93A-10
     gamma_1 = gamma_coeff[1] * (1.0 + 1j)           # MATLAB line 11295
 
     # Eq 93A-11 — suppress log(0) warning; NaN overridden at line 11300
     with np.errstate(divide='ignore', invalid='ignore'):
-        gamma_2 = (gamma_coeff[2] * (1.0 - 2j / np.pi * np.log(f_GHz))
+        gamma_2 = (gamma_coeff[2] * (1.0 - 2j / np.pi * np.log(f_GHz_c))
                    + 2j * np.pi * tau)               # MATLAB line 11297
 
-    # Eq 93A-9
-    gamma = (gamma_coeff[0]
-             + gamma_1 * np.sqrt(f_GHz)
-             + gamma_2 * f_GHz)                      # MATLAB line 11299
+        # Eq 93A-9
+        gamma = (gamma_coeff[0]
+                 + gamma_1 * np.sqrt(f_GHz_c)
+                 + gamma_2 * f_GHz)                  # MATLAB line 11299
     gamma[f_GHz == 0] = gamma_coeff[0]               # MATLAB line 11300 (DC fix)
 
     # Eq 93A-12
     if d == 0:                                       # MATLAB line 11303
         rho_rl = 0.0
     else:
-        rho_rl = (Z_c - 2.0 * Z_0) / (Z_c + 2.0 * Z_0)  # MATLAB line 11308
+        # numpy division, not Python's: at Z_c == -2*Z_0 MATLAB divides by zero
+        # and carries Inf through to an all-NaN result rather than raising.
+        # COM Octave: synth_tline(f, Z_c=-100, Z_0=50, ...) -> s11, s21 all NaN.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            rho_rl = np.float64(Z_c - 2.0 * Z_0) / np.float64(Z_c + 2.0 * Z_0)
+                                                     # MATLAB line 11308
 
     exp_gd = np.exp(-d * gamma)                      # MATLAB line 11311
     exp_gd2 = exp_gd ** 2

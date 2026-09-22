@@ -76,13 +76,14 @@ faxis = np.arange(0.0, 40e9 + 1e9, 1e9)
 py_a, ref_a, idx_a = run_case(faxis, 20e9)
 check("xtlk_index_f2_has_bin_above_fb", idx_a == 22,
       "expected MATLAB 1-based index_f2 == 22 (first bin >20GHz at 0-based 21)")
-# EXPECTED FAIL: sicopr.py omits the first bin above fb -> differs from MATLAB ref.
-xcheck("xtlk_MDFEXT_ICN_matches_matlab_upper_bound",
+# Was DIVERGENT (B13-D18): sicopr.py used a 0-based index_f2 and so omitted the
+# first bin above fb from every ICN sum. RESOLVED 2026-09-22: MATLAB's
+# find(...,1,'first') is 1-based and the sum slices 1:index_f2 inclusively, so
+# the 1-based number is exactly the exclusive Python end. Promoted to check().
+check("xtlk_MDFEXT_ICN_matches_matlab_upper_bound",
       abs(py_a - ref_a) <= TOL,
-      "DIVERGENT (B13-D18, low-med): sicopr.py FEXT sigma=%.9e but MATLAB-correct "
-      "(inclusive upper bound, index_f2=22) =%.9e. sicopr.py index_f2=argmax(f>fb) "
-      "omits the first bin above fb in the ICN sum (sicopr.py 11553; MATLAB 7976/8051)."
-      % (py_a, ref_a))
+      "sicopr.py FEXT sigma=%.9e but MATLAB (inclusive upper bound, "
+      "index_f2=22) =%.9e" % (py_a, ref_a))
 # Confirm the gap equals exactly the omitted index-21 term (mechanism).
 f = faxis
 ta = 32 * (1.0 / (32 * 20e9)) * np.pi * f
@@ -92,10 +93,14 @@ scale = float(np.sqrt((4 ** 2 - 1) / (3 * (4 - 1) ** 2)))
 omitted_term = 2 * 1e9 / 20e9 * (1.0 ** 2 * (sinc[21] ** 2) * (0.5 ** 2))
 ref_sq = (ref_a / scale) ** 2
 py_sq = (py_a / scale) ** 2
-check("xtlk_gap_equals_first_bin_above_fb",
-      abs((ref_sq - py_sq) - omitted_term) <= 1e-9 * max(1.0, ref_sq),
-      "the sicopr.py/MATLAB ICN^2 gap (%.6e) does not equal the omitted first-bin "
-      "term (%.6e)" % (ref_sq - py_sq, omitted_term))
+# This used to assert the gap EQUALLED the omitted term, which characterised
+# the bug. With the bug fixed there is no gap, so it now asserts the opposite:
+# the term is genuinely included. Keeping the mechanism means a regression
+# reappears as a gap of exactly this size rather than as an anonymous delta.
+check("xtlk_first_bin_above_fb_is_included",
+      abs(ref_sq - py_sq) <= 1e-9 * max(1.0, ref_sq),
+      "the sicopr.py/MATLAB ICN^2 gap is %.6e; the first bin above fb (term "
+      "%.6e) is being dropped again" % (ref_sq - py_sq, omitted_term))
 
 # Case B: no bin above fb (fb above the whole grid) -> MATLAB uses all N bins,
 # sicopr.py uses len-1 (omits the last bin). Another off-by-one.
@@ -103,7 +108,8 @@ faxis_b = np.arange(0.0, 20e9 + 1e9, 1e9)   # 0..20 GHz
 py_b, ref_b, idx_b = run_case(faxis_b, 25e9)   # fb above grid -> no f>fb
 check("xtlk_index_f2_empty_case_uses_all_bins", idx_b == len(faxis_b),
       "empty case reference should use all %d bins" % len(faxis_b))
-xcheck("xtlk_MDFEXT_ICN_empty_case_matches_matlab",
+# Also RESOLVED 2026-09-22 by the same 1-based fix.
+check("xtlk_MDFEXT_ICN_empty_case_matches_matlab",
       abs(py_b - ref_b) <= TOL,
       "DIVERGENT (B13-D18, low-med): empty-case sicopr.py FEXT sigma=%.9e but "
       "MATLAB (all bins) =%.9e. sicopr.py uses len(f)-1, omitting the last bin "

@@ -58,8 +58,19 @@ def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
     fmax = 1.0 / time_step / 2.0
     freq_step = (freq[2] - freq[1]) / 1.0
     nstep = _mround(fmax / freq_step)
-    step = fmax / nstep                       # MATLAB 1/round(fmax/freq_step)*fmax
+    # MATLAB writes `1/round(fmax/freq_step)*fmax`, i.e. the reciprocal FIRST and
+    # then the product.  `fmax/nstep` is a different rounding: it moved 2286 of
+    # 3193 grid points by one ulp.
+    # COM Octave: 0:1/round(fmax/freq_step)*fmax:fmax with fmax=4.25e11,
+    #   freq_step=133145363.40852132 matches (1/nstep)*fmax bit-for-bit and
+    #   differs from fmax/nstep on 2286 points.
+    step = (1.0 / nstep) * fmax
     fout = np.arange(0, fmax + step * 0.5, step)
+    # MATLAB's colon clamps its final element to the limit; np.arange lets it
+    # overshoot.  COM Octave: fmax=1.7e12, freq_step=123376152.11553814 gives
+    #   fout(end) == 1.7e12 exactly where i*step is 1700000000000.0002441.
+    if fout.size and fout[-1] > fmax:
+        fout[-1] = fmax
     M = int(param.samples_per_ui)
 
     def _pulse_response(ILin):
@@ -68,8 +79,16 @@ def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
             dtype=complex).ravel()
         nan_idx = np.where(np.isnan(IL))[0]
         for ii in nan_idx:
-            if ii > 0:
-                IL[ii] = IL[ii - 1]
+            # MATLAB's IL(in)=IL(in-1) hits IL(0) when the first point is NaN
+            # and errors out; it does not silently carry the NaN forward.
+            # COM Octave: IL=[NaN;1;2;3]; for in=find(isnan(IL)).'; IL(in)=IL(in-1); end
+            #   -> "error: IL(0): subscripts must be either integers 1 to (2^63)-1
+            #       or logicals"
+            if ii == 0:
+                raise IndexError(
+                    'calculate_delay_CausalityEnforcement: IL(0) - the first '
+                    'interpolated point is NaN, which MATLAB refuses to patch')
+            IL[ii] = IL[ii - 1]
         # conjugate-symmetric padding for a real ifft
         IL_sym = np.concatenate([[np.real(IL[0])], IL[1:-1],
                                  [np.real(IL[-1])], np.conj(IL[1:-1])[::-1]])
@@ -92,7 +111,12 @@ def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
     peak_idx_difference = peak_x_idx - peak_y_idx
 
     if peak_idx_difference != 0:
-        search_bounds = min(peak_x_idx, peak_y_idx)
+        # MATLAB's min() is over 1-BASED peak indices, so its search half-width
+        # is one larger than the 0-based one.  peak_idx_difference is a
+        # difference and so is base-independent, but this is not.
+        # COM Octave: peaks at 1-based 28 and 21 give min(a,b)=21 and shifts
+        #   -14..28 (43 values); the 0-based min gave 20 and -13..27 (41).
+        search_bounds = min(peak_x_idx, peak_y_idx) + 1
         error_value = float(len(sdd21_causality_enforced_PR_reduced))
         error_idx = 0
         for shift_value in range(peak_idx_difference - search_bounds,

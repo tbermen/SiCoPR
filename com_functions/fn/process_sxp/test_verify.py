@@ -229,3 +229,101 @@ def test_no_tdr_when_package_testcase_ne_1():
 
     assert call_count[0] == 0, f"Expected 0 TDR calls, got {call_count[0]}"
     assert not hasattr(chdata_out[0], 'TDR11'), "TDR11 should not be set"
+
+
+# ============================================================
+# COM Octave oracle values — the reference's own predicates evaluated under
+# Octave on the same operands.  process_sxp itself is orchestration plus a
+# large figure/uitab block, so what is pinned here is the decision logic, not
+# a returned waveform.  Pinned 2026-09-22.
+#
+# Two divergences these pin:
+#  * isequal(param.Z0, param.Z_t(izt)) is EXACT.  The port compared with a
+#    1e-6 tolerance, so it ran the CD/DC TDR on impedances the reference
+#    treats as unequal (and reports NaN for).
+#  * find(fir4del==max(fir4del),1) for AUTO_TFX.  MATLAB's max SKIPS NaN and a
+#    NaN never equals the max, so the search lands on the first non-NaN peak;
+#    np.argmax returns the index of the first NaN.
+#
+# COM Octave:
+#   isequal(100, 100)           -> 1
+#   isequal(100, 100.0000005)   -> 0     (abs(a-b) < 1e-6 said True)
+#   isequal(100, 99.9999995)    -> 0     (abs(a-b) < 1e-6 said True)
+#   find(x==max(x),1) on [NaN 1 3 2] -> 3  (1-based; np.argmax gave 0)
+#   find(x==max(x),1) on [1 3 NaN 3] -> 2  (1-based; np.argmax gave 2, the NaN)
+#   find(x==max(x),1) on [NaN NaN]   -> EMPTY
+# ============================================================
+
+def test_octave_Zt_match_is_exact_not_within_1e6():
+    """Z_t a hair off Z0 must be treated as DIFFERENT: no CD/DC TDR, ERL NaN."""
+    ch, f = _make_ch()
+    OP = _make_op()
+    OP.PTDR = True
+    OP.Report_Modal_ERL = 'enable'
+    param = _make_param(Z0=100.0, Z_t=np.array([100.0000005]))
+    zts = []
+
+    def recording_tdr(S, OP_, p, ZT, np_):
+        zts.append(ZT)
+        return _stub_tdr(S, OP_, p, ZT, np_)
+
+    out, _ = process_sxp(param, OP, [ch], None, _get_TDR_fn=recording_tdr)
+    # DD at ZT and CC at ZT/4 only -- no CD (at ZT) and no DC (at ZT/4)
+    assert len(zts) == 4, zts          # 2 ports x (DD + CC)
+    assert np.isnan(out[0].TDR11.ERL_CD)
+    assert np.isnan(out[0].TDR11.ERL_DC)
+
+
+def test_octave_Zt_exactly_equal_still_runs_cd_dc():
+    """Guard the other side: an exact match must still compute CD and DC."""
+    ch, f = _make_ch()
+    OP = _make_op()
+    OP.PTDR = True
+    OP.Report_Modal_ERL = 'enable'
+    param = _make_param(Z0=100.0, Z_t=np.array([100.0]))
+    zts = []
+
+    def recording_tdr(S, OP_, p, ZT, np_):
+        zts.append(ZT)
+        return _stub_tdr(S, OP_, p, ZT, np_)
+
+    out, _ = process_sxp(param, OP, [ch], None, _get_TDR_fn=recording_tdr)
+    assert len(zts) == 8, zts          # 2 ports x (DD + CD + DC + CC)
+    assert out[0].TDR11.ERL_CD == 10.0
+
+
+@pytest.mark.parametrize('fir,expected_pix', [
+    ([np.nan, 1.0, 3.0, 2.0], 2),
+    ([1.0, 3.0, np.nan, 3.0], 1),
+    ([1.0, 3.0, 2.0], 1),
+])
+def test_octave_auto_tfx_peak_skips_nan(fir, expected_pix):
+    ch, f = _make_ch()
+    OP = _make_op()
+    OP.AUTO_TFX = True
+    param = _make_param(Z0=100.0, Z_t=np.array([100.0]))
+    tu = np.arange(len(fir), dtype=float) * 1e-12
+
+    def fake_raw_fir(sdd21, faxis, OP_, p):
+        return np.array(fir, dtype=float), tu
+
+    out, param_out = process_sxp(param, OP, [ch], None,
+                                 _get_TDR_fn=_stub_tdr,
+                                 _get_RAW_FIR_fn=fake_raw_fir)
+    assert param_out.tfx[1] == 2 * tu[expected_pix]
+
+
+def test_octave_auto_tfx_all_nan_raises():
+    """COM Octave: find(x==max(x),1) on an all-NaN vector is EMPTY, so
+    param.tfx(2)=2*tu([]) is not a value assignment at all."""
+    ch, f = _make_ch()
+    OP = _make_op()
+    OP.AUTO_TFX = True
+    param = _make_param(Z0=100.0, Z_t=np.array([100.0]))
+
+    def fake_raw_fir(sdd21, faxis, OP_, p):
+        return np.full(4, np.nan), np.arange(4, dtype=float) * 1e-12
+
+    with pytest.raises(ValueError, match='all-NaN'):
+        process_sxp(param, OP, [ch], None, _get_TDR_fn=_stub_tdr,
+                    _get_RAW_FIR_fn=fake_raw_fir)

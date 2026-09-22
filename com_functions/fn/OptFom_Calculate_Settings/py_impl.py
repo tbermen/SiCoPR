@@ -17,50 +17,6 @@
 import math
 import numpy as np
 
-def _mextreme_complex(a, take):
-    """MATLAB orders complex values by magnitude, then by angle; numpy orders
-    them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
-    and 5 in numpy. take is -1 for max, 0 for min."""
-    f = np.asarray(a).ravel()
-    good = ~np.isnan(np.abs(f))
-    if not good.any():
-        return f[0]
-    g = f[good]
-    return g[np.lexsort((np.angle(g), np.abs(g)))[take]]
-
-
-def _mmax(a):
-    """MATLAB max(): a NaN is skipped unless every element is NaN, and complex
-    values are ordered by magnitude then angle.
-
-    np.max propagates a NaN, so one bad sample swallows the result where MATLAB
-    ignores it. np.nanmax matches MATLAB but warns on an all-NaN input, where
-    MATLAB quietly returns NaN. The isnan test also keeps the ordinary no-NaN
-    case on np.max's faster path.
-    """
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, -1)
-    if a.dtype.kind != 'f':
-        return np.max(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.max(a)
-    return np.nanmax(a)
-
-
-def _mmin(a):
-    """MATLAB min(): the mirror of _mmax."""
-    a = np.asarray(a)
-    if a.dtype.kind == 'c':
-        return _mextreme_complex(a, 0)
-    if a.dtype.kind != 'f':
-        return np.min(a)
-    nan = np.isnan(a)
-    if not nan.any() or nan.all():
-        return np.min(a)
-    return np.nanmin(a)
-
 from scipy.signal import lfilter
 from types import SimpleNamespace
 
@@ -154,10 +110,20 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
             qual = np.ones((len(g_DC_HP_values), len(gdc_values)))
         else:
             qual = np.zeros((len(g_DC_HP_values), len(gdc_values)))
-            # sort g2qual descending
-            si = np.argsort(g2qual, kind='stable')[::-1]
+            # MATLAB's sort(...,'descend') is STABLE: tied values keep their
+            # original order. Reversing a stable ascending sort reverses them
+            # instead. COM Octave, sort([3 1 3 2 1],'descend') -> index
+            # [1 3 4 2 5]; np.argsort(a,'stable')[::-1] gives [3 1 4 5 2].
+            # With g2qual = [0 -2 -2] that swapped two qual rows outright.
+            si = np.argsort(-g2qual, kind='stable')
             g2qual_s = g2qual[si]
-            gqual_s = gqual[si] if gqual.ndim == 1 else gqual[si, :]
+            # MATLAB's gqual(si,:) reads a bare `[0 -6]` as ONE row of two
+            # columns. Indexing a 1-D array with si instead picked out single
+            # elements, so a config with one qual pair compared gdc against
+            # that element twice and qual came back all zeros. COM Octave,
+            # gqual = [0 -6], g2qual = 0, gdc = [-1 -3 -5 -7 -9 -11]:
+            # qual = [1 1 1 0 0 0].
+            gqual_s = np.array(np.atleast_2d(gqual)[si, :], dtype=float)
 
             g2qual_pairs = np.zeros((len(g2qual_s), 2))
             for kk in range(len(g2qual_s)):
@@ -165,10 +131,7 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
                     g2qual_pairs[kk, :] = [g2qual_s[kk] + np.finfo(float).eps, g2qual_s[kk]]
                 else:
                     g2qual_pairs[kk, :] = [g2qual_s[kk - 1], g2qual_s[kk]]
-                if gqual_s.ndim == 2:
-                    gqual_s[kk, :] = np.sort(gqual_s[kk, :])[::-1]
-                else:
-                    gqual_s[kk] = np.sort(np.atleast_1d(gqual_s[kk]))[::-1]
+                gqual_s[kk, :] = np.sort(gqual_s[kk, :])[::-1]
 
             for jj in range(len(g_DC_HP_values)):
                 for ii in range(len(gdc_values)):
@@ -176,9 +139,17 @@ def OptFom_Calculate_Settings(txffe_matrix, chdata, param, OP):
                         g2lo = g2qual_pairs[kk, 1]
                         g2hi = g2qual_pairs[kk, 0]
                         if g_DC_HP_values[jj] >= g2lo and g_DC_HP_values[jj] < g2hi:
-                            row = gqual_s[kk] if gqual_s.ndim == 1 else gqual_s[kk, :]
-                            glo = float(_mmin(row))
-                            ghi = float(_mmax(row))
+                            # MATLAB compares against gqual(kk,2) and
+                            # gqual(kk,1) of the row it just sorted descending
+                            # — the two LARGEST entries, not the min and the
+                            # max. They coincide for a 2-column gqual and part
+                            # company beyond that. COM Octave, gqual =
+                            # [0 -3 -6; -6 -9 -12], g2qual = [0 -2],
+                            # gdc = [-1 -3 -5 -7 -9 -11]: qual row 1 is
+                            # [1 1 0 0 0 0], where min/max gave [1 1 1 0 0 0].
+                            row = gqual_s[kk, :]
+                            glo = float(row[1])
+                            ghi = float(row[0])
                             if gdc_values[ii] >= glo and gdc_values[ii] < ghi:
                                 qual[jj, ii] = 1
                                 break

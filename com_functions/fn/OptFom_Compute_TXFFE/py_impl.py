@@ -1,13 +1,17 @@
 import numpy as np
 from com_functions.fn.FFE_Fast.py_impl import FFE_Fast as _FFE_Fast
+from com_functions.fn.OptFom_FD_or_TD_Fields.py_impl import OptFom_FD_or_TD_Fields as _OptFom_FD_or_TD_Fields
 from types import SimpleNamespace
 
 
-# --- inline from OptFom_FD_or_TD_Fields (MATLAB 3250-3256) ---
-def _OptFom_FD_or_TD_Fields(TDMODE):
-    if TDMODE:
-        return 'td_ctle_imp_response', 'td_ctle_imp_response'
-    return 'ctle_resp', 'ctle_imp_response'
+# The inlined copy that used to live here returned the wrong field names:
+# ('td_ctle_imp_response','td_ctle_imp_response') for TDMODE and
+# ('ctle_resp','ctle_imp_response') otherwise, so the TD path read a field the
+# reference never names.  It also used a bare `if TDMODE:`, which the canonical
+# has already been corrected for.  Collapsed onto the canonical import.
+# COM Octave: OptFom_FD_or_TD_Fields(1) -> 'uneq_pulse_response',
+#   'ctle_pulse_response';  OptFom_FD_or_TD_Fields(0) -> 'uneq_imp_response',
+#   'ctle_imp_response'.
 
 
 # --- inline from FFE_Fast (MATLAB 2049-2062) ---

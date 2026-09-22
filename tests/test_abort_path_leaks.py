@@ -59,9 +59,11 @@ REVIEWED = {
         'param/OP ARE the outputs; the whole function exists to fill them',
     'com_ieee8023_:com_ieee8023_':
         'top-level driver; it owns param and OP rather than borrowing them',
-    'read_p2_s2params:_rangelimit':
-        'param.flim is set on BOTH branches and param is returned; ML sets it '
-        'identically at the caller',
+    # read_p2_s2params no longer has a private _rangelimit: its copy carried a
+    # by-reference param write and was replaced with the shared function on
+    # 2026-09-22, so there is nothing left here to allow. read_p4_s4params
+    # still holds its own copy (and its own _read_Nport_touchstone) and is the
+    # next candidate for the same treatment.
     'read_p4_s4params:_rangelimit':
         'param.flim is set on BOTH branches and param is returned; ML sets it '
         'identically at the caller',

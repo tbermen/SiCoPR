@@ -58,3 +58,61 @@ def test_no_eval_by_default():
     sheet = [['Name', 'hello']]
     p = xls_parameter(sheet, 'Name')
     assert p == 'hello'
+
+
+# ============================================================
+# COM Octave oracle — xls_parameter run verbatim under Octave, with
+# missingParameter, on the cell array {'A',1; 'B',2; 'Kappa1','1+1'}.
+#
+#   ('B')                        -> 2
+#   ('b')                        -> 2            strcmpi, so case-insensitive
+#   ('ZZ')                       -> error: The data for mandatory parameter ZZ
+#                                   is missing or incorrect
+#   ('ZZ', 0, 7)                 -> 7
+#   ('ZZ', 0, '1+1')             -> '1+1'
+#   ('ZZ', true, '1+1')          -> 2            the DEFAULT is eval'd too
+#   ('ZZ', true, '[92 92; 70 70]') -> the 2x2 matrix
+#   ('Kappa1', true)             -> 2
+#   ('Kappa1', 0)                -> '1+1'
+#   ('A', true)                  -> 1            ischar false, so no eval
+#   ('B', 0, 999)                -> 2            a default found is ignored
+#   on {'A',1; 'a',2}: error: 2 occurrences of "A" found — even with a default
+#   on {'A',1; 2,'B'}: error: param_sheet(_,3): out of bound 2
+#   on {' B ',1}: (' B ' vs 'B') no match, strcmpi does not trim
+# ============================================================
+_SHEET = [['A', 1], ['B', 2], ['Kappa1', '1+1']]
+
+
+def test_octave_oracle_lookup_and_eval():
+    assert xls_parameter(_SHEET, 'B') == 2
+    assert xls_parameter(_SHEET, 'b') == 2
+    assert xls_parameter(_SHEET, 'ZZ', False, 7) == 7
+    assert xls_parameter(_SHEET, 'ZZ', False, '1+1') == '1+1'
+    assert xls_parameter(_SHEET, 'Kappa1', True) == 2
+    assert xls_parameter(_SHEET, 'Kappa1', False) == '1+1'
+    assert xls_parameter(_SHEET, 'A', True) == 1
+    assert xls_parameter(_SHEET, 'B', False, 999) == 2
+
+
+def test_octave_oracle_string_default_is_evaluated():
+    """MATLAB falls through to `if ischar(p) && eval_if_string`, so a string
+    default is eval'd as well. Octave: ('ZZ', true, '1+1') -> 2."""
+    assert xls_parameter(_SHEET, 'ZZ', True, '1+1') == 2
+    assert xls_parameter(_SHEET, 'ZZ', True, '[1, 2, 3]') == [1, 2, 3]
+
+
+def test_octave_oracle_duplicate_beats_default():
+    """The duplicate check runs before the default is consulted."""
+    with pytest.raises(ValueError, match='occurrences'):
+        xls_parameter([['A', 1], ['a', 2]], 'A', False, 5)
+
+
+def test_octave_oracle_match_in_last_column_refuses():
+    """Octave: param_sheet(_,3): out of bound 2 (dimensions are 2x2)."""
+    with pytest.raises(IndexError):
+        xls_parameter([['A', 1], [2, 'B']], 'B')
+
+
+def test_octave_oracle_strcmpi_does_not_trim():
+    """' B ' does not match 'B', so the default is returned."""
+    assert xls_parameter([[' B ', 1]], 'B', False, -1) == -1

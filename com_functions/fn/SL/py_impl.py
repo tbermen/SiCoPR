@@ -1,25 +1,8 @@
 import copy
 import numpy as np
+from com_functions.fn.R_series2.py_impl import R_series2 as _R_series2
 from com_functions.fn.combines4p.py_impl import combines4p as _combines4p
-
-
-def _R_series2_params(zref, f, R):
-    N = len(f)
-    s = complex(R / (R + 2 * zref))
-    t = complex(2 * zref / (R + 2 * zref))
-    p = np.empty((2, 2, N), dtype=complex)
-    p[0, 0, :] = p[1, 1, :] = s
-    p[1, 0, :] = p[0, 1, :] = t
-    return p
-
-
-def _r_parrelell2_params(zref, f, rpad):
-    N = len(f)
-    d = zref + 2 * rpad
-    p = np.empty((2, 2, N), dtype=complex)
-    p[0, 0, :] = p[1, 1, :] = complex(-zref / d)
-    p[1, 0, :] = p[0, 1, :] = complex(2 * rpad / d)
-    return p
+from com_functions.fn.r_parrelell2.py_impl import r_parrelell2 as _r_parrelell2
 
 
 def SL(S, f, R, R_0):
@@ -33,15 +16,28 @@ def SL(S, f, R, R_0):
     zref = float(R_0)
     f_arr = np.asarray(f, dtype=float).ravel()
 
+    # R_series2 and r_parrelell2 are called, not re-derived. The private copies
+    # that used to live here carried r_parrelell2's *simplified* denominator,
+    # -zref/(zref+2*rpad) instead of the reference's -zref/(rpad*(zref/rpad+2)),
+    # which is the very rearrangement commit 658bc38 removed from the shared
+    # function. COM Octave, r_parrelell2(50, f, rpad):
+    #     rpad = -18.75  -> s11 -4.0000000000000009, s21 -3.0000000000000009
+    #                       simplified: s11 -4, s21 -3
+    #     rpad = 24950   -> s21 0.99899899899899891
+    #                       simplified: 0.99899899899899902
+    # rpad = -18.75 is SL(R=-30, R_0=50); rpad = 24950 is SL(R=49.9, R_0=50).
     if R == 0:
-        return S
+        return SLD
 
     if R > zref:
-        spr_p = _R_series2_params(zref, f_arr, float(R) - zref)
+        spr_p = _R_series2(zref, f_arr, float(R) - zref).Parameters
     elif R < zref:
-        spr_p = _r_parrelell2_params(zref, f_arr, -float(R) * zref / (float(R) - zref))
+        spr_p = _r_parrelell2(zref, f_arr,
+                              -float(R) * zref / (float(R) - zref)).Parameters
     else:
-        return S
+        # MATLAB `SLD=S`, a value copy. Returning the caller's object instead
+        # would let a later write to SLD.Parameters reach back into S.
+        return SLD
 
     (SLD.Parameters[0, 0, :], SLD.Parameters[0, 1, :],
      SLD.Parameters[1, 0, :], SLD.Parameters[1, 1, :]) = _combines4p(

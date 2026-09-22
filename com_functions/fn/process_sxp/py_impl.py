@@ -189,7 +189,20 @@ def process_sxp(param, OP, chdata, SDDch,
                     if getattr(OP, 'AUTO_TFX', False):
                         fir4del, tu = raw_fir_fn(
                             np.asarray(ch.sdd12_orig).ravel(), S.Frequencies, OP, param)
-                        pix = int(np.argmax(fir4del))
+                        # MATLAB find(fir4del==max(fir4del),1): max() SKIPS
+                        # NaN and a NaN never equals the max, so the search
+                        # lands on the first non-NaN peak.  np.argmax returns
+                        # the index of the first NaN instead.
+                        # COM Octave: find(x==max(x),1) on [NaN 1 3 2] -> 3
+                        #   (1-based; np.argmax gave 0); on [1 3 NaN 3] -> 2
+                        #   (np.argmax gave 2, the NaN); on [NaN NaN] -> EMPTY.
+                        fir4del = np.asarray(fir4del)
+                        if np.all(np.isnan(fir4del)):
+                            raise ValueError(
+                                'process_sxp: AUTO_TFX - get_RAW_FIR returned '
+                                'an all-NaN response, so find(...,1) is empty '
+                                'and param.tfx(2) cannot be set')
+                        pix = int(np.nanargmax(fir4del))
                         param.tfx[1] = 2 * tu[pix]
 
                 # MATLAB passes OP BY VALUE, so the TDR-only overrides below never
@@ -235,7 +248,13 @@ def process_sxp(param, OP, chdata, SDDch,
                         ZT = float(Z_t[izt])
                         tdr_results[izt][ipsl_idx] = tdr_fn(S, OP, param, ZT, ipsl)
 
-                        if abs(float(param.Z0) - ZT) < 1e-6:
+                        # MATLAB isequal() is EXACT; the 1e-6 tolerance the
+                        # port used ran the CD/DC TDR on impedances the
+                        # reference treats as different (and reports NaN for).
+                        # COM Octave: isequal(100, 100.0000005) -> 0
+                        #   (abs(a-b) < 1e-6 said True);
+                        #   isequal(100, 100) -> 1
+                        if float(param.Z0) == ZT:
                             can_plot_cd[izt][ipsl_idx] = True
                             tdr_cd_results[izt][ipsl_idx] = tdr_fn(SCD, OP, param, ZT, ipsl)
                             tdr_dc_results[izt][ipsl_idx] = tdr_fn(SDC, OP, param, ZT / 4, ipsl)

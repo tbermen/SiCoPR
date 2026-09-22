@@ -54,10 +54,29 @@ def TD_FD_fillin(param, OP, chdata):
         step_response = lfilter(V, [1.0], shift_vec)
         Vf = step_response[-1]
 
-        f75_arr = np.where(f >= param.fb * 0.75)[0]
-        f75 = int(f75_arr[0]) if len(f75_arr) > 0 else len(f)
+        # MATLAB builds STEP = timeseries(step_response(1:200*M), T(1:200*M)).
+        # STEP is dead -- nothing reads it -- but it is evaluated, so a time
+        # axis shorter than 200*samples_per_ui stops the reference before
+        # IL_conv exists.  COM Octave, M=8 with 1599 samples:
+        #   "error: T(1600): out of bound 1599 (dimensions are 1x1599)";
+        # 1600 samples answers.  Dropping the line let this fill in fields the
+        # reference declines to produce.
+        if len(T) < M_v * M:
+            raise IndexError(
+                'TD_FD_fillin: channel %d has %d time samples; the reference '
+                'indexes T(1:%d)' % (i + 1, len(T), M_v * M))
 
-        IL_conv = fd[:f75] / (Vf * M * Over_sample) / prr[:f75] / H_ftr[:f75]
+        # MATLAB f75 is 1-based, so fd(1:f75) keeps the first bin AT OR ABOVE
+        # 0.75*fb as well as everything below it.  COM Octave, 2048 samples at
+        # M=8 and fb=25 GHz: f(193) = 18759159745.969715 is the first bin past
+        # 18.75 GHz and length(IL_conv) is 193.  Slicing to the 0-based index
+        # gave 192 bins, one short, and so a short sdd21 and SDDch as well.
+        f75_arr = np.where(f >= param.fb * 0.75)[0]
+        # MATLAB has no empty guard: find returns [], fd(1:[]) is empty, and
+        # IL_conv comes out empty.  (Unreachable while f runs to fb*M.)
+        n75 = int(f75_arr[0]) + 1 if len(f75_arr) > 0 else 0
+
+        IL_conv = fd[:n75] / (Vf * M * Over_sample) / prr[:n75] / H_ftr[:n75]
 
         IL_fields = ['sdd12_raw', 'sdd21_raw', 'sdd12_orig', 'sdd21_orig',
                      'sdd12', 'sdd21', 'sdd21p', 'sdd21f']

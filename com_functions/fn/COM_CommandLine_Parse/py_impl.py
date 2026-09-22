@@ -3,18 +3,29 @@
 # MATLAB lines: 1149–1200
 # ============================================================
 # varargin in MATLAB → *args tuple in Python.
-# keywords = {'Legacy','TD','Config2Mat'} (case-insensitive match).
-# varargin_extractor inlined as _pop: pops first element from a list.
-# str2num(s) == '' check: detect non-numeric string → isempty(str2num) ≈ not try_parse_float.
-# MATLAB varargin{1} → Python args[0].
-# After keyword consumed, args is passed by reference in MATLAB → use list for mutation.
+# keywords = {'Legacy','TD','Config2Mat'}: the *match* is strcmpi, so it is
+# case-insensitive, but my_keyword keeps the caller's spelling and the two
+# switch statements that follow are case-SENSITIVE. So 'td' is consumed as a
+# keyword yet selects no case: nothing further is parsed. See the oracle
+# evidence beside the switch below.
+# varargin_extractor inlined as _pop: pops first element, or MATLAB [] → None.
+# str2num(s) is eval(['[' s ']']); isempty(str2num(s)) is approximated by
+# _str2num_nonempty, see its comment.
+# After keyword consumed, args is passed by reference in MATLAB → use list for
+# mutation.
 # Returns: config_file, num_fext, num_next, Remember_keyword, OP, remaining_varargin.
 # ============================================================
 
+import re
 from types import SimpleNamespace
 
 
-_KEYWORDS = ('legacy', 'td', 'config2mat')
+_KEYWORDS = ('Legacy', 'TD', 'Config2Mat')
+
+# Bare words MATLAB's str2num resolves to a numeric (or logical) value, so
+# str2num returns non-empty for them.
+_NUMERIC_WORDS = frozenset(('pi', 'e', 'i', 'j', 'eps', 'inf', 'nan',
+                            'true', 'false'))
 
 
 def _try_float(s):
@@ -23,6 +34,34 @@ def _try_float(s):
         return True
     except (ValueError, TypeError):
         return False
+
+
+def _str2num_nonempty(s):
+    """~isempty(str2num(s)), for the numeric-array forms str2num accepts.
+
+    str2num is eval(['[' s ']']), so anything that evaluates to a numeric
+    array is non-empty: a bare number, a numeric constant such as pi or eps,
+    a logical, a bracketed or separated list, a colon range. Arithmetic
+    expressions ('2+3') are not covered here; they would need an expression
+    evaluator and are not a command line COM is given.
+    """
+    t = s.strip()
+    if t.startswith('[') and t.endswith(']'):
+        t = t[1:-1]
+    tokens = [k for k in re.split(r'[\s,;]+', t) if k]
+    if not tokens:
+        return False                      # str2num('') and str2num('[]') are []
+    for k in tokens:
+        parts = k.split(':') if ':' in k else [k]
+        for p in parts:
+            if not (_try_float(p) or p.lower().lstrip('+-') in _NUMERIC_WORDS):
+                return False
+    return True
+
+
+def _pop(args):
+    """varargin_extractor: the first argument, or MATLAB [] when there is none."""
+    return args.pop(0) if args else None
 
 
 def COM_CommandLine_Parse(OP, *varargin):
@@ -44,33 +83,39 @@ def COM_CommandLine_Parse(OP, *varargin):
     if args:
         if not isinstance(args[0], str):
             raise TypeError('First input must be a string')
-        kw_lower = args[0].lower()
-        if kw_lower in _KEYWORDS:
+        if args[0].lower() in [k.lower() for k in _KEYWORDS]:
+            # Keyword Mode: strcmpi matched, so the keyword is consumed
+            # whatever its case, and Remember_keyword keeps that spelling.
             my_keyword = args[0]
             Remember_keyword = my_keyword
             args.pop(0)
         else:
             my_keyword = Remember_keyword
 
-        # first pass: set special OP values
-        if my_keyword.upper() == 'TD':
+        # first keyword check: set special OP values.
+        # COM Octave: switch my_keyword is case-sensitive, so ('td','cfg.csv',0,0)
+        # leaves TDMODE=0, GET_FD=1, config_file=[], num_fext=[], num_next=[],
+        # and ('config2mat','cfg.xlsx') leaves CONFIG2MAT_ONLY=0 and
+        # config_file=[]. Only the exact spellings below do anything.
+        if my_keyword == 'TD':
             OP.TDMODE = True
             OP.GET_FD = False
 
-        # main keyword check: pull args
-        kw = my_keyword.lower()
-        if kw in ('legacy', 'td'):
-            # pop config_file
-            config_file = args.pop(0) if args else ''
-            # peek at next arg: if it's a non-numeric string, num_fext/num_next default to 0
-            if args and isinstance(args[0], str) and not _try_float(args[0]):
+        # main keyword check: pull varargin
+        if my_keyword in ('Legacy', 'TD'):
+            config_file = _pop(args)
+            new_argument = args[0] if args else None
+            if isinstance(new_argument, str) and not _str2num_nonempty(new_argument):
+                # special input: allow num_fext and num_next to be omitted
+                # when they are 0
                 num_fext = 0
                 num_next = 0
             else:
-                num_fext = args.pop(0) if args else None
-                num_next = args.pop(0) if args else None
-        elif kw == 'config2mat':
+                # normal input: num_fext and num_next are given
+                num_fext = _pop(args)
+                num_next = _pop(args)
+        elif my_keyword == 'Config2Mat':
             OP.CONFIG2MAT_ONLY = True
-            config_file = args.pop(0) if args else ''
+            config_file = _pop(args)
 
     return config_file, num_fext, num_next, Remember_keyword, OP, args

@@ -79,9 +79,16 @@ def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None,
     upsampled_txffe = np.asarray(upsampled_txffe, dtype=float).ravel()
     f = np.asarray(chdata[0].faxis, dtype=float).ravel()
 
-    # index_f2: first index where f > fb
+    # index_f2: MATLAB's find(f>fb,1,'first') is 1-based and the sums below
+    # slice 1:index_f2 INCLUSIVELY, so the 1-based number is exactly the
+    # exclusive Python end. Using the 0-based index instead dropped the top
+    # bin of every ICN sum. COM Octave, faxis = fb + (0:19)*1e9 (so the very
+    # first point is at fb and the crossing is the second):
+    #     sigma_XT 4.9666884883754367e-05   the port answered 2.85e-19,
+    # having summed one bin where the reference sums two, and the dropped bin
+    # is the one that carries the energy.
     mask = f > param.fb
-    index_f2 = int(np.argmax(mask)) if np.any(mask) else len(f) - 1
+    index_f2 = int(np.argmax(mask)) + 1 if np.any(mask) else len(f)
 
     M = int(param.samples_per_ui)
     dt = float(param.sample_dt)
@@ -91,6 +98,9 @@ def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None,
         temp_angle[0] = 1e-20
 
     # Build PWF_tx
+    # pre_calc exists only if the TX branch below runs: MATLAB assigns it
+    # inside `if max(upsampled_txffe) > 0` and the RX branch reads it anyway.
+    pre_calc = None
     PWF_tx = np.ones(len(f), dtype=complex)
     if _mmax(upsampled_txffe) > 0:
         PWF_tx = np.zeros(len(f), dtype=complex)
@@ -115,15 +125,27 @@ def get_xtlk_noise(upsampled_txffe, xtlk_type, param, chdata, phase_memory=None,
         PWF_rx = np.zeros(len(f), dtype=complex)
         cmx = int(param.RxFFE_cmx)
         cpx = int(param.RxFFE_cpx)
-        pre_calc = phase_memory is not None and len(phase_memory) > 0
         n_txffe = len(upsampled_txffe)
         for ii in range(-cmx, cpx + 1):
             c_idx = ii + cmx  # 0-based index into C
-            if c_idx >= len(C_arr) or C_arr[c_idx] == 0:
+            # No length guard: MATLAB indexes C(ii+cmx+1) and stops if there
+            # is no such element. COM Octave, C = [0.05 -0.2]:
+            #     error: C(3): out of bound 2 (dimensions are 2x1)
+            # and with C = []: error: C(1): out of bound 0. Skipping the
+            # missing taps instead answered with a silently truncated RX FFE
+            # (0.0025285640126039653 against an error, and 0 for an empty C).
+            if C_arr[c_idx] == 0:
                 continue
             if ii + 1 == 0:
                 PWF_rx = PWF_rx + C_arr[c_idx]
             else:
+                if pre_calc is None:
+                    # COM Octave, all-zero upsampled_txffe with C supplied:
+                    #     error: 'pre_calc' undefined near line 55, column 16
+                    raise NameError(
+                        "get_xtlk_noise: 'pre_calc' is undefined. MATLAB sets "
+                        'it only when max(upsampled_txffe) > 0, so this call '
+                        'errors in the reference.')
                 if pre_calc:
                     pm_col = ii + cmx + n_txffe  # 0-based
                     term = C_arr[c_idx] * phase_memory[:, pm_col]

@@ -38,7 +38,13 @@ from math import factorial
 
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     f = np.asarray(f, dtype=float)
-    eps_val = np.finfo(float).tiny
+    # MATLAB `f(f<eps)=eps` is eps(1) = 2.220446049250313e-16, not the
+    # smallest positive double. np.finfo(float).tiny (2.2250738585072014e-308)
+    # is 292 orders out, and it is the DC point that gets it, where
+    # synth_tline then takes sqrt and log of it. The canonical
+    # com_functions/fn/make_pkg/py_impl.py already uses .eps; this inlined
+    # copy had not been brought across.
+    eps_val = np.finfo(float).eps
     f = np.where(f < eps_val, eps_val, f)
     zref = float(pkg_param.Z0)
     tau = float(pkg_param.pkg_tau)
@@ -324,17 +330,15 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
     if inc_pkg == 0:
         import warnings
         warnings.warn('do not use INC_PACKAGE = 0. Instead use package parameters)')
-        s21p = s21.copy()
-        SCH = SimpleNamespace(
-            Frequencies=faxis,
-            Parameters=np.zeros((2, 2, nf), dtype=complex),
-            NumPorts=2,
-            Impedance=Z0 * 2)
-        SCH.Parameters[0, 0, :] = s11
-        SCH.Parameters[1, 1, :] = s22
-        SCH.Parameters[0, 1, :] = s12
-        SCH.Parameters[1, 0, :] = s21
-        return s21p, SCH, sigma_ACCM_at_tp0
+        # SCH and sigma_ACCM_at_tp0 are assigned inside the INC_PACKAGE~=0
+        # branch only, so with INC_PACKAGE=0 the reference has no second or
+        # third output to give -- and every call site here asks for all three.
+        # COM Octave, INC_PACKAGE=0 with [s21p,SCH,sigma]=s21_pkg(...):
+        #   error: element number 2 undefined in return list
+        # The port used to invent an SCH, which is a two-port the reference
+        # never builds.
+        raise ValueError('element number 2 undefined in return list: '
+                         's21_pkg leaves SCH unassigned when INC_PACKAGE = 0')
 
     if rx_cal == 1 and channel_number == 2:
         # Only RX pkg: channel + RX pkg
@@ -389,6 +393,10 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
         s11, s12, s21, s22 = _combines4p(
             s11, s12, s21, s22,
             s22in, s21in, s12in, s11in)
+    else:
+        import warnings
+        warnings.warn('do not use IDEAL_RX_TERM. Instead hard code package '
+                      'and TR parameters')
 
     if include_die:
         s21p = (H_t * s21 * (1 - gamma_tx) * (1 + gamma_rx) /
@@ -407,13 +415,19 @@ def s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
             ACCM_max_freq = float(getattr(param, 'ACCM_MAX_Freq', faxis[-1]))
             f_int = faxis[faxis <= ACCM_max_freq]
             nf_int = len(f_int)
-            H_cc = s21out[:nf_int] * (1 - gamma_tx) / (1.0 - s11out[:nf_int] * gamma_tx) * H_bt[:nf_int]
+            H_cc = s21out * (1 - gamma_tx) / (1.0 - s11out * gamma_tx) * H_bt
             ac_cm_rms = float(getattr(param, 'AC_CM_RMS_TX', 0.0))
-            if nf_int > 1 and f_int[-1] > 0:
-                sigma_ACCM_at_tp0 = np.sqrt(
-                    2 * ac_cm_rms ** 2
-                    * np.sum(np.abs(H_cc[1:]) ** 2 * np.diff(f_int))
-                    / f_int[-1])
+            # No guard on nf_int or f_int(end): MATLAB divides by f_int(end)
+            # whatever it is. COM Octave, dc mode, channel 1:
+            #   ACCM_MAX_Freq=0   -> f_int=[0], empty sum, 0/0 -> sigma = NaN
+            #   ACCM_MAX_Freq=-1  -> f_int empty ->
+            #        error: f_int(0): subscripts must be either integers
+            #               1 to (2^63)-1 or logicals
+            # The port answered 0.0 for both.
+            sigma_ACCM_at_tp0 = np.sqrt(
+                2 * ac_cm_rms ** 2
+                * np.sum(np.abs(H_cc[1:nf_int]) ** 2 * np.diff(f_int))
+                / f_int[-1])
 
     SCH = SimpleNamespace(
         Frequencies=faxis,

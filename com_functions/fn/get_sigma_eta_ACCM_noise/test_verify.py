@@ -78,3 +78,67 @@ def test_non_negative():
     H = np.ones(n, dtype=complex)
     sigma = get_sigma_eta_ACCM_noise(chdata, make_param(), H, H, H)
     assert sigma >= 0
+
+
+# ============================================================
+# COM Octave oracle values (2026-09-22)
+# get_sigma_eta_ACCM_noise run verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m via tools/octave_oracle.py on the
+# inputs built below. The port agreed on every case to between 1 and 5 ulp,
+# and the residual is summation order alone -- numpy sums pairwise, Octave
+# left to right; forming the sum left to right in Python lands on the Octave
+# double exactly. That is the case the brief calls unresolvable, so the
+# tolerance below is loose enough to let it through and tight enough to catch
+# anything else.
+# ============================================================
+
+_N_ORACLE = 201
+_F_ORACLE = np.linspace(0.0, 50e9, _N_ORACLE)
+_HSY = np.ones(_N_ORACLE, dtype=complex)
+_HR = 1.0 / (1 + 1j * _F_ORACLE / 3e10) ** 2
+_HCTF = 0.5 + 0.5 / (1 + 1j * _F_ORACLE / 1e10)
+_SDC21_A = 0.02 * np.exp(-_F_ORACLE / 8e10) * np.exp(1j * _F_ORACLE / 4e10)
+_SDC21_B = 0.03 * np.exp(-_F_ORACLE / 6e10) * np.exp(-1j * _F_ORACLE / 5e10)
+
+
+def _oracle_chdata(nch=1):
+    chs = [SimpleNamespace(faxis=_F_ORACLE, sdc21=_SDC21_A)]
+    if nch == 2:
+        chs.append(SimpleNamespace(faxis=_F_ORACLE, sdc21=_SDC21_B))
+    return chs
+
+
+def _oracle_call(nch=1, eta_0=1.5e-14, rms=0.01, tx=0.01, fmax=30e9):
+    p = SimpleNamespace(eta_0=eta_0, AC_CM_RMS=rms, AC_CM_RMS_TX=tx,
+                        ACCM_MAX_Freq=fmax)
+    return get_sigma_eta_ACCM_noise(_oracle_chdata(nch), p, _HSY, _HR, _HCTF)
+
+
+@pytest.mark.parametrize('kw,expected', [
+    (dict(rms=0.0, tx=0.0), 4.4333040522859273e-07),
+    (dict(), 0.00016265187840761039),
+    (dict(nch=2), 0.00028681699399529429),
+    (dict(nch=2, fmax=90e9), 0.00022527142929351939),
+    (dict(fmax=250e6), 0.00028187493175470095),
+    (dict(eta_0=0.0), 0.00016265127422702803),
+    (dict(rms=0.0, tx=0.01), 4.4333040522859273e-07),
+])
+def test_octave_sigma_values(kw, expected):
+    """COM Octave sigma_N for each configuration of the AC CM branch. The last
+    row is sum(AC_CM_RMS)==0 with a non-zero AC_CM_RMS_TX: the branch is not
+    taken, so the TX figure is ignored."""
+    assert _oracle_call(**kw) == pytest.approx(expected, rel=1e-14)
+
+
+def test_octave_accm_max_below_first_point_errors():
+    """COM Octave, ACCM_MAX_Freq below faxis(1): f_int is empty and
+        error: f_int(0): subscripts must be either integers
+               1 to (2^63)-1 or logicals"""
+    with pytest.raises(IndexError):
+        _oracle_call(fmax=-1.0)
+
+
+def test_octave_accm_max_at_dc_is_nan():
+    """COM Octave, ACCM_MAX_Freq = 0: f_int is [0], the sum is empty and the
+    division by f_int(end)=0 gives 0/0 -> NaN, carried into norm()."""
+    assert np.isnan(_oracle_call(fmax=0.0))

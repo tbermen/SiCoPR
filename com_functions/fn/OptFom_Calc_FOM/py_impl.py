@@ -14,13 +14,32 @@ from com_functions.fn.normal_dist.py_impl import normal_dist as _normal_dist
 from com_functions.fn.COM_eye_width.py_impl import COM_eye_width as _COM_eye_width
 
 
+def _m20log10(num, den):
+    """MATLAB 20*log10(num/den) for real scalars.
+
+    Two ends of the reference's behaviour were lost: Python's `/` RAISES on a
+    zero divisor where MATLAB carries Inf, and numpy's log10 of a negative
+    float is NaN where MATLAB goes complex.
+    COM Octave: 20*log10(0.5/0)     -> Inf
+                20*log10(0/0)       -> NaN
+                20*log10(-0.5/0.05) -> 20 + 27.287527076836827i
+                20*log10(-0.25/0.05)-> 13.979400086720377 + 27.287527076836827i
+    """
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = np.float64(num) / np.float64(den)
+        if ratio < 0:                       # False for NaN, so NaN stays real
+            return complex(20.0 * np.log10(complex(ratio)))
+        return float(20.0 * np.log10(ratio))
+
+
 def OptFom_Calc_FOM(chdata, do_C2M, THIS, param, OP, sbr, _COM_eye_width_fn=None):
     skip_loop = 0
     A_s = float(THIS.A_s)
     total_noise_rms = float(THIS.total_noise_rms)
 
     if not do_C2M:
-        FOM = 20 * np.log10(A_s / total_noise_rms)
+        # Equation 93A-36
+        FOM = _m20log10(A_s, total_noise_rms)
         return FOM, skip_loop
 
     # ── C2M path (MATLAB lines 2826–2873) ──────────────────────────────────
@@ -77,8 +96,7 @@ def OptFom_Calc_FOM(chdata, do_C2M, THIS, param, OP, sbr, _COM_eye_width_fn=None
     if EH <= float(getattr(param, 'Min_VEO_Test', 0)) / 1000.0:
         return None, 1
 
-    if N_i <= 0:
-        return None, 1
-
-    FOM = 20.0 * np.log10(A_s / N_i)
+    # No N_i<=0 guard: the reference has none, and skipping where it returns a
+    # value (Inf at N_i==0, complex below it) is a divergence, not a safeguard.
+    FOM = _m20log10(A_s, N_i)
     return FOM, skip_loop

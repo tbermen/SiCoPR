@@ -98,3 +98,49 @@ def test_multichannel_grows_pulse_struc():
     assert hasattr(chdata_out[2], 'pulse_response_w_CFT_TXFFE_noRxFFE')
     # FEXT channel: TxFFE applied via circshift matrix (MATLAB L3417)
     assert hasattr(chdata_out[1], 'pulse_response_w_CFT_TXFFE_noRxFFE')
+
+
+# ============================================================
+# COM Octave oracle values — tools/octave_oracle.py runs OptFom_FD_or_TD_Fields
+# verbatim out of octave/com_ieee8023_4p16p0_octave_compat.m (byte-identical to
+# matlab/com_ieee8023_4p16p0.m).  Pinned 2026-09-22.
+#
+# Divergence: the copy of OptFom_FD_or_TD_Fields inlined in this module returned
+#   TDMODE true  -> ('td_ctle_imp_response', 'td_ctle_imp_response')
+#   TDMODE false -> ('ctle_resp',            'ctle_imp_response')
+# where the reference returns
+#   TDMODE true  -> ('uneq_pulse_response',  'ctle_pulse_response')
+#   TDMODE false -> ('uneq_imp_response',    'ctle_imp_response')
+# so in TDMODE this function read chdata(ii).td_ctle_imp_response, a field the
+# reference never writes.  Collapsed onto the canonical import, which had
+# already been oracle-corrected for the `if TDMODE` truthiness trap too.
+#
+# COM Octave: OptFom_FD_or_TD_Fields(1) -> uneq='uneq_pulse_response',
+#   ctle='ctle_pulse_response';  (0) -> 'uneq_imp_response','ctle_imp_response'
+# ============================================================
+
+def test_octave_fd_or_td_field_names():
+    import com_functions.fn.OptFom_Compute_TXFFE.py_impl as mod
+    assert mod._OptFom_FD_or_TD_Fields(1) == ('uneq_pulse_response',
+                                              'ctle_pulse_response')
+    assert mod._OptFom_FD_or_TD_Fields(0) == ('uneq_imp_response',
+                                              'ctle_imp_response')
+
+
+def test_octave_td_mode_reads_ctle_pulse_response():
+    """In TDMODE the pulse must come from chdata.ctle_pulse_response.
+
+    The old inlined copy looked for 'td_ctle_imp_response' and raised
+    AttributeError on a chdata carrying the reference's field names.
+    """
+    M, n_taps = 4, 3
+    pulse = np.arange(1.0, 21.0)
+    chdata = [SimpleNamespace(type='THRU', ctle_pulse_response=pulse,
+                              ctle_imp_response=np.zeros(20))]
+    pulse_struc = [SimpleNamespace(pulse_ctle_circshift=None)]
+    param = SimpleNamespace(samples_per_ui=M, cursor_index=2, num_s4p_files=1)
+    OP = SimpleNamespace(TDMODE=True, RxFFE_with_MMSE=False)
+    sbr, chd, ps = OptFom_Compute_TXFFE(chdata, pulse_struc,
+                                        np.array([0.0, 1.0, 0.0]), True,
+                                        param, OP)
+    np.testing.assert_array_equal(ps[0].pulse_ctle, pulse)

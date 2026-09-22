@@ -63,13 +63,18 @@ _mlse_src = _inspect.getsource(sicopr.MLSE)
 _arg_lines = [l.strip() for l in _mlse_src.splitlines()
               if 'qfunc' in l and '1 - 2 * alpha' in l]
 check("mlse_gaussian_qfunc_arg_form_is_pinned",
-      any('((L - 1) * sigma_noise)' in l for l in _arg_lines),
-      "the engine's Gaussian q-function argument changed form. It divides by "
-      "((L-1)*sigma_noise); MATLAB 2331 reads "
-      "`(1-2*alpha)*main/(L-1)*sigma_noise`, which by MATLAB's left-associative "
-      "precedence MULTIPLIES by sigma_noise. If this site is being changed, "
-      "re-run the 208-case correlation and check delta_COM, which is where it "
-      "surfaces. Found: %s" % (_arg_lines or '<no matching line>'))
+      any('/ (L - 1) * sigma_noise' in l for l in _arg_lines),
+      "the engine's Gaussian q-function argument changed form. It must "
+      "MULTIPLY by sigma_noise: both 4p16p0 and the 4p15p0 adaptive-local-search "
+      "build read `(1-2*alpha)*main/(L-1)*sigma_noise`, and MATLAB's "
+      "left-associative precedence makes that ((1-2*alpha)*main/(L-1))*sigma_noise. "
+      "Until 2026-09-22 this check pinned the DIVIDE form instead, as a deliberate "
+      "deviation: dividing is the physically sensible reading, since the multiply "
+      "sends qfunc to 0.5 rather than 0 as noise vanishes. The reference says "
+      "otherwise, and the standing rule is to match it and raise the oddity with "
+      "the COM ad hoc, so the pin was flipped. This surfaces in delta_COM: the "
+      "208-case correlation must confirm it. Found: %s"
+      % (_arg_lines or '<no matching line>'))
 check("mlse_gaussian_arg_ratio_is_sigma_squared",
       abs((ml_arg / py_arg) - sigma ** 2) <= 1e-12,
       "the MATLAB/sicopr.py arg ratio is not sigma^2 (mechanism check)")

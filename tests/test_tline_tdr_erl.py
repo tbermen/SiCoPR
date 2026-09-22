@@ -247,9 +247,13 @@ check("TDR_ERL_Z11est_copied",
       oa.Z11est == 101.0 and oa.Z22est == 99.0,
       "Z11est/Z22est not copied from TDR structs")
 # EXPECTED FAIL: ML str2csv({chdata(1).base}) uses ONLY the first base; py joins all.
-xcheck("TDR_ERL_file_names_first_base_only",
+# Was DIVERGENT (cosmetic, ERL_ONLY): the port joined ALL channel bases where
+# ML 4592 str2csv({chdata(1).base}) takes a ONE-element cell. RESOLVED
+# 2026-09-22, so a crosstalk run no longer reports the aggressor file names
+# alongside the victim's. Promoted to check().
+check("TDR_ERL_file_names_first_base_only",
       oa.file_names == '"thru"',
-      "DIVERGENT (cosmetic, ERL_ONLY): py 6721-6722 joins ALL channel bases "
-      "(%s) but ML 4592 str2csv({chdata(1).base}) uses only the first base" % oa.file_names)
+      "file_names is %s; ML 4592 str2csv({chdata(1).base}) uses only the first "
+      "base, so a crosstalk run must not list the aggressors" % oa.file_names)
 
 finish()

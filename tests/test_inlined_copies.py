@@ -110,7 +110,6 @@ KNOWN_ARITY = {
     ('make_pkg', 'read_s4p_files'),
     ('make_pkg', 's21_pkg'),
     ('get_TDR', 'process_sxp'),
-    ('rangelimit', 'read_p2_s2params'),
     ('rangelimit', 'read_p4_s4params'),
     # Output_Arg_Fill's second get_pdf copy, found 2026-09-22 once
     # inlined_copies() started matching suffixed names: it is a
@@ -690,7 +689,7 @@ print("\n%d inlined copies of %d functions; %d comparison(s) made, "
 # whole 2026-09-22 propagation pass while this test reported success. The set is
 # pinned so a NEW undrivable copy has to be looked at, and so the count can only
 # go down.
-BASELINE_UNDRIVABLE = 42
+BASELINE_UNDRIVABLE = 39
 _undrivable = sorted({(c, p) for _, c, p in COPIES if c not in FACTORY})
 
 check("undrivable_copy_set_does_not_grow",

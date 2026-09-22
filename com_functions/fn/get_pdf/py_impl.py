@@ -111,6 +111,12 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
         return _d_cpdf(BinSize, 0, 1)
     iv[np.abs(iv) < BinSize] = 0.0
     b = np.sign(iv)
+    # NOTE: MATLAB sort(x,'descend') is STABLE and this reverses each tied run
+    # (COM Octave: sort(abs([0.2 -0.2 0.5 0.2 -0.5 0.1]),'descend') indexes
+    # [3 5 1 2 4 6]; this gives [5 3 4 2 1 6]).  Left as is because the loop
+    # below uses only abs(v), so a tied run is a run of identical factors and
+    # the PDF is bit-identical either way -- verified over 4 tie-rich vectors.
+    # The canonical get_pdf_from_sampled_signal has the same line.
     sort_idx = np.argsort(np.abs(iv), kind='stable')[::-1]
     iv = np.abs(iv[sort_idx]) * b[sort_idx]
     values = 2.0 * np.arange(L) / (L - 1) - 1.0
@@ -137,8 +143,12 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
 
     if ch_type == 'THRU':
         ndfe = int(param.N_bmax) if param.Floating_DFE else int(param.ndfe)
+        # No clipping: MATLAB refuses a postcursor past the end of the pulse
+        # response rather than quietly using fewer taps, and numpy's fancy
+        # indexing raises the same way.
+        # COM Octave: SBR 1x60, t_s=41, ndfe=3 -> "error: SBR(65): out of
+        #   bound 60 (dimensions are 1x60)".  The port silently used 2 taps.
         idx = t_s + M * np.arange(ndfe + 1)
-        idx = idx[idx < len(SBR)]
         ideal_cancelled_cursors = SBR[idx]
 
         if param.dfe_delta != 0:
@@ -168,12 +178,23 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
 
         start_cancel = t_s - M // 2
         end_cancel = t_s + (1 + ndfe) * M - M // 2  # exclusive end for Python slice
-        # trim to valid range
+        # No trimming: MATLAB indexes residual_response(start_cancel:end_cancel)
+        # and refuses either end of that range when it leaves the array, where a
+        # python slice would silently shorten and cancel the wrong samples.
+        # COM Octave: t_s=3 -> "error: residual_response(-1): subscripts must be
+        #   either integers 1 to (2^63)-1 or logicals";
+        #   rr=1x10; rr(5:12)=rr(5:12)-ones(1,8) -> "error: rr(12): out of
+        #   bound 10 (dimensions are 1x10)".
         if start_cancel < 0:
-            effective_cancellation_samples = effective_cancellation_samples[-start_cancel:]
-            start_cancel = 0
-        ec_len = min(len(effective_cancellation_samples), end_cancel - start_cancel, len(residual_response) - start_cancel)
-        residual_response[start_cancel:start_cancel + ec_len] -= effective_cancellation_samples[:ec_len]
+            raise IndexError(
+                'get_pdf: residual_response(%d) - the DFE cancellation window '
+                'starts before the pulse response' % (start_cancel + 1))
+        if end_cancel > len(residual_response):
+            raise IndexError(
+                'get_pdf: residual_response(%d): out of bound %d - the DFE '
+                'cancellation window runs past the pulse response'
+                % (end_cancel, len(residual_response)))
+        residual_response[start_cancel:end_cancel] -= effective_cancellation_samples
 
     nui = _mround(len(residual_response) / M)
 
@@ -185,8 +206,12 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
         valid = row_indices[row_indices < len(residual_response)]
         vs[:len(valid), i] = residual_response[valid]
 
-    # Determine phases
-    use_mmse = (str(OP.FFE_OPT_METHOD).upper() == 'MMSE' and OP.RxFFE)
+    # Determine phases.  MATLAB strcmp(OP.FFE_OPT_METHOD,'MMSE') is CASE
+    # SENSITIVE (strcmpi is the insensitive one), so 'mmse' takes the phase-loop
+    # path, not the MMSE one.
+    # COM Octave: OP.FFE_OPT_METHOD='mmse', OP.RxFFE=1, type='NEXT' returns a
+    #   407-bin pdf (the max-sigma phase); .upper() gave the 295-bin ixphase pdf.
+    use_mmse = (str(OP.FFE_OPT_METHOD) == 'MMSE' and OP.RxFFE)
     if use_mmse:
         if ch_type == 'THRU':
             # MATLAB L7451-7452: THRU uses the CURSOR phase mod(t_s,M), NOT ixphase
@@ -219,6 +244,20 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
         p = _get_pdf_from_sampled_signal(vs[:, k], int(param.levels), delta_y)
         pdf_samples[k] = p
         mxV[k] = float(np.sqrt(np.sum(p.x ** 2 * p.y)))
+
+    # MATLAB sizes mxV from `phases`, which for THRU is a SCALAR, then writes
+    # mxV(k) at the 1-based phase.  That write auto-grows mxV and leaves zeros
+    # in 1..k-1, so when the phase's sigma is 0 max() picks index 1 -- a phase
+    # pdf_samples never got, i.e. an unset struct whose every field is [].
+    # COM Octave: THRU, t_s=40, M=8 (phase 8) with no residual at that phase
+    #   returns numel(pdf.x)==0, numel(pdf.y)==0, pdf.BinSize==[].
+    #   The port returned the delta pdf instead.
+    if ch_type == 'THRU':
+        k1 = phases[0] + 1                       # MATLAB's 1-based phase
+        if k1 > 1 and mxV[phases[0]] == 0.0:
+            return SimpleNamespace(BinSize=np.array([]), Min=np.array([]),
+                                   y=np.array([]), x=np.array([]))
+        return pdf_samples[phases[0]]
 
     best_k = phases[int(np.argmax([mxV[k] for k in phases]))]
     return pdf_samples[best_k]

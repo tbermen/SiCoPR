@@ -33,6 +33,26 @@ def _mmax(a):
     return np.nanmax(a)
 
 
+def _margmax(a):
+    """MATLAB's `[~,i] = max(x)`: a NaN is SKIPPED unless every element is NaN,
+    in which case the index is 1.  np.argmax returns the index of the first NaN
+    instead, so one bad sample moved the cursor to the head of the response.
+
+    COM Octave: max([NaN 1 3 2]) -> 3 at 1-based index 3   (np.argmax gave 0)
+                max([1 NaN 5])   -> 5 at 1-based index 3   (np.argmax gave 1)
+                max([NaN NaN])   -> NaN at 1-based index 1 (np.argmax gave 0)
+    """
+    a = np.asarray(a)
+    if a.dtype.kind != 'f':
+        return int(np.argmax(a))
+    nan = np.isnan(a)
+    if nan.all():
+        return 0
+    if nan.any():
+        return int(np.nanargmax(a))
+    return int(np.argmax(a))
+
+
 from types import SimpleNamespace
 
 def _value_copy(obj):
@@ -98,7 +118,7 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
     cursor_i = THIS.cursor_i
     # If cursor_i is None or empty → use argmax of sbr
     if cursor_i is None or (hasattr(cursor_i, '__len__') and len(cursor_i) == 0):
-        cursor_i = int(np.argmax(sbr))
+        cursor_i = _margmax(sbr)
     BEST.cursor_i = cursor_i
     BEST.itick = THIS.itick
 
@@ -122,6 +142,15 @@ def OptFom_Update_Best_Settings_EQ_Failed(BEST, THIS, sbr, chdata, param, OP):
     cursor_val = float(sbr[ci])
     # MATLAB: sbr(cursor_i+M:M:cursor_i+M*ndfe)/sbr(cursor_i) — both 1-based
     # Python: sbr[ci+M : ci+M*ndfe+1 : M] / cursor_val (0-based ci)
+    # A python slice silently stops at the end of the array; MATLAB refuses, so
+    # a short response used to yield FEWER dfe taps than param.ndfe without a
+    # word.  COM Octave: sbr 1x20, cursor_i=5, M=4, ndfe=6 ->
+    #   "error: sbr(29): out of bound 20 (dimensions are 1x20)".
+    if ci + M * ndfe >= len(sbr):
+        raise IndexError(
+            'OptFom_Update_Best_Settings_EQ_Failed: sbr(%d): out of bound %d - '
+            'the pulse response is too short for %d DFE taps'
+            % (ci + M * ndfe + 1, len(sbr), ndfe))
     BEST.dfetaps = sbr[ci + M: ci + M * ndfe + 1: M] / cursor_val
     BEST.A_s = cursor_val
 

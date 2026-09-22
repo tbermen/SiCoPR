@@ -20,6 +20,20 @@ def OptFom_Local_Search(LocalSearch_Value, BEST, THIS, txffe_sweep_indices):
 
     skip_it = 0
     for kv in txffe_sweep_indices:
+        # MATLAB subscripts are positive integers, and every kv here is used as
+        # one. int() rounded a fractional index down and let a non-positive one
+        # index from the END of the array, so a caller that handed this a
+        # 0-based sweep list got a plausible answer instead of a failure.
+        # COM Octave, txffe_sweep_indices = [0]:
+        #     error: tx_index_vector(-1): subscripts must be either integers
+        #            1 to (2^63)-1 or logicals            (Python returned 0)
+        # and with [2.5]:
+        #     error: tx_index_vector(1.5): subscripts must be ...
+        #                                                  (Python returned 1)
+        if not float(kv).is_integer() or kv < 1:
+            raise IndexError(
+                'txffe_sweep_indices must be positive integer MATLAB '
+                'subscripts; got %r' % (kv,))
         kv = int(kv)
         if kv == 1:
             previous_loop_val = g_LP_index

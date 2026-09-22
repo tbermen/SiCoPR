@@ -13,7 +13,29 @@
 # ============================================================
 
 import numpy as np
+from com_functions.fn.str2csv.py_impl import str2csv as _str2csv
 from types import SimpleNamespace
+
+
+def _mcat(*parts):
+    """MATLAB's `[a b]` on numeric scalars: an EMPTY operand contributes
+    nothing, it does not become an element.
+    COM Octave: [nan, []] -> nan, numel 1    (the port built [nan, []], 2 long)
+                [[], nan] -> nan, numel 1
+                [nan, 5]  -> [nan 5], numel 2
+    """
+    return np.concatenate(
+        [np.atleast_1d(np.asarray(p, dtype=float).ravel()) for p in parts])
+
+
+def _mmin2(a, b):
+    """MATLAB's two-argument min(): NaN is SKIPPED unless both are NaN.
+    Python's min() just compares, so it is order-dependent and wrong.
+    COM Octave: min(NaN, 5) -> 5   (python min gave nan)
+                min(5, NaN) -> 5
+                min(NaN,NaN)-> NaN
+    """
+    return float(np.fmin(np.float64(a), np.float64(b)))
 
 
 def TDR_ERL_Processing(output_args, OP, package_testcase_i, chdata, param):
@@ -83,14 +105,14 @@ def TDR_ERL_Processing(output_args, OP, package_testcase_i, chdata, param):
     if OP.ERL:
         if OP.TDR_W_TXPKG:
             min_ERL = erl22
-            ERL = [np.nan, erl22]
+            ERL = _mcat(np.nan, erl22)
         else:
             if _is_empty(erl22):
                 min_ERL = erl11
-                ERL = [erl11, np.nan]
+                ERL = _mcat(erl11, np.nan)
             else:
-                min_ERL = min(erl11, erl22)
-                ERL = [erl11, erl22]
+                min_ERL = _mmin2(erl11, erl22)
+                ERL = _mcat(erl11, erl22)
         output_args.ERL = min_ERL
     else:
         min_ERL = []
@@ -105,8 +127,11 @@ def TDR_ERL_Processing(output_args, OP, package_testcase_i, chdata, param):
             fom_result = SimpleNamespace(ran=0)
             output_args.fom_result = fom_result
         output_args.Z_t = param.Z_t
-        bases = [ch.base for ch in chdata]
-        fileset_str = ','.join(str(b) for b in bases)
+        # MATLAB passes str2csv the ONE-element cell {chdata(1).base}; joining
+        # every chdata entry listed the crosstalk files too.
+        # COM Octave: str2csv({'a.s4p'}) -> 'a.s4p';
+        #   sprintf('"%s"','a.s4p') -> '"a.s4p"'
+        fileset_str = _str2csv([str(chdata[0].base)])
         output_args.file_names = f'"{fileset_str}"'
 
     return output_args, ERL, min_ERL

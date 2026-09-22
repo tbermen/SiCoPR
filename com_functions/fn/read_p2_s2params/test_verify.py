@@ -103,3 +103,94 @@ def test_scd_antisymmetric_input(tmp_path):
     S = np.array([[s11[0], s21[0]], [s21[0], s11[0]]])
     D = T @ S @ T_inv
     assert abs(SCD[0, 0, 0] - D[0, 1]) < 1e-8
+
+
+# ============================================================
+# COM Octave oracle — read_p2_s2params run verbatim under Octave, with
+# read_Nport_touchstone and rangelimit, on this file:
+#
+#   ! test 2-port
+#   # GHz S RI R 50
+#   0.0   0.01 0.00   0.90 0.00   0.90 0.00   0.02 0.00
+#   5.0  -0.03 0.02   0.80 -0.30  0.81 -0.31  0.04 -0.01
+#   10.0  0.05 -0.04  0.60 -0.55  0.61 -0.56 -0.02 0.03
+#   20.0 -0.07 0.06   0.30 -0.70  0.31 -0.71  0.05 -0.02
+#   40.0  0.09 -0.08  0.10 -0.40  0.11 -0.41 -0.06 0.04
+#
+# with param.Z0 = 50, OP.DISPLAY_WINDOW = false, both plot flags 0:
+#
+#   SDD(1:2) -0.885+0j              -0.8+0.31j
+#   SDC(1:2) -0.0050000000000000044  -0.030000000000000027+0.0099999999999999811j
+#   SCC(1:2)  0.91500000000000004     0.81000000000000005-0.30000000000000004j
+#   SCD(1:2) -0.0050000000000000044  -0.040000000000000036+0.020000000000000018j
+#
+# Pinned with ==, because these pin the FORM of W = T*(S/T). MATLAB's S/T is
+# mrdivide, which solves rather than multiplying by an inverse; T @ S @ inv(T)
+# is the same matrix in exact arithmetic and differs in the last bit here, on
+# SDC and SCC, for this very ordinary file.
+#
+# param.flim:
+#   67e9 (above the file) -> data.flim 40e9, data.limited 0, 5 points
+#   15e9                  -> data.flim 15e9, data.limited 1, 4 points
+#   10e9 (on a point)     -> data.flim 10e9, data.limited 1, 3 points
+# and in every case Octave leaves the CALLER's param.flim alone, because
+# rangelimit takes param by value.
+# ============================================================
+_ORACLE_S2P = """! test 2-port
+# GHz S RI R 50
+0.0   0.01 0.00   0.90 0.00   0.90 0.00   0.02 0.00
+5.0  -0.03 0.02   0.80 -0.30  0.81 -0.31  0.04 -0.01
+10.0  0.05 -0.04  0.60 -0.55  0.61 -0.56 -0.02 0.03
+20.0 -0.07 0.06   0.30 -0.70  0.31 -0.71  0.05 -0.02
+40.0  0.09 -0.08  0.10 -0.40  0.11 -0.41 -0.06 0.04
+"""
+
+
+def _oracle_file(tmp_path):
+    p = tmp_path / 'oracle.s2p'
+    p.write_text(_ORACLE_S2P)
+    return str(p)
+
+
+def test_octave_oracle_mixed_mode_is_mrdivide(tmp_path):
+    param = SimpleNamespace(Z0=50.0, flim=67e9)
+    OP = SimpleNamespace(DISPLAY_WINDOW=False)
+    _, SDD, SDC, SCC, SCD = read_p2_s2params(_oracle_file(tmp_path), 0, 0,
+                                             [1, 2], OP, param)
+    assert SDD[0, 0, 0] == -0.88500000000000001 + 0j
+    assert SDD[1, 0, 0] == -0.80000000000000004 + 0.31j
+    assert SDC[0, 0, 0] == -0.0050000000000000044 + 0j
+    assert SDC[1, 0, 0] == -0.030000000000000027 + 0.0099999999999999811j
+    assert SCC[0, 0, 0] == 0.91500000000000004 + 0j
+    assert SCC[1, 0, 0] == 0.81000000000000005 - 0.30000000000000004j
+    assert SCD[0, 0, 0] == -0.0050000000000000044 + 0j
+    assert SCD[1, 0, 0] == -0.040000000000000036 + 0.020000000000000018j
+
+
+@pytest.mark.parametrize('flim,n,limited,out_flim', [
+    (67e9, 5, 0, 40e9),
+    (15e9, 4, 1, 15e9),
+    (10e9, 3, 1, 10e9),
+])
+def test_octave_oracle_rangelimit(tmp_path, flim, n, limited, out_flim):
+    param = SimpleNamespace(Z0=50.0, flim=flim)
+    OP = SimpleNamespace(DISPLAY_WINDOW=False)
+    data, _, _, _, _ = read_p2_s2params(_oracle_file(tmp_path), 0, 0,
+                                        [1, 2], OP, param)
+    assert len(data.freq) == n
+    assert data.limited == limited
+    assert data.flim == out_flim
+    # MATLAB passes param by value, so the caller's struct is unchanged
+    assert param.flim == flim
+
+
+def test_ports_may_be_an_array(tmp_path):
+    """MATLAB only tests isempty(ports) before overwriting it with [1 2];
+    `not ports` raised on an ndarray of length 2."""
+    param = SimpleNamespace(Z0=50.0, flim=67e9)
+    OP = SimpleNamespace(DISPLAY_WINDOW=False)
+    ref = read_p2_s2params(_oracle_file(tmp_path), 0, 0, [1, 2], OP,
+                           SimpleNamespace(Z0=50.0, flim=67e9))[1]
+    for ports in (np.array([1, 2]), np.array([2, 1]), [], np.array([])):
+        got = read_p2_s2params(_oracle_file(tmp_path), 0, 0, ports, OP, param)[1]
+        np.testing.assert_array_equal(got, ref)

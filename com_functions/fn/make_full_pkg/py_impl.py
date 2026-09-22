@@ -27,7 +27,11 @@ from types import SimpleNamespace
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     """Inlined make_pkg (MATLAB lines 8359-8405)."""
     f = np.asarray(f, dtype=float)
-    eps_val = np.finfo(float).tiny
+    # MATLAB `f(f<eps)=eps` is eps(1) = 2.220446049250313e-16, not the
+    # smallest positive double. np.finfo(float).tiny is 292 orders out,
+    # and it is the DC point that gets it, which then goes into
+    # synth_tline's sqrt and log. Matches com_functions/fn/make_pkg.
+    eps_val = np.finfo(float).eps
     f = np.where(f < eps_val, eps_val, f)
     zref = float(pkg_param.Z0)
     tau = float(pkg_param.pkg_tau)

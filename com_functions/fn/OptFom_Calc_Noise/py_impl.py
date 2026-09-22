@@ -85,6 +85,16 @@ def OptFom_Calc_Noise(THIS, Best_FOM, sbr, SETTINGS, chdata, param, OP):
         sigma_TX = (L - 1) * A_s / R_LM * SNR_TX_lin
     else:
         cur_idx = int(param.cursor_index) - 1  # 0-based
+        # MATLAB txffe(0) is not the last tap, it is an error.  COM Octave,
+        # OP.SNR_TXwC0=1 with param.cursor_index=0:
+        #   "error: txffe(0): subscripts must be either integers 1 to (2^63)-1
+        #    or logicals".
+        # A negative Python index wraps to txffe[-1] and returns a sigma_TX
+        # built from the wrong tap.
+        if cur_idx < 0:
+            raise IndexError('OptFom_Calc_Noise: param.cursor_index is %d, so '
+                             'MATLAB txffe(%d) is not a valid subscript'
+                             % (int(param.cursor_index), int(param.cursor_index)))
         sigma_TX = (L - 1) * A_s / float(txffe[cur_idx]) / R_LM * SNR_TX_lin
 
     # sigma_ISI (Equation 93A-31)
@@ -145,8 +155,15 @@ def OptFom_Calc_Noise(THIS, Best_FOM, sbr, SETTINGS, chdata, param, OP):
         n_txffe = len(txffe)
         for ii in range(-cmx, cpx + 1):
             c_idx = ii + cmx  # 0-based Python: MATLAB C(ii+cmx+1) → C[ii+cmx]
+            # MATLAB indexes C directly, so a C shorter than
+            # RxFFE_cmx+RxFFE_cpx+1 is an error, not a set of skipped taps.
+            # COM Octave, RxFFE_cmx=RxFFE_cpx=1 with a two-element C:
+            #   "error: C(3): out of bound 2 (dimensions are 1x2)".
+            # `continue` here dropped the missing taps from H_Rx_FFE and
+            # reported a sigma_N the reference declines to produce.
             if c_idx < 0 or c_idx >= len(C):
-                continue
+                raise IndexError('OptFom_Calc_Noise: C(%d) is out of bound %d'
+                                 % (c_idx + 1, len(C)))
             if C[c_idx] == 0:
                 continue
             if ii + 1 == 0:

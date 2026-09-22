@@ -96,7 +96,11 @@ def OptFom_Create_Output(result, BEST, t, chdata, param, OP):
     result.sbr = BEST.sbr
     if OP.RxFFE:
         result.RxFFE = BEST.RxFFE
-        if str(getattr(OP, 'FFE_OPT_METHOD', '')).upper() == 'MMSE':
+        # MATLAB strcmp(OP.FFE_OPT_METHOD,'MMSE') is CASE SENSITIVE.  COM
+        # Octave with OP.RxFFE=1: 'MMSE' adds result.PSD_results and
+        # result.MMSE_results; 'mmse' and 'Mmse' add neither.  .upper() here
+        # attached both fields on every spelling.
+        if str(getattr(OP, 'FFE_OPT_METHOD', '')) == 'MMSE':
             result.PSD_results = BEST.PSD_results
             result.MMSE_results = BEST.MMSE_results
 
@@ -125,10 +129,25 @@ def OptFom_Create_Output(result, BEST, t, chdata, param, OP):
     i20 = int(i20_arr[0]) if len(i20_arr) > 0 else 0
     i80 = int(i80_arr[0]) if len(i80_arr) > 0 else len(SRn) - 1
     result.Tr_measured_from_step = (i80 - i20) / (param.fb * M)
-    result.Pmax_by_Vf = result.A_p / result.A_f if result.A_f != 0 else 0.0
+    # MATLAB divides straight through: A_p/0 is Inf and 0/0 is NaN, neither of
+    # which is zero.  COM Octave, a PR window summing to zero:
+    # result.Pmax_by_Vf = inf where this returned 0.
+    with np.errstate(divide='ignore', invalid='ignore'):
+        result.Pmax_by_Vf = float(np.float64(result.A_p) / np.float64(result.A_f))
 
     result.ISI = BEST.ISI
-    result.SNR_ISI = float(20 * np.log10(BEST.A_p / BEST.ISI)) if BEST.ISI != 0 else np.inf
+    # Same for 20*log10(BEST.A_p/BEST.ISI).  COM Octave:
+    #   A_p=1,  ISI=0 -> Inf                    (this agreed)
+    #   A_p=0,  ISI=0 -> NaN                    (this returned Inf)
+    #   A_p=-1, ISI=0.05 -> 26.020599913279625 + 27.287527076836827i,
+    #                       because MATLAB log10 of a negative is complex
+    #                       (np.log10 gives NaN).
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ratio = np.float64(BEST.A_p) / np.float64(BEST.ISI)
+        if ratio < 0:
+            result.SNR_ISI = complex(20 * np.log10(np.complex128(ratio)))
+        else:
+            result.SNR_ISI = float(20 * np.log10(ratio))
     result.best_current_ffegain = BEST.ffegain
     result.best_bmax = BEST.bmax
     result.best_bmin = BEST.bmin

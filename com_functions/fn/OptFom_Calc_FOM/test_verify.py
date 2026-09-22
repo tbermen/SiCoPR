@@ -116,3 +116,63 @@ def test_unit_snr_gives_zero_db():
     THIS = _THIS(A_s=0.5, total_noise_rms=0.5)
     FOM, _ = OptFom_Calc_FOM(None, False, THIS, _param(), _op(), None)
     assert FOM == pytest.approx(0.0)
+
+
+# ============================================================
+# COM Octave oracle values — 20*log10 evaluated under Octave on the same
+# operands.  Pinned 2026-09-22.
+#
+# Two divergences these pin, both on the 20*log10(A_s/x) sites (equation
+# 93A-36 and the C2M A_s/N_i site):
+#  * a zero divisor.  MATLAB carries Inf (and NaN for 0/0); the port did the
+#    division in Python floats and raised ZeroDivisionError.
+#  * a negative ratio.  MATLAB's log10 goes COMPLEX; numpy's on a float is NaN.
+# The C2M path also carried an `if N_i <= 0: return None, 1` guard that the
+# reference does not have, turning those two cases into a skip.
+#
+# COM Octave:
+#   20*log10( 0.5 /  0   ) -> Inf
+#   20*log10( 0.0 /  0   ) -> NaN
+#   20*log10(-0.5 /  0.05) -> 20 + 27.287527076836827i
+#   20*log10( 0.5 / -0.05) -> 20 + 27.287527076836827i
+#   20*log10(-0.25/  0.05) -> 13.979400086720377 + 27.287527076836827i
+#   20*log10( 0.5 /  0.05) -> 20            (unchanged, real)
+# ============================================================
+
+def test_octave_zero_total_noise_rms_is_inf():
+    FOM, skip = OptFom_Calc_FOM(None, False, _THIS(A_s=0.5, total_noise_rms=0.0),
+                                _param(), _op(), None)
+    assert FOM == float('inf')
+    assert skip == 0
+
+
+def test_octave_zero_over_zero_is_nan():
+    FOM, skip = OptFom_Calc_FOM(None, False, _THIS(A_s=0.0, total_noise_rms=0.0),
+                                _param(), _op(), None)
+    assert np.isnan(FOM)
+    assert skip == 0
+
+
+@pytest.mark.parametrize('A_s,tnr,expected', [
+    (-0.5, 0.05, complex(20.0, 27.287527076836827)),
+    (0.5, -0.05, complex(20.0, 27.287527076836827)),
+    (-0.25, 0.05, complex(13.979400086720377, 27.287527076836827)),
+])
+def test_octave_negative_ratio_is_complex(A_s, tnr, expected):
+    FOM, skip = OptFom_Calc_FOM(None, False, _THIS(A_s=A_s, total_noise_rms=tnr),
+                                _param(), _op(), None)
+    assert isinstance(FOM, complex)
+    # numpy's complex log10 and Octave's round a few ulps apart (the imaginary
+    # part is 20*pi/ln(10)), so both parts are pinned relatively.  What matters
+    # here is that the result is COMPLEX at all, where the port gave NaN.
+    assert FOM.real == pytest.approx(expected.real, rel=1e-15)
+    assert FOM.imag == pytest.approx(expected.imag, rel=1e-15)
+    assert skip == 0
+
+
+def test_octave_positive_ratio_stays_a_real_float():
+    """Guard the other side: the ordinary case must not become complex."""
+    FOM, skip = OptFom_Calc_FOM(None, False, _THIS(A_s=0.5, total_noise_rms=0.05),
+                                _param(), _op(), None)
+    assert isinstance(FOM, float)
+    assert FOM == 20.0

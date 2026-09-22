@@ -103,7 +103,12 @@ def _freeze(obj, depth=0):
 
 def _fixture():
     """A THIS/param/OP/chdata set exercising every branch of the snapshot."""
-    n = 160          # long enough that cursor_i = 32 is a valid position
+    # The DFE tap span is sbr(cursor_i + M*(1..ndfe)), i.e. 32 + 32*4 = 160
+    # in 0-based terms, so the reference needs 161 samples and refuses fewer.
+    # This was 160, a call MATLAB itself errors on; the bounds guard added to
+    # OptFom_Update_Best_Settings_EQ_Failed on 2026-09-22 surfaced it. Padded
+    # rather than shrinking the span, so every branch of the snapshot still runs.
+    n = 256
     arr = lambda seed: np.arange(n, dtype=float) + seed        # noqa: E731
 
     psd = SimpleNamespace(S_tn=arr(1), S_jn=arr(2), S_rj_jn=arr(3), S_xn=arr(4),
