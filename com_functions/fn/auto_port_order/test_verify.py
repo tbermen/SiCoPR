@@ -105,3 +105,55 @@ def test_non_4port_raises():
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, '-v']))
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave, on S-matrices built with a KNOWN through path.
+#
+# The assertions above check that the result is a permutation of 1..4. Every
+# wrong answer is also a permutation of 1..4, so they pass on a routine that
+# picks the wrong ports -- and picking the wrong ports silently swaps the
+# victim and the aggressor for the whole run.
+# ---------------------------------------------------------------------------
+
+_APO_NF = 8
+_APO_F = np.linspace(0.0, 20e9, _APO_NF)
+_OCT = {((0, 1), (2, 3)): [1, 3, 2, 4],
+        ((0, 2), (1, 3)): [1, 2, 3, 4],
+        ((0, 3), (1, 2)): [1, 2, 4, 3]}
+
+
+def _sch_with_thru(pairs, xtalk=0.02):
+    """A 4-port whose strong transmission is between the given port pairs."""
+    s = np.full((_APO_NF, 4, 4), xtalk, dtype=complex)
+    for k in range(_APO_NF):
+        np.fill_diagonal(s[k], 0.05)
+        for a, b in pairs:
+            s[k, a, b] = s[k, b, a] = 0.9 * np.exp(-_APO_F[k] / 6e10)
+    return s
+
+
+def test_matches_com_octave_for_each_through_arrangement():
+    for pairs, want in _OCT.items():
+        got = [int(v) for v in
+               np.asarray(auto_port_order(_sch_with_thru(pairs), _APO_F, 0)).ravel()]
+        assert got == want, (
+            'through path %r gave port order %r; COM Octave gives %r'
+            % (pairs, got, want))
+
+
+def test_the_arrangement_actually_decides_the_answer():
+    """Three different through paths must give three different orders, or the
+    comparison above is pinning a constant."""
+    seen = {tuple(int(v) for v in
+                  np.asarray(auto_port_order(_sch_with_thru(p), _APO_F, 0)).ravel())
+            for p in _OCT}
+    assert len(seen) == 3, 'only %d distinct orders for 3 arrangements: %r' % (
+        len(seen), seen)
+
+
+def test_non_four_port_is_rejected():
+    """COM Octave errors for anything but a 4-port rather than guessing."""
+    three = np.full((_APO_NF, 3, 3), 0.1, dtype=complex)
+    with pytest.raises(Exception):
+        auto_port_order(three, _APO_F, 0)
