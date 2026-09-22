@@ -155,25 +155,35 @@ def test_die_elements_actually_change_the_result():
         'applied' % abs(with_die - no_die))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    'HELD FOR REVIEW 2026-09-22: with a matrix C_diepad/L_comp -- the shape '
-    'the shipped workbooks carry -- SiCoPR and COM Octave disagree. SiCoPR '
-    'returns the answer COM Octave gives for the equivalent VECTOR die '
-    'parameters, so it appears to take the first Tx/Rx pair where the '
-    'reference consumes the matrix differently. With vector parameters the '
-    'two agree to 1e-16, and with the die zeroed they agree exactly, so the '
-    'transmission line is not involved. Whether the engine ever reaches '
-    'make_full_pkg with a matrix, or selects the package-case row upstream, '
-    'decides whether this matters. Weighing against it: the 208-case MATLAB '
-    'correlation is bit-exact on COM with workbooks whose C_diepad IS a '
-    'matrix, and that is this same path reached with real parameters and '
-    'agreeing -- not an untested path excused by a corpus. So the likelier '
-    'reading is that the synthetic matrix here is inconsistent with the '
-    'Pkg_len/pkg_Z_c shapes the matrix branch expects (num_blocks becomes '
-    'mele + len(Cd_Tx) - 1). Resolve by capturing a real param set.'))
 def test_matrix_die_parameters_match_com_octave():
+    """A matrix C_diepad/L_comp gives one LC section per column, per side.
+
+    SiCoPR's mele==1 branch used to take only the first entry, dropping every
+    die section after it -- the same truncation already fixed in the mele==4
+    branch. The shipped workbooks set mele=4 (z_p_next_cases is 4x4) AND zero
+    die values, so no run could reach it; it was found by driving the function
+    directly against COM Octave. Fixed 2026-09-22.
+    """
     f, _P = _channel()
     s11 = np.asarray(
         make_full_pkg('TX', f, _pkg_param(matrix_die=True), 'THRU', 'dd')[0]).ravel()[0]
-    # COM Octave, same matrix parameters
-    assert _close(s11, -0.0013811167357231284 - 0.008590681999406666j)
+    want = -0.0013811167357231284 - 0.008590681999406666j
+    assert _close(s11, want, 1e-11), (
+        's11[0] is %r, COM Octave gives %r' % (s11, want)
+    )
+
+
+def test_matrix_die_adds_sections_beyond_the_first():
+    """Positive control for the fix above: a matrix whose later columns differ
+    must not give the same answer as one truncated to its first column."""
+    f, _P = _channel()
+    full = np.asarray(
+        make_full_pkg('TX', f, _pkg_param(matrix_die=True), 'THRU', 'dd')[0]).ravel()[0]
+    first_only = _pkg_param(matrix_die=True)
+    first_only.C_diepad = first_only.C_diepad[:, :1]
+    first_only.L_comp = first_only.L_comp[:, :1]
+    trunc = np.asarray(
+        make_full_pkg('TX', f, first_only, 'THRU', 'dd')[0]).ravel()[0]
+    assert abs(full - trunc) > 1e-6, (
+        'keeping only the first die section changed s11 by %.2e; the later '
+        'sections are not reaching the network' % abs(full - trunc))

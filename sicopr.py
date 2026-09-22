@@ -14812,8 +14812,14 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
     type_upper = str(type_).upper()
     if type_upper == 'TX':
         if mele == 1:
-            Cpad = np.array([float(Cd_Tx) if np.isscalar(Cd_Tx) else float(Cd_Tx.ravel()[0])])
-            Lcomp = np.array([float(Lcomp_Tx) if np.isscalar(Lcomp_Tx) else float(Lcomp_Tx.ravel()[0])])
+            # MATLAB L8389-8390: Cpad=Cd_Tx; Lcomp=L_comp_Tx -- the WHOLE row
+            # when C_diepad/L_comp are given as a 2xN matrix of die LC
+            # sections. Taking only the first entry dropped every section
+            # after it, which is the same truncation already fixed in the
+            # mele==4 branch below. Unreachable on the shipped workbooks,
+            # which set mele=4 (z_p_next_cases is 4x4) and zero die values.
+            Cpad = np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel()
+            Lcomp = np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel()
             Cbump = np.array([float(C_bump[0])])
             Cball = np.array([float(C_pkg_board[0])])
             pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float).ravel()
@@ -14857,8 +14863,9 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
 
     elif type_upper == 'RX':
         if mele == 1:
-            Cpad = np.array([float(Cd_Rx) if np.isscalar(Cd_Rx) else float(Cd_Rx.ravel()[0])])
-            Lcomp = np.array([float(Lcomp_Rx) if np.isscalar(Lcomp_Rx) else float(Lcomp_Rx.ravel()[0])])
+            # MATLAB L8416-8417: the whole row, as for TX above.
+            Cpad = np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel()
+            Lcomp = np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel()
             Cbump = np.array([float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])])
             Cball = np.array([float(C_pkg_board[1]) if len(C_pkg_board) > 1 else float(C_pkg_board[0])])
             pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float).ravel()
