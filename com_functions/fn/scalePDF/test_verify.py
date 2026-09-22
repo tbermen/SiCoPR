@@ -101,3 +101,39 @@ def test_all_y_nonneg():
     p = _make_pdf(-2, 1.0, [0.1, 0.2, 0.4, 0.2, 0.1])
     out = scalePDF(p, 2.0)
     assert np.all(out.y >= 0)
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave, via tools/octave_oracle.py. The assertions above check
+# shape and monotonicity; these pin the values.
+# ---------------------------------------------------------------------------
+
+_BINSIZE, _MIN = 1e-3, -6
+
+
+def _a_pdf():
+    """A small asymmetric discrete PDF on a 13-bin axis, summing to 1."""
+    y = np.array([0.01, 0.02, 0.05, 0.09, 0.14, 0.18, 0.20,
+                  0.13, 0.08, 0.05, 0.03, 0.015, 0.005])
+    x = (np.arange(_MIN, _MIN + len(y))) * _BINSIZE
+    return SimpleNamespace(BinSize=_BINSIZE, Min=_MIN, y=y, x=x)
+
+
+_OCT_BINSIZE, _OCT_MIN, _OCT_LEN = 0.001, -15, 31
+_OCT_Y3 = [0.0056022408963585443, 0.0056022408963585443, 0.0072028811524609843]
+
+
+def test_matches_com_octave():
+    q = scalePDF(_a_pdf(), 2.5)
+    assert q.BinSize == _OCT_BINSIZE, 'BinSize %r, COM Octave %r' % (q.BinSize, _OCT_BINSIZE)
+    assert q.Min == _OCT_MIN, 'Min %r, COM Octave %r' % (q.Min, _OCT_MIN)
+    y = np.asarray(q.y).ravel()
+    assert y.size == _OCT_LEN, 'len(y) %d, COM Octave %d' % (y.size, _OCT_LEN)
+    assert np.allclose(y[:3], _OCT_Y3, rtol=0, atol=1e-16), (
+        'y[:3] is %r, COM Octave gives %r' % (list(y[:3]), _OCT_Y3))
+
+
+def test_scaling_preserves_total_probability():
+    q = scalePDF(_a_pdf(), 2.5)
+    assert abs(float(np.sum(np.asarray(q.y))) - 1.0) < 1e-12, (
+        'scaled PDF sums to %r' % float(np.sum(np.asarray(q.y))))

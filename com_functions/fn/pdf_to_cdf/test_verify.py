@@ -82,3 +82,41 @@ def test_y_leq_yB_and_yT():
     c = pdf_to_cdf(_make_pdf([0.05, 0.2, 0.5, 0.2, 0.05]))
     assert np.all(c.y <= c.yB + 1e-15)
     assert np.all(c.y <= c.yT + 1e-15)
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave, via tools/octave_oracle.py. The assertions above check
+# shape and monotonicity; these pin the values.
+# ---------------------------------------------------------------------------
+
+_BINSIZE, _MIN = 1e-3, -6
+
+
+def _a_pdf():
+    """A small asymmetric discrete PDF on a 13-bin axis, summing to 1."""
+    y = np.array([0.01, 0.02, 0.05, 0.09, 0.14, 0.18, 0.20,
+                  0.13, 0.08, 0.05, 0.03, 0.015, 0.005])
+    x = (np.arange(_MIN, _MIN + len(y))) * _BINSIZE
+    return SimpleNamespace(BinSize=_BINSIZE, Min=_MIN, y=y, x=x)
+
+
+_OCT_YB = [0.01, 0.029999999999999999, 0.080000000000000002, 0.16999999999999998]
+_OCT_YT = [1.0, 0.98999999999999999, 0.96999999999999997, 0.91999999999999993]
+
+
+def test_matches_com_octave():
+    c = pdf_to_cdf(_a_pdf())
+    for name, want in (('yB', _OCT_YB), ('yT', _OCT_YT)):
+        got = np.asarray(getattr(c, name)).ravel()[:4]
+        assert np.allclose(got, want, rtol=0, atol=1e-15), (
+            '%s[:4] is %r, COM Octave gives %r' % (name, list(got), want))
+
+
+def test_the_two_tails_are_complementary():
+    """yB accumulates from the bottom and yT from the top, so yB[k] + yT[k]
+    must be one PDF bin more than 1 at every k."""
+    p = _a_pdf()
+    c = pdf_to_cdf(p)
+    s = np.asarray(c.yB).ravel() + np.asarray(c.yT).ravel()
+    assert np.allclose(s, 1.0 + np.asarray(p.y).ravel(), rtol=0, atol=1e-12), (
+        'yB + yT is %r' % list(s[:4]))

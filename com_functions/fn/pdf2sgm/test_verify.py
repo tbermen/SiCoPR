@@ -70,3 +70,36 @@ def test_returns_scalar():
 def test_nonnegative():
     p = _make_pdf([-1.0, 0.0, 1.0], [0.25, 0.50, 0.25])
     assert pdf2sgm(p) >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave, via tools/octave_oracle.py. The assertions above check
+# shape and monotonicity; these pin the values.
+# ---------------------------------------------------------------------------
+
+_BINSIZE, _MIN = 1e-3, -6
+
+
+def _a_pdf():
+    """A small asymmetric discrete PDF on a 13-bin axis, summing to 1."""
+    y = np.array([0.01, 0.02, 0.05, 0.09, 0.14, 0.18, 0.20,
+                  0.13, 0.08, 0.05, 0.03, 0.015, 0.005])
+    x = (np.arange(_MIN, _MIN + len(y))) * _BINSIZE
+    return SimpleNamespace(BinSize=_BINSIZE, Min=_MIN, y=y, x=x)
+
+
+_OCT_SGM = 0.0022280877451303391
+
+
+def test_matches_com_octave():
+    got = float(np.asarray(pdf2sgm(_a_pdf())).ravel()[0])
+    assert abs(got - _OCT_SGM) <= 1e-17, (
+        'sigma is %.17g, COM Octave gives %.17g' % (got, _OCT_SGM))
+
+
+def test_sigma_grows_with_a_wider_pdf():
+    """Positive control: widening the bin size scales sigma with it."""
+    p = _a_pdf()
+    wide = SimpleNamespace(BinSize=p.BinSize * 4, Min=p.Min, y=p.y,
+                           x=np.asarray(p.x) * 4)
+    assert float(np.asarray(pdf2sgm(wide)).ravel()[0]) > 3.5 * _OCT_SGM

@@ -7,6 +7,7 @@
 # ============================================================
 """
 import sys, os
+import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from com_functions.fn.Full_Grid_Matrix.py_impl import Full_Grid_Matrix
 
@@ -51,3 +52,32 @@ def test_non_list_raises():
     import pytest
     with pytest.raises((ValueError, TypeError)):
         Full_Grid_Matrix('not a list')
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave: the cartesian product, and the ORDER it comes out in.
+# The order is the part a property test cannot see, and the part a downstream
+# index depends on.
+# ---------------------------------------------------------------------------
+
+_OCT_ROWS = [[0.0, -1.0], [0.0, 0.0], [0.0, 1.0],
+             [0.5, -1.0], [0.5, 0.0], [0.5, 1.0],
+             [1.0, -1.0], [1.0, 0.0], [1.0, 1.0]]
+
+
+def test_matches_com_octave_including_row_order():
+    out = np.asarray(Full_Grid_Matrix([np.array([0.0, 0.5, 1.0]),
+                                       np.array([-1.0, 0.0, 1.0])]))
+    assert out.shape == (9, 2), 'shape %s, COM Octave gives (9, 2)' % (out.shape,)
+    assert out.tolist() == _OCT_ROWS, (
+        'row order differs from COM Octave.\n got %r\n want %r'
+        % (out.tolist(), _OCT_ROWS))
+
+
+def test_first_variable_varies_slowest():
+    """The ordering above in one sentence, so a reordering is caught by intent
+    and not only by the literal."""
+    out = np.asarray(Full_Grid_Matrix([np.array([0.0, 0.5, 1.0]),
+                                       np.array([-1.0, 0.0, 1.0])]))
+    assert list(out[:3, 0]) == [0.0, 0.0, 0.0]
+    assert list(out[:3, 1]) == [-1.0, 0.0, 1.0]

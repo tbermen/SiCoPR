@@ -96,3 +96,43 @@ def test_curval_negative_sets_h1_zero():
     idx = findbankloc(hisi, 1, 5, 1, -0.5, 1.0, 1)
     assert len(idx) == 1
     assert 0 <= idx[0] <= 4
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave. findbankloc returns tap-bank locations; MATLAB indexes
+# them from 1 and SiCoPR from 0, so every location here is the reference's
+# minus one. Pinning the relationship means a convention change cannot pass.
+# ---------------------------------------------------------------------------
+
+_OCT_IDX_1BASED = [1, 2, 8, 9]
+
+
+def _isi():
+    """A decaying ISI tail with bumps at 7-8 and 14, so the chosen banks have
+    to respond to the input rather than fall on the first locations."""
+    rng = np.random.default_rng(3)
+    h = 0.3 * np.exp(-np.arange(20) / 6.0) + 0.02 * rng.standard_normal(20)
+    h[7] += 0.20
+    h[8] += 0.15
+    h[14] += 0.12
+    return h
+
+
+def test_matches_com_octave_one_based_minus_one():
+    got = np.asarray(findbankloc(_isi(), 1, 20, 2, np.inf, 0.2, 2)).ravel()
+    want = [v - 1 for v in _OCT_IDX_1BASED]
+    assert list(got) == want, (
+        'locations %r; COM Octave gives %r 1-based, so %r is expected here'
+        % (list(got), _OCT_IDX_1BASED, want))
+
+
+def test_locations_follow_the_isi_bumps():
+    """Move the energy and the banks must move with it."""
+    h = _isi()
+    moved = h.copy()
+    moved[7] -= 0.20
+    moved[8] -= 0.15
+    moved[15] += 0.30
+    a = list(np.asarray(findbankloc(h, 1, 20, 2, np.inf, 0.2, 2)).ravel())
+    b = list(np.asarray(findbankloc(moved, 1, 20, 2, np.inf, 0.2, 2)).ravel())
+    assert a != b, 'the same banks %r were chosen for a different ISI tail' % a

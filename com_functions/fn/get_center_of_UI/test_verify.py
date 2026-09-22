@@ -58,3 +58,28 @@ def test_result_in_valid_range():
     for n in [1, 2, 3, 4, 5, 7, 8, 16, 32]:
         h = get_center_of_UI(n)
         assert 0 <= h < n
+
+
+# ---------------------------------------------------------------------------
+# Against COM Octave. MATLAB returns the same sample 1-based, so every value
+# here is the reference's minus one -- the relationship is pinned too, so a
+# future change of convention cannot pass silently.
+# ---------------------------------------------------------------------------
+
+_OCT_1BASED = {4: 3, 8: 5, 32: 17, 33: 17}
+
+
+def test_matches_com_octave_one_based_minus_one():
+    for M, want1 in _OCT_1BASED.items():
+        got = get_center_of_UI(M)
+        assert got == want1 - 1, (
+            'get_center_of_UI(%d) is %r; COM Octave gives %d 1-based, so %d '
+            'is expected here' % (M, got, want1, want1 - 1))
+
+
+def test_odd_sample_count_breaks_the_tie_downward():
+    """At M=33 the two neighbours of the half-UI are equidistant. numpy's
+    argmin takes the first and MATLAB's find takes the first too, so both land
+    on the same sample -- 17 there, 16 here."""
+    assert get_center_of_UI(33) == 16
+    assert get_center_of_UI(32) == 16
