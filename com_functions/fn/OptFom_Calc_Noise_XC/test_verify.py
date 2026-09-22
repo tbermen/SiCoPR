@@ -123,3 +123,53 @@ def test_octave_method_label_is_case_insensitive(method):
     out = OptFom_Calc_Noise_XC(np.ones(8), np.ones(8), _settings(8, 2),
                                _param(M=2), _op(method))
     assert len(out) > 0
+
+
+# ---------------------------------------------------------------------------
+# COM Octave, 2026-09-22.
+#
+# This branch used to be recorded as "not oracle-able": Octave's ifft has no
+# 'symmetric' flag and rejects it, so the reference line could not run. That
+# was a failure of spelling, not of capability. ifft(X,n,'symmetric') pads X to
+# n, keeps the first n/2+1 entries and infers the rest by conjugate symmetry,
+# and building that mirrored spectrum explicitly reproduces it exactly. The
+# construction is now in octave/patches/OptFom_Calc_Noise_XC.m, so the branch
+# is a first-class oracle again.
+#
+# It also showed the port was WRONG: real(ifft([P zeros])) is the ifft of the
+# HERMITIAN PART of the padded vector, which disagrees by a non-constant ratio
+# (1.45, 1.28 on the N=4 probe), not by a factor of 2. The port now uses
+# np.fft.irfft([P, 0], 2N) and agrees with Octave to 4.8e-16 relative.
+# ---------------------------------------------------------------------------
+
+def test_octave_wiener_hopf_branch_matches_the_reference():
+    """COM Octave: Noise_XC[:3] on a 64-point deterministic spectrum."""
+    rng = np.random.default_rng(11)
+    N = 64
+    H_r = (rng.standard_normal(N) + 1j * rng.standard_normal(N)) * 0.1
+    H_low = (rng.standard_normal(N) + 1j * rng.standard_normal(N)) * 0.1
+    SETTINGS = SimpleNamespace(H_r_xc=H_r, f_xc=np.linspace(0, 53.125e9, N),
+                               N_fft_by2=32)
+    param = SimpleNamespace(eta_0=1.2e-9, samples_per_ui=8)
+    OP = SimpleNamespace(FFE_OPT_METHOD='WIENER-HOPF', Do_White_Noise=0)
+    got = np.asarray(OptFom_Calc_Noise_XC(H_low, 1.7, SETTINGS, param, OP)).ravel()
+    np.testing.assert_allclose(
+        got[:3],
+        [5.1337666600188375e-11, -1.0688349862241651e-11, -2.8214400159142196e-12],
+        rtol=1e-14)
+
+
+def test_symmetric_ifft_is_not_the_hermitian_part():
+    """The two forms differ by a NON-constant ratio, so this separates them.
+
+    real(ifft([P zeros])) was the port's old line. If it ever comes back, the
+    values above move by ~30-45%, not by a clean factor anyone would notice as
+    a unit error.
+    """
+    P = np.array([0.85, 0.5, 0.1625, 0.0404])
+    n = 2 * P.size
+    symmetric = np.fft.irfft(np.concatenate([P, [0.0]]), n)
+    hermitian = np.real(np.fft.ifft(np.concatenate([P, np.zeros(P.size)]), n))
+    ratio = symmetric[:2] / hermitian[:2]
+    assert not np.allclose(ratio[0], ratio[1], rtol=1e-3), \
+        'the two forms must differ by a non-constant ratio, else this test is vacuous'

@@ -81,7 +81,8 @@ VERSIONS = {
 }
 
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
-            'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp']
+            'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp',
+            'OptFom_Calc_Noise_XC']
 ADDED = ['csvread4com', 'com_octave_accel_on']
 
 # (label, old, new, expected count). Exact text; a miss is an error, never a

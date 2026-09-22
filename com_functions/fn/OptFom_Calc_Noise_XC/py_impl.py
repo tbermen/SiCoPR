@@ -40,9 +40,25 @@ def OptFom_Calc_Noise_XC(H_low_xc, ctle_gain_xc, SETTINGS, param, OP):
     # real(ifft(X)) IS the ifft of the Hermitian part of X. Needs MATLAB to
     # settle. Left as-is: the branch is 'obsolete not used' in the reference
     # and no shipped config selects WIENER-HOPF.
-    # MATLAB: ifft(P, 2*N, 'symmetric') ?= real(ifft([P; zeros(N,1)]))
+    # MATLAB: XC_rx_ctle = ifft(H.*conj(H), 2*length(H), 'symmetric').
+    #
+    # ifft(X,n,'symmetric') PADS X to n first, then uses only the first n/2+1
+    # entries and infers the rest by conjugate symmetry. For X of length N and
+    # n = 2N that is the half spectrum [P, 0] mirrored, i.e. exactly
+    # np.fft.irfft([P, 0], 2N).
+    #
+    # The port previously used real(ifft([P; zeros(N,1)])), which transforms
+    # the zero-padded vector as given and keeps the real part. That is the ifft
+    # of the HERMITIAN PART of X, not of its symmetric extension, and it is
+    # wrong here -- not by a constant factor either.
+    #
+    # Octave has no 'symmetric' flag, but the construction is reproducible
+    # there by building the mirrored spectrum explicitly, which is what
+    # octave/patches/OptFom_Calc_Noise_XC.m now does. Measured, N=4:
+    #   symmetric : 0.281975  0.187496569158  0.065625  0.0250034308417
+    #   old form  : 0.1941125 0.146873284579  0.0859375 0.0656267154208
     N = len(P)
-    XC = np.real(np.fft.ifft(np.concatenate([P, np.zeros(N)])))
+    XC = np.fft.irfft(np.concatenate([P, [0.0]]), 2 * N)
 
     M = int(param.samples_per_ui)
     Noise_XC = Var_eta0 * XC[0:N_fft_by2:M]
