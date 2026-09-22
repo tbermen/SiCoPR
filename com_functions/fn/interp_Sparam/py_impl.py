@@ -215,7 +215,7 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
         n_lf = min(50, len(group_delay))
         lf_gd = group_delay[:n_lf]
         m = np.median(lf_gd)
-        sigma = np.std(lf_gd)
+        sigma = np.std(lf_gd, ddof=1)     # MATLAB/Octave std normalises by N-1; numpy defaults to N
         mask = np.abs(lf_gd - m) < sigma
         lf_trend = np.mean(lf_gd[mask]) if np.any(mask) else m
 
@@ -245,7 +245,7 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             n_lf = min(50, len(group_delay))
             lf_gd = group_delay[:n_lf]
             m = np.median(lf_gd)
-            sigma = np.std(lf_gd)
+            sigma = np.std(lf_gd, ddof=1)     # MATLAB/Octave std normalises by N-1; numpy defaults to N
             mask = np.abs(lf_gd - m) < sigma
             lf_trend = np.mean(lf_gd[mask]) if np.any(mask) else m
 
@@ -259,7 +259,7 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
                 n_hf = min(51, len(group_delay))
                 hf_gd = group_delay[-n_hf:]
                 m_hf = np.median(hf_gd)
-                sigma_hf = np.std(hf_gd)
+                sigma_hf = np.std(hf_gd, ddof=1)     # MATLAB/Octave std normalises by N-1; numpy defaults to N
                 mask_hf = np.abs(hf_gd - m_hf) < sigma_hf
                 hf_trend_val = -np.mean(hf_gd[mask_hf]) if np.any(mask_hf) else -m_hf
 

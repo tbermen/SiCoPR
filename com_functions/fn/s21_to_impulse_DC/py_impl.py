@@ -160,7 +160,7 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
     elif ph_method == 'trend_and_shift_to_DC':
         gd = -np.diff(H_ph) / np.diff(fin)
         n_lf = min(50, len(gd))
-        lf = gd[:n_lf]; m = np.median(lf); s = np.std(lf)
+        lf = gd[:n_lf]; m = np.median(lf); s = np.std(lf, ddof=1)     # MATLAB/Octave std normalises by N-1; numpy defaults to N
         mask_g = np.abs(lf - m) < s
         lf_t = np.mean(lf[mask_g]) if np.any(mask_g) else m
         H_ph_c = H_ph.copy()
@@ -191,7 +191,7 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             n_lf = min(50, len(group_delay))
             lf_gd = group_delay[:n_lf]
             m_lf = np.median(lf_gd)
-            sd_lf = np.std(lf_gd)
+            sd_lf = np.std(lf_gd, ddof=1)     # MATLAB/Octave std normalises by N-1; numpy defaults to N
             mask_lf = np.abs(lf_gd - m_lf) < sd_lf
             lf_trend = float(np.mean(lf_gd[mask_lf])) if np.any(mask_lf) else float(m_lf)
 
@@ -206,7 +206,7 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
                 n_hf = min(51, len(group_delay))       # MATLAB group_delay(end-50:end)
                 hf_gd = group_delay[-n_hf:]
                 m_hf = np.median(hf_gd)
-                sd_hf = np.std(hf_gd)
+                sd_hf = np.std(hf_gd, ddof=1)     # MATLAB/Octave std normalises by N-1; numpy defaults to N
                 mask_hf = np.abs(hf_gd - m_hf) < sd_hf
                 hf_trend = -float(np.mean(hf_gd[mask_hf])) if np.any(mask_hf) else -float(m_hf)
                 hf_ext = np.where(fout > fin[-1])[0]
