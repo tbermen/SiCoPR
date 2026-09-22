@@ -68,6 +68,15 @@
    ]
   },
   {
+   "copy": "_Bathtub_Contribution_Wrapper__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "Bathtub_Contribution_Wrapper",
+   "inlined_into_matlab_lines": [
+    977,
+    1027
+   ]
+  },
+  {
    "copy": "_Bathtub_Contribution_Wrapper__plot_bathtub_curves",
    "helper": "plot_bathtub_curves",
    "inlined_into": "Bathtub_Contribution_Wrapper",
@@ -158,6 +167,15 @@
    "canonical_matlab_lines": [
     7473,
     7519
+   ]
+  },
+  {
+   "copy": "_Burst_Probability_Calc__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "Burst_Probability_Calc",
+   "inlined_into_matlab_lines": [
+    1083,
+    1132
    ]
   },
   {
@@ -454,6 +472,24 @@
    ]
   },
   {
+   "copy": "_Create_Noise_PDF__mround",
+   "helper": "mround",
+   "inlined_into": "Create_Noise_PDF",
+   "inlined_into_matlab_lines": [
+    1552,
+    1680
+   ]
+  },
+  {
+   "copy": "_Create_Noise_PDF__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "Create_Noise_PDF",
+   "inlined_into_matlab_lines": [
+    1552,
+    1680
+   ]
+  },
+  {
    "copy": "_Create_Noise_PDF__normal_dist",
    "helper": "normal_dist",
    "inlined_into": "Create_Noise_PDF",
@@ -492,6 +528,15 @@
    "inlined_into_matlab_lines": [
     1684,
     2025
+   ]
+  },
+  {
+   "copy": "_Init_PDF_Fast__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "Init_PDF_Fast",
+   "inlined_into_matlab_lines": [
+    2199,
+    2265
    ]
   },
   {
@@ -557,6 +602,15 @@
    "canonical_matlab_lines": [
     5480,
     5530
+   ]
+  },
+  {
+   "copy": "_MLSE_U1_c_178A__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "MLSE_U1_c_178A",
+   "inlined_into_matlab_lines": [
+    2348,
+    2479
    ]
   },
   {
@@ -1139,6 +1193,15 @@
    ]
   },
   {
+   "copy": "_Output_Arg_Fill__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "Output_Arg_Fill",
+   "inlined_into_matlab_lines": [
+    3976,
+    4173
+   ]
+  },
+  {
    "copy": "_Output_Arg_Fill__pam",
    "helper": "pam",
    "inlined_into": "Output_Arg_Fill",
@@ -1206,6 +1269,15 @@
   {
    "copy": "_PRBS13Q__lfsr",
    "helper": "lfsr",
+   "inlined_into": "PRBS13Q",
+   "inlined_into_matlab_lines": [
+    4174,
+    4212
+   ]
+  },
+  {
+   "copy": "_PRBS13Q__mround_arr",
+   "helper": "mround_arr",
    "inlined_into": "PRBS13Q",
    "inlined_into_matlab_lines": [
     4174,
@@ -1326,6 +1398,24 @@
    "canonical_matlab_lines": [
     7473,
     7519
+   ]
+  },
+  {
+   "copy": "_RILN_TD__mround",
+   "helper": "mround",
+   "inlined_into": "RILN_TD",
+   "inlined_into_matlab_lines": [
+    4226,
+    4305
+   ]
+  },
+  {
+   "copy": "_RILN_TD__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "RILN_TD",
+   "inlined_into_matlab_lines": [
+    4226,
+    4305
    ]
   },
   {
@@ -1654,6 +1744,15 @@
    ]
   },
   {
+   "copy": "_adjust_Rx_noise_for_quantization__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "adjust_Rx_noise_for_quantization",
+   "inlined_into_matlab_lines": [
+    4858,
+    4896
+   ]
+  },
+  {
    "copy": "_adjust_Rx_noise_for_quantization__scalePDF",
    "helper": "scalePDF",
    "inlined_into": "adjust_Rx_noise_for_quantization",
@@ -1677,12 +1776,30 @@
    ]
   },
   {
+   "copy": "_calculate_delay_CausalityEnforcement__mround",
+   "helper": "mround",
+   "inlined_into": "calculate_delay_CausalityEnforcement",
+   "inlined_into_matlab_lines": [
+    4933,
+    5086
+   ]
+  },
+  {
    "copy": "_com_ieee8023___save_case_outputs",
    "helper": "save_case_outputs",
    "inlined_into": "com_ieee8023_",
    "inlined_into_matlab_lines": [
     1,
     904
+   ]
+  },
+  {
+   "copy": "_combine_pdf_same_voltage_axis__mround",
+   "helper": "mround",
+   "inlined_into": "combine_pdf_same_voltage_axis",
+   "inlined_into_matlab_lines": [
+    5286,
+    5326
    ]
   },
   {
@@ -1710,6 +1827,15 @@
    "inlined_into_matlab_lines": [
     5371,
     5388
+   ]
+  },
+  {
+   "copy": "_d_cpdf__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "d_cpdf",
+   "inlined_into_matlab_lines": [
+    5480,
+    5530
    ]
   },
   {
@@ -1893,6 +2019,24 @@
    ]
   },
   {
+   "copy": "_get_ILN_cmp_td__mround",
+   "helper": "mround",
+   "inlined_into": "get_ILN_cmp_td",
+   "inlined_into_matlab_lines": [
+    6270,
+    6379
+   ]
+  },
+  {
+   "copy": "_get_ILN_cmp_td__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "get_ILN_cmp_td",
+   "inlined_into_matlab_lines": [
+    6270,
+    6379
+   ]
+  },
+  {
    "copy": "_get_ILN_cmp_td__s21_to_impulse_DC_zero",
    "helper": "s21_to_impulse_DC_zero",
    "inlined_into": "get_ILN_cmp_td",
@@ -2043,6 +2187,24 @@
   {
    "copy": "_get_PSDs__get_pdf_from_sampled_signal_uncached",
    "helper": "get_pdf_from_sampled_signal_uncached",
+   "inlined_into": "get_PSDs",
+   "inlined_into_matlab_lines": [
+    6380,
+    6654
+   ]
+  },
+  {
+   "copy": "_get_PSDs__mround",
+   "helper": "mround",
+   "inlined_into": "get_PSDs",
+   "inlined_into_matlab_lines": [
+    6380,
+    6654
+   ]
+  },
+  {
+   "copy": "_get_PSDs__mround_arr",
+   "helper": "mround_arr",
    "inlined_into": "get_PSDs",
    "inlined_into_matlab_lines": [
     6380,
@@ -2329,6 +2491,15 @@
    ]
   },
   {
+   "copy": "_get_cm_noise__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "get_cm_noise",
+   "inlined_into_matlab_lines": [
+    7331,
+    7376
+   ]
+  },
+  {
    "copy": "_get_pdf__Init_PDF_Fast",
    "helper": "Init_PDF_Fast",
    "inlined_into": "get_pdf",
@@ -2417,6 +2588,15 @@
    ]
   },
   {
+   "copy": "_get_pdf__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "get_pdf",
+   "inlined_into_matlab_lines": [
+    7377,
+    7472
+   ]
+  },
+  {
    "copy": "_get_pdf_from_sampled_signal__Init_PDF_Fast",
    "helper": "Init_PDF_Fast",
    "inlined_into": "get_pdf_from_sampled_signal",
@@ -2465,6 +2645,24 @@
    "canonical_matlab_lines": [
     5480,
     5530
+   ]
+  },
+  {
+   "copy": "_get_pdf_from_sampled_signal__mround",
+   "helper": "mround",
+   "inlined_into": "get_pdf_from_sampled_signal",
+   "inlined_into_matlab_lines": [
+    7473,
+    7519
+   ]
+  },
+  {
+   "copy": "_get_pdf_from_sampled_signal__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "get_pdf_from_sampled_signal",
+   "inlined_into_matlab_lines": [
+    7473,
+    7519
    ]
   },
   {
@@ -2584,6 +2782,15 @@
    ]
   },
   {
+   "copy": "_get_pdf_full__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "get_pdf_full",
+   "inlined_into_matlab_lines": [
+    7520,
+    7663
+   ]
+  },
+  {
    "copy": "_interp_Sparam__Tukey_Window",
    "helper": "Tukey_Window",
    "inlined_into": "interp_Sparam",
@@ -2677,6 +2884,15 @@
    ]
   },
   {
+   "copy": "_normal_dist__mround",
+   "helper": "mround",
+   "inlined_into": "normal_dist",
+   "inlined_into_matlab_lines": [
+    8410,
+    8416
+   ]
+  },
+  {
    "copy": "_optimize_fom__mround",
    "helper": "mround",
    "inlined_into": "optimize_fom",
@@ -2738,6 +2954,15 @@
    "canonical_matlab_lines": [
     5480,
     5530
+   ]
+  },
+  {
+   "copy": "_plot_bathtub_curves__mround_arr",
+   "helper": "mround_arr",
+   "inlined_into": "plot_bathtub_curves",
+   "inlined_into_matlab_lines": [
+    8865,
+    8913
    ]
   },
   {
@@ -3369,6 +3594,15 @@
   {
    "copy": "_vma__lfsr",
    "helper": "lfsr",
+   "inlined_into": "vma",
+   "inlined_into_matlab_lines": [
+    11337,
+    11365
+   ]
+  },
+  {
+   "copy": "_vma__mround_arr",
+   "helper": "mround_arr",
    "inlined_into": "vma",
    "inlined_into_matlab_lines": [
     11337,

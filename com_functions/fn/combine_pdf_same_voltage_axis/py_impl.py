@@ -16,6 +16,17 @@
 # ============================================================
 
 import numpy as np
+
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
 from types import SimpleNamespace
 
 
@@ -30,7 +41,7 @@ def combine_pdf_same_voltage_axis(pdf1, pdf2):
 
     min1 = x1[0]   # pdf1.x(1) in MATLAB = x1[0] in Python
     min2 = x2[0]
-    shift_amount = int(round(abs(min1 - min2) / pdf1.BinSize))
+    shift_amount = _mround(abs(min1 - min2) / pdf1.BinSize)
 
     if min1 < min2:
         # pdf1 extends further left; prepend first shift_amount pts of x1 to x2/y2

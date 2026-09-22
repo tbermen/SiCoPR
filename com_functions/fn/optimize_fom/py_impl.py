@@ -19,7 +19,13 @@ def _mround(x):
     Guarded by tests/test_integer_ratio_rounding.py.
     """
     import math
-    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 # ── Optional EQ-search trajectory logging (off by default; no effect on COM) ──

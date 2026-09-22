@@ -15,6 +15,19 @@
 # ============================================================
 
 import numpy as np
+
+def _mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
 from types import SimpleNamespace
 
 
@@ -23,7 +36,7 @@ def Init_PDF_Fast(EmptyPDF, values, probs):
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
 
-    rvd = np.round(values / pdf.BinSize).astype(int)   # rounded_values_div_binsize
+    rvd = _mround_arr(values / pdf.BinSize).astype(int)   # rounded_values_div_binsize
 
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])

@@ -19,6 +19,19 @@
 # ============================================================
 
 import numpy as np
+
+def _mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
 from types import SimpleNamespace
 
 
@@ -39,7 +52,7 @@ def d_cpdf(binsize, values, probs):
         values = values[si]
         probs = probs[si]
 
-    values = binsize * np.round(values / binsize)   # snap to grid
+    values = binsize * _mround_arr(values / binsize)   # snap to grid
 
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))

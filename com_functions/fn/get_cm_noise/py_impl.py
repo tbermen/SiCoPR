@@ -1,4 +1,17 @@
 import numpy as np
+
+def _mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
 from scipy.signal import fftconvolve
 from types import SimpleNamespace
 
@@ -34,7 +47,7 @@ def _d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -62,7 +75,7 @@ def _Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float).ravel()
     probs = np.asarray(probs, dtype=float).ravel()
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))

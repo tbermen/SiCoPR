@@ -123,32 +123,83 @@ check('mround_helpers_round_half_away_from_zero',
       _mrounds and not _bad,
       'MATLAB round() goes half away from zero: %s' % _bad[:4])
 
-# ...but most sites still call np.round, which goes half to even.
-np_rounds = sites(r'np\.round\(')
-int_rounds = sites(r'int\(round\(')
-xcheck('round_every_site_uses_matlab_semantics',
-       not np_rounds and not int_rounds,
-       'OPEN: %d np.round and %d int(round( sites round half to even, where '
-       'the MATLAB they translate uses half away from zero. All three np.round '
-       'patterns map to a MATLAB round(): the PDF bin snap '
-       'binsize*round(values/binsize) (ML 5949), round(values/pdf.BinSize) '
-       '(ML 2240) and round(2*(seq+1)) (ML 4462-4465). The seq form is tie-free '
-       'for the PAM level sets COM uses; the bin snaps are not. Fixing them '
-       'changes engine output at ties, so it is sequenced against the 1368-case '
-       're-run rather than done here.' % (len(np_rounds), len(int_rounds)))
+# The helpers must also be right at the boundary. floor(x + 0.5) is the obvious
+# implementation and is wrong: 0.49999999999999994 + 0.5 is exactly 1.0 in
+# double precision, so it rounds the largest double below a half up to 1 where
+# MATLAB gives 0. Every _mround carried that bug until 2026-09-22.
+_edge = {0.49999999999999994: 0, -0.49999999999999994: 0,
+         1.4999999999999998: 1, -1.4999999999999998: -1}
+_edge_bad = ['%s(%.17g)=%s want %s' % (n, x, getattr(sicopr, n)(x), w)
+             for n in _mrounds for x, w in _edge.items()
+             if getattr(sicopr, n)(x) != w]
+check('mround_helpers_are_exact_just_below_a_half',
+      not _edge_bad,
+      'the largest double below a half must round down, as MATLAB does: %s'
+      % _edge_bad[:4])
+
+# No bare rounding may remain where the MATLAB it translates uses round().
+# Reviewed exceptions, each tie-free by construction:
+#   int(round(p1.Min + p2.Min))          a sum of two integer bin indices
+#   int(round(values[0|-1] / binsize))   values were just snapped to the grid
+#   int(round((stop - start) / step))    a colon-range count, not a MATLAB
+#                                        round(); MATLAB's ':' has its own rule
+#   return int(round(x))                 inside _mround itself, off a tie
+#   np.round(x) / np.round(values)       inside _mround_arr itself, off a tie
+_ALLOWED = (r'int\(round\(p\d\.Min \+ p\d\.Min\)\)',
+            r'int\(round\(values\[-?\d\] / binsize\)\)',
+            r'int\(round\(\(stop - start\) / step\)\)',
+            r'return int\(round\(x\)\)',
+            r'np\.round\(x\)',
+            r'np\.round\(values\)')
+def _code_lines(src):
+    """Source lines with comments and docstrings dropped, so prose about
+    rounding is not mistaken for a rounding call."""
+    out, in_doc, delim = [], False, ''
+    for line in src.split('\n'):
+        s = line.strip()
+        if in_doc:
+            if delim in s:
+                in_doc = False
+            continue
+        if s.startswith('#'):
+            continue
+        for d in ('"""', "'''"):
+            if s.startswith(d) or s.startswith('r' + d):
+                body = s.split(d, 1)[1]
+                if d not in body:
+                    in_doc, delim = True, d
+                s = ''
+                break
+        out.append(s.split('  #')[0])
+    return out
+
+
+_bare = [s for s in _code_lines(SRC)
+         if re.search(r'(?<![\w.])(?:np\.)?round\(', s)
+         and not any(re.search(p, s) for p in _ALLOWED)]
+check('round_every_site_uses_matlab_semantics',
+      not _bare,
+      'these round half to even, where the MATLAB they translate goes half '
+      'away from zero -- use _mround (scalar) or _mround_arr (array): %s'
+      % _bare[:6])
 
 # The bin snap, driven at unit level: no COM run needed to see it.
+#
+# Expected values are COM Octave's own d_cpdf, via tools/octave_oracle.py. An
+# earlier version of this check guessed them by hand and guessed the *shape*
+# wrong -- it assumed bins 0..4 where the reference gives Min=1 and four bins.
+# That is the argument for the oracle in one line.
 _d_cpdf = sicopr._Bathtub_Contribution_Wrapper__d_cpdf
 _r = _d_cpdf(1.0, np.array([0.5, 1.5, 2.5, 3.5]), np.full(4, 0.25))
-_y_got = np.asarray(_r.y)
-# MATLAB round gives bins 1,2,3,4 -> one quarter of the mass in each.
-_y_matlab = np.array([0.0, 0.25, 0.25, 0.25, 0.25])
-xcheck('round_pdf_bin_snap_matches_matlab',
-       _y_got.shape == _y_matlab.shape and np.allclose(_y_got, _y_matlab),
-       'OPEN, same cause as above: snapping [0.5,1.5,2.5,3.5] at binsize 1 '
-       'gives mass %s, because np.round sends 0.5->0 and 2.5->2 and so merges '
-       'two values into one bin. MATLAB round gives 1,2,3,4 and mass %s.'
-       % (list(_y_got), list(_y_matlab)))
+_y_got, _min_got = np.asarray(_r.y), _r.Min
+_OCT_Y, _OCT_MIN = np.array([0.25, 0.25, 0.25, 0.25]), 1
+check('round_pdf_bin_snap_matches_matlab',
+      _min_got == _OCT_MIN and _y_got.shape == _OCT_Y.shape
+      and np.allclose(_y_got, _OCT_Y),
+      'snapping [0.5,1.5,2.5,3.5] at binsize 1 gives Min=%s mass %s; COM '
+      'Octave gives Min=%s mass %s. Under np.round 0.5 goes to 0 and 2.5 to 2, '
+      'merging two values into one bin.'
+      % (_min_got, list(_y_got), _OCT_MIN, list(_OCT_Y)))
 
 
 # ---- max / min and NaN ----------------------------------------------------

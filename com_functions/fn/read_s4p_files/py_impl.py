@@ -23,7 +23,13 @@ from math import factorial
 
 def _mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def _auto_port_order(sch, F, flip_victim=0):

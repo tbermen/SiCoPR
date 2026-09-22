@@ -236,7 +236,13 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
 
 def _mround(x):
     """MATLAB round(): half away from zero (fix B03-D7, MATLAB rev 4p15p0 line 11232)."""
-    return int(np.floor(x + 0.5)) if x >= 0 else int(np.ceil(x - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):

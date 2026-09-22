@@ -835,6 +835,19 @@ def Apply_EQ(param, fom_result, chdata, OP):
 # ============================================================
 
 
+def _Bathtub_Contribution_Wrapper__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -873,7 +886,7 @@ def _Bathtub_Contribution_Wrapper__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _Bathtub_Contribution_Wrapper__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -1076,6 +1089,20 @@ def Bread_Crumb_Chdata_Reduction(chdata, fields_file):
 
 # --- Burst_Probability_Calc (MATLAB lines 1083–1132) ---
 
+def _Burst_Probability_Calc__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
+
 # --- inline from conv_fct (MATLAB 5371-5388) ---
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -1115,7 +1142,7 @@ def _Burst_Probability_Calc__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _Burst_Probability_Calc__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -1140,7 +1167,7 @@ def _Burst_Probability_Calc__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _Burst_Probability_Calc__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -2094,6 +2121,30 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
 # ============================================================
 
 
+def _Create_Noise_PDF__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def _Create_Noise_PDF__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -2121,7 +2172,7 @@ def _Create_Noise_PDF__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _Create_Noise_PDF__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -2146,7 +2197,7 @@ def _Create_Noise_PDF__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _Create_Noise_PDF__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -2169,7 +2220,7 @@ def _Create_Noise_PDF__conv_fct(p1, p2):
 def _Create_Noise_PDF__normal_dist(sigma, nsigma, binsize):
     pdf = SimpleNamespace()
     pdf.BinSize = binsize
-    pdf.Min = -round(2 * nsigma * sigma / binsize)
+    pdf.Min = -_Create_Noise_PDF__mround(2 * nsigma * sigma / binsize)
     pdf.x = np.arange(pdf.Min, -pdf.Min + 1) * binsize
     eps = np.finfo(float).eps
     pdf.y = np.exp(-pdf.x ** 2 / (2 * sigma ** 2 + eps))
@@ -2895,13 +2946,26 @@ def H_interp(S21_old, f_old, f_new, f_b):
 # ============================================================
 
 
+def _Init_PDF_Fast__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 def Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))         # pdf = EmptyPDF (copy)
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
 
-    rvd = np.round(values / pdf.BinSize).astype(int)   # rounded_values_div_binsize
+    rvd = _Init_PDF_Fast__mround_arr(values / pdf.BinSize).astype(int)   # rounded_values_div_binsize
 
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
@@ -3054,6 +3118,19 @@ def MLSE(param, alpha, A_s, A_ni, PDF, CDF):
 # ============================================================
 
 
+def _MLSE_U1_c_178A__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -3081,7 +3158,7 @@ def _MLSE_U1_c_178A__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _MLSE_U1_c_178A__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -4077,7 +4154,13 @@ _ALS_HEADER = ['iter', 'adaptive_radius', 'deterministic_radius', 'raw_L1_TX',
 
 def _OptFom_Adaptive_Local_Search__mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def _OptFom_Adaptive_Local_Search__compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
@@ -6158,6 +6241,19 @@ def OptFom_Update_Best_Setttings(BEST, THIS, sbr, chdata, param, OP):
 # ============================================================
 
 
+def _Output_Arg_Fill__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 # --- inline vma helpers ---
 
@@ -6219,9 +6315,9 @@ def _Output_Arg_Fill__PRBS13Q():
     seq_nrz = 2.0 * (seq_bits - 0.5)
     seq = _Output_Arg_Fill__pam(seq_nrz)
     syms = np.zeros(len(seq), dtype=int)
-    syms[np.round(2 * (seq + 1)) / 2 == 2] = 3
-    syms[np.round(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[np.round(2 * (seq + 1)) / 2 == 0.5] = 1
+    syms[_Output_Arg_Fill__mround_arr(2 * (seq + 1)) / 2 == 2] = 3
+    syms[_Output_Arg_Fill__mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
+    syms[_Output_Arg_Fill__mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
     return seq, syms, seq_nrz
 
 
@@ -6286,7 +6382,7 @@ def _Output_Arg_Fill__d_cpdf_b(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _Output_Arg_Fill__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -6311,7 +6407,7 @@ def _Output_Arg_Fill__Init_PDF_Fast_b(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _Output_Arg_Fill__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -6588,6 +6684,20 @@ def _Output_Arg_Fill__erfc_inv_approx(y):
 
 # --- PRBS13Q (MATLAB lines 4174–4212) ---
 
+def _PRBS13Q__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
+
 def _PRBS13Q__lfsr(s, t):
     """Linear feedback shift register (MATLAB lines 4195-4211).
 
@@ -6650,10 +6760,10 @@ def PRBS13Q():
     seq = _PRBS13Q__pam(seq_nrz)
 
     syms = np.zeros(len(seq), dtype=int)
-    syms[np.round(2 * (seq + 1)) / 2 == 2] = 3
-    syms[np.round(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[np.round(2 * (seq + 1)) / 2 == 0.5] = 1
-    syms[np.round(2 * (seq + 1)) / 2 == 0] = 0
+    syms[_PRBS13Q__mround_arr(2 * (seq + 1)) / 2 == 2] = 3
+    syms[_PRBS13Q__mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
+    syms[_PRBS13Q__mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
+    syms[_PRBS13Q__mround_arr(2 * (seq + 1)) / 2 == 0] = 0
 
     syms_nrz = seq_nrz
     return seq, syms, syms_nrz
@@ -6729,6 +6839,30 @@ def pam(data):
 # ============================================================
 
 
+def _RILN_TD__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def _RILN_TD__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 _BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
 
@@ -6783,7 +6917,7 @@ def _RILN_TD__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _RILN_TD__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -6808,7 +6942,7 @@ def _RILN_TD__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _RILN_TD__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -6853,7 +6987,7 @@ def _RILN_TD__get_pdf_from_sampled_signal(input_vector, L, BinSize):
 def _RILN_TD__normal_dist(sigma, nsigma, binsize):
     pdf = SimpleNamespace()
     pdf.BinSize = binsize
-    pdf.Min = -round(2 * nsigma * sigma / binsize)
+    pdf.Min = -_RILN_TD__mround(2 * nsigma * sigma / binsize)
     pdf.x = np.arange(pdf.Min, -pdf.Min + 1) * binsize
     eps = np.finfo(float).eps
     pdf.y = np.exp(-pdf.x ** 2 / (2 * sigma ** 2 + eps))
@@ -7938,6 +8072,20 @@ def add_pkg_with_die(S, mode, param, OP):
 
 # --- adjust_Rx_noise_for_quantization (MATLAB lines 4858–4896) ---
 
+def _adjust_Rx_noise_for_quantization__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
+
 # --- inline from conv_fct (MATLAB 5371-5388) ---
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -7998,7 +8146,7 @@ def _adjust_Rx_noise_for_quantization__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _adjust_Rx_noise_for_quantization__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -8023,7 +8171,7 @@ def _adjust_Rx_noise_for_quantization__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _adjust_Rx_noise_for_quantization__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -8184,7 +8332,13 @@ def bessel(n):
 
 def _auto_port_order__mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def auto_port_order(sch, F, flip_victim=0):
@@ -8313,6 +8467,17 @@ def auto_port_order(sch, F, flip_victim=0):
 # ============================================================
 
 
+def _calculate_delay_CausalityEnforcement__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
 
 def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
     sdd21 = np.asarray(sdd21, dtype=complex).ravel()
@@ -8344,7 +8509,7 @@ def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
     time_step = float(param.sample_dt)
     fmax = 1.0 / time_step / 2.0
     freq_step = (freq[2] - freq[1]) / 1.0
-    nstep = int(round(fmax / freq_step))
+    nstep = _calculate_delay_CausalityEnforcement__mround(fmax / freq_step)
     step = fmax / nstep                       # MATLAB 1/round(fmax/freq_step)*fmax
     fout = np.arange(0, fmax + step * 0.5, step)
     M = int(param.samples_per_ui)
@@ -8676,6 +8841,17 @@ def comb_fct(p1, p2):
 # ============================================================
 
 
+def _combine_pdf_same_voltage_axis__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
 
 def combine_pdf_same_voltage_axis(pdf1, pdf2):
     if pdf1.BinSize != pdf2.BinSize:
@@ -8688,7 +8864,7 @@ def combine_pdf_same_voltage_axis(pdf1, pdf2):
 
     min1 = x1[0]   # pdf1.x(1) in MATLAB = x1[0] in Python
     min2 = x2[0]
-    shift_amount = int(round(abs(min1 - min2) / pdf1.BinSize))
+    shift_amount = _combine_pdf_same_voltage_axis__mround(abs(min1 - min2) / pdf1.BinSize)
 
     if min1 < min2:
         # pdf1 extends further left; prepend first shift_amount pts of x1 to x2/y2
@@ -8921,6 +9097,19 @@ def cursor_sample_index(sbr, param, OP, peak_search_range):
 # ============================================================
 
 
+def _d_cpdf__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 def d_cpdf(binsize, values, probs):
     values = np.asarray(values, dtype=float)
@@ -8939,7 +9128,7 @@ def d_cpdf(binsize, values, probs):
         values = values[si]
         probs = probs[si]
 
-    values = binsize * np.round(values / binsize)   # snap to grid
+    values = binsize * _d_cpdf__mround_arr(values / binsize)   # snap to grid
 
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
@@ -9416,7 +9605,13 @@ def _findbankloc__make_badV(b_start, b_end):
 
 def _compute_hard_cap__mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
@@ -10085,6 +10280,30 @@ def get_ILN(sdd21, faxis_f2):
 # ============================================================
 
 
+def _get_ILN_cmp_td__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def _get_ILN_cmp_td__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -10109,7 +10328,7 @@ def _get_ILN_cmp_td__s21_to_impulse_DC_zero(freq_array, time_step, OP, param):
     freq_array = np.asarray(freq_array, dtype=float)
     fmax = 1.0 / time_step / 2.0
     freq_step = float(freq_array[2] - freq_array[1]) if len(freq_array) > 2 else float(freq_array[1] - freq_array[0])
-    n_steps = round(fmax / freq_step)
+    n_steps = _get_ILN_cmp_td__mround(fmax / freq_step)
     fout = np.arange(0, n_steps + 1) * (fmax / n_steps)
     IL_interp = np.full(len(fout), np.finfo(float).eps, dtype=complex)
     IL_symmetric = np.concatenate([
@@ -10138,7 +10357,7 @@ def _get_ILN_cmp_td__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _get_ILN_cmp_td__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -10159,7 +10378,7 @@ def _get_ILN_cmp_td__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _get_ILN_cmp_td__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -10340,6 +10559,30 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
 
 
 
+def _get_PSDs__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def _get_PSDs__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 # ---------------------------------------------------------------------------
 # Callee stubs (minimal)
@@ -10427,7 +10670,7 @@ def _get_PSDs__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _get_PSDs__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -10452,7 +10695,7 @@ def _get_PSDs__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _get_PSDs__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -10478,7 +10721,7 @@ def _get_PSDs__normal_dist(sigma, nsigma, binsize):
     eps = np.finfo(float).eps
     p = SimpleNamespace()
     p.BinSize = binsize
-    p.Min = -int(round(2 * nsigma * sigma / binsize))
+    p.Min = -_get_PSDs__mround(2 * nsigma * sigma / binsize)
     p.x = np.arange(p.Min, -p.Min + 1) * binsize
     p.y = np.exp(-p.x ** 2 / (2 * sigma ** 2 + eps))
     p.y = p.y / np.sum(p.y)
@@ -11757,6 +12000,20 @@ def get_center_of_UI(samples_per_UI):
 
 # --- get_cm_noise (MATLAB lines 7331–7376) ---
 
+def _get_cm_noise__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
+
 # ── Inlined helpers (from Group 3 implementations; no sibling imports) ────────
 
 
@@ -11788,7 +12045,7 @@ def _get_cm_noise__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _get_cm_noise__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -11816,7 +12073,7 @@ def _get_cm_noise__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float).ravel()
     probs = np.asarray(probs, dtype=float).ravel()
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _get_cm_noise__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -11942,6 +12199,19 @@ def get_cm_noise(M, PR, L, BER, OP=None):
 
 
 
+def _get_pdf__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -11968,7 +12238,13 @@ def _get_pdf__mround(x):
     tie. docs/AUDIT_FINDINGS.md listed this site and dismissed it as "measure-zero
     for continuous data", which is true of continuous inputs and false of this one.
     """
-    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 def _get_pdf__conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
@@ -11987,7 +12263,7 @@ def _get_pdf__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _get_pdf__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -12012,7 +12288,7 @@ def _get_pdf__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _get_pdf__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -12168,6 +12444,32 @@ def get_pdf(chdata, delta_y, t_s, param, OP, ixphase=None):
 
 # --- get_pdf_from_sampled_signal (MATLAB lines 7473–7519) ---
 
+def _get_pdf_from_sampled_signal__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def _get_pdf_from_sampled_signal__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
+
+
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
 # ~1% of the calls (both operands long), while most calls have a kernel of a few
 # bins. Direct convolution wins for tiny kernels and loses badly for long ones
@@ -12194,7 +12496,7 @@ def _get_pdf_from_sampled_signal__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _get_pdf_from_sampled_signal__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -12220,7 +12522,7 @@ def _get_pdf_from_sampled_signal__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _get_pdf_from_sampled_signal__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -12247,7 +12549,7 @@ def _get_pdf_from_sampled_signal__normal_dist(sigma, nsigma, binsize):
     eps = np.finfo(float).eps
     p = SimpleNamespace()
     p.BinSize = binsize
-    p.Min = -int(round(2 * nsigma * sigma / binsize))
+    p.Min = -_get_pdf_from_sampled_signal__mround(2 * nsigma * sigma / binsize)
     p.x = np.arange(p.Min, -p.Min + 1) * binsize
     p.y = np.exp(-p.x ** 2 / (2 * sigma ** 2 + eps))
     p.y = p.y / np.sum(p.y)
@@ -12334,6 +12636,19 @@ def get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
 
 
 
+def _get_pdf_full__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -12360,7 +12675,13 @@ def _get_pdf_full__mround(x):
     tie. docs/AUDIT_FINDINGS.md listed this site and dismissed it as "measure-zero
     for continuous data", which is true of continuous inputs and false of this one.
     """
-    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 def _get_pdf_full__conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
@@ -12388,7 +12709,7 @@ def _get_pdf_full__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _get_pdf_full__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -12409,7 +12730,7 @@ def _get_pdf_full__Init_PDF_Fast(EmptyPDF, values, probs):
     pdf = SimpleNamespace(**vars(EmptyPDF))
     values = np.asarray(values, dtype=float)
     probs = np.asarray(probs, dtype=float)
-    rvd = np.round(values / pdf.BinSize).astype(int)
+    rvd = _get_pdf_full__mround_arr(values / pdf.BinSize).astype(int)
     pdf.x = np.arange(rvd[0], rvd[-1] + 1) * pdf.BinSize
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
@@ -13709,6 +14030,17 @@ def missingParameter(parameterName):
 # Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 
+def _normal_dist__mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
 
 def normal_dist(sigma, nsigma, binsize):
     """Return a normalised Gaussian PDF struct.
@@ -13722,7 +14054,7 @@ def normal_dist(sigma, nsigma, binsize):
     pdf = SimpleNamespace()
     pdf.BinSize = binsize
     # pdf.Min is the (negative) index of the leftmost bin
-    pdf.Min = -round(2 * nsigma * sigma / binsize)  # MATLAB line 8412
+    pdf.Min = -_normal_dist__mround(2 * nsigma * sigma / binsize)  # MATLAB line 8412
 
     # MATLAB: (pdf.Min:-pdf.Min) is range [pdf.Min, ..., -pdf.Min] step 1
     # np.arange upper bound is exclusive, so +1 is needed
@@ -13756,7 +14088,13 @@ def _optimize_fom__mround(x):
     Guarded by tests/test_integer_ratio_rounding.py.
     """
     import math
-    return int(math.floor(float(x) + 0.5)) if x >= 0 else int(math.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 # ── Optional EQ-search trajectory logging (off by default; no effect on COM) ──
@@ -14356,6 +14694,19 @@ def pdf_to_cdf(pdf):
 # ============================================================
 
 
+def _plot_bathtub_curves__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
 
 
 # PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
@@ -14394,7 +14745,7 @@ def _plot_bathtub_curves__d_cpdf(binsize, values, probs):
     if np.any(np.diff(values) < 0):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
-    values = binsize * np.round(values / binsize)
+    values = binsize * _plot_bathtub_curves__mround_arr(values / binsize)
     t_start = int(round(values[0] / binsize))
     t_end = int(round(values[-1] / binsize))
     t = np.arange(t_start, t_end + 1) * binsize
@@ -15016,7 +15367,13 @@ def rangelimit(sch, schFreqAxis, param, OP=None):
 
 def _read_Nport_touchstone__mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def _read_Nport_touchstone__auto_port_order(sch, F, flip_victim=0):
@@ -16358,7 +16715,13 @@ def read_p2_s2params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
 
 def _read_p4_s4params__mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def _read_p4_s4params__auto_port_order(sch, F, flip_victim=0):
@@ -16733,7 +17096,13 @@ def read_package_parameters(parameter, param_struct=None):
 
 def _read_s4p_files__mround(x):
     """MATLAB round(): half away from zero."""
-    return int(np.floor(float(x) + 0.5)) if x >= 0 else int(np.ceil(float(x) - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def _read_s4p_files__auto_port_order(sch, F, flip_victim=0):
@@ -18516,7 +18885,13 @@ def _s21_to_impulse_DC__interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, pa
 
 def _s21_to_impulse_DC__mround(x):
     """MATLAB round(): half away from zero (fix B03-D7, MATLAB rev 4p15p0 line 11232)."""
-    return int(np.floor(x + 0.5)) if x >= 0 else int(np.ceil(x - 0.5))
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
 
 
 def s21_to_impulse_DC(IL, freq_array, time_step, OP, param):
@@ -19143,6 +19518,20 @@ def varargin_extractor(*args):
 
 # --- vma (MATLAB lines 11337–11365) ---
 
+def _vma__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
+
+
 def _vma__lfsr(s, t):
     s = [int(b) for b in s]
     n = len(s)
@@ -19184,9 +19573,9 @@ def _vma__PRBS13Q():
     seq_nrz = 2.0 * (seq_bits - 0.5)
     seq = _vma__pam(seq_nrz)
     syms = np.zeros(len(seq), dtype=int)
-    syms[np.round(2 * (seq + 1)) / 2 == 2] = 3
-    syms[np.round(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[np.round(2 * (seq + 1)) / 2 == 0.5] = 1
+    syms[_vma__mround_arr(2 * (seq + 1)) / 2 == 2] = 3
+    syms[_vma__mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
+    syms[_vma__mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
     return seq, syms, seq_nrz
 
 

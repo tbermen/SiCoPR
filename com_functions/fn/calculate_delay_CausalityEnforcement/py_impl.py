@@ -15,6 +15,17 @@
 
 import numpy as np
 
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
 
 def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
     sdd21 = np.asarray(sdd21, dtype=complex).ravel()
@@ -46,7 +57,7 @@ def calculate_delay_CausalityEnforcement(freq, sdd21, param, OP):
     time_step = float(param.sample_dt)
     fmax = 1.0 / time_step / 2.0
     freq_step = (freq[2] - freq[1]) / 1.0
-    nstep = int(round(fmax / freq_step))
+    nstep = _mround(fmax / freq_step)
     step = fmax / nstep                       # MATLAB 1/round(fmax/freq_step)*fmax
     fout = np.arange(0, fmax + step * 0.5, step)
     M = int(param.samples_per_ui)

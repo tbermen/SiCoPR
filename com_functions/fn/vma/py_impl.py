@@ -1,4 +1,17 @@
 import numpy as np
+
+def _mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even.
+
+    Only exact ties are corrected. Adding 0.5 and truncating would be wrong:
+    0.49999999999999994 + 0.5 is exactly 1.0 in double precision, so that form
+    rounds the largest double below a half up to 1 where MATLAB gives 0.
+    """
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
+
 from scipy.signal import lfilter
 from types import SimpleNamespace
 
@@ -44,9 +57,9 @@ def _PRBS13Q():
     seq_nrz = 2.0 * (seq_bits - 0.5)
     seq = _pam(seq_nrz)
     syms = np.zeros(len(seq), dtype=int)
-    syms[np.round(2 * (seq + 1)) / 2 == 2] = 3
-    syms[np.round(2 * (seq + 1)) / 2 == 1.5] = 2
-    syms[np.round(2 * (seq + 1)) / 2 == 0.5] = 1
+    syms[_mround_arr(2 * (seq + 1)) / 2 == 2] = 3
+    syms[_mround_arr(2 * (seq + 1)) / 2 == 1.5] = 2
+    syms[_mround_arr(2 * (seq + 1)) / 2 == 0.5] = 1
     return seq, syms, seq_nrz
 
 

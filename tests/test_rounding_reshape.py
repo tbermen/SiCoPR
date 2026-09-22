@@ -69,22 +69,18 @@ check("python_round_is_bankers_reference",
       "Python/np round unexpectedly not banker's")
 
 # ===========================================================================
-# 2. G8: a real bare-round site (normal_dist Min) uses banker's, not half-away
-#    -> EXPECTED FAIL documenting B10-D14 at a concrete call site.
+# 2. G8: normal_dist's Min, a real bare-round site.
+#    B10-D14 documented it rounding banker's where MATLAB rounds half away.
+#    CLOSED 2026-09-22: that site and every other round() translating a MATLAB
+#    round() now go half away from zero, so this is a hard check.
 # ===========================================================================
 # Choose 2*nsigma*sigma/binsize = 2.5 exactly: nsigma=1, sigma=1.25, binsize=1.
 nd = sicopr.normal_dist(1.25, 1, 1.0)
-# MATLAB: Min = -round(2.5) = -3 (half away). Python: -round(2.5) = -2 (banker's).
-xcheck("normal_dist_Min_uses_matlab_half_away",
+check("normal_dist_Min_uses_matlab_half_away",
       nd.Min == -3,
-      "DIVERGENT (B10-D14, low): normal_dist Min=%d; MATLAB round(2.5)=3 gives "
-      "-3 but Python banker's round(2.5)=2 gives -2. Bare round at a PDF-axis "
-      "site (py 12412). Only bites exact half-integer 2*nsigma*sigma/binsize."
+      "normal_dist Min=%d; MATLAB -round(2.5) is -3. Banker's rounding would "
+      "give -2, which is what B10-D14 recorded before the site was fixed."
       % nd.Min)
-# Confirm it IS the banker's result (positive confirmation of the mechanism).
-check("normal_dist_Min_is_bankers",
-      nd.Min == -2,
-      "normal_dist Min is neither the MATLAB nor the banker's value: %d" % nd.Min)
 
 # nui = round(len/M): banker's vs half-away at len/M = 2.5 (e.g. len=80, M=32).
 check("nui_round_len_over_M_is_bankers",

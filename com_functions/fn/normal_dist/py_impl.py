@@ -16,6 +16,17 @@
 from types import SimpleNamespace
 import numpy as np
 
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's."""
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not
+    # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
 
 def normal_dist(sigma, nsigma, binsize):
     """Return a normalised Gaussian PDF struct.
@@ -29,7 +40,7 @@ def normal_dist(sigma, nsigma, binsize):
     pdf = SimpleNamespace()
     pdf.BinSize = binsize
     # pdf.Min is the (negative) index of the leftmost bin
-    pdf.Min = -round(2 * nsigma * sigma / binsize)  # MATLAB line 8412
+    pdf.Min = -_mround(2 * nsigma * sigma / binsize)  # MATLAB line 8412
 
     # MATLAB: (pdf.Min:-pdf.Min) is range [pdf.Min, ..., -pdf.Min] step 1
     # np.arange upper bound is exclusive, so +1 is needed
