@@ -109,9 +109,34 @@ def _conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
+    # conv2 with an empty operand returns empty; np.convolve raises instead.
+    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
+    if a.size == 0 or b.size == 0:
+        return np.zeros(0)
     if min(a.size, b.size) >= _CONV_FFT_MIN:
         return fftconvolve(a, b)
     return np.convolve(a, b)
+
+
+def _colon_x(pmin, pmax, binsize):
+    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
+
+    The colon accumulates from the first element as a+k*d and pins the last
+    element to the limit only when accumulation overshoots it; the product form
+    (pmin:pmax)*binsize builds each element as one product instead, and the two
+    differ by 1 ulp on most bins.  Swept over 7920 (Min, length, BinSize)
+    combinations against COM Octave, the product form got 24.6% of elements
+    wrong; this form got none.
+    """
+    n = pmax - pmin + 1
+    if n <= 0:
+        return np.zeros(0)
+    a = pmin * binsize
+    b = pmax * binsize
+    x = a + np.arange(n) * binsize
+    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
+        x[-1] = b
+    return x
 
 
 def _d_cpdf(binsize, values, probs):
@@ -119,7 +144,17 @@ def _d_cpdf(binsize, values, probs):
     probs = np.asarray(probs, dtype=float)
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.any(np.diff(values) < 0):
+    if np.size(probs) < np.size(values):
+        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
+        # out-of-bound error, not a shorter answer.  zip() below would stop at
+        # the shorter of the two and silently normalise whatever it collected.
+        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
+        # "probs(3): out of bound 2 (dimensions are 1x2)".
+        raise IndexError('d_cpdf: probs is shorter than values')
+    # ~issorted(values): MATLAB requires every element <= the next, which is
+    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
+    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
+    if not np.all(values[:-1] <= values[1:]):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * _mround_arr(values / binsize)
@@ -136,7 +171,15 @@ def _d_cpdf(binsize, values, probs):
             bin_idx = int(np.argmin(np.abs(t - v)))
         pdf_y[bin_idx] += prob
     pdf_y = pdf_y / np.sum(pdf_y)
-    support = np.where(pdf_y > 0)[0]
+
+    if np.any(pdf_y < 0):
+        raise ValueError('PDF must be real and nonnegative')
+    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
+    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
+    # support empty and raised instead of answering.
+    # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns
+    # Min=-1, x=[-1 0 1], y=[NaN NaN NaN]; likewise probs=[0 0 0].
+    support = np.where(pdf_y != 0)[0]
     pdf_y = pdf_y[support[0]:support[-1] + 1]
     pdf_min = t_start + int(support[0])
     return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
@@ -152,6 +195,15 @@ def _Init_PDF_Fast(EmptyPDF, values, probs):
     pdf.Min = int(rvd[0])
     pdf.y = np.zeros(len(pdf.x))
     bp = rvd - rvd[0]
+    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
+        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
+        # that span (i.e. `values` is not ascending) makes bin_placement fall
+        # off the array and MATLAB stops.  A negative index is legal in numpy,
+        # so Python wrapped round and added the probability to the wrong bin.
+        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
+        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
+        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
+        raise IndexError('Init_PDF_Fast: values must be ascending')
     pdf.y[bp[0]] = probs[0]
     for k in range(1, len(values)):
         pdf.y[bp[k]] += probs[k]
@@ -159,11 +211,13 @@ def _Init_PDF_Fast(EmptyPDF, values, probs):
 
 
 def _conv_fct(p1, p2):
+    if p1.BinSize != p2.BinSize:
+        raise ValueError('bin size must be equal')
     p = SimpleNamespace(**vars(p1))
-    p.Min = int(round(p1.Min + p2.Min))
+    p.Min = _mround(p1.Min + p2.Min)         # MATLAB round: half away from zero
     p.y = _conv1d(p1.y, p2.y)
     pMax = p.Min + len(p.y) - 1
-    p.x = np.arange(p.Min, pMax + 1) * p.BinSize
+    p.x = _colon_x(p.Min, pMax, p.BinSize)   # (p.Min*BinSize:BinSize:pMax*BinSize)
     return p
 
 

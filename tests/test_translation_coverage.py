@@ -74,7 +74,7 @@ check('composite_baseline_is_current',
 # many there are, nor which orientation they come back in -- and MATLAB
 # distinguishes a row from a column where a 1-D numpy array does not. Ratcheted
 # rather than gated outright, because the leaf gap has to close first.
-BASELINE_SHAPE_CHECKED = 116
+BASELINE_SHAPE_CHECKED = 119
 n_shape = sum(1 for r in bearing if r['shape_checks'])
 no_shape = sorted(r['function'] for r in bearing if not r['shape_checks'])
 
@@ -87,5 +87,23 @@ check('shape_baseline_is_current',
       n_shape <= BASELINE_SHAPE_CHECKED,
       'shape coverage rose from %d to %d -- raise BASELINE_SHAPE_CHECKED to %d '
       'so the gain is held' % (BASELINE_SHAPE_CHECKED, n_shape, n_shape))
+
+# The number that actually catches a library default: tests whose expected
+# values came from EXECUTING the reference under Octave, not from reading the
+# MATLAB. A test written from a reading cannot see that `std(x)` and
+# `np.std(x)` differ, which is how the N-vs-N-1 defect survived to 2026-09-21.
+# 2026-09-22 took this from 22 to 56 in one pass; ratcheted so it cannot slip.
+BASELINE_ORACLE_BACKED = 56
+n_oracle = sum(1 for r in bearing if r['grade'] == 'oracle')
+
+check('oracle_coverage_does_not_fall',
+      n_oracle >= BASELINE_ORACLE_BACKED,
+      'functions checked against the executed reference fell from %d to %d'
+      % (BASELINE_ORACLE_BACKED, n_oracle))
+
+check('oracle_baseline_is_current',
+      n_oracle <= BASELINE_ORACLE_BACKED,
+      'oracle coverage rose from %d to %d -- raise BASELINE_ORACLE_BACKED to '
+      '%d so the gain is held' % (BASELINE_ORACLE_BACKED, n_oracle, n_oracle))
 
 finish()

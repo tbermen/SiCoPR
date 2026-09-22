@@ -28,6 +28,19 @@ def vref_intersect(eye_contour, x_in, vref):
     vref        : target voltage level
     """
     ec = np.asarray(eye_contour, dtype=float)
+
+    # MATLAB reads eye_contour(x_in-1,1), so x_in<=1 asks for subscript 0 and
+    # errors. Python's ec[x_in-2, 0] turns that into a negative index and
+    # quietly reads the LAST row instead, answering off the far end of the eye.
+    # COM Octave: vref_intersect([0.1;0.3;0.7;0.9], 1, 0.5) ->
+    #   "eye_contour(0,_): subscripts must be either integers 1 to (2^63)-1
+    #    or logicals"                 (Python returned 0.5)
+    # A fractional x_in is refused the same way; int(x_in) used to truncate it.
+    # COM Octave: x_in=2.5 -> "eye_contour(2.5,_): subscripts must be ..."
+    #   (Python returned 3.0)
+    if x_in != int(x_in) or x_in < 2:
+        raise IndexError('eye_contour(%s,_): subscripts must be either '
+                         'integers 1 to (2^63)-1 or logicals' % (x_in - 1,))
     x_in = int(x_in)
 
     y_curr = ec[x_in - 1, 0]          # MATLAB eye_contour(x_in, 1)

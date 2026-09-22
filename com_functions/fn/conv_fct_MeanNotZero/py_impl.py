@@ -27,9 +27,63 @@ def _conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
+    # conv2 with an empty operand returns empty; np.convolve raises instead.
+    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
+    if a.size == 0 or b.size == 0:
+        return np.zeros(0)
     if min(a.size, b.size) >= _CONV_FFT_MIN:
         return fftconvolve(a, b)
     return np.convolve(a, b)
+
+
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is half-to-even.
+
+    COM Octave: p1.Min=-0.5, p2.Min=0 -> p.Min=-1  (Python round() gives 0)
+    """
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    return int(round(x))
+
+
+def _colon_x(pmin, pmax, binsize):
+    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
+
+    The MATLAB comment right above this line claims the colon is "equivalent
+    to (p.Min:p.Min+length(p.y)-1)*p.BinSize". It is not: the colon
+    accumulates from the first element as a+k*d and pins the last element to
+    the stated limit, while (a:b)*d forms each element as one product. They
+    differ by 1 ulp on most bins.
+
+    COM Octave: p.Min=-5, BinSize=1e-4, 9 bins ->
+      [-0.00050000000000000001, -0.00040000000000000002, -0.00030000000000000003,
+       -0.00019999999999999998, -9.9999999999999991e-05, 0,
+        0.00010000000000000005,  0.00019999999999999998,  0.00030000000000000003]
+    where np.arange(-5,4)*1e-4 differs on several bins. Swept over 7920
+    (Min, length, BinSize) combinations against Octave: the product form got
+    249387 of 1013684 elements wrong (24.6%, all by 1 ulp); this form got none.
+
+    The last element is pinned to the limit only when accumulation overshoots
+    it, which is what the colon does -- pinning unconditionally is wrong, e.g.
+    COM Octave: p.Min=-3, BinSize=0.1, 2 bins ->
+      [-0.30000000000000004, -0.20000000000000004]   (not ..., -0.2)
+
+    Known gap: in 38 of those 7920 combinations Octave's colon yields one
+    element FEWER than length(p.y), so p.x is shorter than p.y. That is not
+    reproduced here (nor by the old form); it needs Octave's fuzzy element
+    count, and every rule tried for it broke far more cases than it fixed.
+    """
+    n = pmax - pmin + 1
+    if n <= 0:
+        return np.zeros(0)
+    a = pmin * binsize
+    b = pmax * binsize
+    x = a + np.arange(n) * binsize
+    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
+        x[-1] = b
+    return x
 
 
 def conv_fct_MeanNotZero(p1, p2):
@@ -37,10 +91,10 @@ def conv_fct_MeanNotZero(p1, p2):
         raise ValueError('bin size must be equal')
 
     p = SimpleNamespace(**vars(p1))
-    p.Min = int(round(p1.Min + p2.Min))
+    p.Min = _mround(p1.Min + p2.Min)
     p.y = _conv1d(p1.y, p2.y)
     pMax = p.Min + len(p.y) - 1
-    p.x = np.arange(p.Min, pMax + 1) * p.BinSize
+    p.x = _colon_x(p.Min, pMax, p.BinSize)
     return p
 
 

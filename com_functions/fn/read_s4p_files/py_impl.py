@@ -361,10 +361,30 @@ def _make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
     return s11o, s12o, s21o, s22o
 
 
+def _factorial(k):
+    """MATLAB factorial(): a double, so it overflows to Inf above 170!.
+
+    COM Octave, bessel(90): a(1:10) are Inf, a(11) = 2.31e157.  Python's exact
+    math.factorial made the first ten finite (~1.09e164) instead.
+    """
+    return np.inf if k > 170 else factorial(k)
+
+
 def _bessel(n):
+    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
+    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
+    # assignment is undefined".  Returning an empty array answered a call the
+    # reference refuses.
+    if n < 0:
+        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
+    # MATLAB factorial() rejects non-integers.  COM Octave: bessel(2.5) ->
+    # "factorial: all N must be real non-negative integers".
+    if n != int(n):
+        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
+    n = int(n)
     a = np.zeros(n + 1)
     for ii in range(n + 1):
-        a[ii] = factorial(2 * n - ii) / (2 ** (n - ii) * factorial(ii) * factorial(n - ii))
+        a[ii] = _factorial(2 * n - ii) / (2 ** (n - ii) * _factorial(ii) * _factorial(n - ii))
     return a
 
 

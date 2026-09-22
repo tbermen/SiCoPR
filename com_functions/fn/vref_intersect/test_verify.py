@@ -77,3 +77,53 @@ def test_result_between_brackets():
     ec = _ec([0.0, 0.2, 0.8, 1.0])
     result = vref_intersect(ec, 3, 0.5)
     assert 2.0 <= result <= 3.0
+
+
+# ============================================================
+# Divergences found by EXECUTING the reference (COM Octave oracle,
+# tools/octave_oracle.py).
+#
+# MATLAB reads eye_contour(x_in-1,1), so x_in<=1 asks for subscript 0 and
+# errors, and a fractional x_in is not a legal subscript either. Python
+# turned subscript 0 into ec[-1,0] and quietly read the LAST row, and
+# int(x_in) truncated a fractional index -- both answered where the
+# reference refuses, off the far end of the eye.
+# ============================================================
+
+def test_x_in_one_raises_instead_of_wrapping():
+    """COM Octave: vref_intersect([0.1;0.3;0.7;0.9], 1, 0.5) ->
+    'eye_contour(0,_): subscripts must be either integers 1 to (2^63)-1 or
+    logicals'.  Python returned 0.5, computed from the last row."""
+    ec = np.array([[0.1], [0.3], [0.7], [0.9]])
+    with pytest.raises(IndexError):
+        vref_intersect(ec, 1, 0.5)
+
+
+def test_x_in_zero_or_negative_raises():
+    """Subscript 0 and below are illegal for the same reason."""
+    ec = np.array([[0.1], [0.3], [0.7], [0.9]])
+    for bad in (0, -1):
+        with pytest.raises(IndexError):
+            vref_intersect(ec, bad, 0.5)
+
+
+def test_fractional_x_in_raises():
+    """COM Octave: x_in=2.5 -> 'eye_contour(2.5,_): subscripts must be
+    either integers 1 to (2^63)-1 or logicals'.  int(x_in) truncated to 2
+    and Python answered 3.0."""
+    ec = np.array([[0.1], [0.3], [0.7], [0.9]])
+    with pytest.raises(IndexError):
+        vref_intersect(ec, 2.5, 0.5)
+
+
+def test_x_in_two_is_the_lowest_legal_index():
+    """COM Octave: vref_intersect([0.1;0.3;0.7;0.9], 2, 0.5) -> 3.
+    x_in=2 reads rows 1 and 2, which is legal."""
+    ec = np.array([[0.1], [0.3], [0.7], [0.9]])
+    assert vref_intersect(ec, 2, 0.5) == 3.0
+
+
+def test_flat_segment_is_infinite():
+    """COM Octave: a flat pair gives m1=0 and the intersection is Inf."""
+    ec = np.array([[0.1], [0.3], [0.3], [0.9]])
+    assert np.isinf(vref_intersect(ec, 3, 0.5))

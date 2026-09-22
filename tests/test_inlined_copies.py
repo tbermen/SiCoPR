@@ -32,9 +32,11 @@ import copy as _copy
 import io
 import json
 import os
+import re
 import sys
 
 import numpy as np
+from types import SimpleNamespace
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -54,7 +56,15 @@ with io.open(os.path.join(_ROOT, 'com_functions', 'registry.json'),
 
 
 def inlined_copies():
-    """-> [(copy_name, canonical_name, parent), ...]"""
+    """-> [(copy_name, canonical_name, parent), ...]
+
+    A caller carrying TWO copies of the same helper distinguishes them with a
+    suffix -- Output_Arg_Fill has both `_conv_fct` and `_conv_fct_b`. Matching
+    the text after `__` against the registry verbatim misses every suffixed
+    one, so they were invisible to both layers of this test and sat on stale
+    code that nothing compared against anything. Strip a trailing _b/_c/_d or
+    digits before looking the canonical up.
+    """
     out = []
     for name in sorted(_TOPS):
         if not (name.startswith('_') and '__' in name[1:]):
@@ -62,6 +72,10 @@ def inlined_copies():
         parent, _, child = name[1:].partition('__')
         if child in _REG and child in _TOPS:
             out.append((name, child, parent))
+            continue
+        base = re.sub(r'_(?:b|c|d|\d+)$', '', child)
+        if base != child and base in _REG and base in _TOPS:
+            out.append((name, base, parent))
     return out
 
 
@@ -98,6 +112,10 @@ KNOWN_ARITY = {
     ('get_TDR', 'process_sxp'),
     ('rangelimit', 'read_p2_s2params'),
     ('rangelimit', 'read_p4_s4params'),
+    # Output_Arg_Fill's second get_pdf copy, found 2026-09-22 once
+    # inlined_copies() started matching suffixed names: it is a
+    # narrower form than the canonical.
+    ('get_pdf', 'Output_Arg_Fill'),
 }
 
 _arity_bad = {(child, parent) for name, child, parent in COPIES
@@ -126,8 +144,11 @@ _MANIFEST = os.path.join(_ROOT, 'com_functions', 'inlined_copies.json')
 if os.path.exists(_MANIFEST):
     with io.open(_MANIFEST, encoding='utf-8') as _f:
         _man = json.load(_f)
-    _man_pairs = {(c['helper'], c['inlined_into']) for c in _man['copies']
-                  if 'canonical' in c}
+    # Key off `canonical`, not `helper`: a second copy is recorded under a
+    # suffixed helper name (`conv_fct_b`) but the assembler resolves it to the
+    # reference function it duplicates, which is what this compares against.
+    _man_pairs = {(c['canonical'], c['inlined_into'])
+                  for c in _man['copies'] if 'canonical' in c}
     _found_pairs = {(child, parent) for _, child, parent in COPIES}
     check("manifest_covers_every_inlined_copy",
           not (_found_pairs - _man_pairs),
@@ -268,6 +289,114 @@ FACTORY = {
     'auto_port_order':   lambda: (_PORT_CUBE(), _F4.copy(), 0),
 }
 
+# ---------------------------------------------------------------------------
+# Edge cases, added 2026-09-22.
+#
+# The factory inputs above are all well-behaved: ascending real vectors,
+# scalars in range, nothing empty or NaN. That is exactly why copy drift kept
+# hiding. The Octave-oracle pass of 2026-09-22 corrected twenty-odd canonical
+# functions and NOT ONE nominal comparison moved, because every fix lived at an
+# edge -- a column where MATLAB wants a row, a NaN, a scalar threshold, an
+# index past the end, a value nothing matches.
+#
+# So each entry here is an input where a canonical function and a copy that
+# missed the fix give DIFFERENT answers, one of them usually by raising. Keep
+# them cheap: they run once per copy of the function.
+# ---------------------------------------------------------------------------
+EDGE = {
+    'pam': [
+        # unmatched first pair back-fills 0; unmatched last pair SHORTENS
+        lambda: (np.array([0.0, 0.0, 1.0, 1.0]),),
+        lambda: (np.array([1.0, 1.0, 0.0, 0.0]),),
+        lambda: (np.array([1.0]),),          # MATLAB never assigns dataout
+    ],
+    'hrem': [
+        lambda: (_ISI_TAIL.reshape(-1, 1).copy(), 5, 4, 0.2),   # column
+        lambda: (_ISI_TAIL.copy(), 45, 10, 0.2),                # window past end
+    ],
+    'dfe_clipper': [
+        lambda: (_ISI_TAIL.copy(), np.array(0.001), np.array(-0.001)),
+    ],
+    'Tukey_Window': [
+        # non-ascending f: MATLAB concatenates three COUNTED pieces
+        lambda: (np.array([1e9, 1e9, 3e9, 3e9, 0.0, 9e9]), _FILT_PARAM(),
+                 1e9, 3e9),
+        lambda: (np.array([0.0, 1e9, np.nan, 9e9]), _FILT_PARAM(), 1e9, 3e9),
+    ],
+    'bessel': [lambda: (-1,), lambda: (2.5,), lambda: (0,)],
+    'TD_CTLE': [
+        lambda: (_ISI_TAIL.astype(complex) + 1j * 0.01, 106.25e9, 20e9,
+                 25e9, 40e9, -6.0, 32),                     # complex input
+        lambda: (np.array([1.0]), 106.25e9, 20e9, 25e9, 40e9, -6.0, 32),
+    ],
+    'Butterworth_Filter': [
+        lambda: (_FILT_PARAM(), np.asarray(1e9), 0),        # scalar f
+    ],
+    'H_interp': [
+        lambda: (_Z.copy(), _F[::-1].copy(),
+                 np.linspace(0.0, 40e9, 128), 106.25e9),    # descending f_old
+        lambda: (_Z.copy(), _F.copy(),
+                 np.linspace(0.0, 40e9, 128), 1e6),         # inq empty
+    ],
+    'd_cpdf': [
+        lambda: (1e-4, np.array([-2e-3, 0.0, 2e-3]),
+                 np.array([0.5, np.nan, 0.5])),             # NaN counts as support
+        lambda: (1e-4, np.array([-2e-3, 0.0, 2e-3]), np.array([0.5, 0.5])),
+    ],
+    'CDF_ev': [
+        lambda: (-1.0, _PDF_A, sicopr.pdf_to_cdf(_PDF_A).y),   # nothing matches
+    ],
+    'cdf_to_ber_contour': [
+        lambda: (sicopr.pdf_to_cdf(_PDF_A), 0.9),              # no crossing
+    ],
+    'Init_PDF_Fast': [
+        lambda: (sicopr.normal_dist(0.01, 5, 1e-4),
+                 np.array([0.0, -2e-3, 3e-3]),                 # NOT ascending
+                 np.array([0.2, 0.3, 0.5])),
+    ],
+    # conv_fct's own drift is a ONE-ULP difference in p.x (the colon form vs
+    # arange*BinSize), which the 1e-12 absolute tolerance below cannot see on
+    # a voltage axis of order 1e-5. These two cases make the same fix show up
+    # categorically instead: an empty operand, and a half-integer Min where
+    # MATLAB's round goes away from zero.
+    'conv_fct': [
+        lambda: (SimpleNamespace(BinSize=1e-4, Min=-1,
+                                 y=np.array([0.25, 0.5, 0.25]),
+                                 x=np.array([-1e-4, 0.0, 1e-4])),
+                 SimpleNamespace(BinSize=1e-4, Min=0,
+                                 y=np.array([]), x=np.array([]))),
+        lambda: (SimpleNamespace(BinSize=1e-4, Min=0.5,
+                                 y=np.array([0.25, 0.5, 0.25]),
+                                 x=np.array([5e-5, 1.5e-4, 2.5e-4])),
+                 SimpleNamespace(BinSize=1e-4, Min=0,
+                                 y=np.array([0.5, 0.5]),
+                                 x=np.array([0.0, 1e-4]))),
+    ],
+    'conv_fct_MeanNotZero': [
+        lambda: (SimpleNamespace(BinSize=1e-4, Min=0.5,
+                                 y=np.array([0.25, 0.5, 0.25]),
+                                 x=np.array([5e-5, 1.5e-4, 2.5e-4])),
+                 SimpleNamespace(BinSize=1e-4, Min=0,
+                                 y=np.array([0.5, 0.5]),
+                                 x=np.array([0.0, 1e-4]))),
+    ],
+}
+
+# Guards the canonical has and many copies do not -- older drift than the
+# 2026-09-22 pass, and invisible to everything above because every input there
+# uses matching bin sizes and non-negative probabilities. Kept separate only so
+# the provenance stays readable; they are driven exactly like the rest.
+EDGE['conv_fct'].append(
+    lambda: (SimpleNamespace(BinSize=1e-4, Min=-1,
+                             y=np.array([0.25, 0.5, 0.25]),
+                             x=np.array([-1e-4, 0.0, 1e-4])),
+             SimpleNamespace(BinSize=2e-4, Min=0,      # DIFFERENT bin size
+                             y=np.array([0.5, 0.5]),
+                             x=np.array([0.0, 2e-4]))))
+EDGE['d_cpdf'].append(
+    lambda: (1e-4, np.array([-2e-3, 0.0, 2e-3]),
+             np.array([0.5, -0.25, 0.75])))            # negative probability
+
 # Copies known to differ behaviourally, reviewed 2026-08-18. Each is a FALLBACK
 # STUB reached only when dependency injection is skipped; sicopr.py wires the real
 # function in production (see the _wired_* partials near the top of sicopr.py).
@@ -398,54 +527,152 @@ def _flat(v):
     return a.astype(complex).ravel() if a.dtype.kind in 'ifcb' else np.array([])
 
 
+# Copies that are deliberate FALLBACK STUBS rather than translations. The
+# codebase already marks them: the stub's docstring starts with "Stub:".
+# Two carry no docstring to mark, so they are named here with the reason.
+EXTRA_STUBS = {
+    ('_COM_eye_width__conv_fct_MeanNotZero',
+     'a one-line delegate to the _conv_fct stub above it'),
+    ('_get_RILN_cmp_td__Butterworth_Filter',
+     'sits under the "Callee stubs" header and computes 1/sqrt(1+(f/(fb/2))^8), '
+     'not the reference polynomial'),
+}
+_EXTRA_STUB_NAMES = {n for n, _ in EXTRA_STUBS}
+
+
+def _is_stub(copy_name):
+    """True for a deliberate stand-in, by the codebase's own marker."""
+    if copy_name in _EXTRA_STUB_NAMES:
+        return True
+    doc = (ast.get_docstring(_TOPS[copy_name]) or '').strip().lower()
+    return doc.startswith('stub')
+
+
+def _outcome(fn, args, n_pos):
+    """Run fn and return a comparable outcome, treating a raise as a result.
+
+    Raising IS behaviour. The 2026-09-22 oracle pass fixed twenty-odd
+    functions and most of those fixes turned a silent wrong answer INTO a
+    raise, matching a call the MATLAB reference refuses. A differential that
+    skips whenever either side raises cannot see any of that: the canonical
+    would raise, the stale copy would answer, and the test would call it a
+    skip rather than a difference.
+    """
+    try:
+        return ('value', _flat(fn(*_copy.deepcopy(args[:n_pos]))))
+    except Exception as e:                                   # noqa: BLE001
+        return ('raise', type(e).__name__)
+
+
+def _differ(a, b):
+    """(same, detail) for two outcomes."""
+    ka, va = a
+    kb, vb = b
+    if ka != kb:
+        return False, ('canonical %s, copy %s'
+                       % (va if ka == 'raise' else 'returned a value',
+                          vb if kb == 'raise' else 'returned a value'))
+    if ka == 'raise':
+        return va == vb, 'canonical raised %s, copy raised %s' % (va, vb)
+    if va.shape != vb.shape:
+        return False, 'shape %s vs %s' % (va.shape, vb.shape)
+    if va.size == 0:
+        return True, 'both empty'
+    # NaN and Inf have to be compared as PATTERNS, not by subtraction.
+    # nan - nan and inf - inf are both nan, and `nan <= 1e-12` is False, so a
+    # plain max|delta| reports two bit-identical arrays as different -- it fails
+    # a function compared against ITSELF. That matters here because several of
+    # the 2026-09-22 fixes are "propagate NaN the way MATLAB does", so the very
+    # cases this test exists to check are the ones it would have got wrong.
+    nan_a, nan_b = np.isnan(va), np.isnan(vb)
+    if not np.array_equal(nan_a, nan_b):
+        return False, ('NaN pattern differs (%d vs %d)'
+                       % (int(nan_a.sum()), int(nan_b.sum())))
+    keep = ~nan_a
+    if not keep.any():
+        return True, 'all NaN, identical pattern'
+    ka, kb = va[keep], vb[keep]
+    fin_a, fin_b = np.isfinite(ka), np.isfinite(kb)
+    if not np.array_equal(fin_a, fin_b):
+        return False, 'infinity pattern differs'
+    if not np.array_equal(ka[~fin_a], kb[~fin_b]):
+        return False, 'infinities differ in sign'
+    ka, kb = ka[fin_a], kb[fin_a]
+    if ka.size == 0:
+        return True, 'all non-finite, identical pattern'
+    d = np.max(np.abs(ka - kb))
+    return d <= 1e-12, 'max|delta| = %.3g' % d
+
+
 _compared = _skipped = 0
 for _name, _child, _parent in COPIES:
     if _child not in FACTORY:
         _skipped += 1
         continue
     _key = (_child, _parent)
+    # Copies legitimately take fewer positional args than the canonical --
+    # get_pdf_from_sampled_signal has 3- and 4-arg forms, Tukey_Window 2- and
+    # 4-arg. Drive each side with the arguments IT accepts, taken from the
+    # same case tuple, so the comparison stays like-for-like.
+    _na = len(_TOPS[_name].args.args)
+    _nb = len(_TOPS[_child].args.args)
+    _canon, _copyfn = getattr(sicopr, _name), getattr(sicopr, _child)
+
     try:
-        _args = FACTORY[_child]()
-        # Copies legitimately take fewer positional args than the canonical --
-        # get_pdf_from_sampled_signal has 3- and 4-arg forms, Tukey_Window 2-
-        # and 4-arg. Drive each side with the arguments IT accepts, taken from
-        # the same factory tuple, so the comparison stays like-for-like.
-        _na = len(_TOPS[_name].args.args)
-        _nb = len(_TOPS[_child].args.args)
-        _a = getattr(sicopr, _name)(*_copy.deepcopy(_args[:_na]))
-        _b = getattr(sicopr, _child)(*_copy.deepcopy(_args[:_nb]))
+        _cases = [('nominal', FACTORY[_child]())]
     except Exception as _e:                                  # noqa: BLE001
         _skipped += 1
-        if _key not in KNOWN_BEHAVIOUR:
-            check("inlined_copy_callable__%s__in__%s" % (_child, _parent),
-                  False,
-                  "could not drive the copy with the canonical arguments: "
-                  "%s: %s" % (type(_e).__name__, _e))
+        check("inlined_copy_callable__%s__in__%s" % (_child, _parent),
+              False, "could not build the canonical arguments: %s: %s"
+              % (type(_e).__name__, _e))
         continue
+    # A FALLBACK STUB is not a translation of the canonical -- it is a crude
+    # stand-in reached only when dependency injection is skipped, and it is
+    # expected to differ. Driving one with the edge inputs produces noise, and
+    # worse, it pressures whoever is fixing copies into making the stub
+    # faithful just to quiet the test: the test steering the code rather than
+    # describing it. The nominal comparison still runs, so a stub that drifts
+    # from the canonical on ordinary input is still reported.
+    _edges = (() if (_key in KNOWN_BEHAVIOUR or _is_stub(_name))
+              else EDGE.get(_child, ()))
+    for _i, _mk in enumerate(_edges):
+        try:
+            _cases.append(('edge%d' % _i, _mk()))
+        except Exception as _e:                              # noqa: BLE001
+            # Never swallow this. Silently dropping an edge case that fails to
+            # BUILD makes a test that exercises nothing look like a test that
+            # passes -- which is how the conv_fct cases sat inert behind a
+            # NameError until the failure count refused to move.
+            check("edge_case_builds__%s__edge%d" % (_child, _i), False,
+                  "the edge case could not be constructed, so it tested "
+                  "nothing: %s: %s" % (type(_e).__name__, _e))
 
-    _compared += 1
-    _fa, _fb = _flat(_a), _flat(_b)
-    _same = (_fa.shape == _fb.shape and _fa.size > 0
-             and np.max(np.abs(_fa - _fb)) <= 1e-12)
-    _detail = ('shape %s vs %s' % (_fa.shape, _fb.shape)
-               if _fa.shape != _fb.shape
-               else 'max|delta| = %.3g' % (np.max(np.abs(_fa - _fb))
-                                           if _fa.size else float('nan')))
+    for _label, _args in _cases:
+        _oa = _outcome(_canon, _args, _na)
+        _ob = _outcome(_copyfn, _args, _nb)
+        # A case that BOTH sides refuse to be driven with says nothing about
+        # drift -- it usually means the synthetic inputs do not fit.
+        if (_oa[0] == 'raise' and _ob[0] == 'raise'
+                and _oa[1] == 'TypeError' and _ob[1] == 'TypeError'):
+            _skipped += 1
+            continue
+        _same, _detail = _differ(_oa, _ob)
+        _compared += 1
+        _tag = "%s__in__%s" % (_child, _parent)
+        if _label != 'nominal':
+            _tag += "__" + _label
+        if _key in KNOWN_BEHAVIOUR and _label == 'nominal':
+            xcheck("inlined_copy_matches__%s" % _tag, _same,
+                   "%s (%s)" % (KNOWN_BEHAVIOUR[_key], _detail))
+        else:
+            check("inlined_copy_matches__%s" % _tag, _same,
+                  "the inlined copy of %s inside %s no longer behaves like the "
+                  "canonical function on the %s input (%s). A fix applied to "
+                  "com_functions/fn/%s/py_impl.py does NOT reach this copy -- "
+                  "engine defect #6 was exactly this, across three copies."
+                  % (_child, _parent, _label, _detail, _child))
 
-    if _key in KNOWN_BEHAVIOUR:
-        xcheck("inlined_copy_matches__%s__in__%s" % (_child, _parent),
-               _same,
-               "%s (%s)" % (KNOWN_BEHAVIOUR[_key], _detail))
-    else:
-        check("inlined_copy_matches__%s__in__%s" % (_child, _parent),
-              _same,
-              "the inlined copy of %s inside %s no longer behaves like the "
-              "canonical function (%s). A fix applied to "
-              "com_functions/fn/%s/py_impl.py does NOT reach this copy -- "
-              "engine defect #6 was exactly this, across three copies."
-              % (_child, _parent, _detail, _child))
-
-print("\n%d inlined copies of %d functions; %d compared behaviourally, "
-      "%d not drivable synthetically"
+print("\n%d inlined copies of %d functions; %d comparison(s) made, "
+      "%d skipped as not drivable synthetically"
       % (len(COPIES), len({c for _, c, _ in COPIES}), _compared, _skipped))
 finish()

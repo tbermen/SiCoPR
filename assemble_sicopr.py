@@ -516,9 +516,21 @@ for _copy_name, _helper, _into in sorted(set(_renames)):
         'inlined_into': _into,
         'inlined_into_matlab_lines': _reg_lines.get(_into),
     }
-    if _helper in _reg_lines:
-        _entry['canonical'] = _helper
-        _entry['canonical_matlab_lines'] = _reg_lines[_helper]
+    # A caller carrying TWO copies of one helper distinguishes them with a
+    # suffix (Output_Arg_Fill has both `_conv_fct` and `_conv_fct_b`). Those
+    # are still copies of the same reference function, so resolve the canonical
+    # through the suffix -- otherwise the manifest records no provenance for
+    # them and tests/test_inlined_copies.py, which keys off `canonical`, never
+    # compares them against anything. Four such copies sat unchecked until
+    # 2026-09-22.
+    _canon = _helper
+    if _canon not in _reg_lines:
+        _stripped = re.sub(r'_(?:b|c|d|\d+)$', '', _helper)
+        if _stripped in _reg_lines:
+            _canon = _stripped
+    if _canon in _reg_lines:
+        _entry['canonical'] = _canon
+        _entry['canonical_matlab_lines'] = _reg_lines[_canon]
     _manifest['copies'].append(_entry)
 
 with open(os.path.join('com_functions', 'inlined_copies.json'), 'w',

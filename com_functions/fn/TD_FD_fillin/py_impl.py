@@ -16,11 +16,27 @@ import numpy as np
 from scipy.signal import lfilter
 
 
+def _factorial(k):
+    """MATLAB factorial(): a double, so it overflows to Inf above 170!."""
+    return math.inf if k > 170 else math.factorial(k)
+
+
 def _bessel(n):
+    # `for ii = 0:n` never runs for n < 0, so MATLAB never assigns `a` and the
+    # function errors.  COM Octave: bessel(-1) -> "value on right hand side of
+    # assignment is undefined".  Returning an empty array answered a call the
+    # reference refuses.  Non-integer n is rejected by MATLAB factorial().
+    if n < 0:
+        raise ValueError('bessel: output is undefined for n < 0 (got %r)' % (n,))
+    if n != int(n):
+        raise ValueError('bessel: n must be a non-negative integer (got %r)' % (n,))
+    n = int(n)
     a = np.zeros(n + 1)
     for ii in range(n + 1):
-        a[ii] = (math.factorial(2 * n - ii)
-                 / (2 ** (n - ii) * math.factorial(ii) * math.factorial(n - ii)))
+        # COM Octave, bessel(90): a(1:10) are Inf.  Python's exact
+        # math.factorial made them finite (~1.09e164) instead.
+        a[ii] = (_factorial(2 * n - ii)
+                 / (2 ** (n - ii) * _factorial(ii) * _factorial(n - ii)))
     return a
 
 
@@ -37,10 +53,24 @@ def _Bessel_Thomson_Filter(param, f, use_BT):
 _BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
 
 
+def _length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def _Butterworth_Filter(param, f, use_BW):
     f = np.asarray(f, dtype=float)
-    if not use_BW:
-        return np.ones(len(f))
+    # MATLAB `if use_BW` is true only for a non-empty value whose elements are
+    # ALL non-zero.  COM Octave: use_BW=[] -> ones branch, [1 0] -> ones branch,
+    # [1 1] -> filter branch.
+    use = np.asarray(use_BW)
+    if not (use.size and np.all(use)):
+        # ones(1,length(f)): length() is the LONGEST dimension, not the first.
+        # COM Octave: f 2x3 -> ones(1,3), three elements not six; f scalar -> 1
+        # (len(f) raised TypeError on a scalar).
+        return np.ones(_length(f))
     s = 1j * f / (param.fb_BW_cutoff * param.fb)
     return 1.0 / np.polyval(_BW_POLY, s)
 

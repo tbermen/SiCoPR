@@ -2,7 +2,33 @@ import numpy as np
 
 
 def _hrem(h, index, N_bf, bmaxg):
-    """Remove at most bmaxg from N_bf taps starting at 0-based index."""
+    """Remove at most bmaxg from N_bf taps starting at 0-based index.
+
+    The index is 0-based here where the canonical hrem takes it 1-based: the
+    caller below passes ig1/ig2/ig3 from range(N_b, ...), the 0-based form of
+    MATLAB's `ig1 = N_b+1:end1`. Everything else matches the canonical.
+    """
+    h = np.asarray(h, dtype=float)
+    # MATLAB L7941 builds the result with HORIZONTAL concatenation, so h must
+    # be a row. A column makes the three pieces 1x1 / Nx1 / Mx1 and MATLAB
+    # errors "horizontal dimensions mismatch". Verified against Octave.
+    if h.ndim == 2 and h.shape[1] == 1 and h.shape[0] > 1:
+        raise ValueError(
+            'hrem: h must be a row vector. MATLAB concatenates the three '
+            'pieces horizontally, so a %dx1 column errors there with '
+            '"horizontal dimensions mismatch".' % h.shape[0])
+    h = h.ravel()
+    index = int(index)
+
+    # MATLAB indexes h(index:index+N_bf-1) directly, so running past the end
+    # errors ("h(7): out of bound 5"). A numpy slice silently returns a SHORTER
+    # segment, handing back a result of the wrong length instead.
+    if index < 0 or index + int(N_bf) > h.size:
+        raise IndexError(
+            'hrem: h(%d:%d) is out of bounds for a length-%d h; MATLAB errors '
+            'here rather than shortening the result.'
+            % (index + 1, index + int(N_bf), h.size))
+
     mid = (
         h[index:index + N_bf]
         - np.sign(h[index:index + N_bf])

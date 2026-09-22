@@ -14,6 +14,12 @@ import numpy as np
 def _mround(x):
     """MATLAB round(): half away from zero."""
     x = float(x)
+    # MATLAB round(NaN) is NaN and round(Inf) is Inf; int() raises on both, so
+    # a NaN local-search value used to abort here instead of being capped.
+    # COM Octave: compute_hard_cap(1, 1.2, NaN, 1) -> 1
+    #             compute_hard_cap(1, 1.2, Inf, 1) -> Inf
+    if not np.isfinite(x):
+        return x
     t = int(x)                      # int() truncates toward zero
     if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
         return t + (1 if x > 0 else -1)
@@ -22,10 +28,29 @@ def _mround(x):
     return int(round(x))
 
 
+def _mmax2(a, b):
+    """MATLAB max(a,b): a NaN operand is dropped, not propagated.
+
+    Python's max() compares with > and keeps whichever it saw first, so
+    max(NaN, 2) is NaN where MATLAB gives 2.
+    COM Octave: compute_hard_cap(1, 1.2, 2, NaN) -> 2   (Python gave nan)
+                compute_hard_cap(1, NaN, 2, 3)   -> 3   (Python raised)
+                compute_hard_cap(1, NaN, NaN, NaN) -> NaN
+    """
+    if np.isnan(a):
+        return b
+    if np.isnan(b):
+        return a
+    return a if a > b else b
+
+
 def compute_hard_cap(use_hard_cap, mul, LSV, min_radius):
     """Hard cap for the raw TX L1 distance (MATLAB lines 5788-5794)."""
-    if use_hard_cap:
-        return max(min_radius, _mround(mul * LSV))
+    # MATLAB `if X` is false for an empty X and true only when every element is
+    # non-zero; `if np.array([])` raises in numpy.
+    # COM Octave: compute_hard_cap([], 1.2, 2, 1) -> NaN
+    if np.size(use_hard_cap) and np.all(use_hard_cap):
+        return _mmax2(min_radius, _mround(mul * LSV))
     return float('nan')
 
 

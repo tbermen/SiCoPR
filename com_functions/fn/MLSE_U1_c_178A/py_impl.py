@@ -30,6 +30,18 @@ def _mround_arr(x):
     tie = np.abs(x - np.trunc(x)) == 0.5
     return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
 
+
+def _mround(x):
+    """MATLAB round(): half away from zero, where Python's round() is banker's.
+
+    COM Octave: p1.Min=0.5, p2.Min=0 -> p.Min=1 (Python round() gives 0).
+    """
+    x = float(x)
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    return int(round(x))
+
 from scipy.signal import fftconvolve
 from scipy.linalg import toeplitz
 from scipy.special import erfc
@@ -49,9 +61,35 @@ def _conv1d(a, b):
     """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
+    # conv2 with an empty operand returns empty; np.convolve raises instead.
+    # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
+    if a.size == 0 or b.size == 0:
+        return np.zeros(0)
     if min(a.size, b.size) >= _CONV_FFT_MIN:
         return fftconvolve(a, b)
     return np.convolve(a, b)
+
+
+def _colon_x(pmin, pmax, binsize):
+    """MATLAB `pmin*binsize : binsize : pmax*binsize`.
+
+    The colon accumulates from the first element as a+k*d and pins the last
+    element to the stated limit, where (pmin:pmax)*binsize forms each element
+    as one product. Swept over 7920 (Min, length, BinSize) combinations against
+    Octave, the product form got 24.6% of the elements wrong, all by 1 ulp;
+    this form got none. The last element is pinned only when accumulation
+    overshoots the limit -- pinning unconditionally is wrong, e.g. COM Octave
+    Min=-3, BinSize=0.1, 2 bins -> [-0.30000000000000004, -0.20000000000000004].
+    """
+    n = pmax - pmin + 1
+    if n <= 0:
+        return np.zeros(0)
+    a = pmin * binsize
+    b = pmax * binsize
+    x = a + np.arange(n) * binsize
+    if (binsize > 0 and x[-1] > b) or (binsize < 0 and x[-1] < b):
+        x[-1] = b
+    return x
 
 
 def _d_cpdf(binsize, values, probs):
@@ -59,7 +97,17 @@ def _d_cpdf(binsize, values, probs):
     probs = np.asarray(probs, dtype=float)
     if np.all(values == 0):
         return SimpleNamespace(BinSize=binsize, Min=0, y=np.array([1.0]), x=np.array([0.0]))
-    if np.any(np.diff(values) < 0):
+    if np.size(probs) < np.size(values):
+        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
+        # out-of-bound error, not a shorter answer.  zip() below would stop at
+        # the shorter of the two and silently normalise whatever it collected.
+        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
+        # "probs(3): out of bound 2 (dimensions are 1x2)".
+        raise IndexError('d_cpdf: probs is shorter than values')
+    # ~issorted(values): MATLAB requires every element <= the next, which is
+    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
+    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
+    if not np.all(values[:-1] <= values[1:]):
         si = np.argsort(values, kind='stable')
         values, probs = values[si], probs[si]
     values = binsize * _mround_arr(values / binsize)
@@ -72,7 +120,14 @@ def _d_cpdf(binsize, values, probs):
                                      else int(np.argmin(np.abs(t - v))))
         pdf_y[bin_idx] += prob
     pdf_y = pdf_y / np.sum(pdf_y)
-    support = np.where(pdf_y > 0)[0]
+
+    if np.any(pdf_y < 0):
+        raise ValueError('PDF must be real and nonnegative')
+    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
+    # NaN, so an all-zero or NaN-bearing probs vector left the support empty
+    # and raised instead of answering.  COM Octave 4p16p0:
+    # d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns Min=-1, y=[NaN NaN NaN].
+    support = np.where(pdf_y != 0)[0]
     pdf_y = pdf_y[support[0]:support[-1] + 1]
     pdf_min = t_start + int(support[0])
     return SimpleNamespace(BinSize=binsize, Min=pdf_min, y=pdf_y,
@@ -80,11 +135,15 @@ def _d_cpdf(binsize, values, probs):
 
 
 def _conv_fct(p1, p2):
+    if p1.BinSize != p2.BinSize:
+        raise ValueError('bin size must be equal')
     p = SimpleNamespace(**vars(p1))
-    p.Min = int(round(p1.Min + p2.Min))
+    p.Min = _mround(p1.Min + p2.Min)   # MATLAB round: halves go away from zero
     p.y = _conv1d(p1.y, p2.y)
     pMax = p.Min + len(p.y) - 1
-    p.x = np.arange(p.Min, pMax + 1) * p.BinSize
+    # (p.Min*BinSize : BinSize : pMax*BinSize) -- a floating-point colon, which
+    # is NOT (p.Min:pMax)*BinSize.
+    p.x = _colon_x(p.Min, pMax, p.BinSize)
     return p
 
 
@@ -119,7 +178,13 @@ def _scaleCDF(pdf, delta_com, DER0, A_s):
 def _CDF_ev(val, PDF, CDF):
     x = np.asarray(PDF.x, dtype=float)
     cdf = np.asarray(CDF, dtype=float)
-    index = int(np.argmax(x >= -val))
+    hit = x >= -val
+    if not hit.any():
+        # find() is empty, so MATLAB's CDF(index) is an empty 1x0 -- there is
+        # no value to return.  np.argmax on an all-False mask answers 0, which
+        # would hand back CDF(1) as though it were the crossing.
+        raise IndexError('CDF_ev: no PDF.x >= -val')
+    index = int(np.argmax(hit))
     return float(cdf[index])
 
 

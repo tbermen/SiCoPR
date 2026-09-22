@@ -66,3 +66,90 @@ def test_positive_gdc_increases_output():
     out0 = float(S_RN(f, 0.0, 0.0, p)[0])
     out10 = float(S_RN(f, 10.0, 0.0, p)[0])
     assert out10 > out0
+
+
+# ============================================================
+# COM Octave oracle — S_RN extracted verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m and run by tools/octave_oracle.py.
+# param.CTLE_fp1=[15e9 20e9], CTLE_fz=[6e9 7e9], CTLE_fp2=[30e9], f_HP=[0.66e9],
+# fb=106.25e9, f_r=0.75, eta_0=8.2e-9  (only the first element of each list is
+# read), f=[0 1e9 20e9 53.125e9 120e9]:
+#
+#   S_RN(f, -5, 0, param) -> [1.2965338406690357e-09, 1.4026234506316369e-09,
+#                             1.1676798710179013e-08, 5.5451278033857772e-09,
+#                             5.4122286147607244e-11]
+#   f=[-20e9 -1e9 0], G_DC=-5, G_DC2=-3 -> [1.1670462690110094e-08,
+#                             1.1903317201696051e-09, 6.4980620890905654e-10]
+#   f=0, G_DC=G_DC2=0 -> eta_0/2 = 4.1000000000000003e-09
+#   f 2x2 -> a 2x2 result;  f=[] -> []
+#   f_HP=0 -> all NaN
+#   G_DC=[-5 -6] (or G_DC2=[0 1]), whatever length(f) is -> error "for x^y, only
+#       square matrix arguments are permitted and one argument must be scalar.
+#       Use .^ for elementwise power."  MATLAB writes 10^(G_DC/20) with the
+#       MATRIX power, so a vector gain is refused; numpy's ** broadcast it.
+#   G_DC=[-5] (1x1) is still a scalar and is accepted.
+# ============================================================
+
+OCT_F = np.array([0.0, 1e9, 20e9, 53.125e9, 120e9])
+
+
+def oct_param():
+    return make_param(fb=106.25e9, f_r=0.75, eta_0=8.2e-9,
+                      fp1=15e9, fz=6e9, fp2=30e9, fHP=0.66e9)
+
+
+def test_oracle_values():
+    out = S_RN(OCT_F, -5.0, 0.0, oct_param())
+    np.testing.assert_allclose(
+        out, [1.2965338406690357e-09, 1.4026234506316369e-09,
+              1.1676798710179013e-08, 5.5451278033857772e-09,
+              5.4122286147607244e-11], rtol=1e-13, atol=0)
+
+
+def test_oracle_negative_frequencies():
+    out = S_RN(np.array([-20e9, -1e9, 0.0]), -5.0, -3.0, oct_param())
+    np.testing.assert_allclose(
+        out, [1.1670462690110094e-08, 1.1903317201696051e-09,
+              6.4980620890905654e-10], rtol=1e-13, atol=0)
+
+
+def test_oracle_dc_is_eta0_over_2():
+    out = S_RN(np.array([0.0]), 0.0, 0.0, oct_param())
+    assert float(out[0]) == pytest.approx(4.1000000000000003e-09, rel=1e-13)
+
+
+def test_vector_gain_is_a_matrix_power_error():
+    """10^(G_DC/20) is MATLAB's ^, so a non-scalar gain is refused there."""
+    p = oct_param()
+    with pytest.raises(ValueError):
+        S_RN(OCT_F, np.array([-5.0, -6.0]), 0.0, p)
+    with pytest.raises(ValueError):
+        S_RN(OCT_F, -5.0, np.array([0.0, 1.0]), p)
+    # length(f) == length(G_DC) is refused just the same
+    with pytest.raises(ValueError):
+        S_RN(np.array([0.0, 20e9]), np.array([-5.0, -6.0]), 0.0, p)
+
+
+def test_one_by_one_gain_is_still_a_scalar():
+    out = S_RN(np.array([0.0, 20e9]), np.array([-5.0]), 0.0, oct_param())
+    np.testing.assert_allclose(out, [1.2965338406690357e-09,
+                                     1.1676798710179013e-08], rtol=1e-13, atol=0)
+
+
+def test_zero_f_HP_is_all_nan():
+    out = S_RN(OCT_F, -5.0, 0.0, make_param(fb=106.25e9, f_r=0.75, eta_0=8.2e-9,
+                                            fp1=15e9, fz=6e9, fp2=30e9, fHP=0.0))
+    assert np.all(np.isnan(out))
+
+
+def test_matrix_f_keeps_its_shape():
+    out = S_RN(np.array([[0.0, 1e9], [20e9, 53.125e9]]), -5.0, 0.0, oct_param())
+    assert out.shape == (2, 2)
+    np.testing.assert_allclose(
+        out, [[1.2965338406690357e-09, 1.4026234506316369e-09],
+              [1.1676798710179013e-08, 5.5451278033857772e-09]],
+        rtol=1e-13, atol=0)
+
+
+def test_empty_f():
+    assert S_RN(np.array([]), -5.0, 0.0, oct_param()).size == 0

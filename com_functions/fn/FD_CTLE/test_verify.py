@@ -66,3 +66,70 @@ def test_output_length_matches_input():
     freq = np.linspace(0, 50e9, 25)
     H = FD_CTLE(freq, 5e9, 15e9, 30e9, kacdc_dB=-3.0)
     assert len(H) == 25
+
+
+# ============================================================
+# COM Octave oracle — FD_CTLE extracted verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m and run by tools/octave_oracle.py.
+# No divergence was found: every probe below agrees to <= 3e-16 absolute, which
+# is the last-bit difference between MATLAB's and numpy's complex division.
+#
+# freq = [0 1e9 20e9 53.125e9 120e9]
+#   FD_CTLE(freq, 6e9, 15e9, 30e9, -5)  ->
+#       [0.56234132519034907+0j,
+#        0.57456348774080934+0.10945354799925074j,
+#        1.6771109905437327-0.18799782978718932j,
+#        0.78683301947844086-0.88664283233853802j,
+#        0.2014184786598183-0.56719284697039296j]
+#   FD_CTLE(freq, 0.66e9, 0.66e9, 100e100, -5)   (the engine's high-pass call)
+#       [0.56234132519034907+0j,
+#        0.86720248067213435+0.20120836261797825j,
+#        0.99952390816713821+0.014427025238234043j,
+#        0.99993246039748795+0.0054364263385733944j,
+#        0.99998676122555985+0.0024070498981936597j]
+#   FD_CTLE(20e9, 6e9, 15e9, 30e9, [-5 -6])      (10.^ is element-wise, so a
+#       [1.6771109905437327-0.18799782978718932j,   vector gain is legal here
+#        1.6754174926235246-0.15751486722344027j]   unlike S_RN's 10^)
+#   FD_CTLE([], ...) -> empty
+#   FD_CTLE([NaN Inf], 6e9, 15e9, 30e9, -5) -> [NaN+NaNj, NaN+NaNj]
+# ============================================================
+
+OCT_FREQ = np.array([0.0, 1e9, 20e9, 53.125e9, 120e9])
+
+
+def test_oracle_values():
+    H = FD_CTLE(OCT_FREQ, 6e9, 15e9, 30e9, -5.0)
+    np.testing.assert_allclose(
+        H, [0.56234132519034907 + 0j,
+            0.57456348774080934 + 0.10945354799925074j,
+            1.6771109905437327 - 0.18799782978718932j,
+            0.78683301947844086 - 0.88664283233853802j,
+            0.2014184786598183 - 0.56719284697039296j], rtol=1e-13, atol=0)
+
+
+def test_oracle_highpass_call():
+    """f_p1 = f_z and f_p2 = 100e100, as OptFom_Compute_CTLE calls it."""
+    H = FD_CTLE(OCT_FREQ, 0.66e9, 0.66e9, 100e100, -5.0)
+    np.testing.assert_allclose(
+        H, [0.56234132519034907 + 0j,
+            0.86720248067213435 + 0.20120836261797825j,
+            0.99952390816713821 + 0.014427025238234043j,
+            0.99993246039748795 + 0.0054364263385733944j,
+            0.99998676122555985 + 0.0024070498981936597j], rtol=1e-13, atol=0)
+
+
+def test_vector_gain_is_element_wise():
+    """MATLAB writes 10.^(kacdc_dB/20) here, so a vector of gains is legal."""
+    H = FD_CTLE(20e9, 6e9, 15e9, 30e9, np.array([-5.0, -6.0]))
+    np.testing.assert_allclose(
+        H, [1.6771109905437327 - 0.18799782978718932j,
+            1.6754174926235246 - 0.15751486722344027j], rtol=1e-13, atol=0)
+
+
+def test_empty_freq():
+    assert FD_CTLE(np.array([]), 6e9, 15e9, 30e9, -5.0).size == 0
+
+
+def test_nan_and_inf_freq():
+    H = FD_CTLE(np.array([np.nan, np.inf]), 6e9, 15e9, 30e9, -5.0)
+    assert np.all(np.isnan(H.real)) and np.all(np.isnan(H.imag))

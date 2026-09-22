@@ -36,19 +36,35 @@ def _lfsr(s, t):
 
 
 def _pam(data):
+    # MATLAB assigns dataout(ceil(i/2)) only inside the four if/elseif arms. A
+    # pair that matches none leaves that slot UNASSIGNED, and MATLAB's
+    # auto-grow then fills it with 0 -- but only if some LATER index is
+    # assigned, because the array only ever grows to the highest assigned
+    # index. Verified against Octave:
+    #     pam([0 0 1 1]) -> [0 1/3]      (slot 1 back-filled with 0)
+    #     pam([1 1 0 0]) -> [1/3]        (length 1, NOT 2)
+    #     pam([1]), pam([]) -> error: value on right hand side is undefined
     data = np.asarray(data, dtype=float)
     n_pairs = int(np.floor(len(data) / 2))
-    dataout = np.zeros(n_pairs)
+    assigned = {}
     for i in range(n_pairs):
         pair = data[2 * i: 2 * i + 2]
         if np.array_equal(pair, [-1, -1]):
-            dataout[i] = -1.0
+            assigned[i] = -1.0
         elif np.array_equal(pair, [-1, 1]):
-            dataout[i] = -1.0 / 3.0
+            assigned[i] = -1.0 / 3.0
         elif np.array_equal(pair, [1, 1]):
-            dataout[i] = 1.0 / 3.0
+            assigned[i] = 1.0 / 3.0
         elif np.array_equal(pair, [1, -1]):
-            dataout[i] = 1.0
+            assigned[i] = 1.0
+    if not assigned:
+        raise ValueError(
+            'pam: no input pair matched a Grey-code symbol, so MATLAB never '
+            'assigns dataout and errors with "Output argument dataout (and '
+            'maybe others) not assigned". Got %d sample(s).' % len(data))
+    dataout = np.zeros(max(assigned) + 1)
+    for i, v in assigned.items():
+        dataout[i] = v
     return dataout
 
 

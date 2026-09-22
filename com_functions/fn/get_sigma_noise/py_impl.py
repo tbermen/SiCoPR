@@ -15,7 +15,16 @@ def get_sigma_noise(H_ctf, param, chdata, sigma_bn):
     )
     # MATLAB: idxfbby2 = find(faxis >= fb/2, 1)  [1-based]
     # Python: 0-based argmax → slice [:idxfbby2+1] matches MATLAB (1:idxfbby2)
-    idx0 = int(np.argmax(faxis >= float(param.fb) / 2))
+    hit = faxis >= float(param.fb) / 2
+    if not hit.any():
+        # find() is empty, so MATLAB averages over H_np(1:[]) — an empty
+        # slice — and mean([]) is NaN.  np.argmax answers 0 on an all-False
+        # mask, which averaged over the *first* bin instead and returned a
+        # finite number.
+        # COM Octave 4p16p0: faxis = linspace(0,fb/4,51), fb=100e9 gives
+        # sigma_NE = NaN and sigma_HP = NaN; Python returned 0 and 0.
+        return float('nan'), float('nan')
+    idx0 = int(np.argmax(hit))
     idxfbby2 = idx0 + 1  # exclusive upper bound for slices below
 
     if len(chdata) >= 2:
@@ -31,6 +40,10 @@ def get_sigma_noise(H_ctf, param, chdata, sigma_bn):
         H_hp = np.ones(len(f), dtype=complex)
 
     H_np = Hnoise_channel * H_ctf * H_r * H_hp
-    sigma_NE = float(sigma_bn) * np.sqrt(np.mean(np.abs(H_np[:idxfbby2]) ** 2))
-    sigma_HP = float(sigma_bn) * np.mean(np.abs(H_hp[:idxfbby2]) ** 2)
+    # MATLAB squares first and takes the modulus after: abs(H(1:n).^2).
+    # |z^2| and |z|^2 agree mathematically but not bit-for-bit — 18 of the 26
+    # in-band elements differ in the probe pinned in test_verify.py, where the
+    # reference order makes the f_hp=0 result match COM Octave 4p16p0 exactly.
+    sigma_NE = float(sigma_bn) * np.sqrt(np.mean(np.abs(H_np[:idxfbby2] ** 2)))
+    sigma_HP = float(sigma_bn) * np.mean(np.abs(H_hp[:idxfbby2] ** 2))
     return sigma_NE, sigma_HP

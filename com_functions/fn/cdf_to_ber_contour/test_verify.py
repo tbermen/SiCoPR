@@ -79,3 +79,69 @@ def test_returns_scalars():
     bottom, top = cdf_to_ber_contour(c, 0.25)
     assert np.isscalar(bottom)
     assert np.isscalar(top)
+
+
+# ============================================================
+# Executed-reference checks — values produced by running the reference
+# function under Octave (tools/octave_oracle.py, COM Octave 4p16p0), not by
+# reading the MATLAB.  cdf.y=[0.1 0.3 0.7 0.3 0.1], cdf.x=[-2 -1 0 1 2]
+# unless stated.
+#
+# Nothing above specBER: BOTH find() calls are empty, so
+#   specBER = 0.9  -> noise_bottom = [] and noise_top = []   (1x0, not a
+#                     voltage; nidx = length(cdf.y) - [] + 1 is empty too)
+#   specBER = NaN  -> [] and []   (nothing compares > NaN)
+#   cdf.y=[0.1], x=[1.5], specBER=0.25 -> [] and []
+# np.argmax on an all-False mask answers 0, so the old code returned
+# (cdf.x(1), cdf.x(end)) = (-2.0, 2.0) — the whole axis reported as the eye.
+#
+# Cases that do have a crossing, confirmed against Octave:
+#   y=[0.5 0.6 0.7],  x=[0 1 2], spec=0.1  -> (0, 2)
+#   y=[0.1 NaN 0.7 0.3 0.1],     spec=0.25 -> (0, 1)   NaN never satisfies >
+#   y=[0.25 0.5 0.25], x=[0 1 2], spec=0.25 -> (1, 1)  strict >, so the
+#                                              equal ends are excluded
+#   y=[0 .1 .4 .8 1], x=[0..4],  spec=0.25 -> (2, 4)
+#   y=[0.7], x=[1.5],            spec=0.25 -> (1.5, 1.5)
+#   column-vector cdf.x/cdf.y with the nominal data -> (-1, 1), same as rows
+# ============================================================
+
+
+def test_no_crossing_refuses():
+    """specBER above every cdf.y: MATLAB yields an empty contour, not the axis."""
+    c = _make_cdf([0.1, 0.3, 0.7, 0.3, 0.1], [-2.0, -1.0, 0.0, 1.0, 2.0])
+    with pytest.raises(IndexError):
+        cdf_to_ber_contour(c, 0.9)
+
+
+def test_nan_specber_refuses():
+    c = _make_cdf([0.1, 0.3, 0.7, 0.3, 0.1], [-2.0, -1.0, 0.0, 1.0, 2.0])
+    with pytest.raises(IndexError):
+        cdf_to_ber_contour(c, float('nan'))
+
+
+def test_single_point_no_crossing_refuses():
+    c = _make_cdf([0.1], [1.5])
+    with pytest.raises(IndexError):
+        cdf_to_ber_contour(c, 0.25)
+
+
+def test_all_above_spans_whole_axis():
+    c = _make_cdf([0.5, 0.6, 0.7], [0.0, 1.0, 2.0])
+    assert cdf_to_ber_contour(c, 0.1) == (0.0, 2.0)
+
+
+def test_nan_in_cdf_y_is_skipped():
+    c = _make_cdf([0.1, np.nan, 0.7, 0.3, 0.1], [-2.0, -1.0, 0.0, 1.0, 2.0])
+    assert cdf_to_ber_contour(c, 0.25) == (0.0, 1.0)
+
+
+def test_single_point_with_crossing():
+    c = _make_cdf([0.7], [1.5])
+    assert cdf_to_ber_contour(c, 0.25) == (1.5, 1.5)
+
+
+def test_column_vectors_match_rows():
+    c = _make_cdf([0.1, 0.3, 0.7, 0.3, 0.1], [-2.0, -1.0, 0.0, 1.0, 2.0])
+    c.y = c.y.reshape(-1, 1)
+    c.x = c.x.reshape(-1, 1)
+    assert cdf_to_ber_contour(c, 0.25) == (-1.0, 1.0)

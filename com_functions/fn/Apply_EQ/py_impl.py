@@ -19,7 +19,11 @@ from scipy.signal import lfilter
 
 
 def _TD_CTLE(ir_in, fb, f_z, f_p1, f_p2, kacdc_dB, oversampling):
-    ir_in = np.asarray(ir_in, dtype=float)
+    # No dtype=float: MATLAB's filter() carries a complex input through, and
+    # the cast silently DISCARDED the imaginary part.  atleast_1d because
+    # MATLAB filters a scalar (1x1) and returns a scalar, where lfilter raised
+    # "selected axis is out of range" on a 0-d array.
+    ir_in = np.atleast_1d(np.asarray(ir_in))
     p1_ctle = -2 * np.pi * f_p1
     p2_ctle = -2 * np.pi * f_p2
     z_ctle = -2 * np.pi * f_z * 10 ** (kacdc_dB / 20)
@@ -33,7 +37,11 @@ def _TD_CTLE(ir_in, fb, f_z, f_p1, f_p2, kacdc_dB, oversampling):
           * f_p1 / f_z)
     B_filt = k_ctle * kd * np.poly([zd, -1])
     A_filt = np.poly([p1d, p2d])
-    return lfilter(B_filt, A_filt, ir_in), p1_ctle, p2_ctle, z_ctle
+    # MATLAB filter() runs along the first NON-singleton dimension: down the
+    # columns of a matrix, along a row vector.  lfilter defaults to axis=-1,
+    # which filtered a matrix along its rows instead.
+    axis = 0 if (ir_in.ndim >= 2 and ir_in.shape[0] != 1) else -1
+    return lfilter(B_filt, A_filt, ir_in, axis=axis), p1_ctle, p2_ctle, z_ctle
 
 
 def _FFE(C, cmx, spui, V):

@@ -44,6 +44,16 @@ def Init_PDF_Fast(EmptyPDF, values, probs):
     pdf.y = np.zeros(len(pdf.x))
     bp = rvd - rvd[0]                              # 0-based bin placement (MATLAB: rvd-Min+1)
 
+    if np.any(bp < 0) or np.any(bp >= len(pdf.y)):
+        # pdf.x only spans rvd(1)..rvd(end), so any value that rounds outside
+        # that span (i.e. `values` is not ascending) makes bin_placement fall
+        # off the array and MATLAB stops.  A negative index is legal in numpy,
+        # so Python wrapped round and added the probability to the wrong bin.
+        # COM Octave 4p16p0: Init_PDF_Fast(E,[0 -0.2 0.3],[0.2 0.3 0.5]) with
+        # BinSize=0.1 errors "pdf(-1): subscripts must be either integers
+        # 1 to (2^63)-1 or logicals"; Python answered y=[0.2 0 0.3 0.5].
+        raise IndexError('Init_PDF_Fast: values must be ascending')
+
     pdf.y[bp[0]] = probs[0]                        # first value: direct assign
     for k in range(1, len(values)):
         pdf.y[bp[k]] += probs[k]

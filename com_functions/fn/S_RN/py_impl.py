@@ -3,6 +3,14 @@ import numpy as np
 
 def S_RN(f, G_DC, G_DC2, param):
     """Compute receiver noise PSD S_RN(f) = eta_0/2 * |H_CTF * H_R|^2."""
+    # 10^(G_DC/20) uses MATLAB's ^, which is MATRIX power: a non-scalar gain is
+    # an error there, while numpy's ** broadcast it and answered.  COM Octave,
+    # G_DC=[-5 -6]: "for x^y, only square matrix arguments are permitted and
+    # one argument must be scalar.  Use .^ for elementwise power."
+    for name, g in (('G_DC', G_DC), ('G_DC2', G_DC2)):
+        if np.asarray(g).size != 1:
+            raise ValueError('S_RN: %s must be a scalar for 10^(%s/20) '
+                             '(got size %d)' % (name, name, np.asarray(g).size))
     f = np.asarray(f, dtype=float)
     p1 = float(np.asarray(param.CTLE_fp1).flat[0])
     z1 = float(np.asarray(param.CTLE_fz).flat[0])

@@ -33,9 +33,22 @@ def _Bessel_Thomson_Filter(param, faxis, enable):
     return np.abs(b[0] / np.polyval(b, s))
 
 
+def _length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def _Butterworth_Filter(param, faxis, enable):
-    if not enable:
-        return np.ones(len(faxis))
+    faxis = np.asarray(faxis, dtype=float)
+    # MATLAB `if enable` is true only for a non-empty value whose elements are
+    # ALL non-zero; `not enable` raised on any numpy array of more than one
+    # element.  ones(1,length(f)) uses the LONGEST dimension, and len(f) raised
+    # TypeError on a scalar f where MATLAB gives 1.
+    use = np.asarray(enable)
+    if not (use.size and np.all(use)):
+        return np.ones(_length(faxis))
     f0 = param.fb / 2.0
     return 1.0 / np.sqrt(1.0 + (faxis / (f0 + 1e-300)) ** 8)
 

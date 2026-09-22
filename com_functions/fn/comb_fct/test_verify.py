@@ -78,3 +78,70 @@ def test_x_axis_correct_length():
     p2 = make_pdf(-3, np.ones(7))
     out = comb_fct(p1, p2)
     assert len(out.x) == 2 * abs(out.Min) + 1
+
+
+# ============================================================
+# Probed against the executed reference (COM Octave oracle,
+# tools/octave_oracle.py). NO divergence was found in comb_fct's values --
+# these pin the behaviour so it stays that way.
+#
+# Worth contrasting with conv_fct: comb_fct's axis is (p.Min:-p.Min)*BinSize,
+# an INTEGER colon scaled afterwards, so np.arange(...)*BinSize is right here.
+# conv_fct's axis is a FLOATING-POINT colon and that same form is wrong there.
+# ============================================================
+
+def test_octave_shift_branches():
+    """COM Octave, BinSize=0.1: whichever side has the smaller Min, the other
+    is zero-padded into its frame and the sum is [1 3 5 3 1]."""
+    p1 = SimpleNamespace(Min=-2, BinSize=0.1, y=np.array([1., 2, 3, 2, 1]))
+    p2 = SimpleNamespace(Min=-1, BinSize=0.1, y=np.array([1., 2, 1]))
+    out = comb_fct(p1, p2)
+    assert out.Min == -2
+    np.testing.assert_array_equal(out.y, [1, 3, 5, 3, 1])
+    out = comb_fct(p2, p1)          # same pair, swapped
+    assert out.Min == -2
+    np.testing.assert_array_equal(out.y, [1, 3, 5, 3, 1])
+
+
+def test_octave_equal_min_shorter_second():
+    """COM Octave: equal Min with a shorter p2 zero-fills p2 out to len(p1)
+    -> [2 3 3 2 1]."""
+    p1 = SimpleNamespace(Min=-2, BinSize=0.1, y=np.array([1., 2, 3, 2, 1]))
+    p2 = SimpleNamespace(Min=-2, BinSize=0.1, y=np.array([1., 1]))
+    np.testing.assert_array_equal(comb_fct(p1, p2).y, [2, 3, 3, 2, 1])
+
+
+def test_octave_x_axis_is_an_integer_colon_scaled():
+    """COM Octave, BinSize=1e-4, p.Min=-4 -> x is exactly
+    np.arange(-4,5)*1e-4, including -0.0001 (not the -9.9999...e-05 that
+    conv_fct's floating-point colon produces at the same bin)."""
+    p1 = SimpleNamespace(Min=-4, BinSize=1e-4,
+                         y=np.array([1., 2, 3, 2, 1, 1, 1, 1, 1]))
+    p2 = SimpleNamespace(Min=-2, BinSize=1e-4, y=np.array([1., 2, 1]))
+    out = comb_fct(p1, p2)
+    assert list(out.x) == [-0.00040000000000000002, -0.00030000000000000003,
+                           -0.00020000000000000001, -0.0001, 0, 0.0001,
+                           0.00020000000000000001, 0.00030000000000000003,
+                           0.00040000000000000002]
+    np.testing.assert_array_equal(out.x, np.arange(-4, 5) * 1e-4)
+
+
+def test_octave_positive_min_gives_an_empty_axis():
+    """COM Octave: p.Min=2 makes (2:-2) empty, so p.x is 1x0 while p.y is not.
+    p.Min=0 gives the single point 0."""
+    p1 = SimpleNamespace(Min=2, BinSize=0.1, y=np.array([1., 2, 3]))
+    p2 = SimpleNamespace(Min=2, BinSize=0.1, y=np.array([1., 1, 1]))
+    out = comb_fct(p1, p2)
+    np.testing.assert_array_equal(out.y, [2, 3, 4])
+    assert len(out.x) == 0
+    p1.Min = p2.Min = 0
+    np.testing.assert_array_equal(comb_fct(p1, p2).x, [0.0])
+
+
+def test_octave_nonconformant_lengths_raise():
+    """COM Octave: when the padded operands end up different lengths the sum
+    is 'operator +: nonconformant arguments'. Python must refuse too."""
+    p1 = SimpleNamespace(Min=-2, BinSize=0.1, y=np.array([1., 2]))
+    p2 = SimpleNamespace(Min=-2, BinSize=0.1, y=np.array([1., 1, 1, 1, 1]))
+    with pytest.raises(ValueError):
+        comb_fct(p1, p2)

@@ -76,3 +76,73 @@ def test_high_frequency_rolls_off():
     H = Butterworth_Filter(param, f, use_BW=True)
     magnitudes = np.abs(H)
     assert magnitudes[0] > magnitudes[1] > magnitudes[2] > magnitudes[3]
+
+
+# ============================================================
+# COM Octave oracle — Butterworth_Filter extracted verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m and run by tools/octave_oracle.py.
+# param.fb_BW_cutoff=0.75, param.fb=106.25e9, f=[0 10e9 40e9 79.6875e9 200e9]:
+#
+#   use_BW=1            -> [1+0j,
+#                           0.94648161896813487-0.3227576349210437j,
+#                           0.20240919992647205-0.97724929994732523j,
+#                           -0.70710656237316283-0j,
+#                           0.012169725890660104+0.022060200405580519j]
+#   f 2x3, use_BW=0     -> ones(1,3), THREE elements: MATLAB length() is the
+#                          LONGEST dimension, not the first one
+#   f scalar, use_BW=0  -> 1          (length(scalar) is 1)
+#   use_BW=[]           -> ones branch    ("if []"    is false)
+#   use_BW=[1 0]        -> ones branch    ("if [1 0]" is false)
+#   use_BW=[1 1]        -> filter branch  ("if [1 1]" is true)
+# ============================================================
+
+OCT_F = np.array([0.0, 10e9, 40e9, 79.6875e9, 200e9])
+OCT_H = np.array([1 + 0j,
+                  0.94648161896813487 - 0.3227576349210437j,
+                  0.20240919992647205 - 0.97724929994732523j,
+                  -0.70710656237316283 - 0j,
+                  0.012169725890660104 + 0.022060200405580519j])
+
+
+def oct_param():
+    return make_param(cutoff=0.75, fb=106.25e9)
+
+
+def test_oracle_values():
+    """Pin the COM Octave response for a real COM axis."""
+    H = Butterworth_Filter(oct_param(), OCT_F, 1)
+    np.testing.assert_allclose(H, OCT_H, rtol=1e-13, atol=0)
+
+
+def test_length_is_longest_dimension_not_first():
+    """ones(1,length(f)) for a 2x3 f is THREE ones, not two."""
+    f = np.array([[0.0, 1e9, 2e9], [3e9, 4e9, 5e9]])
+    H = Butterworth_Filter(oct_param(), f, 0)
+    assert H.size == 3
+    np.testing.assert_array_equal(H, np.ones(3))
+
+
+def test_scalar_f_disabled_returns_one():
+    """length() of a scalar is 1; len() raised TypeError on an unsized object."""
+    H = Butterworth_Filter(oct_param(), 40e9, 0)
+    assert np.asarray(H).size == 1
+    assert float(np.asarray(H).ravel()[0]) == 1.0
+
+
+def test_use_bw_empty_is_false():
+    """MATLAB `if []` is false, so an empty flag takes the all-pass branch."""
+    H = Butterworth_Filter(oct_param(), OCT_F, np.array([]))
+    np.testing.assert_array_equal(H, np.ones(5))
+
+
+def test_use_bw_all_nonzero_is_true():
+    """MATLAB `if [1 1]` is true — every element non-zero."""
+    H = Butterworth_Filter(oct_param(), OCT_F, np.array([1, 1]))
+    np.testing.assert_allclose(H, OCT_H, rtol=1e-13, atol=0)
+
+
+def test_use_bw_any_zero_is_false():
+    """MATLAB `if [1 0]` is FALSE; Python list truthiness called it true."""
+    for flag in (np.array([1, 0]), [1, 0], (1, 0)):
+        H = Butterworth_Filter(oct_param(), OCT_F, flag)
+        np.testing.assert_array_equal(H, np.ones(5), err_msg=repr(flag))

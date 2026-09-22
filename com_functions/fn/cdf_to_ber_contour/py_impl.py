@@ -9,8 +9,8 @@
 #     Python:  nidx_true = len(y) - 1 - nidx_flipped     (0-based)
 #   where nidx_flipped is 0-based in the flipped array.
 # fliplr(cdf.y(:)'): flatten to row then flip — np.flip(y.ravel()).
-# find(..., 1, 'first'): np.argmax on boolean mask (returns 0 if no match;
-#   MATLAB returns [] — callers must ensure specBER is in range).
+# find(..., 1, 'first'): np.argmax on boolean mask — but argmax answers 0
+#   where MATLAB's find() returns [], so the no-match case is guarded below.
 # Output shape: two scalars (float).
 # Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
@@ -26,8 +26,19 @@ def cdf_to_ber_contour(cdf, specBER):
     y = np.asarray(cdf.y, dtype=float).ravel()
     x = np.asarray(cdf.x, dtype=float).ravel()
 
+    hit = y > specBER
+    if not hit.any():
+        # Both find() calls are empty, so MATLAB's cdf.x(nidx) is an empty
+        # 1x0 for noise_bottom *and* noise_top — there is no contour.
+        # np.argmax on an all-False mask answers 0, which handed back
+        # (cdf.x(1), cdf.x(end)) — the full axis — as though it were the eye.
+        # COM Octave 4p16p0: cdf.y=[0.1 0.3 0.7 0.3 0.1], x=[-2:2],
+        # specBER=0.9 returns noise_bottom=[] and noise_top=[]; same for
+        # specBER=NaN, where nothing compares greater.
+        raise IndexError('cdf_to_ber_contour: no cdf.y > specBER')
+
     # Bottom eye: first index where cdf.y > specBER (MATLAB lines 5251-5252)
-    nidx = int(np.argmax(y > specBER))           # 0-based
+    nidx = int(np.argmax(hit))                   # 0-based
     noise_bottom = x[nidx]
 
     # Top eye: search flipped CDF for first crossing, then un-flip (lines 5254-5257)

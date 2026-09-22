@@ -75,3 +75,112 @@ def test_output_length_matches_input():
     f = np.linspace(0, 5e9, 30)
     H = Tukey_Window(f, None, fr=1e9, fb=4e9)
     assert len(H) == 30
+
+
+# ============================================================
+# COM Octave oracle — Tukey_Window extracted verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m and run by tools/octave_oracle.py.
+# MATLAB builds H_tw by CONCATENATING three counted pieces, so the answer is
+# grouped by category and only lines up with f while f ascends.  fr=1e9, fb=3e9
+# unless noted:
+#
+#   f=[0 .5 1 1.5 2 2.5 3 3.5]e9 -> [1 1 1 0.85355339059327373
+#                                    0.49999999999999989 0.14644660940672616 0 0]
+#   f=[2.5 0 3.5 1.5]e9          -> [1 0.14644660940672616
+#                                    0.85355339059327373 0]
+#        (element-wise would be    [0.14644660940672616 1 0 0.85355339059327373])
+#   f=[1 1 3 3 0 9]e9            -> [1 1 1 0 0 0]
+#        (element-wise would be    [1 1 0 0 1 0])
+#   f=[0 1.5 NaN 3.5]e9          -> error "H_tw(4): out of bound 3": a NaN
+#        falls in no category, so the pieces are short and H_tw(1:length(f))
+#        reads past the end
+#   COLUMN f, 5 values in band   -> error "horizontal dimensions mismatch
+#        (1x2 vs 5x1)": only the middle piece keeps f's orientation
+#   COLUMN f, <=1 value in band  -> answers, as a row
+#   f=2e9 scalar                 -> 0.49999999999999989
+#   f=[] -> []   f=[-Inf 2e9 Inf] -> [1 0.49999999999999989 0]
+#   fr=fb=2e9, f=[0 2e9 3e9]     -> [1 NaN 0]   (fperiod is 0)
+#   fr=3e9 > fb=1e9, f=[0 2 4]e9 -> [1 1 0]: the categories overlap, the pieces
+#        run long, and H_tw(1:length(f)) truncates
+# ============================================================
+
+RC15, RC20, RC25 = (0.85355339059327373, 0.49999999999999989, 0.14644660940672616)
+
+
+def test_oracle_ascending_axis():
+    f = np.array([0.0, 0.5e9, 1.0e9, 1.5e9, 2.0e9, 2.5e9, 3.0e9, 3.5e9])
+    H = Tukey_Window(f, None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H, [1, 1, 1, RC15, RC20, RC25, 0, 0],
+                               rtol=1e-15, atol=0)
+
+
+def test_unsorted_axis_is_grouped_not_element_wise():
+    """The concatenation is by category count, not by position."""
+    H = Tukey_Window(np.array([2.5e9, 0.0, 3.5e9, 1.5e9]), None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H, [1, RC25, RC15, 0], rtol=1e-15, atol=0)
+
+
+def test_ties_at_both_edges_are_grouped():
+    """Duplicated edge values with one late low value: [1 1 1 0 0 0]."""
+    H = Tukey_Window(np.array([1e9, 1e9, 3e9, 3e9, 0.0, 9e9]), None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H, [1, 1, 1, 0, 0, 0], rtol=1e-15, atol=0)
+
+
+def test_nan_in_f_is_out_of_bound():
+    """A NaN is in no category, so MATLAB's H_tw(1:length(f)) errors."""
+    with pytest.raises(IndexError):
+        Tukey_Window(np.array([0.0, 1.5e9, np.nan, 3.5e9]), None, fr=1e9, fb=3e9)
+
+
+def test_column_f_is_a_concatenation_error():
+    """[ones(1,2), 5x1, zeros(1,1)] is a horizontal dimension mismatch."""
+    f = np.array([0.0, 0.5e9, 1.0e9, 1.5e9, 2.0e9, 2.5e9, 3.0e9, 3.5e9])
+    with pytest.raises(ValueError):
+        Tukey_Window(f.reshape(-1, 1), None, fr=1e9, fb=3e9)
+    with pytest.raises(ValueError):
+        Tukey_Window(np.array([[0.0, 2.0e9, 4.0e9], [0.5e9, 2.5e9, 5e9]]),
+                     None, fr=1e9, fb=3e9)
+
+
+def test_column_f_with_one_in_band_value_is_legal():
+    """A 1x1 middle piece concatenates, so MATLAB answers these two."""
+    H = Tukey_Window(np.array([[0.0], [2.0e9], [4.0e9]]), None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H, [1, RC20, 0], rtol=1e-15, atol=0)
+    H = Tukey_Window(np.array([[0.0], [0.5e9], [4.0e9]]), None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H, [1, 1, 0], rtol=1e-15, atol=0)
+
+
+def test_column_f_all_in_band_is_legal():
+    """With both outer pieces empty there is nothing to mismatch."""
+    f = np.array([[1.0e9], [1.5e9], [2.0e9], [2.5e9], [3.0e9]])
+    H = Tukey_Window(f, None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H.ravel(), [1, RC15, RC20, RC25, 0],
+                               rtol=1e-15, atol=0)
+
+
+def test_scalar_f():
+    H = Tukey_Window(2e9, None, fr=1e9, fb=3e9)
+    assert np.asarray(H).size == 1
+    assert float(np.asarray(H).ravel()[0]) == pytest.approx(RC20, rel=1e-15)
+
+
+def test_empty_f():
+    assert Tukey_Window(np.array([]), None, fr=1e9, fb=3e9).size == 0
+
+
+def test_infinite_f_values():
+    H = Tukey_Window(np.array([-np.inf, 2e9, np.inf]), None, fr=1e9, fb=3e9)
+    np.testing.assert_allclose(H, [1, RC20, 0], rtol=1e-15, atol=0)
+
+
+def test_zero_width_window_is_nan_in_band():
+    H = Tukey_Window(np.array([0.0, 2e9, 3e9]), None, fr=2e9, fb=2e9)
+    assert H[0] == 1.0
+    assert np.isnan(H[1])
+    assert H[2] == 0.0
+
+
+def test_reversed_edges_truncate():
+    """fr>fb makes the categories overlap; H_tw(1:length(f)) cuts it back."""
+    H = Tukey_Window(np.array([0.0, 2e9, 4e9]), None, fr=3e9, fb=1e9)
+    np.testing.assert_allclose(H, [1, 1, 0], rtol=1e-15, atol=0)

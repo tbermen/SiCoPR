@@ -29,7 +29,13 @@ def _qfunc(x):
 def _CDF_ev(val, PDF, CDF):
     x = np.asarray(PDF.x, dtype=float)
     cdf = np.asarray(CDF, dtype=float)
-    index = int(np.argmax(x >= -val))
+    hit = x >= -val
+    if not hit.any():
+        # find() is empty, so MATLAB's CDF(index) is an empty 1x0 -- there is
+        # no value to return.  np.argmax on an all-False mask answers 0, which
+        # would hand back CDF(1) as though it were the crossing.
+        raise IndexError('CDF_ev: no PDF.x >= -val')
+    index = int(np.argmax(hit))
     return float(cdf[index])
 
 

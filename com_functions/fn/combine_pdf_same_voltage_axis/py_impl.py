@@ -30,14 +30,32 @@ def _mround(x):
 from types import SimpleNamespace
 
 
+def _require_row(a, name):
+    """MATLAB builds the shifted axes with horizontal concatenation, so every
+    field has to be a row.  A column makes `[zeros(1,n) pdf2.y]` a dimension
+    error, and a row/column *mix* implicit-expands into a matrix instead.
+    np.concatenate flattens both away, so Python answered where MATLAB did not.
+
+    COM Octave 4p16p0, pdf1.x/.y columns and pdf2.x/.y rows, equal Min:
+      out.y comes back 3x3 = [1 2 1;2 3 2;1 2 1], not the 1x3 [1 3 1].
+    With both as columns and a nonzero shift:
+      "horizontal dimensions mismatch (1x1 vs 3x1)".
+    """
+    a = np.asarray(a, dtype=float)
+    if a.ndim > 1 and a.shape[0] != 1:
+        raise ValueError('combine_pdf_same_voltage_axis: %s must be a row '
+                         'vector' % name)
+    return a.reshape(-1).copy()
+
+
 def combine_pdf_same_voltage_axis(pdf1, pdf2):
     if pdf1.BinSize != pdf2.BinSize:
         raise ValueError('bin size must be equal')
 
-    x1 = np.asarray(pdf1.x, dtype=float).copy()
-    y1 = np.asarray(pdf1.y, dtype=float).copy()
-    x2 = np.asarray(pdf2.x, dtype=float).copy()
-    y2 = np.asarray(pdf2.y, dtype=float).copy()
+    x1 = _require_row(pdf1.x, 'pdf1.x')
+    y1 = _require_row(pdf1.y, 'pdf1.y')
+    x2 = _require_row(pdf2.x, 'pdf2.x')
+    y2 = _require_row(pdf2.y, 'pdf2.y')
 
     min1 = x1[0]   # pdf1.x(1) in MATLAB = x1[0] in Python
     min2 = x2[0]

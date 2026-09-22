@@ -47,7 +47,18 @@ def d_cpdf(binsize, values, probs):
         pdf.x = np.array([0.0])
         return pdf
 
-    if np.any(np.diff(values) < 0):     # ~issorted
+    if np.size(probs) < np.size(values):
+        # MATLAB reads probs(k) for k = 1..length(values); a short probs is an
+        # out-of-bound error, not a shorter answer.  zip() below would stop at
+        # the shorter of the two and silently normalise whatever it collected.
+        # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 0.5]) errors
+        # "probs(3): out of bound 2 (dimensions are 1x2)".
+        raise IndexError('d_cpdf: probs is shorter than values')
+
+    # ~issorted(values): MATLAB requires every element <= the next, which is
+    # false as soon as a NaN is present.  np.diff(values) < 0 is False across a
+    # NaN, so that form calls [-1 NaN 1] sorted where MATLAB does not.
+    if not np.all(values[:-1] <= values[1:]):     # ~issorted
         si = np.argsort(values, kind='stable')
         values = values[si]
         probs = probs[si]
@@ -75,7 +86,12 @@ def d_cpdf(binsize, values, probs):
     if np.any(pdf_y < 0):
         raise ValueError('PDF must be real and nonnegative')
 
-    support = np.where(pdf_y > 0)[0]               # 0-based nonzero indices
+    # find(pdf.y) selects *nonzero*, and NaN counts as nonzero.  `> 0` drops
+    # NaN, so an all-zero or NaN-bearing probs vector (pdf.y = 0/0) left the
+    # support empty and raised instead of answering.
+    # COM Octave 4p16p0: d_cpdf(1,[-1 0 1],[0.5 NaN 0.5]) returns
+    # Min=-1, x=[-1 0 1], y=[NaN NaN NaN]; likewise probs=[0 0 0].
+    support = np.where(pdf_y != 0)[0]              # 0-based nonzero indices
     pdf_y = pdf_y[support[0]:support[-1] + 1]
     pdf_min = pdf_min + int(support[0])             # MATLAB: pdf.Min+(support(1)-1)
 

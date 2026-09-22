@@ -83,3 +83,57 @@ def test_bessel_first_coeff():
     for n in range(1, 6):
         expected = math.factorial(2 * n) / (2**n * math.factorial(n))
         assert bessel(n)[0] == pytest.approx(expected)
+
+
+# ============================================================
+# COM Octave oracle — bessel extracted verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m and run by tools/octave_oracle.py:
+#
+#   bessel(0)  -> 1
+#   bessel(4)  -> [105 105 45 10 1]
+#   bessel(8)  -> [2027025 2027025 945945 270270 51975 6930 630 36 1]
+#   bessel(-1) -> error: "value on right hand side of assignment is undefined"
+#                 (for ii = 0:-1 never runs, so `a` is never assigned)
+#   bessel(2.5)-> error: "factorial: all N must be real non-negative integers"
+#   bessel(90) -> a(1:10) are Inf, a(11) = 2.3114876975621479e+157
+#                 (MATLAB factorial() is a double and overflows above 170!;
+#                  Python's exact math.factorial made a(1:10) finite, ~1e164)
+# ============================================================
+
+OCT_BESSEL_8 = [2027025.0, 2027025.0, 945945.0, 270270.0, 51975.0,
+                6930.0, 630.0, 36.0, 1.0]
+
+
+def test_oracle_bessel_8():
+    np.testing.assert_array_equal(bessel(8), OCT_BESSEL_8)
+
+
+def test_negative_order_is_an_error():
+    """MATLAB leaves `a` unassigned for n<0; an empty array answered a call
+    the reference refuses."""
+    with pytest.raises(ValueError):
+        bessel(-1)
+    with pytest.raises(ValueError):
+        bessel(-3)
+
+
+def test_non_integer_order_is_an_error():
+    """factorial() rejects 2.5; int(n) silently computed bessel(2) instead."""
+    with pytest.raises(ValueError):
+        bessel(2.5)
+    with pytest.raises(ValueError):
+        bessel(0.5)
+
+
+def test_integer_valued_float_order_still_works():
+    """4.0 is an integer value, so it stays legal."""
+    np.testing.assert_array_equal(bessel(4.0), [105.0, 105.0, 45.0, 10.0, 1.0])
+
+
+def test_factorial_overflows_to_inf_like_matlab():
+    """factorial(2n-ii) is a double above 170!, so the first terms are Inf."""
+    a = bessel(90)
+    assert np.all(np.isinf(a[:10]))
+    assert np.isfinite(a[10])
+    assert a[10] == pytest.approx(2.3114876975621479e+157, rel=1e-12)
+    assert a[-1] == 1.0

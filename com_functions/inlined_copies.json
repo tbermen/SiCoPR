@@ -31,6 +31,15 @@
    ]
   },
   {
+   "copy": "_Bathtub_Contribution_Wrapper__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "Bathtub_Contribution_Wrapper",
+   "inlined_into_matlab_lines": [
+    977,
+    1027
+   ]
+  },
+  {
    "copy": "_Bathtub_Contribution_Wrapper__conv1d",
    "helper": "conv1d",
    "inlined_into": "Bathtub_Contribution_Wrapper",
@@ -65,6 +74,15 @@
    "canonical_matlab_lines": [
     5480,
     5530
+   ]
+  },
+  {
+   "copy": "_Bathtub_Contribution_Wrapper__mround",
+   "helper": "mround",
+   "inlined_into": "Bathtub_Contribution_Wrapper",
+   "inlined_into_matlab_lines": [
+    977,
+    1027
    ]
   },
   {
@@ -105,6 +123,15 @@
    ]
   },
   {
+   "copy": "_Bessel_Thomson_Filter__factorial",
+   "helper": "factorial",
+   "inlined_into": "Bessel_Thomson_Filter",
+   "inlined_into_matlab_lines": [
+    1028,
+    1037
+   ]
+  },
+  {
    "copy": "_Burst_Probability_Calc__Init_PDF_Fast",
    "helper": "Init_PDF_Fast",
    "inlined_into": "Burst_Probability_Calc",
@@ -116,6 +143,15 @@
    "canonical_matlab_lines": [
     2199,
     2265
+   ]
+  },
+  {
+   "copy": "_Burst_Probability_Calc__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "Burst_Probability_Calc",
+   "inlined_into_matlab_lines": [
+    1083,
+    1132
    ]
   },
   {
@@ -197,12 +233,30 @@
    ]
   },
   {
+   "copy": "_Burst_Probability_Calc__mround",
+   "helper": "mround",
+   "inlined_into": "Burst_Probability_Calc",
+   "inlined_into_matlab_lines": [
+    1083,
+    1132
+   ]
+  },
+  {
    "copy": "_Burst_Probability_Calc__mround_arr",
    "helper": "mround_arr",
    "inlined_into": "Burst_Probability_Calc",
    "inlined_into_matlab_lines": [
     1083,
     1132
+   ]
+  },
+  {
+   "copy": "_Butterworth_Filter__length",
+   "helper": "length",
+   "inlined_into": "Butterworth_Filter",
+   "inlined_into_matlab_lines": [
+    1133,
+    1138
    ]
   },
   {
@@ -461,6 +515,15 @@
    ]
   },
   {
+   "copy": "_Create_Noise_PDF__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "Create_Noise_PDF",
+   "inlined_into_matlab_lines": [
+    1552,
+    1680
+   ]
+  },
+  {
    "copy": "_Create_Noise_PDF__conv1d",
    "helper": "conv1d",
    "inlined_into": "Create_Noise_PDF",
@@ -649,6 +712,15 @@
    ]
   },
   {
+   "copy": "_MLSE_U1_c_178A__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "MLSE_U1_c_178A",
+   "inlined_into_matlab_lines": [
+    2348,
+    2479
+   ]
+  },
+  {
    "copy": "_MLSE_U1_c_178A__conv1d",
    "helper": "conv1d",
    "inlined_into": "MLSE_U1_c_178A",
@@ -683,6 +755,15 @@
    "canonical_matlab_lines": [
     5480,
     5530
+   ]
+  },
+  {
+   "copy": "_MLSE_U1_c_178A__mround",
+   "helper": "mround",
+   "inlined_into": "MLSE_U1_c_178A",
+   "inlined_into_matlab_lines": [
+    2348,
+    2479
    ]
   },
   {
@@ -1419,6 +1500,11 @@
    "inlined_into_matlab_lines": [
     3976,
     4173
+   ],
+   "canonical": "Init_PDF_Fast",
+   "canonical_matlab_lines": [
+    2199,
+    2265
    ]
   },
   {
@@ -1433,6 +1519,15 @@
    "canonical_matlab_lines": [
     4174,
     4212
+   ]
+  },
+  {
+   "copy": "_Output_Arg_Fill__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "Output_Arg_Fill",
+   "inlined_into_matlab_lines": [
+    3976,
+    4173
    ]
   },
   {
@@ -1451,6 +1546,11 @@
    "inlined_into_matlab_lines": [
     3976,
     4173
+   ],
+   "canonical": "conv_fct",
+   "canonical_matlab_lines": [
+    5371,
+    5388
    ]
   },
   {
@@ -1460,6 +1560,11 @@
    "inlined_into_matlab_lines": [
     3976,
     4173
+   ],
+   "canonical": "d_cpdf",
+   "canonical_matlab_lines": [
+    5480,
+    5530
    ]
   },
   {
@@ -1478,6 +1583,11 @@
    "inlined_into_matlab_lines": [
     3976,
     4173
+   ],
+   "canonical": "get_pdf",
+   "canonical_matlab_lines": [
+    7377,
+    7472
    ]
   },
   {
@@ -1510,6 +1620,15 @@
   {
    "copy": "_Output_Arg_Fill__mmin",
    "helper": "mmin",
+   "inlined_into": "Output_Arg_Fill",
+   "inlined_into_matlab_lines": [
+    3976,
+    4173
+   ]
+  },
+  {
+   "copy": "_Output_Arg_Fill__mround",
+   "helper": "mround",
    "inlined_into": "Output_Arg_Fill",
    "inlined_into_matlab_lines": [
     3976,
@@ -1674,6 +1793,15 @@
    ]
   },
   {
+   "copy": "_RILN_TD__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "RILN_TD",
+   "inlined_into_matlab_lines": [
+    4226,
+    4305
+   ]
+  },
+  {
    "copy": "_RILN_TD__conv1d",
    "helper": "conv1d",
    "inlined_into": "RILN_TD",
@@ -1722,6 +1850,15 @@
    "canonical_matlab_lines": [
     7473,
     7519
+   ]
+  },
+  {
+   "copy": "_RILN_TD__length",
+   "helper": "length",
+   "inlined_into": "RILN_TD",
+   "inlined_into_matlab_lines": [
+    4226,
+    4305
    ]
   },
   {
@@ -1895,6 +2032,33 @@
    ]
   },
   {
+   "copy": "_TD_FD_fillin__factorial",
+   "helper": "factorial",
+   "inlined_into": "TD_FD_fillin",
+   "inlined_into_matlab_lines": [
+    4610,
+    4676
+   ]
+  },
+  {
+   "copy": "_TD_FD_fillin__length",
+   "helper": "length",
+   "inlined_into": "TD_FD_fillin",
+   "inlined_into_matlab_lines": [
+    4610,
+    4676
+   ]
+  },
+  {
+   "copy": "_Tukey_Window__length",
+   "helper": "length",
+   "inlined_into": "Tukey_Window",
+   "inlined_into_matlab_lines": [
+    4677,
+    4696
+   ]
+  },
+  {
    "copy": "_Write_CSV__item_to_str",
    "helper": "item_to_str",
    "inlined_into": "Write_CSV",
@@ -2044,6 +2208,15 @@
    ]
   },
   {
+   "copy": "_adjust_Rx_noise_for_quantization__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "adjust_Rx_noise_for_quantization",
+   "inlined_into_matlab_lines": [
+    4858,
+    4896
+   ]
+  },
+  {
    "copy": "_adjust_Rx_noise_for_quantization__conv1d",
    "helper": "conv1d",
    "inlined_into": "adjust_Rx_noise_for_quantization",
@@ -2122,6 +2295,15 @@
    ]
   },
   {
+   "copy": "_adjust_Rx_noise_for_quantization__mround",
+   "helper": "mround",
+   "inlined_into": "adjust_Rx_noise_for_quantization",
+   "inlined_into_matlab_lines": [
+    4858,
+    4896
+   ]
+  },
+  {
    "copy": "_adjust_Rx_noise_for_quantization__mround_arr",
    "helper": "mround_arr",
    "inlined_into": "adjust_Rx_noise_for_quantization",
@@ -2154,6 +2336,15 @@
    ]
   },
   {
+   "copy": "_bessel__factorial",
+   "helper": "factorial",
+   "inlined_into": "bessel",
+   "inlined_into_matlab_lines": [
+    4926,
+    4932
+   ]
+  },
+  {
    "copy": "_calculate_delay_CausalityEnforcement__mround",
    "helper": "mround",
    "inlined_into": "calculate_delay_CausalityEnforcement",
@@ -2181,12 +2372,39 @@
    ]
   },
   {
+   "copy": "_combine_pdf_same_voltage_axis__require_row",
+   "helper": "require_row",
+   "inlined_into": "combine_pdf_same_voltage_axis",
+   "inlined_into_matlab_lines": [
+    5286,
+    5326
+   ]
+  },
+  {
+   "copy": "_compute_hard_cap__mmax2",
+   "helper": "mmax2",
+   "inlined_into": "compute_hard_cap",
+   "inlined_into_matlab_lines": [
+    5788,
+    5794
+   ]
+  },
+  {
    "copy": "_compute_hard_cap__mround",
    "helper": "mround",
    "inlined_into": "compute_hard_cap",
    "inlined_into_matlab_lines": [
     5788,
     5794
+   ]
+  },
+  {
+   "copy": "_conv_fct_MeanNotZero__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "conv_fct_MeanNotZero",
+   "inlined_into_matlab_lines": [
+    5389,
+    5404
    ]
   },
   {
@@ -2199,8 +2417,35 @@
    ]
   },
   {
+   "copy": "_conv_fct_MeanNotZero__mround",
+   "helper": "mround",
+   "inlined_into": "conv_fct_MeanNotZero",
+   "inlined_into_matlab_lines": [
+    5389,
+    5404
+   ]
+  },
+  {
+   "copy": "_conv_fct__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "conv_fct",
+   "inlined_into_matlab_lines": [
+    5371,
+    5388
+   ]
+  },
+  {
    "copy": "_conv_fct__conv1d",
    "helper": "conv1d",
+   "inlined_into": "conv_fct",
+   "inlined_into_matlab_lines": [
+    5371,
+    5388
+   ]
+  },
+  {
+   "copy": "_conv_fct__mround",
+   "helper": "mround",
    "inlined_into": "conv_fct",
    "inlined_into_matlab_lines": [
     5371,
@@ -2427,6 +2672,15 @@
    ]
   },
   {
+   "copy": "_get_ILN_cmp_td__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "get_ILN_cmp_td",
+   "inlined_into_matlab_lines": [
+    6270,
+    6379
+   ]
+  },
+  {
    "copy": "_get_ILN_cmp_td__conv1d",
    "helper": "conv1d",
    "inlined_into": "get_ILN_cmp_td",
@@ -2599,6 +2853,15 @@
    "canonical_matlab_lines": [
     4474,
     4497
+   ]
+  },
+  {
+   "copy": "_get_PSDs__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "get_PSDs",
+   "inlined_into_matlab_lines": [
+    6380,
+    6654
    ]
   },
   {
@@ -2804,6 +3067,15 @@
    ]
   },
   {
+   "copy": "_get_RILN_cmp_td__length",
+   "helper": "length",
+   "inlined_into": "get_RILN_cmp_td",
+   "inlined_into_matlab_lines": [
+    6694,
+    6875
+   ]
+  },
+  {
    "copy": "_get_RILN_cmp_td__normal_dist",
    "helper": "normal_dist",
    "inlined_into": "get_RILN_cmp_td",
@@ -2953,6 +3225,15 @@
    ]
   },
   {
+   "copy": "_get_cm_noise__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "get_cm_noise",
+   "inlined_into_matlab_lines": [
+    7331,
+    7376
+   ]
+  },
+  {
    "copy": "_get_cm_noise__conv1d",
    "helper": "conv1d",
    "inlined_into": "get_cm_noise",
@@ -3031,6 +3312,15 @@
    ]
   },
   {
+   "copy": "_get_cm_noise__mround",
+   "helper": "mround",
+   "inlined_into": "get_cm_noise",
+   "inlined_into_matlab_lines": [
+    7331,
+    7376
+   ]
+  },
+  {
    "copy": "_get_cm_noise__mround_arr",
    "helper": "mround_arr",
    "inlined_into": "get_cm_noise",
@@ -3051,6 +3341,15 @@
    "canonical_matlab_lines": [
     2199,
     2265
+   ]
+  },
+  {
+   "copy": "_get_pdf__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "get_pdf",
+   "inlined_into_matlab_lines": [
+    7377,
+    7472
    ]
   },
   {
@@ -3178,6 +3477,15 @@
    ]
   },
   {
+   "copy": "_get_pdf_from_sampled_signal__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "get_pdf_from_sampled_signal",
+   "inlined_into_matlab_lines": [
+    7473,
+    7519
+   ]
+  },
+  {
    "copy": "_get_pdf_from_sampled_signal__conv1d",
    "helper": "conv1d",
    "inlined_into": "get_pdf_from_sampled_signal",
@@ -3285,6 +3593,15 @@
    "canonical_matlab_lines": [
     2199,
     2265
+   ]
+  },
+  {
+   "copy": "_get_pdf_full__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "get_pdf_full",
+   "inlined_into_matlab_lines": [
+    7520,
+    7663
    ]
   },
   {
@@ -3435,6 +3752,15 @@
    ]
   },
   {
+   "copy": "_interp_Sparam__length",
+   "helper": "length",
+   "inlined_into": "interp_Sparam",
+   "inlined_into_matlab_lines": [
+    7950,
+    8165
+   ]
+  },
+  {
    "copy": "_make_full_pkg__combines4p",
    "helper": "combines4p",
    "inlined_into": "make_full_pkg",
@@ -3568,6 +3894,15 @@
    ]
   },
   {
+   "copy": "_plot_bathtub_curves__colon_x",
+   "helper": "colon_x",
+   "inlined_into": "plot_bathtub_curves",
+   "inlined_into_matlab_lines": [
+    8865,
+    8913
+   ]
+  },
+  {
    "copy": "_plot_bathtub_curves__conv1d",
    "helper": "conv1d",
    "inlined_into": "plot_bathtub_curves",
@@ -3602,6 +3937,15 @@
    "canonical_matlab_lines": [
     5480,
     5530
+   ]
+  },
+  {
+   "copy": "_plot_bathtub_curves__mround",
+   "helper": "mround",
+   "inlined_into": "plot_bathtub_curves",
+   "inlined_into_matlab_lines": [
+    8865,
+    8913
    ]
   },
   {
@@ -4031,6 +4375,15 @@
    ]
   },
   {
+   "copy": "_read_s4p_files__factorial",
+   "helper": "factorial",
+   "inlined_into": "read_s4p_files",
+   "inlined_into_matlab_lines": [
+    10594,
+    10767
+   ]
+  },
+  {
    "copy": "_read_s4p_files__make_full_pkg",
    "helper": "make_full_pkg",
    "inlined_into": "read_s4p_files",
@@ -4183,6 +4536,15 @@
    ]
   },
   {
+   "copy": "_s21_pkg__factorial",
+   "helper": "factorial",
+   "inlined_into": "s21_pkg",
+   "inlined_into_matlab_lines": [
+    10900,
+    11075
+   ]
+  },
+  {
    "copy": "_s21_pkg__make_full_pkg",
    "helper": "make_full_pkg",
    "inlined_into": "s21_pkg",
@@ -4255,6 +4617,15 @@
   {
    "copy": "_s21_to_impulse_DC__interp_extrap",
    "helper": "interp_extrap",
+   "inlined_into": "s21_to_impulse_DC",
+   "inlined_into_matlab_lines": [
+    11076,
+    11146
+   ]
+  },
+  {
+   "copy": "_s21_to_impulse_DC__length",
+   "helper": "length",
    "inlined_into": "s21_to_impulse_DC",
    "inlined_into_matlab_lines": [
     11076,

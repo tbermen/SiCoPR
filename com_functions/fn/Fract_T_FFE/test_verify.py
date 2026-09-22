@@ -57,3 +57,48 @@ def test_column_vector_input():
 def test_output_length():
     V = np.ones(16)
     assert len(Fract_T_FFE(V, 3)) == 16
+
+
+# ============================================================
+# Divergences found by EXECUTING the reference (COM Octave oracle,
+# tools/octave_oracle.py on matlab/com_ieee8023_4p16p0.m).
+#
+# 1. circshift(V',[ishift,0])' shifts the TRANSPOSE along its rows, i.e. a 2-D
+#    V is shifted across its COLUMNS. np.roll(V, skew_step) flattened V and
+#    rolled the flat buffer, which mixes rows together.
+# 2. A fractional skew_step is an error in MATLAB; np.roll truncated it and
+#    answered.
+# ============================================================
+
+def test_2d_input_shifts_across_columns():
+    """COM Octave: Fract_T_FFE([1 2;3 4;5 6], 1) -> [1.5 1.5; 3.5 3.5; 5.5 5.5].
+    np.roll on the flat buffer gave [[3.5,1.5],[2.5,3.5],[4.5,5.5]]."""
+    V = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    V0 = Fract_T_FFE(V, 1)
+    assert V0.shape == (3, 2)
+    np.testing.assert_array_equal(V0, [[1.5, 1.5], [3.5, 3.5], [5.5, 5.5]])
+
+
+def test_2d_input_wide():
+    """COM Octave: Fract_T_FFE([1 2 3;4 5 6], 1) -> [2 1.5 2.5; 5 4.5 5.5]
+    and skew -1 -> [1.5 2.5 2; 4.5 5.5 5]."""
+    V = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    np.testing.assert_array_equal(Fract_T_FFE(V, 1),
+                                  [[2.0, 1.5, 2.5], [5.0, 4.5, 5.5]])
+    np.testing.assert_array_equal(Fract_T_FFE(V, -1),
+                                  [[1.5, 2.5, 2.0], [4.5, 5.5, 5.0]])
+
+
+def test_fractional_skew_raises():
+    """COM Octave: Fract_T_FFE([1 2 3 4], 1.5) ->
+    'circshift: all values of N must be integers'.  np.roll truncated the
+    1.5 to 1 and returned [2.5 1.5 2.5 3.5]."""
+    with pytest.raises(ValueError):
+        Fract_T_FFE(np.array([1.0, 2.0, 3.0, 4.0]), 1.5)
+
+
+def test_1d_skew_wraps_past_end():
+    """COM Octave: Fract_T_FFE([1 2 3 4 5 6], 3) -> [2.5 3.5 4.5 2.5 3.5 4.5]."""
+    V = np.arange(1.0, 7.0)
+    np.testing.assert_array_equal(Fract_T_FFE(V, 3),
+                                  [2.5, 3.5, 4.5, 2.5, 3.5, 4.5])
