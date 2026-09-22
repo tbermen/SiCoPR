@@ -135,12 +135,18 @@ VERSIONS = {
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
             'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp',
             'OptFom_Calc_Noise_XC']
-ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv']
+ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv',
+         'mldivide_matlab']
 
 # (label, old, new, expected count). Exact text; a miss is an error, never a
 # silent skip, because a substitution that no longer matches means the release
 # changed under the patch.
 SUBSTITUTIONS = [
+    ('force: MATLAB backslash semantics on a singular VV',
+     "C=VV'\\FV';\n",
+     "C=mldivide_matlab(VV',FV'); % OCTAVE: backslash returns a minimum-norm "
+     "solution where MATLAB returns Inf for an exactly singular VV\n",
+     1),
     ('main: guard verLessThan under Octave',
      "if verLessThan('matlab', '7.4.1')\n",
      "if ~exist('OCTAVE_VERSION', 'builtin') && verLessThan('matlab', '7.4.1') "
@@ -421,6 +427,23 @@ def build(ver):
         if n != count:
             raise SystemExit('%s: expected %d match(es) in %s, found %d'
                              % (label, count, src_rel, n))
+        # A replacement that swallows the pattern's trailing newline joins the
+        # next statement onto a comment line. The result still PARSES -- an
+        # if/else/end whose `else` has been commented out is a valid if/end --
+        # so neither --check nor the Octave parse test sees it, and the branch
+        # silently disappears. Caught once, on the force() backslash patch,
+        # where a literal backslash-n was emitted instead of a newline.
+        if old.endswith('\n') and not new.endswith('\n'):
+            raise SystemExit(
+                '%s: the pattern ends with a newline and the replacement does '
+                'not, so the following line would be pulled onto it. If the '
+                'replacement ends in a comment this silently deletes that '
+                'line.' % label)
+        if '\\n' in new:
+            raise SystemExit(
+                '%s: the replacement contains a LITERAL backslash-n. In a '
+                'MATLAB comment that is two characters, not a line break, and '
+                'everything after it on that line is swallowed.' % label)
         text = text.replace(old, new)
     for label, rx, repl, count in REGEX_SUBSTITUTIONS:
         text, n = rx.subn(repl, text)
