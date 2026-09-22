@@ -388,8 +388,22 @@ def _bessel(n):
     return a
 
 
+def _length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def _Bessel_Thomson_Filter(param, f, use_BT):
     f = np.asarray(f, dtype=float)
+    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
+    # ALL non-zero, and length() is the LONGEST dimension, not the first.
+    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
+    # f scalar -> 1 (len(f) raised TypeError).
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_length(f))
     if use_BT:
         a = _bessel(int(param.BTorder))
         acoef = a[::-1]

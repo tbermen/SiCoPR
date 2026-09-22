@@ -132,6 +132,15 @@
    ]
   },
   {
+   "copy": "_Bessel_Thomson_Filter__length",
+   "helper": "length",
+   "inlined_into": "Bessel_Thomson_Filter",
+   "inlined_into_matlab_lines": [
+    1028,
+    1037
+   ]
+  },
+  {
    "copy": "_Burst_Probability_Calc__Init_PDF_Fast",
    "helper": "Init_PDF_Fast",
    "inlined_into": "Burst_Probability_Calc",
@@ -4384,6 +4393,15 @@
    ]
   },
   {
+   "copy": "_read_s4p_files__length",
+   "helper": "length",
+   "inlined_into": "read_s4p_files",
+   "inlined_into_matlab_lines": [
+    10594,
+    10767
+   ]
+  },
+  {
    "copy": "_read_s4p_files__make_full_pkg",
    "helper": "make_full_pkg",
    "inlined_into": "read_s4p_files",
@@ -4538,6 +4556,15 @@
   {
    "copy": "_s21_pkg__factorial",
    "helper": "factorial",
+   "inlined_into": "s21_pkg",
+   "inlined_into_matlab_lines": [
+    10900,
+    11075
+   ]
+  },
+  {
+   "copy": "_s21_pkg__length",
+   "helper": "length",
    "inlined_into": "s21_pkg",
    "inlined_into_matlab_lines": [
     10900,

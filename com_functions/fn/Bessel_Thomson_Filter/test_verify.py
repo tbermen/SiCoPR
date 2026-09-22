@@ -74,3 +74,51 @@ def test_output_length_matches_input():
     H = Bessel_Thomson_Filter(make_param(order=3, cutoff=1.0, fb=25e9),
                                f, use_BT=True)
     assert len(H) == 15
+
+
+# ---------------------------------------------------------------------------
+# Values below came from running Bessel_Thomson_Filter() out of
+# octave/com_ieee8023_4p16p0_octave_compat.m under COM Octave via
+# tools/octave_oracle.py. The same two traps Butterworth_Filter had; this
+# function is structurally identical in the reference and was missed when that
+# one was fixed on 2026-09-22.
+# ---------------------------------------------------------------------------
+
+def _bt_param():
+    return SimpleNamespace(fb=106.25e9, fb_BT_cutoff=0.75, BTorder=4)
+
+
+@pytest.mark.parametrize('use_BT', [0, [], [1, 0]])
+def test_oracle_matlab_if_semantics_take_the_ones_branch(use_BT):
+    """COM Octave: use_BT of [] or [1 0] is FALSE, so the ones branch runs.
+
+    `not use_BT` raised on any numpy array of more than one element, and took
+    the FILTER branch for the list [1, 0].
+    """
+    f = np.array([1e9, 2e9, 3e9])
+    np.testing.assert_allclose(
+        Bessel_Thomson_Filter(_bt_param(), f, use_BT), np.ones(3))
+
+
+def test_oracle_all_nonzero_takes_the_filter_branch():
+    """COM Octave: use_BT=[1 1] filters; H[0] = 0.99991001458943418-0.012548549092434663j"""
+    f = np.array([1e9, 2e9, 3e9])
+    H = Bessel_Thomson_Filter(_bt_param(), f, [1, 1])
+    np.testing.assert_allclose(
+        H[0], 0.99991001458943418 - 0.012548549092434663j, rtol=1e-13)
+
+
+def test_oracle_length_is_the_longest_dimension():
+    """COM Octave: a 2x3 f gives ones(1,3) -- THREE elements, not six.
+
+    MATLAB length() is the longest dimension; len(f) is the first, so a matrix
+    axis returned an array of the wrong size.
+    """
+    fm = np.ones((2, 3)) * np.array([1e9, 2e9, 3e9])
+    assert Bessel_Thomson_Filter(_bt_param(), fm, 0).shape == (3,)
+
+
+def test_oracle_scalar_f():
+    """COM Octave: a scalar f with use_BT=0 gives 1; len(f) raised TypeError."""
+    np.testing.assert_allclose(
+        Bessel_Thomson_Filter(_bt_param(), 1e9, 0), np.ones(1))

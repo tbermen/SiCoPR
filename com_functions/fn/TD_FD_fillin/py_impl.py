@@ -42,8 +42,13 @@ def _bessel(n):
 
 def _Bessel_Thomson_Filter(param, f, use_BT):
     f = np.asarray(f, dtype=float)
-    if not use_BT:
-        return np.ones(len(f))
+    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
+    # ALL non-zero, and length() is the LONGEST dimension, not the first.
+    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
+    # f scalar -> 1 (len(f) raised TypeError).
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_length(f))
     a = _bessel(param.BTorder)
     acoef = a[::-1]
     s = 1j * f / (param.fb_BT_cutoff * param.fb)

@@ -1114,10 +1114,25 @@ def _Bessel_Thomson_Filter__bessel(n):
     return a
 
 
+def _Bessel_Thomson_Filter__length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def Bessel_Thomson_Filter(param, f, use_BT):
     f = np.asarray(f, dtype=float)
-    if not use_BT:
-        return np.ones(len(f))
+    # Same shape as Butterworth_Filter, and the same two traps. MATLAB `if
+    # use_BT` is true only for a non-empty value whose elements are ALL
+    # non-zero, and `length()` is the LONGEST dimension, not the first.
+    # COM Octave (param.BTorder=4, fb=106.25e9, fb_BT_cutoff=0.75):
+    #   use_BT=[]    -> ones branch        use_BT=[1 0] -> ones branch
+    #   use_BT=[1 1] -> filter branch      f 2x3, use_BT=0 -> ones(1,3)
+    #   f scalar, use_BT=0 -> 1            (len(f) raised TypeError)
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_Bessel_Thomson_Filter__length(f))
     a = _Bessel_Thomson_Filter__bessel(param.BTorder)       # [a0,...,an]; a[0] is constant term
     acoef = a[::-1]                  # fliplr → highest-degree first
     s = 1j * f / (param.fb_BT_cutoff * param.fb)
@@ -8021,8 +8036,14 @@ def _RILN_TD__Butterworth_Filter(param, f, use_BW):
 
 
 def _RILN_TD__Bessel_Thomson_Filter(param, f, use_BT):
-    if not use_BT:
-        return np.ones(len(f))
+    f = np.asarray(f, dtype=float)
+    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
+    # ALL non-zero, and length() is the LONGEST dimension, not the first.
+    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
+    # f scalar -> 1 (len(f) raised TypeError).
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_RILN_TD__length(f))
     a = _RILN_TD__bessel_poly(param.BTorder)
     acoef = a[::-1]
     s = 1j * np.asarray(f, dtype=float) / (param.fb_BT_cutoff * param.fb)
@@ -8772,8 +8793,13 @@ def _TD_FD_fillin__bessel(n):
 
 def _TD_FD_fillin__Bessel_Thomson_Filter(param, f, use_BT):
     f = np.asarray(f, dtype=float)
-    if not use_BT:
-        return np.ones(len(f))
+    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
+    # ALL non-zero, and length() is the LONGEST dimension, not the first.
+    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
+    # f scalar -> 1 (len(f) raised TypeError).
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_TD_FD_fillin__length(f))
     a = _TD_FD_fillin__bessel(param.BTorder)
     acoef = a[::-1]
     s = 1j * f / (param.fb_BT_cutoff * param.fb)
@@ -10951,7 +10977,19 @@ def end_display_control(msg, param, OP, output_args, COM, min_ERL, ERL, VEO_mV, 
 
 
 def _find_eye_width__vref_intersect(eye_col_1d, x_in_1based, vref):
-    x = x_in_1based
+    # MATLAB reads eye_contour(x_in-1,1), so x_in<=1 asks for subscript 0 and
+    # errors. eye_col_1d[x-2] turns that into a NEGATIVE index and quietly
+    # reads the LAST row instead, answering off the far end of the eye.
+    # COM Octave: vref_intersect([0.1;0.3;0.7;0.9], 1, 0.5) ->
+    #   "eye_contour(0,_): subscripts must be either integers 1 to (2^63)-1
+    #    or logicals"                 (this copy returned 0.5)
+    # Same guard as the canonical vref_intersect; this copy takes the eye
+    # column already sliced out, so it indexes one dimension rather than two.
+    if x_in_1based != int(x_in_1based) or x_in_1based < 2:
+        raise IndexError('eye_contour(%s,_): subscripts must be either '
+                         'integers 1 to (2^63)-1 or logicals'
+                         % (x_in_1based - 1,))
+    x = int(x_in_1based)
     m1 = eye_col_1d[x - 1] - eye_col_1d[x - 2]
     b1 = eye_col_1d[x - 1] - m1 * x
     return (vref - b1) / m1
@@ -20180,8 +20218,22 @@ def _read_s4p_files__bessel(n):
     return a
 
 
+def _read_s4p_files__length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def _read_s4p_files__Bessel_Thomson_Filter(param, f, use_BT):
     f = np.asarray(f, dtype=float)
+    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
+    # ALL non-zero, and length() is the LONGEST dimension, not the first.
+    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
+    # f scalar -> 1 (len(f) raised TypeError).
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_read_s4p_files__length(f))
     if use_BT:
         a = _read_s4p_files__bessel(int(param.BTorder))
         acoef = a[::-1]
@@ -21243,9 +21295,23 @@ def _s21_pkg__bessel(n):
     return a
 
 
+def _s21_pkg__length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def _s21_pkg__Bessel_Thomson_Filter(param, f, use_BT):
     """Bessel-Thomson filter (MATLAB lines 1028-1035)."""
     f = np.asarray(f, dtype=float)
+    # MATLAB `if use_BT` is true only for a non-empty value whose elements are
+    # ALL non-zero, and length() is the LONGEST dimension, not the first.
+    # COM Octave: use_BT=[] or [1 0] -> ones branch; f 2x3 -> ones(1,3);
+    # f scalar -> 1 (len(f) raised TypeError).
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_s21_pkg__length(f))
     if use_BT:
         a = _s21_pkg__bessel(int(param.BTorder))
         acoef = a[::-1]

@@ -13,7 +13,19 @@ import numpy as np
 
 
 def _vref_intersect(eye_col_1d, x_in_1based, vref):
-    x = x_in_1based
+    # MATLAB reads eye_contour(x_in-1,1), so x_in<=1 asks for subscript 0 and
+    # errors. eye_col_1d[x-2] turns that into a NEGATIVE index and quietly
+    # reads the LAST row instead, answering off the far end of the eye.
+    # COM Octave: vref_intersect([0.1;0.3;0.7;0.9], 1, 0.5) ->
+    #   "eye_contour(0,_): subscripts must be either integers 1 to (2^63)-1
+    #    or logicals"                 (this copy returned 0.5)
+    # Same guard as the canonical vref_intersect; this copy takes the eye
+    # column already sliced out, so it indexes one dimension rather than two.
+    if x_in_1based != int(x_in_1based) or x_in_1based < 2:
+        raise IndexError('eye_contour(%s,_): subscripts must be either '
+                         'integers 1 to (2^63)-1 or logicals'
+                         % (x_in_1based - 1,))
+    x = int(x_in_1based)
     m1 = eye_col_1d[x - 1] - eye_col_1d[x - 2]
     b1 = eye_col_1d[x - 1] - m1 * x
     return (vref - b1) / m1

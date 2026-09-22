@@ -332,6 +332,14 @@ EDGE = {
     'Butterworth_Filter': [
         lambda: (_FILT_PARAM(), np.asarray(1e9), 0),        # scalar f
     ],
+    # Structurally identical to Butterworth_Filter in the reference, and it has
+    # the same two traps: MATLAB `if` is true only when every element is
+    # non-zero, and length() is the longest dimension.
+    'Bessel_Thomson_Filter': [
+        lambda: (_FILT_PARAM(), np.asarray(1e9), 0),        # scalar f
+        lambda: (_FILT_PARAM(), _F.copy(), [1, 0]),         # falsy in MATLAB
+        lambda: (_FILT_PARAM(), np.ones((2, 3)) * 1e9, 0),  # length() = 3
+    ],
     'H_interp': [
         lambda: (_Z.copy(), _F[::-1].copy(),
                  np.linspace(0.0, 40e9, 128), 106.25e9),    # descending f_old
@@ -675,4 +683,28 @@ for _name, _child, _parent in COPIES:
 print("\n%d inlined copies of %d functions; %d comparison(s) made, "
       "%d skipped as not drivable synthetically"
       % (len(COPIES), len({c for _, c, _ in COPIES}), _compared, _skipped))
+
+# A copy with no FACTORY entry is only ARITY-checked: nothing ever compares what
+# it computes. That is a silent blind spot, not a neutral gap -- it is how
+# find_eye_width's vref_intersect copy kept its negative-index wrap through the
+# whole 2026-09-22 propagation pass while this test reported success. The set is
+# pinned so a NEW undrivable copy has to be looked at, and so the count can only
+# go down.
+BASELINE_UNDRIVABLE = 42
+_undrivable = sorted({(c, p) for _, c, p in COPIES if c not in FACTORY})
+
+check("undrivable_copy_set_does_not_grow",
+      len(_undrivable) <= BASELINE_UNDRIVABLE,
+      "inlined copies that nothing drives behaviourally rose from %d to %d. "
+      "Each is arity-checked only, so a defect in one is invisible here. Add a "
+      "FACTORY entry, or record why no single argument tuple can drive both "
+      "sides. Current set: %s"
+      % (BASELINE_UNDRIVABLE, len(_undrivable), _undrivable))
+
+check("undrivable_baseline_is_current",
+      len(_undrivable) >= BASELINE_UNDRIVABLE,
+      "behavioural coverage of the copies improved: %d undrivable, down from "
+      "%d -- lower BASELINE_UNDRIVABLE to %d so the gain is held"
+      % (len(_undrivable), BASELINE_UNDRIVABLE, len(_undrivable)))
+
 finish()

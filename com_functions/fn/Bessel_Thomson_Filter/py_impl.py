@@ -43,10 +43,25 @@ def _bessel(n):
     return a
 
 
+def _length(x):
+    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
+    if x.size == 0:
+        return 0
+    return max(x.shape) if x.ndim else 1
+
+
 def Bessel_Thomson_Filter(param, f, use_BT):
     f = np.asarray(f, dtype=float)
-    if not use_BT:
-        return np.ones(len(f))
+    # Same shape as Butterworth_Filter, and the same two traps. MATLAB `if
+    # use_BT` is true only for a non-empty value whose elements are ALL
+    # non-zero, and `length()` is the LONGEST dimension, not the first.
+    # COM Octave (param.BTorder=4, fb=106.25e9, fb_BT_cutoff=0.75):
+    #   use_BT=[]    -> ones branch        use_BT=[1 0] -> ones branch
+    #   use_BT=[1 1] -> filter branch      f 2x3, use_BT=0 -> ones(1,3)
+    #   f scalar, use_BT=0 -> 1            (len(f) raised TypeError)
+    use = np.asarray(use_BT)
+    if not (use.size and np.all(use)):
+        return np.ones(_length(f))
     a = _bessel(param.BTorder)       # [a0,...,an]; a[0] is constant term
     acoef = a[::-1]                  # fliplr → highest-degree first
     s = 1j * f / (param.fb_BT_cutoff * param.fb)

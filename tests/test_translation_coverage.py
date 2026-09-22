@@ -93,7 +93,7 @@ check('shape_baseline_is_current',
 # MATLAB. A test written from a reading cannot see that `std(x)` and
 # `np.std(x)` differ, which is how the N-vs-N-1 defect survived to 2026-09-21.
 # 2026-09-22 took this from 22 to 56 in one pass; ratcheted so it cannot slip.
-BASELINE_ORACLE_BACKED = 56
+BASELINE_ORACLE_BACKED = 57
 n_oracle = sum(1 for r in bearing if r['grade'] == 'oracle')
 
 check('oracle_coverage_does_not_fall',
