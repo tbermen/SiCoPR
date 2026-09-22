@@ -37,13 +37,27 @@ def OptFom_Calc_FOM(chdata, do_C2M, THIS, param, OP, sbr, _COM_eye_width_fn=None
     ne_noise_pdf = _normal_dist(0, ber_q, delta_y)
     cci_pdf      = _normal_dist(0, ber_q, delta_y)
 
+    # MATLAB L3120 writes chdata(1).eq_pulse_response=sbr HERE, before the
+    # EH_1st skip test. MATLAB passes chdata by value and this function returns
+    # only [FOM, skip_loop] (L3097), so that write is local and the caller never
+    # sees it. Python shares the list and its namespaces, so element 0 is
+    # replaced with a copy first -- the process_sxp remedy, see
+    # tests/test_reference_leaks.py for what this defect class cost.
+    #
+    # The copy also contains COM_eye_width's timing_bathtub side-channel, which
+    # it writes to chdata[0] below. Without it, a losing EQ candidate's bathtub
+    # is left on the caller's chdata for com_plots and com_mat_export to read
+    # whenever the driver's own COM_eye_width call is gated off (OP.EW ~= 1 or
+    # OP.MLSE ~= 0) -- the wrong curve, silently.
+    chdata = list(chdata)
+    chdata[0] = SimpleNamespace(**vars(chdata[0]))
+    chdata[0].eq_pulse_response = np.asarray(sbr, dtype=float)
+
     tmp_result = SimpleNamespace(t_s=int(THIS.cursor_i), A_s=A_s)
 
     EH_1st = 2.0 * (A_s - float(erfcinv(float(param.specBER) * 2)) * 2.0 / np.sqrt(2) * total_noise_rms)
     if EH_1st <= float(getattr(param, 'Min_VEO_Test', 0)) / 1000.0 - 0.001:
         return None, 1
-
-    chdata[0].eq_pulse_response = np.asarray(sbr, dtype=float)
 
     Struct_Noise = SimpleNamespace(
         sigma_N      = float(THIS.sigma_N),
