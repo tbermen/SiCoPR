@@ -133,6 +133,15 @@ _edge = {0.49999999999999994: 0, -0.49999999999999994: 0,
 _edge_bad = ['%s(%.17g)=%s want %s' % (n, x, getattr(sicopr, n)(x), w)
              for n in _mrounds for x, w in _edge.items()
              if getattr(sicopr, n)(x) != w]
+_marrs = [n for n in dir(sicopr) if n.endswith('__mround_arr')]
+_arr_probe = np.array([0.5, 1.5, 2.5, -0.5, -2.5, 0.49999999999999994, 1e16])
+_arr_want = np.array([1.0, 2.0, 3.0, -1.0, -3.0, 0.0, 1e16])
+_arr_bad = [n for n in _marrs
+            if not np.array_equal(getattr(sicopr, n)(_arr_probe), _arr_want)]
+check('every_inlined_mround_arr_copy_rounds_half_away',
+      _marrs and not _arr_bad,
+      'inlined _mround_arr copies that disagree with MATLAB: %s' % _arr_bad[:4])
+
 check('mround_helpers_are_exact_just_below_a_half',
       not _edge_bad,
       'the largest double below a half must round down, as MATLAB does: %s'
@@ -217,31 +226,47 @@ check('maxmin_every_site_uses_matlab_nan_semantics',
       'MATLAB max/min skip NaN; np.max/np.min propagate it, so one bad sample '
       'swallows the result. Use _mmax/_mmin: %s' % _bare_maxmin[:6])
 
-# ...and the helpers must behave, on the cases that separate the two.
-_mmax = sicopr._get_PSDs__mmax
-_mmin = sicopr._get_PSDs__mmin
+# ...and every inlined copy of the helpers must behave, on the cases that
+# separate the two conventions. The assembler emits one copy per calling
+# function, so checking a single copy leaves the rest unverified -- and an
+# inlined copy that drifts is exactly the defect class test_inlined_copies.py
+# exists for.
+_mmaxes = [n for n in dir(sicopr) if n.endswith('__mmax')]
+_mmins = [n for n in dir(sicopr) if n.endswith('__mmin')]
+check('every_inlined_maxmin_copy_is_present',
+      len(_mmaxes) == len(_mmins) and len(_mmaxes) >= 20,
+      'expected a _mmax/_mmin pair per calling function, found %d and %d'
+      % (len(_mmaxes), len(_mmins)))
+_mmax = getattr(sicopr, _mmaxes[0])
+_mmin = getattr(sicopr, _mmins[0])
 _nan_probes = [([1.0, np.nan, 3.0], 3.0, 1.0),
                ([1.0, 2.0, np.nan], 2.0, 1.0),
                ([-5.0, np.nan, -1.0], -1.0, -5.0)]
-_nan_bad = ['%s -> max %s want %s, min %s want %s'
-            % (p, _mmax(np.array(p)), wx, _mmin(np.array(p)), wn)
+_nan_bad = ['%s %s -> max %s want %s, min %s want %s'
+            % (nx, p, getattr(sicopr, nx)(np.array(p)), wx,
+               getattr(sicopr, nn)(np.array(p)), wn)
+            for nx, nn in zip(_mmaxes, _mmins)
             for p, wx, wn in _nan_probes
-            if _mmax(np.array(p)) != wx or _mmin(np.array(p)) != wn]
+            if getattr(sicopr, nx)(np.array(p)) != wx
+            or getattr(sicopr, nn)(np.array(p)) != wn]
 check('mmax_mmin_skip_nan_like_matlab',
       not _nan_bad,
       'checked against COM Octave: max([1 NaN 3]) is 3, min is 1. %s' % _nan_bad)
 # MATLAB orders complex by magnitude then angle; numpy by real part first.
 # Verified against COM Octave: max([3+4i, 5]) is 3+4i, min is 5.
 _cx = np.array([3 + 4j, 5 + 0j])
+_cx_bad = [n for n in _mmaxes if getattr(sicopr, n)(_cx) != (3 + 4j)]     + [n for n in _mmins if getattr(sicopr, n)(_cx) != (5 + 0j)]
 check('mmax_mmin_order_complex_by_magnitude_then_angle',
-      _mmax(_cx) == (3 + 4j) and _mmin(_cx) == (5 + 0j),
+      not _cx_bad,
       'both elements have magnitude 5, so MATLAB breaks the tie on angle and '
       'returns 3+4i for max and 5 for min; numpy compares the real part first '
-      'and returns 5 for max. Got max %s min %s' % (_mmax(_cx), _mmin(_cx)))
+      'and returns 5 for max. Copies that disagree: %s' % _cx_bad[:4])
 
+_allnan = np.array([np.nan, np.nan])
+_allnan_bad = [n for n in _mmaxes + _mmins
+               if not np.isnan(getattr(sicopr, n)(_allnan))]
 check('mmax_mmin_return_nan_when_all_nan',
-      np.isnan(_mmax(np.array([np.nan, np.nan])))
-      and np.isnan(_mmin(np.array([np.nan, np.nan]))),
+      not _allnan_bad,
       'MATLAB max of an all-NaN vector is NaN; the helpers must return it '
       'quietly rather than warn or raise')
 
