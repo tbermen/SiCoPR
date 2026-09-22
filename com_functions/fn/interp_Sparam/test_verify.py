@@ -133,3 +133,66 @@ def test_trend_to_dc_method():
     Sout = interp_Sparam(Sin, fin, fout, 'trend_to_DC', 'interp_to_DC', _op(), _param())
     assert len(Sout) == 50
     assert np.all(np.isfinite(Sout))
+
+
+# --------------------------------------------------------------------------
+# The configured default path, against COM Octave itself.
+#
+# Every shipped configuration workbook selects mag='linear_trend_to_DC' and
+# phase='extrap_cubic_to_dc_linear_to_inf'. Until 2026-09-22 the tests above
+# exercised only 'old', 'interp_to_DC', 'extrap_to_DC' and 'trend_to_DC', so
+# the branch every run takes was never entered -- and all three `std` calls
+# live in it. Hence SiCoPR d5bff6c, where numpy's N normalisation stood in for
+# MATLAB's N-1 inside an outlier threshold.
+#
+# Expected values are COM Octave's own interp_Sparam, extracted verbatim from
+# octave/com_ieee8023_4p16p0_octave_compat.m and run on this input.
+# --------------------------------------------------------------------------
+
+_OCT_N = 6001
+_OCT = {
+    0: 0.99551467368075997 + 0.00032860821987716881j,    # DC: the extrapolated point
+    1: 0.94673980940840263 - 0.30724845157815045j,
+    3: 0.58332679250451458 - 0.80222427311898858j,
+    100: 0.94951056414620771 - 0.00090894483179480043j,
+}
+_OCT_SUM_ABS = 4016.1085110174708
+
+
+def _default_path_fixture():
+    """A channel that starts at 10 MHz, so the DC-extrapolation branch runs."""
+    fin = np.arange(1, 4001) * 10e6
+    rng = np.random.default_rng(5)
+    f_ghz = fin / 1e9
+    mag = 10 ** (-(0.4 * np.sqrt(f_ghz) + 0.05 * f_ghz) / 20)
+    ph = -2 * np.pi * fin * 5e-9 + 2e-3 * rng.standard_normal(fin.size)
+    fmax, fstep = 60e9, fin[2] - fin[1]
+    fout = np.arange(0, round(fmax / fstep) + 1) * (fmax / round(fmax / fstep))
+    return mag * np.exp(1j * ph), fin, fout
+
+
+def test_default_option_path_matches_com_octave():
+    """mag='linear_trend_to_DC', phase='extrap_cubic_to_dc_linear_to_inf'."""
+    Sin, fin, fout = _default_path_fixture()
+    Sout = np.asarray(interp_Sparam(Sin, fin, fout, 'linear_trend_to_DC',
+                                    'extrap_cubic_to_dc_linear_to_inf',
+                                    _op(debug=False), _param())).ravel()
+    assert Sout.size == _OCT_N, 'length %d, COM Octave gives %d' % (Sout.size, _OCT_N)
+    for idx, want in _OCT.items():
+        rel = abs(Sout[idx] - want) / abs(want)
+        assert rel < 1e-13, 'Sout[%d] is %r, COM Octave gives %r (rel %.2e)' % (
+            idx, Sout[idx], want, rel)
+    rel = abs(float(np.sum(np.abs(Sout))) - _OCT_SUM_ABS) / _OCT_SUM_ABS
+    assert rel < 1e-13, 'sum|Sout| differs from COM Octave by %.2e' % rel
+
+
+def test_default_path_is_sensitive_to_std_normalisation():
+    """Guard the guard: if this input stopped straddling the outlier threshold,
+    the comparison above would pass under either std convention."""
+    Sin, fin, _ = _default_path_fixture()
+    gd = -np.diff(np.unwrap(np.angle(Sin))) / np.diff(fin)
+    lf = gd[:50]
+    m = np.median(lf)
+    kept = [np.abs(lf - m) < np.std(lf, ddof=d) for d in (0, 1)]
+    assert not np.array_equal(kept[0], kept[1]), (
+        'fixture no longer distinguishes N from N-1 normalisation; re-craft it')

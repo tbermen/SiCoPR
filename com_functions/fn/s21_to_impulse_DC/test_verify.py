@@ -215,3 +215,78 @@ def test_B03_D7_fout_grid_uses_half_away_round():
     assert len(voltage) == 2 * 201, (
         "len(voltage)=%d; expected 2*round(200.5)=402 (half-away). Pre-fix banker's "
         "round(200.5)=200 gives 400." % len(voltage))
+
+
+# --------------------------------------------------------------------------
+# The configured default path, against COM Octave itself.
+#
+# Every shipped configuration workbook selects interp_sparam_mag =
+# 'linear_trend_to_DC' and interp_sparam_phase =
+# 'extrap_cubic_to_dc_linear_to_inf'. Until 2026-09-22 no test in this file
+# passed either, so the branch every run takes was the one branch never
+# exercised -- and all three `std` calls live in it. That is how the
+# N-vs-N-1 normalisation defect (SiCoPR d5bff6c) survived: the function was
+# tested, its default path was not.
+#
+# The expected values below are COM Octave's own s21_to_impulse_DC, extracted
+# verbatim from octave/com_ieee8023_4p16p0_octave_compat.m and run on the
+# channel _default_path_channel() rebuilds. A reading of the MATLAB cannot
+# catch a library-default divergence; running it can.
+# --------------------------------------------------------------------------
+
+_OCTAVE_N = 1032
+_OCTAVE_ARGMAX0 = 600                       # 0-based; Octave reports 601
+_OCTAVE_MAXABS = 0.65393863838784316
+_OCTAVE_CAUS_DB = -13.663430588600212
+_OCTAVE_TRUNC_DB = -39.535880675055282
+
+
+def _default_path_channel():
+    """A synthetic channel that starts at 10 MHz, so the DC-extrapolation
+    branch runs. Deterministic: numpy's PCG64 stream is stable."""
+    fin = np.arange(1, 4001) * 10e6
+    rng = np.random.default_rng(5)
+    f_ghz = fin / 1e9
+    mag = 10 ** (-(0.4 * np.sqrt(f_ghz) + 0.05 * f_ghz) / 20)
+    ph = -2 * np.pi * fin * 5e-9 + 2e-3 * rng.standard_normal(fin.size)
+    return mag * np.exp(1j * ph), fin, 1.0 / 120e9
+
+
+def _op_default_path():
+    return SimpleNamespace(
+        interp_sparam_mag='linear_trend_to_DC',
+        interp_sparam_phase='extrap_cubic_to_dc_linear_to_inf',
+        DEBUG=0, ZERO_PAD=0, ENFORCE_CAUSALITY=1,
+        EC_PULSE_TOL=0.05, EC_REL_TOL=1e-3, EC_DIFF_TOL=1e-5,
+        impulse_response_truncation_threshold=1e-3)
+
+
+def test_default_option_path_matches_com_octave():
+    """The options every workbook selects, checked against the reference code."""
+    IL, fin, ts = _default_path_channel()
+    v, _t, caus, trunc = s21_to_impulse_DC(IL, fin, ts, _op_default_path(), _param())
+    v = np.asarray(v).ravel()
+
+    assert v.size == _OCTAVE_N, 'length %d, COM Octave gives %d' % (v.size, _OCTAVE_N)
+    assert int(np.argmax(np.abs(v))) == _OCTAVE_ARGMAX0, (
+        'peak at sample %d, COM Octave puts it at %d'
+        % (int(np.argmax(np.abs(v))), _OCTAVE_ARGMAX0))
+    for got, want, name in ((np.max(np.abs(v)), _OCTAVE_MAXABS, 'peak'),
+                            (caus, _OCTAVE_CAUS_DB, 'causality_correction_dB'),
+                            (trunc, _OCTAVE_TRUNC_DB, 'truncation_dB')):
+        rel = abs(float(got) - want) / abs(want)
+        assert rel < 1e-12, '%s is %.17g, COM Octave gives %.17g (rel %.2e)' % (
+            name, float(got), want, rel)
+
+
+def test_default_path_is_sensitive_to_std_normalisation():
+    """Guard the guard. If this channel stopped exercising the outlier
+    threshold, the test above would pass whichever std convention was used."""
+    IL, fin, _ = _default_path_channel()
+    gd = -np.diff(np.unwrap(np.angle(IL))) / np.diff(fin)
+    lf = gd[:50]
+    m = np.median(lf)
+    kept = [np.abs(lf - m) < np.std(lf, ddof=d) for d in (0, 1)]
+    assert not np.array_equal(kept[0], kept[1]), (
+        'this channel no longer distinguishes N from N-1 normalisation; '
+        're-craft it before trusting the oracle comparison above')
