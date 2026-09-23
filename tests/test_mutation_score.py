@@ -124,34 +124,8 @@ KNOWN_SURVIVORS = frozenset([
     'mround_to_np_round:calculate_delay_CausalityEnforcement',
     'mround_to_np_round:get_ILN_cmp_td',
     'mround_to_np_round:optimize_fom',
-    'ne_zero_to_gt_zero:COM_eye_width',
-    'ne_zero_to_gt_zero:Create_Noise_PDF',
-    'ne_zero_to_gt_zero:MLSE_U1_c_178A',
-    'ne_zero_to_gt_zero:MMSE',
-    'ne_zero_to_gt_zero:MMSE_FOM',
-    'ne_zero_to_gt_zero:OptFom_Compute_DFE',
-    'ne_zero_to_gt_zero:OptFom_Plot_Best_Results',
     'ne_zero_to_gt_zero:Output_Arg_Fill',
-    'ne_zero_to_gt_zero:RXFFE_Illegal',
-    'ne_zero_to_gt_zero:Tx_FFE_Filter',
-    'ne_zero_to_gt_zero:applyDFEbk',
-    'ne_zero_to_gt_zero:calculate_delay_CausalityEnforcement',
-    'ne_zero_to_gt_zero:capture_RIL_RILN',
-    'ne_zero_to_gt_zero:com_ieee8023_',
-    'ne_zero_to_gt_zero:floatingDFE',
-    'ne_zero_to_gt_zero:force',
-    'ne_zero_to_gt_zero:get_ILN_cmp_td',
-    'ne_zero_to_gt_zero:get_PSDs',
-    'ne_zero_to_gt_zero:get_TDR',
-    'ne_zero_to_gt_zero:get_pdf',
-    'ne_zero_to_gt_zero:get_pdf_full',
     'ne_zero_to_gt_zero:get_sigma_eta_ACCM_noise',
-    'ne_zero_to_gt_zero:get_sigma_noise',
-    'ne_zero_to_gt_zero:interp_Sparam',
-    'ne_zero_to_gt_zero:optimize_fom',
-    'ne_zero_to_gt_zero:read_ParamConfigFile',
-    'ne_zero_to_gt_zero:read_s4p_files',
-    'ne_zero_to_gt_zero:s21_to_impulse_DC',
     'solve_to_lstsq:MMSE',
     'solve_to_lstsq:MMSE_FOM',
     'solve_to_lstsq:force',
@@ -269,11 +243,24 @@ def main():
           'Either strengthen the test or, if the mutant provably changes '
           'nothing, add it to EQUIVALENT with the reason: %s' % new)
 
-    fixed = sorted(KNOWN_SURVIVORS - set(survived))
+    # Two different reasons an entry can go stale, and conflating them would
+    # report work that nobody did. A pair whose operator no longer has a site
+    # in that function was not FIXED: the site went away, usually because an
+    # operator was narrowed or the code was refactored.
+    present = {'%s:%s' % (r['op'], r['fn']) for r in rows}
+    gone = sorted(KNOWN_SURVIVORS - present)
+    fixed = sorted((KNOWN_SURVIVORS & present) - set(survived))
+
     check('known_survivor_list_is_current',
           not fixed,
-          'these now catch their mutant -- delete them from KNOWN_SURVIVORS so '
+          'these now CATCH their mutant -- delete them from KNOWN_SURVIVORS so '
           'the gain is held and cannot silently regress: %s' % fixed)
+
+    check('known_survivor_list_has_no_dead_entries',
+          not gone,
+          'these name an operator/function pair that has no mutation site at '
+          'all any more, so they were not fixed, they stopped applying. '
+          'Delete them, but do not record them as gains: %s' % gone)
 
     finish()
 

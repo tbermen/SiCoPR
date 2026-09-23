@@ -41,10 +41,15 @@ while four sites stay unguarded.
 
 ## Caching
 
-Keyed by the content hash of the implementation AND of the bound test. Change
-either and the pair re-runs. This is a memo over derived state, not stored
-judgment: nothing is believed because someone wrote it down, only because the
-inputs that produced it are unchanged.
+Keyed by the content hash of the implementation, of the bound test, AND of the
+operator's own definition. Change any of the three and the pair re-runs. This is
+a memo over derived state, not stored judgment: nothing is believed because
+someone wrote it down, only because the inputs that produced it are unchanged.
+
+The operator fingerprint is not optional. Without it the key is id + function +
+site INDEX, so narrowing a pattern re-serves the old rows under the same key
+while index 0 now means a different site. That happened, and it reported a
+scalar config flag the new pattern does not match, with its old line number.
 
     python com_functions/verification/mutations.py --list
     python com_functions/verification/mutations.py --run [--only ID] [--no-cache]
@@ -83,7 +88,7 @@ class Op(object):
     """
 
     def __init__(self, id, pattern, replace, defect, evidence, skip=None,
-                 guard=None):
+                 guard=None, require=None):
         self.id = id
         self.pattern = re.compile(pattern)
         self.replace = replace
@@ -91,6 +96,25 @@ class Op(object):
         self.evidence = evidence
         # a regex that, if it matches the whole LINE, disqualifies the site
         self.skip = re.compile(skip) if skip else None
+        # a regex the LINE must contain for the site to count. This is how an
+        # operator is kept honest about the defect it represents: see
+        # ne_zero_to_gt_zero, where the real defect was an ARRAY comparison and
+        # a bare textual match dragged in 55 scalar config flags that cannot
+        # express it.
+        self.require = re.compile(require) if require else None
+        # Identity of the operator's DEFINITION, for the result cache.
+        #
+        # Without this the cache key is op id + function + site INDEX, and
+        # narrowing a pattern silently re-serves the old rows: index 0 comes to
+        # mean a different site while the key stays the same. Narrowing
+        # ne_zero_to_gt_zero from 63 sites to 4 duly reported a scalar config
+        # flag that the new pattern does not even match, complete with its old
+        # line number. Same family as the stale-bytecode bug, and the same
+        # lesson: cached derived state must be keyed by EVERYTHING that
+        # produced it.
+        self.fingerprint = hashlib.sha256(
+            repr((id, pattern, replace, skip, require)).encode('utf-8')
+        ).hexdigest()[:12]
         # (audit script, check name): a REPO-WIDE lint that forbids the
         # mutated source form outright, so the defect cannot land even where
         # the function's own test is blind to it.
@@ -163,11 +187,29 @@ CATALOGUE = [
        "the caller's array.",
        'com-matlab-correlation-complete'),
 
+    # NARROWED 2026-09-22, and the narrowing is the point.
+    #
+    # The real defect is `support = np.where(pdf_y != 0)` in d_cpdf, where
+    # pdf_y is an ARRAY of probabilities that can hold NaN. A bare textual
+    # `!= 0` matched 63 sites, 58 of which survived and read as gaps. They were
+    # not: almost all are `if param.N_qb != 0:` and its kin, scalar config
+    # enable-flags where a count cannot go negative, so `> 0` and `!= 0` cannot
+    # differ and no test could ever tell them apart.
+    #
+    # That is the "generic operators are mostly noise" failure, committed by
+    # over-generalising ONE real array defect into every occurrence of a common
+    # token. An operator that reports 58 unreachable gaps does not measure the
+    # suite, it buries the 8 findings that matter. So the site must be an array
+    # context: the comparison feeds a numpy reduction or a mask index.
     Op('ne_zero_to_gt_zero',
        r'!= 0\b', '> 0',
-       'd_cpdf counted NaN as support. The two differ exactly on negative and '
-       'NaN entries.',
-       'docs/AUDIT_FINDINGS.md'),
+       'd_cpdf counted NaN as support: np.where(pdf_y != 0) on a probability '
+       'array. The two differ exactly on negative and NaN entries, which a '
+       'scalar config flag cannot be, so only array comparisons carry the '
+       'defect.',
+       'docs/AUDIT_FINDINGS.md',
+       require=r'np\.(?:where|any|all|sum|nonzero|flatnonzero|count_nonzero)\('
+               r'|\[[^\]]*!= 0'),
 
     # A mutation must be a BEHAVIOURAL difference, not a runtime error. An
     # earlier draft substituted a nonexistent numpy attribute: that raises
@@ -243,6 +285,8 @@ def sites(op, text):
         line_end = text.find('\n', m.end())
         line = text[line_start:line_end if line_end >= 0 else len(text)]
         if op.skip and op.skip.match(line):
+            continue
+        if op.require and not op.require.search(line):
             continue
         mutated = text[:m.start()] + m.expand(op.replace) + text[m.end():]
         out.append((m.start(), m.end(), mutated))
@@ -404,7 +448,8 @@ def evaluate(only=None, use_cache=True, progress=True):
         orig = orig_raw.decode('utf-8')
         impl = os.path.join(FN, fn_dir, 'py_impl.py')
         test = os.path.join(FN, fn_dir, 'test_verify.py')
-        key = '%s|%s|%d|%s|%s' % (op.id, fn_dir, idx, _sha(impl), _sha(test))
+        key = '%s|%s|%s|%d|%s|%s' % (op.id, op.fingerprint, fn_dir, idx,
+                                     _sha(impl), _sha(test))
 
         if key in cache and use_cache:
             rows.append(dict(cache[key], cached=True))
