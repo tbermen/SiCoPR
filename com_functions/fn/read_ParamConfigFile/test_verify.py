@@ -427,3 +427,113 @@ def test_octave_pkg_name_unknown_block_is_an_error(tmp_path):
                       '.START,TXPKG\nC_p,0.1\n.END,TXPKG\n')
     with pytest.raises(ValueError):
         read_ParamConfigFile(path, make_op())
+
+
+# ---------------------------------------------------------------------------
+# CTLE_type selection, against COM Octave.
+#
+# 'CL120d' and 'CL120e' sat in test_option_coverage.py's KNOWN_UNCOVERED: no
+# test wrote a config that selects either. ML 10263-10264 is
+#     if ~isempty(param.g_DC_HP_values) ; param.CTLE_type='CL120d'; end
+#     if ~isempty(param.f_HP_Z)         ; param.CTLE_type='CL120e'; end
+# so the two overrides are ORDERED -- f_HP_Z wins over g_DC_HP, and both win
+# over the configured CTLE_type. All three cases are checked below.
+# ---------------------------------------------------------------------------
+
+_CL120D_CSV = MINIMAL_CSV + 'g_DC_HP,-1\nf_HP_PZ,0.6625\n'
+_CL120E_CSV = MINIMAL_CSV + 'f_HP_Z,0.6625\nf_HP_P,1.5\n'
+_BOTH_CSV = MINIMAL_CSV + 'g_DC_HP,-1\nf_HP_PZ,0.6625\nf_HP_Z,0.6625\nf_HP_P,1.5\n'
+
+
+def _param_from(csv_text):
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv',
+                                     delete=False) as f:
+        f.write(csv_text)
+        name = f.name
+    try:
+        param, _ = read_ParamConfigFile(name, make_op())
+        return param
+    finally:
+        os.unlink(name)
+
+
+def test_ctle_type_CL120d_selected_by_g_DC_HP():
+    """A g_DC_HP entry overrides the default CL93."""
+    param = _param_from(_CL120D_CSV)
+    assert param.CTLE_type == 'CL120d', param.CTLE_type
+    assert np.size(param.g_DC_HP_values) > 0
+    assert np.size(param.f_HP) > 0
+
+
+def test_ctle_type_CL120e_selected_by_f_HP_Z():
+    """An f_HP_Z entry overrides the default CL93."""
+    param = _param_from(_CL120E_CSV)
+    assert param.CTLE_type == 'CL120e', param.CTLE_type
+
+
+def test_ctle_type_CL120e_wins_over_CL120d():
+    """ML 10263-10264 apply in order, so f_HP_Z overrides g_DC_HP.
+
+    Without this the two `if`s could be written as an if/elif and CL120d would
+    win, which no single-option test would notice.
+    """
+    param = _param_from(_BOTH_CSV)
+    assert param.CTLE_type == 'CL120e', param.CTLE_type
+
+
+def test_ctle_type_CL120e_divides_fz_by_the_dc_gain():
+    """ML 10281: in CL120e the zero has already been adjusted for gain, so
+    CTLE_fz is divided by 10^(g_DC/20). g_DC is -1 in this config."""
+    param = _param_from(_CL120E_CSV)
+    fz = np.atleast_1d(np.asarray(param.CTLE_fz, dtype=float))
+    fb = 53.125e9
+    assert np.allclose(fz, (fb / 4) / (10.0 ** (-1.0 / 20.0)), rtol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# DIVERGENCE FROM THE REFERENCE, DELIBERATE, AWAITING A RULING.
+#
+# ML 10268-10270 default f_p1, f_p2 and f_z to param.fb/4, param.fb and
+# param.fb/4 and then multiply by 1e9. But param.fb is ALREADY in Hz -- ML
+# 10175 is `param.fb = xls_parameter(parameter,'f_b')*1e9` -- so the reference's
+# defaults come out 1e9 times too large, and the comment on each line says
+# "fp1 is in GHz". Measured on the minimal config above, which omits all three:
+#
+#     COM Octave   param.CTLE_fp1 = 1.328125e+19      (fb/4 = 1.328125e+10)
+#                  param.CTLE_fp2 = 5.3125e+19
+#                  param.CTLE_fz  = 1.328125e+19
+#     SiCoPR       param.CTLE_fp1 = 1.328125e+10
+#                  param.CTLE_fp2 = 5.3125e+10
+#                  param.CTLE_fz  = 1.328125e+10
+#
+# A 1.3e19 Hz pole makes the CTLE transfer function identically 1, i.e. no
+# filtering at all. The port divides by 1e9 and gets the physically sensible
+# value. That is a silent correction of an upstream defect, which the
+# verification contract says not to do: an upstream defect should be visible.
+#
+# It is documented rather than changed because matching the reference here
+# would alter results for any config that omits f_p1/f_p2/f_z, and that is the
+# owner's call, not a 4am one. Every shipped workbook supplies all three, so
+# the path is not reached on a normal run. Reported for the COM ad hoc.
+#
+# This test pins BOTH numbers so the divergence cannot drift unnoticed while
+# the ruling is pending.
+# ---------------------------------------------------------------------------
+
+_OCT_CTLE_DEFAULTS = {'CTLE_fp1': 1.328125e+19,
+                      'CTLE_fp2': 5.3125e+19,
+                      'CTLE_fz': 1.328125e+19}
+
+
+def test_ctle_defaults_diverge_from_the_reference_by_1e9():
+    """Documented, pending a ruling. See the block comment above."""
+    param = _param_from(MINIMAL_CSV)
+    for name, reference_value in sorted(_OCT_CTLE_DEFAULTS.items()):
+        got = float(np.ravel(np.asarray(getattr(param, name)))[0])
+        assert abs(got - reference_value / 1e9) <= 1e-3, (
+            '%s is %.17g; the port intends reference/1e9 = %.17g'
+            % (name, got, reference_value / 1e9))
+        assert abs(got - reference_value) > 1.0, (
+            '%s now matches COM Octave (%.17g). The divergence documented '
+            'above has been resolved -- delete this test and the block '
+            'comment.' % (name, reference_value))

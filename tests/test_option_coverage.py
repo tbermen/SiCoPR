@@ -59,8 +59,6 @@ DEFAULTS = {
 # when its option gains a test; never add one to make a red run go green.
 # Pinning the set rather than a count lets the failure name the new branch.
 KNOWN_UNCOVERED = frozenset([
-    'read_ParamConfigFile:CL120d',
-    'read_ParamConfigFile:CL120e',
 ])
 
 
