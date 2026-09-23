@@ -5,10 +5,12 @@
 # Computes complex IL fitting and TD ILN.
 # Polynomial fit: fmbg = [ones sdd21, sqrt(f)*sdd21, f*sdd21, f^2*sdd21] (column matrix).
 # LGw = (sdd21 * log(abs(sdd21)) + 1j*unwrap(angle(sdd21))) transposed.
-# alpha = pinv(fmbg) @ LGw → least-squares.
+# alpha = inv(fmbg'*fmbg) * fmbg'*LGw -- the NORMAL EQUATIONS (ML 6740),
+# NOT a least-squares solve: fmbg is nearly singular and the two differ by ~0.9 dB.
 # efit_C = sum(alpha_i * basis_i); FIT = exp(efit_C).
 # efit = dB(FIT); ILN = dB(sdd21) - efit.
-# TD: calls the real s21_to_impulse_DC for non-zero sdd21 (eps-valued path for all-zero).
+# TD: calls the real s21_to_impulse_DC. An all-zero sdd21 has no answer and the
+# reference stops on it; so does this.
 # ipeak: 0-based argmax of TD_ILN.REF.PR.
 # Loop im=0..M-1: norm, pdf, cdf → FOM_PDF.
 # ============================================================
@@ -150,17 +152,45 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
         f ** 2 * sdd21,
     ])  # shape (N, 4)
 
-    unwraplog = np.log(np.abs(sdd21) + np.finfo(float).eps) + 1j * np.unwrap(np.angle(sdd21))
+    # ML 6738: unwraplog=log(abs(sdd21))+1i*unwrap(angle(sdd21)) -- NO eps
+    # floor. The floor changes every value slightly and, at |sdd21| = 0,
+    # replaces the reference's -Inf with a finite ~-708.
+    with np.errstate(divide='ignore'):
+        unwraplog = np.log(np.abs(sdd21)) + 1j * np.unwrap(np.angle(sdd21))
     LGw = (sdd21 * unwraplog).reshape(-1, 1)
 
-    # Least-squares: alpha = pinv(fmbg) @ LGw
-    alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
+    # ML 6740: alpha = ((fmbg'*fmbg)^-1)*fmbg'*LGw -- the NORMAL EQUATIONS with
+    # an explicit inverse, not a least-squares solve.
+    #
+    # They are the same answer only for a well-conditioned system, and this one
+    # is not: ML 6737 is `warning('off','MATLAB:nearlySingularMatrix')`, so the
+    # reference knows fmbg'*fmbg is nearly singular and proceeds anyway. On a
+    # near-singular system np.linalg.lstsq truncates the small singular values
+    # and returns the minimum-norm answer, while the explicit inverse amplifies
+    # them; the two fits differ by about 0.9 dB across the band.
+    #
+    # Measured on a smooth real sdd21 = 0.9*exp(-f/40e9), 40 points:
+    #   COM Octave ILN[0:3] = 3.33e-14, 5.33e-14, 6.06e-14   (a near-exact fit)
+    #   lstsq      ILN[0:3] = -0.905,   -0.807,   -0.713
+    # The reference's fit reproduces this channel essentially exactly, which is
+    # what ILN is supposed to do; the lstsq fit does not.
+    #
+    # `fmbg.conj().T` is MATLAB's `'`, the CONJUGATE transpose, which matters
+    # because fmbg is complex.
+    fmbg_h = fmbg.conj().T
+    alpha = np.linalg.inv(fmbg_h @ fmbg) @ (fmbg_h @ LGw)
     alpha = alpha.ravel()
 
     efit_C = (alpha[0] + alpha[1] * np.sqrt(f) + alpha[2] * f + alpha[3] * f ** 2)
     FIT = np.exp(efit_C)
 
-    dB = lambda x: 20.0 * np.log10(np.abs(x) + np.finfo(float).eps)
+    # ML 6731: db = @(x) 20*log10(abs(x)) -- NO eps floor. Same defect as
+    # plot_modal carried: at |x| = 0 the reference gives -Inf and the
+    # epsilon version gives a plausible -313 dB that reads like data.
+    # errstate only silences numpy's warning; MATLAB returns -Inf quietly.
+    def dB(x):
+        with np.errstate(divide='ignore'):
+            return 20.0 * np.log10(np.abs(x))
     efit = dB(np.abs(FIT))
     ILN = dB(sdd21) - efit
 
