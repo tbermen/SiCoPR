@@ -59,8 +59,25 @@ FN = os.path.join(_ROOT, 'com_functions', 'fn')
 # three of get_PSDs' stubs and reported it as 0 stub-backed.
 STUB_DOC = re.compile('stub', re.IGNORECASE)
 
-INJECT = re.compile(
+# TWO injection idioms are in use and both must be caught:
+#   dep = _dep_fn if _dep_fn is not None else _fallback   COM_FD_to_TD, get_PSDs
+#   dep = _dep_fn or _fallback                            COM_eye_width,
+#                                                         get_TDR, process_sxp
+# Matching only the first found 3 functions and missed 3 more carrying 13
+# stubs between them, the same quiet under-count the docstring convention
+# caused.
+INJECT_TERNARY = re.compile(
     r'(\w+)\s*=\s*(_\w+_fn)\s+if\s+\2\s+is not None\s+else\s+(\w+)')
+INJECT_OR = re.compile(r'(\w+)\s*=\s*(_\w+_fn)\s+or\s+(\w+)')
+
+
+def injected_deps(src):
+    """{parameter name: fallback name}, over both idioms."""
+    out = {}
+    for rx in (INJECT_TERNARY, INJECT_OR):
+        for m in rx.finditer(src):
+            out[m.group(2)] = m.group(3)
+    return out
 
 # Test call sites that deliberately drive the stub. Each entry is
 # "<function>:<file>:<line>". Remove an entry when the call starts injecting;
@@ -71,7 +88,6 @@ INJECT = re.compile(
 # the engine's. They are pinned here rather than fixed blind, because changing
 # what those tests drive changes what they assert.
 KNOWN_BARE = frozenset([
-    'FOM_rxffe_floating_taps:com_functions/fn/FOM_rxffe_floating_taps/test_verify.py:1',
     'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:127',
     'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:151',
     'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:173',
@@ -106,7 +122,7 @@ def survey():
             stubs = stub_functions(ast.parse(src))
         except SyntaxError:
             continue
-        deps = {m.group(2): m.group(3) for m in INJECT.finditer(src)}
+        deps = injected_deps(src)
         if deps:
             out[d] = (deps, {k for k, v in deps.items() if v in stubs})
     return out
@@ -164,7 +180,13 @@ check('the_engine_injects_every_dependency',
 
 # ---- 2. pinned set of bare test call sites ---------------------------------
 bare = set()
-for d in found:
+for d, (deps, stubbed) in found.items():
+    # A bare call only matters when a fallback is actually a STUB. Several
+    # functions here inject real implementations as their defaults -- after
+    # get_RILN_cmp_td's six stubs were replaced by the canonical functions it
+    # became one of them -- and calling those bare runs the real code.
+    if not stubbed:
+        continue
     for rel in ('com_functions/fn/%s/test_verify.py' % d, 'tests/conftest.py'):
         for line in call_sites(d, os.path.join(_ROOT, rel)):
             bare.add('%s:%s:%d' % (d, rel, line))
