@@ -290,3 +290,79 @@ def test_default_path_is_sensitive_to_std_normalisation():
     assert not np.array_equal(kept[0], kept[1]), (
         'this channel no longer distinguishes N from N-1 normalisation; '
         're-craft it before trusting the oracle comparison above')
+
+
+# --------------------------------------------------------------------------
+# phase='trend_and_shift_to_DC', against COM Octave.
+#
+# This option had no test, so it sat in test_option_coverage.py's
+# KNOWN_UNCOVERED and the branch was dead to the suite -- while carrying its
+# own std(ddof=1) at py_impl line 182, whose mutant
+# tests/test_mutation_score.py reported surviving. Same shape as the gap closed
+# in interp_Sparam.
+#
+# Same channel as the default path above, so the two runs differ only in the
+# phase method. They disagree in length (630 against 1032) and in truncation
+# dB, which is what makes this a real exercise of the branch rather than a
+# second way of running the same code.
+# --------------------------------------------------------------------------
+
+_TS_N = 630
+_TS_ARGMAX0 = 600                           # 0-based; Octave reports 601
+_TS_MAXABS = 0.65656962995622636
+_TS_CAUS_DB = -14.358232433453464
+_TS_TRUNC_DB = -49.845775600410640
+
+
+def _op_trend_and_shift():
+    return SimpleNamespace(
+        interp_sparam_mag='linear_trend_to_DC',
+        interp_sparam_phase='trend_and_shift_to_DC',
+        DEBUG=0, ZERO_PAD=0, ENFORCE_CAUSALITY=1,
+        EC_PULSE_TOL=0.05, EC_REL_TOL=1e-3, EC_DIFF_TOL=1e-5,
+        impulse_response_truncation_threshold=1e-3)
+
+
+def test_trend_and_shift_to_DC_matches_com_octave():
+    """mag='linear_trend_to_DC', phase='trend_and_shift_to_DC'."""
+    IL, fin, ts = _default_path_channel()
+    v, _t, caus, trunc = s21_to_impulse_DC(IL, fin, ts,
+                                           _op_trend_and_shift(), _param())
+    v = np.asarray(v).ravel()
+
+    assert v.size == _TS_N, 'length %d, COM Octave gives %d' % (v.size, _TS_N)
+    assert int(np.argmax(np.abs(v))) == _TS_ARGMAX0, (
+        'peak at sample %d, COM Octave puts it at %d'
+        % (int(np.argmax(np.abs(v))), _TS_ARGMAX0))
+    for got, want, name in ((np.max(np.abs(v)), _TS_MAXABS, 'peak'),
+                            (caus, _TS_CAUS_DB, 'causality_correction_dB'),
+                            (trunc, _TS_TRUNC_DB, 'truncation_dB')):
+        rel = abs(float(got) - want) / abs(want)
+        assert rel < 1e-12, '%s is %.17g, COM Octave gives %.17g (rel %.2e)' % (
+            name, float(got), want, rel)
+
+
+def test_trend_and_shift_is_sensitive_to_std_normalisation():
+    """Guard the guard: the LF outlier mask at py_impl line 182 must straddle
+    N versus N-1 on this channel, or the oracle comparison above would pass
+    under either convention and prove nothing about that std."""
+    IL, fin, _ = _default_path_channel()
+    gd = -np.diff(np.unwrap(np.angle(IL))) / np.diff(fin)
+    lf = gd[:50]
+    m = np.median(lf)
+    kept = [np.abs(lf - m) < np.std(lf, ddof=d) for d in (0, 1)]
+    assert not np.array_equal(kept[0], kept[1]), (
+        'channel no longer distinguishes N from N-1 normalisation; re-craft it')
+
+
+def test_trend_and_shift_differs_from_the_default_phase_method():
+    """Guard the guard: the two phase methods must actually disagree here."""
+    IL, fin, ts = _default_path_channel()
+    a = np.asarray(s21_to_impulse_DC(IL, fin, ts, _op_trend_and_shift(),
+                                     _param())[0]).ravel()
+    b = np.asarray(s21_to_impulse_DC(IL, fin, ts, _op_default_path(),
+                                     _param())[0]).ravel()
+    assert a.size != b.size or abs(float(np.max(np.abs(a)))
+                                   - float(np.max(np.abs(b)))) > 1e-6, (
+        'the two phase methods now agree on this channel, so this test no '
+        'longer exercises the branch it claims to; re-craft the fixture')

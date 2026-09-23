@@ -11,10 +11,10 @@ test failed. A test that still passes did not discriminate.
 
 When this gate was first run, 3 of the 6 `np.std(..., ddof=1)` sites survived --
 the very defect that prompted the verification contract, fixed in d5bff6c, and
-the suite would not have noticed it coming back. Two of those three are now
-closed by oracle-backed tests in interp_Sparam (lines 205 and 249); the one at
-s21_to_impulse_DC line 182 remains. That is the value of asking this question by
-computation instead of from memory.
+the suite would not have noticed it coming back. **All 6 are now caught**, by
+oracle-backed tests on the DC-extrapolation branches of interp_Sparam and
+s21_to_impulse_DC. That operator is closed, and it is closed because a number
+said where to look, not because anyone remembered to check.
 
 (The first run reported 4 of 6, and was wrong: it was measuring stale bytecode,
 see the note in `mutations.run_test`. A tool that measures whether tests lie has
@@ -158,7 +158,6 @@ KNOWN_SURVIVORS = frozenset([
     'solve_to_lstsq:read_Nport_touchstone',
     'solve_to_lstsq:read_p4_s4params',
     'solve_to_lstsq:read_s4p_files',
-    'std_ddof:s21_to_impulse_DC',
 ])
 
 # Mutants that provably change nothing. They read as "not caught" and are not
@@ -223,6 +222,30 @@ def main():
 
     print('\n%d mutants, %d caught, %d survived, %d equivalent-mutant entries'
           % (total, caught, len(survived), len(EQUIVALENT)))
+
+    # Split the survivors by whether a REPO-WIDE lint already forbids the
+    # mutated form. Without this the report aims work at the best-defended
+    # code in the repository: 40 of the mmax/mmin mutants survive their bound
+    # test, and not one of them could reach a release, because
+    # maxmin_every_site_uses_matlab_nan_semantics rejects a bare np.max
+    # anywhere in the assembled engine.
+    guarded_ops = {op.id for op in mutations.CATALOGUE if op.guard}
+    g = [k for k in survived if k.split(':')[0] in guarded_ops]
+    u = [k for k in survived if k.split(':')[0] not in guarded_ops]
+    print('    %d survive with a repo-wide lint still forbidding the form'
+          % len(g))
+    print('    %d survive with NO other gate blocking them  <-- the real gaps'
+          % len(u))
+
+    demonstrated = mutations.verify_guards()
+    broken = sorted(k for k, ok in demonstrated.items() if not ok)
+    check('every_declared_guard_is_demonstrated',
+          not broken,
+          'these operators claim a repo-wide lint blocks their mutated form, '
+          'and the lint did NOT fail when the mutation was applied and the '
+          'engine re-assembled. An unverified guard is worse than none: it is '
+          'a stored judgment that quietly excuses a whole class of survivors '
+          'from attention. Fix the lint or drop the guard: %s' % broken)
 
     # A mutant that does not parse fails the test for a reason that has nothing
     # to do with the defect, so it would score as a catch and certify the test

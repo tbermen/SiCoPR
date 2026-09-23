@@ -86,7 +86,6 @@ KNOWN_UNCOVERED = frozenset([
     's21_to_impulse_DC:interp_and_shift_to_DC',
     's21_to_impulse_DC:interp_to_DC',
     's21_to_impulse_DC:linear_trend_to_DC_log_trend_to_inf',
-    's21_to_impulse_DC:trend_and_shift_to_DC',
     's21_to_impulse_DC:trend_to_DC',
     's21_to_impulse_DC:zero_DC',
 ])

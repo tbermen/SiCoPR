@@ -82,7 +82,8 @@ class Op(object):
     recorded, so an operator can never become a rule nobody can trace.
     """
 
-    def __init__(self, id, pattern, replace, defect, evidence, skip=None):
+    def __init__(self, id, pattern, replace, defect, evidence, skip=None,
+                 guard=None):
         self.id = id
         self.pattern = re.compile(pattern)
         self.replace = replace
@@ -90,6 +91,22 @@ class Op(object):
         self.evidence = evidence
         # a regex that, if it matches the whole LINE, disqualifies the site
         self.skip = re.compile(skip) if skip else None
+        # (audit script, check name): a REPO-WIDE lint that forbids the
+        # mutated source form outright, so the defect cannot land even where
+        # the function's own test is blind to it.
+        #
+        # This distinction matters a great deal for where effort goes. 40 of
+        # the mmax/mmin mutants survive their bound test, which reads as 40
+        # urgent gaps; but `maxmin_every_site_uses_matlab_nan_semantics` scans
+        # the assembled engine and rejects a bare np.max anywhere, so none of
+        # them could ever reach a release. Without this field the gate would
+        # aim work at the best-defended code in the repository.
+        #
+        # The claim is VERIFIED, never trusted: verify_guards() mutates a real
+        # site, re-assembles, runs the named check and requires it to fail. A
+        # guard that stopped working would otherwise be a stored judgment, the
+        # exact defect this framework exists to prevent.
+        self.guard = guard
 
 
 # Every entry is a defect that happened here. Do not add a textbook operator.
@@ -99,27 +116,31 @@ CATALOGUE = [
        'MATLAB/Octave std normalises by N-1, numpy defaults to N. Sat inside a '
        'membership threshold in interp_Sparam on the branch every shipped '
        'workbook selects, so no unit test and no corpus channel reached it.',
-       'commit d5bff6c; com-208-corpus-dc-blind-spot'),
+       'commit d5bff6c; com-208-corpus-dc-blind-spot',
+       guard=('tests/test_matlab_semantics.py', 'std_every_site_passes_ddof')),
 
     Op('mround_to_np_round',
        r'\b_mround\(', 'np.round(',
        'MATLAB round() is half AWAY from zero; np.round is half to EVEN. '
        '41 sites.',
        'docs/AUDIT_FINDINGS.md',
-       skip=r'\s*def\s+_mround'),
+       skip=r'\s*def\s+_mround',
+       guard=('tests/test_matlab_semantics.py', 'round_every_site_uses_matlab_semantics')),
 
     Op('mmax_to_np_max',
        r'\b_mmax\(', 'np.max(',
        'MATLAB max() skips NaN; np.max propagates it. 48 sites across the '
        'engine.',
        'docs/AUDIT_FINDINGS.md',
-       skip=r'\s*def\s+_mmax'),
+       skip=r'\s*def\s+_mmax',
+       guard=('tests/test_matlab_semantics.py', 'maxmin_every_site_uses_matlab_nan_semantics')),
 
     Op('mmin_to_np_min',
        r'\b_mmin\(', 'np.min(',
        'MATLAB min() skips NaN; np.min propagates it.',
        'docs/AUDIT_FINDINGS.md',
-       skip=r'\s*def\s+_mmin'),
+       skip=r'\s*def\s+_mmin',
+       guard=('tests/test_matlab_semantics.py', 'maxmin_every_site_uses_matlab_nan_semantics')),
 
     Op('mlength_to_len',
        r'\b_length\(', 'len(',
@@ -286,6 +307,61 @@ def run_test(fn_dir):
 
 def line_of(text, off):
     return text.count('\n', 0, off) + 1
+
+
+def _assemble():
+    env = dict(os.environ)
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    return subprocess.run(
+        [sys.executable, '-B', os.path.join(_ROOT, 'assemble_sicopr.py')],
+        cwd=_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        env=env).returncode == 0
+
+
+def _named_check_fails(script, check_name):
+    """Run an audit script and report whether that one check FAILED."""
+    env = dict(os.environ)
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    r = subprocess.run([sys.executable, '-B', os.path.join(_ROOT, script)],
+                       cwd=_ROOT, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, env=env)
+    out = r.stdout.decode('utf-8', 'replace')
+    return ('FAIL %s' % check_name) in out
+
+
+def verify_guards():
+    """Prove each operator's `guard` really does reject the mutated form.
+
+    A guard is the reason a whole class of survivors is NOT urgent, so an
+    unverified guard would quietly redirect every future effort away from real
+    gaps. It is therefore demonstrated, not declared: mutate one real site,
+    re-assemble the engine, run the named check, and require it to fail.
+
+    Returns {operator id: True if its guard was demonstrated}.
+    """
+    out = {}
+    for op in CATALOGUE:
+        if not op.guard:
+            continue
+        script, check_name = op.guard
+        work = [w for w in collect(op.id)]
+        if not work:
+            out[op.id] = False
+            continue
+        _o, fn_dir, _i, _off, mutated, orig_raw = work[0]
+        impl = os.path.join(FN, fn_dir, 'py_impl.py')
+        try:
+            write_bytes(impl, mutated.encode('utf-8'))
+            out[op.id] = _assemble() and _named_check_fails(script, check_name)
+        finally:
+            write_bytes(impl, orig_raw)
+            with open(impl, 'rb') as f:
+                if f.read() != orig_raw:
+                    raise SystemExit(
+                        'mutations.py: FAILED TO RESTORE %s during guard '
+                        'verification. Restore it from git.' % impl)
+            _assemble()
+    return out
 
 
 def collect(only=None):
