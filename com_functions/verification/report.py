@@ -293,8 +293,17 @@ def main():
         if not os.path.isdir(APPROVED):
             os.makedirs(APPROVED)
         day = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
-        path = os.path.join(APPROVED, '%s-%s.txt' % (day, sha))
-        io.open(path, 'w', encoding='utf-8', newline='\n').write(text + '\n')
+        name = '%s-%s.txt' % (day, sha)
+        path = os.path.join(APPROVED, name)
+        # Self-reference: the report says which anchor it was computed against,
+        # and approving it makes it the anchor. Stored verbatim, the first
+        # report would say "none yet" and every re-run at its own sha would
+        # differ on that one line, so the tool would fail its own
+        # reproducibility promise immediately. After approval this report IS
+        # the anchor, so that is what the stored copy records.
+        stored = re.sub(r'(?m)^anchor +.*$', 'anchor          %s' % name, text,
+                        count=1)
+        io.open(path, 'w', encoding='utf-8', newline='\n').write(stored + '\n')
         print('\napproved: %s' % os.path.relpath(path, _ROOT))
 
     return 1 if opens else 0
