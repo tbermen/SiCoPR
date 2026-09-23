@@ -17007,15 +17007,32 @@ def read_ParamConfigFile(paramFile, OP):
         param.CTLE_type = 'CL120e'
 
     param.ctle_gdc_values = _read_ParamConfigFile__xls_param(parameter, 'g_DC', True)
-    param.CTLE_fp1 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p1', True, param.fb / 4 / 1e9)
-    param.CTLE_fp2 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p2', True, param.fb / 1e9)
-    param.CTLE_fz = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_z', True, param.fb / 4 / 1e9)
+    # ML 10268-10270. The 1e9 converts a GHz config entry to Hz, but the
+    # DEFAULT is param.fb/4, and param.fb is already in Hz (ML 10175), so an
+    # omitted key gives 1e9 * 1.328e10 = 1.328e19 Hz. The trailing comments on
+    # those lines read "fp1 is in GHz", so the defaults look like they were
+    # meant to be param.fb/4/1e9.
+    #
+    # UPSTREAM DEFECT, reproduced deliberately (owner ruling 2026-09-23). The
+    # port used to divide by 1e9 and get the physically sensible value, which
+    # is a silent correction of the reference and exactly what
+    # docs/VERIFICATION.md says not to do. A 1.328e19 Hz pole makes the CTLE
+    # transfer function identically 1, i.e. no filtering. COM Octave on a
+    # config omitting all three:
+    #     param.CTLE_fp1 = 1.328125e+19   (fb/4 = 1.328125e+10)
+    #     param.CTLE_fp2 = 5.3125e+19
+    #     param.CTLE_fz  = 1.328125e+19
+    # Every shipped workbook supplies f_p1, f_p2 and f_z, so a normal run does
+    # not reach the defaults. Reported for the COM ad hoc as item A12.
+    param.CTLE_fp1 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p1', True, param.fb / 4)
+    param.CTLE_fp2 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p2', True, param.fb)
+    param.CTLE_fz = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_z', True, param.fb / 4)
 
     if param.CTLE_type == 'CL93':
         param.ctle_gdc_values = _read_ParamConfigFile__xls_param(parameter, 'g_DC', True)
-        param.CTLE_fp1 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p1', True, param.fb / 4 / 1e9)
-        param.CTLE_fp2 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p2', True, param.fb / 1e9)
-        param.CTLE_fz = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_z', True, param.fb / 4 / 1e9)
+        param.CTLE_fp1 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p1', True, param.fb / 4)
+        param.CTLE_fp2 = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_p2', True, param.fb)
+        param.CTLE_fz = 1e9 * _read_ParamConfigFile__xls_param(parameter, 'f_z', True, param.fb / 4)
     elif param.CTLE_type == 'CL120d':
         param.g_DC_HP_values = _read_ParamConfigFile__xls_param(parameter, 'g_DC_HP', True, [])
         param.f_HP = 1e9 * np.atleast_1d(np.asarray(_read_ParamConfigFile__xls_param(parameter, 'f_HP_PZ', True, []), dtype=float))

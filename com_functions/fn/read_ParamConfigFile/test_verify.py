@@ -130,12 +130,21 @@ def test_frequency_conversion(minimal_csv_file):
 # ---------------------------------------------------------------------------
 
 def test_ctle_defaults(minimal_csv_file):
-    """Without explicit CTLE poles/zeros, defaults are fb/4, fb, fb/4."""
+    """Without explicit CTLE poles/zeros, the reference's defaults are 1e9
+    times fb/4, fb and fb/4 -- see the block comment further down.
+
+    COM Octave on this exact config:
+        param.CTLE_fp1 = 1.328125e+19
+        param.CTLE_fp2 = 5.3125e+19
+        param.CTLE_fz  = 1.328125e+19
+    """
     param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
-    fb = 53.125e9
-    assert abs(param.CTLE_fp1 - fb / 4) < 1e3, f"CTLE_fp1={param.CTLE_fp1}"
-    assert abs(param.CTLE_fp2 - fb) < 1e3, f"CTLE_fp2={param.CTLE_fp2}"
-    assert abs(param.CTLE_fz - fb / 4) < 1e3, f"CTLE_fz={param.CTLE_fz}"
+    for name, want in (('CTLE_fp1', 1.328125e+19),
+                       ('CTLE_fp2', 5.3125e+19),
+                       ('CTLE_fz', 1.328125e+19)):
+        got = float(np.ravel(np.asarray(getattr(param, name)))[0])
+        assert abs(got - want) <= 1e-12 * want, (
+            '%s is %.17g, COM Octave gives %.17g' % (name, got, want))
 
 
 # ---------------------------------------------------------------------------
@@ -486,54 +495,29 @@ def test_ctle_type_CL120e_divides_fz_by_the_dc_gain():
     CTLE_fz is divided by 10^(g_DC/20). g_DC is -1 in this config."""
     param = _param_from(_CL120E_CSV)
     fz = np.atleast_1d(np.asarray(param.CTLE_fz, dtype=float))
-    fb = 53.125e9
-    assert np.allclose(fz, (fb / 4) / (10.0 ** (-1.0 / 20.0)), rtol=1e-12)
+    # The base CTLE_fz here is the REFERENCE's default, 1e9*(fb/4), not fb/4;
+    # this test is about the /10^(g_DC/20) division, not the default itself.
+    base = 1e9 * (53.125e9 / 4)
+    assert np.allclose(fz, base / (10.0 ** (-1.0 / 20.0)), rtol=1e-12)
 
 
 # ---------------------------------------------------------------------------
-# DIVERGENCE FROM THE REFERENCE, DELIBERATE, AWAITING A RULING.
+# The CTLE pole and zero defaults, RULED 2026-09-23: match the reference.
 #
-# ML 10268-10270 default f_p1, f_p2 and f_z to param.fb/4, param.fb and
-# param.fb/4 and then multiply by 1e9. But param.fb is ALREADY in Hz -- ML
-# 10175 is `param.fb = xls_parameter(parameter,'f_b')*1e9` -- so the reference's
-# defaults come out 1e9 times too large, and the comment on each line says
-# "fp1 is in GHz". Measured on the minimal config above, which omits all three:
+# ML 10268-10270 multiply by 1e9 to turn a GHz config entry into Hz, but the
+# DEFAULT is param.fb/4, and param.fb is already in Hz (ML 10175). So an
+# omitted key gives 1e9 * 1.328e10 = 1.328e19 Hz, and the trailing comments on
+# those lines read "fp1 is in GHz". It looks like the defaults were meant to be
+# param.fb/4/1e9.
 #
-#     COM Octave   param.CTLE_fp1 = 1.328125e+19      (fb/4 = 1.328125e+10)
-#                  param.CTLE_fp2 = 5.3125e+19
-#                  param.CTLE_fz  = 1.328125e+19
-#     SiCoPR       param.CTLE_fp1 = 1.328125e+10
-#                  param.CTLE_fp2 = 5.3125e+10
-#                  param.CTLE_fz  = 1.328125e+10
+# The port used to write it that way and get the physically sensible value.
+# That is a silent correction of an upstream defect, which docs/VERIFICATION.md
+# says not to do: an upstream defect should be visible, not quietly improved
+# upon. The owner ruled to match the reference and report it, so
+# test_ctle_defaults above now pins COM Octave's own numbers.
 #
-# A 1.3e19 Hz pole makes the CTLE transfer function identically 1, i.e. no
-# filtering at all. The port divides by 1e9 and gets the physically sensible
-# value. That is a silent correction of an upstream defect, which the
-# verification contract says not to do: an upstream defect should be visible.
-#
-# It is documented rather than changed because matching the reference here
-# would alter results for any config that omits f_p1/f_p2/f_z, and that is the
-# owner's call, not a 4am one. Every shipped workbook supplies all three, so
-# the path is not reached on a normal run. Reported for the COM ad hoc.
-#
-# This test pins BOTH numbers so the divergence cannot drift unnoticed while
-# the ruling is pending.
+# Consequence worth knowing: a 1.328e19 Hz pole makes the CTLE transfer
+# function identically 1, i.e. no filtering at all. Every shipped workbook
+# supplies f_p1, f_p2 and f_z, so a normal run never reaches the defaults.
+# Reported for the COM ad hoc as item A12.
 # ---------------------------------------------------------------------------
-
-_OCT_CTLE_DEFAULTS = {'CTLE_fp1': 1.328125e+19,
-                      'CTLE_fp2': 5.3125e+19,
-                      'CTLE_fz': 1.328125e+19}
-
-
-def test_ctle_defaults_diverge_from_the_reference_by_1e9():
-    """Documented, pending a ruling. See the block comment above."""
-    param = _param_from(MINIMAL_CSV)
-    for name, reference_value in sorted(_OCT_CTLE_DEFAULTS.items()):
-        got = float(np.ravel(np.asarray(getattr(param, name)))[0])
-        assert abs(got - reference_value / 1e9) <= 1e-3, (
-            '%s is %.17g; the port intends reference/1e9 = %.17g'
-            % (name, got, reference_value / 1e9))
-        assert abs(got - reference_value) > 1.0, (
-            '%s now matches COM Octave (%.17g). The divergence documented '
-            'above has been resolved -- delete this test and the block '
-            'comment.' % (name, reference_value))
