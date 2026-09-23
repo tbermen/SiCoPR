@@ -283,3 +283,101 @@ def test_hf_extrapolation_is_sensitive_to_std_normalisation():
     assert not np.array_equal(kept[0], kept[1]), (
         'fixture no longer distinguishes N from N-1 in the HF trend; '
         're-craft it')
+
+
+# --------------------------------------------------------------------------
+# The remaining option branches, against COM Octave.
+#
+# All four were in test_option_coverage.py's KNOWN_UNCOVERED, so no test
+# selected them and the branches were dead to the suite. Sweeping them against
+# the reference found two real defects at once, both the same class: MATLAB's
+# interp1 is called with 'linear','extrap' at EVERY site in this function, and
+# the port used bare np.interp, which CLAMPS.
+#
+#   extrap_to_DC_or_zero    clamped at DC, giving H_mag[0] instead of the
+#                           extrapolated value. 0.995348 against 0.997306.
+#   interp_and_shift_to_DC  clamped above fin[-1]=40 GHz, so the whole
+#                           extrapolated band was wrong by up to 198%.
+#
+# Ten sites were converted to the file's own _interp_extrap helper. All four
+# options now agree with COM Octave to 1e-15.
+# --------------------------------------------------------------------------
+
+_OCT_EXTRAP_OR_ZERO = {
+    0: 0.99730593480744656 + 0.00032919949506952662j,   # DC, extrapolated
+    1: 0.94673980940840263 - 0.30724845157815045j,
+    3: 0.58332679250451458 - 0.80222427311898858j,
+    100: 0.94951056414620771 - 0.00090894483179480043j,
+    4500: 0.58597274243719866 - 0.094980252368355333j,
+    5000: 0.56331832643948188 - 0.18723719266414290j,
+    6000: 0.47567949416826988 - 0.35512578341644940j,
+}
+
+_OCT_INTERP_AND_SHIFT = {
+    0: 0.99551472791570106 + 0.0j,
+    1: 0.94631042174646207 - 0.30856840961100102j,
+    3: 0.58306478459292188 - 0.80241472332111674j,
+    100: 0.94951092389725633 - 0.00037816099156726970j,
+    4500: 0.081019575306351607 - 0.55407023957870660j,  # extrapolated band
+    5000: -0.50427908000090371 - 0.15066198141273707j,
+    6000: 0.38378038150916721 + 0.25175990881843324j,
+}
+
+_OCT_ZERO_DC = {
+    0: 0.99551472791570106 + 0.0j,
+    1: 0.94613778177939767 - 0.30909735619281908j,
+    3: 0.58261613749868002 - 0.80274053564088432j,
+    100: 0.94951056414620771 - 0.00090894483179480043j,
+    4500: 0.080709833127870334 - 0.55411544357299602j,
+    5000: -0.50436322241472187 - 0.15038006199362844j,
+    6000: 0.38392105726820769 + 0.25154533330127454j,
+}
+
+
+def _check_against(mag_method, ph_method, expected):
+    Sin, fin, fout = _default_path_fixture()
+    Sout = np.asarray(interp_Sparam(Sin, fin, fout, mag_method, ph_method,
+                                    _op(debug=False), _param())).ravel()
+    assert Sout.size == _OCT_N
+    for idx, want in expected.items():
+        rel = abs(Sout[idx] - want) / abs(want)
+        assert rel < 1e-13, (
+            'mag=%s ph=%s Sout[%d] is %r, COM Octave gives %r (rel %.2e)'
+            % (mag_method, ph_method, idx, Sout[idx], want, rel))
+
+
+def test_mag_extrap_to_DC_or_zero_matches_com_octave():
+    """Was clamping at DC where ML 8496 extrapolates log10(H_mag)."""
+    _check_against('extrap_to_DC_or_zero', 'extrap_cubic_to_dc_linear_to_inf',
+                   _OCT_EXTRAP_OR_ZERO)
+
+
+def test_phase_interp_and_shift_to_DC_matches_com_octave():
+    """Was clamping above fin[-1] where ML 8559 extrapolates."""
+    _check_against('linear_trend_to_DC', 'interp_and_shift_to_DC',
+                   _OCT_INTERP_AND_SHIFT)
+
+
+def test_phase_zero_DC_matches_com_octave():
+    _check_against('linear_trend_to_DC', 'zero_DC', _OCT_ZERO_DC)
+
+
+def test_linear_trend_to_DC_log_trend_to_inf_is_refused_like_the_reference():
+    """UPSTREAM: the reference cannot run this option on an ordinary channel.
+
+    hf_logtrend_val is assigned only inside `if hf_trend_val>H_mag(end)` or
+    `elseif hf_trend_val<eps`. For a normal HF trend, between the two, neither
+    branch runs and ML 8494 reads an undefined variable.
+
+        COM Octave: error: 'hf_logtrend_val' undefined
+                    interp_Sparam at line 55 column 13
+
+    MATLAB raises the same. The port used to pre-initialise the variable to
+    H_mag[-1] and answer where the reference stops; it now refuses, and names
+    the upstream defect in the message.
+    """
+    Sin, fin, fout = _default_path_fixture()
+    with pytest.raises(ValueError, match='hf_logtrend_val'):
+        interp_Sparam(Sin, fin, fout, 'linear_trend_to_DC_log_trend_to_inf',
+                      'extrap_cubic_to_dc_linear_to_inf',
+                      _op(debug=False), _param())

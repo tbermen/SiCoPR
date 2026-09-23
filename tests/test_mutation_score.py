@@ -156,11 +156,11 @@ EQUIVALENT = frozenset([
     # corrupts something nobody looks at again. Verified by reading each
     # branch; triage_copies.py reports some of them as load-bearing because it
     # is flow-insensitive and sees the read in a sibling elif.
-    'drop_dot_copy:interp_Sparam:209',
-    'drop_dot_copy:interp_Sparam:239',
-    'drop_dot_copy:interp_Sparam:273',
-    'drop_dot_copy:s21_to_impulse_DC:185',
-    'drop_dot_copy:s21_to_impulse_DC:218',
+    'drop_dot_copy:interp_Sparam:234',
+    'drop_dot_copy:interp_Sparam:264',
+    'drop_dot_copy:interp_Sparam:298',
+    'drop_dot_copy:s21_to_impulse_DC:200',
+    'drop_dot_copy:s21_to_impulse_DC:233',
     # force's non-square else-branch is unreachable: VV is built square as
     # zeros(num_taps, num_taps) in both languages, so nothing in that branch
     # can change a result. The SQUARE site at line 341 is caught, by the

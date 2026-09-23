@@ -74,20 +74,9 @@ KNOWN_UNCOVERED = frozenset([
     'com_ieee8023_:S_xn',
     'end_display_control:C2Mcom',
     'end_display_control:enable',
-    'interp_Sparam:extrap_to_DC_or_zero',
-    'interp_Sparam:interp_and_shift_to_DC',
-    'interp_Sparam:linear_trend_to_DC_log_trend_to_inf',
-    'interp_Sparam:zero_DC',
     'process_sxp:Rlcc_179mm',
     'read_ParamConfigFile:CL120d',
     'read_ParamConfigFile:CL120e',
-    's21_to_impulse_DC:extrap_to_DC',
-    's21_to_impulse_DC:extrap_to_DC_or_zero',
-    's21_to_impulse_DC:interp_and_shift_to_DC',
-    's21_to_impulse_DC:interp_to_DC',
-    's21_to_impulse_DC:linear_trend_to_DC_log_trend_to_inf',
-    's21_to_impulse_DC:trend_to_DC',
-    's21_to_impulse_DC:zero_DC',
 ])
 
 

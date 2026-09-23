@@ -53,11 +53,11 @@ this file demands the argument in writing.
 
 | operator | site | why the mutant cannot change the result |
 |---|---|---|
-| `drop_dot_copy` | `interp_Sparam:209` | `H_ph_corr = H_ph.copy()` in the `trend_and_shift_to_DC` branch. `H_ph` is last read on line 201, which computes the group delay, and the branch never reads it again: everything after uses `H_ph_corr`. The in-place loop corrupts a local nobody looks at |
-| `drop_dot_copy` | `interp_Sparam:239` | Same shape in the `extrap_cubic_to_dc_linear_to_inf` branch, whose last read of `H_ph` is line 231 |
-| `drop_dot_copy` | `interp_Sparam:273` | `H_ph_i = H_ph_cubic.copy()`; `H_ph_cubic` is not read after the copy |
-| `drop_dot_copy` | `s21_to_impulse_DC:185` | Same family; its branch's last read of `H_ph` is line 180 |
-| `drop_dot_copy` | `s21_to_impulse_DC:218` | Same family; its branch's last read of `H_ph` is line 209 |
+| `drop_dot_copy` | `interp_Sparam:234` | `H_ph_corr = H_ph.copy()` in the `trend_and_shift_to_DC` branch. `H_ph` is last read on the line that computes the group delay, and the branch never reads it again: everything after uses `H_ph_corr`. The in-place loop corrupts a local nobody looks at |
+| `drop_dot_copy` | `interp_Sparam:264` | Same shape in the `extrap_cubic_to_dc_linear_to_inf` branch, whose last read of `H_ph` is the group-delay line |
+| `drop_dot_copy` | `interp_Sparam:298` | `H_ph_i = H_ph_cubic.copy()`; `H_ph_cubic` is not read after the copy |
+| `drop_dot_copy` | `s21_to_impulse_DC:200` | Same family; its branch has already read `H_ph` for the group delay |
+| `drop_dot_copy` | `s21_to_impulse_DC:233` | Same family; its branch has already read `H_ph` for the group delay |
 
 These five were each read and checked by hand, and they are the reason
 `triage_copies.py` is a triage AID rather than an authority. It is

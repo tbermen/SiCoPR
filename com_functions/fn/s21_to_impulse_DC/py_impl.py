@@ -89,7 +89,13 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             p = np.polyfit(fin[:n], H_mag[:n], 1)
             fin_x = np.concatenate([[0.0], fin_x])
             H_mag_x = np.concatenate([[float(np.polyval(p, 0))], H_mag_x])
-        hf_log = H_mag[-1]
+        # UPSTREAM DEFECT, the same one as interp_Sparam's hf_logtrend_val:
+        # the reference assigns it only inside `if hf_trend_val>H_mag(end)`
+        # or `elseif hf_trend_val<eps`, so a normal HF trend leaves it
+        # undefined and ML 8494 reads it anyway. COM Octave on this
+        # channel: "error: 'hf_logtrend_val' undefined, interp_Sparam at
+        # line 55". Pre-initialising it answered where the reference stops.
+        hf_log = None
         if fin[-1] < fout[-1]:
             # MATLAB mid_freq_ind = round(length(fin)/2) is a 1-BASED index;
             # floor division as 0-based starts one point late for even len(fin).
@@ -101,10 +107,19 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             elif hf < eps_mag: hf = eps_mag; hf_log = np.finfo(float).tiny  # fix B02-D4 (MATLAB line 8125)
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             H_mag_x = np.concatenate([H_mag_x, [hf]])
-        H_mag_i = np.interp(fout, fin_x, H_mag_x)
+        H_mag_i = _interp_extrap(fout, fin_x, H_mag_x)
         if mag_method == 'linear_trend_to_DC_log_trend_to_inf' and fin[-1] < fout[-1]:
+            if hf_log is None:
+                raise ValueError(
+                    's21_to_impulse_DC: interp_sparam_mag='
+                    "'linear_trend_to_DC_log_trend_to_inf' cannot run on "
+                    'this channel. The reference leaves hf_logtrend_val '
+                    'undefined unless the HF trend exceeds H_mag(end) or '
+                    'falls below eps. COM Octave: "error: hf_logtrend_val '
+                    'undefined, interp_Sparam at line 55". Reported '
+                    'upstream; not a port failure.')
             log_x = np.concatenate([np.log(H_mag_x[:-1]), [np.log(max(hf_log, eps_val))]])
-            H_lmi = np.exp(np.interp(fout, fin_x, log_x))
+            H_lmi = np.exp(_interp_extrap(fout, fin_x, log_x))
             idx = np.searchsorted(fout, fin[-1], side='right')
             H_mag_i[idx:] = H_lmi[idx:]
 
@@ -127,7 +142,7 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             H_mag_x = np.concatenate([H_mag_x, [hf]])
         with np.errstate(divide='ignore', invalid='ignore'):
-            H_mag_i = 10.0 ** np.interp(fout, fin_x, np.log10(H_mag_x + eps_val))
+            H_mag_i = 10.0 ** _interp_extrap(fout, fin_x, np.log10(H_mag_x + eps_val))
 
     elif mag_method == 'extrap_to_DC_or_zero':
         if fin[0] > 0 and 20 * np.log10(H_mag[0] + eps_val) < -20:
@@ -135,21 +150,21 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             H_log_x = np.concatenate([[-100.0], np.log10(H_mag)])
             mask = fout <= fin[-1]
             H_mag_i = np.zeros(len(fout))
-            H_mag_i[mask] = 10.0 ** np.interp(fout[mask], fin_x2, H_log_x)
+            H_mag_i[mask] = 10.0 ** _interp_extrap(fout[mask], fin_x2, H_log_x)
         else:
             mask = fout <= fin[-1]; H_mag_i = np.zeros(len(fout))
             with np.errstate(divide='ignore', invalid='ignore'):
-                H_mag_i[mask] = 10.0 ** np.interp(fout[mask], fin, np.log10(H_mag))
+                H_mag_i[mask] = 10.0 ** _interp_extrap(fout[mask], fin, np.log10(H_mag))
         H_mag_i[fout > fin[-1]] = H_mag[-1]
 
     elif mag_method == 'extrap_to_DC':
         mask = fout <= fin[-1]; H_mag_i = np.zeros(len(fout))
         with np.errstate(divide='ignore', invalid='ignore'):
-            H_mag_i[mask] = 10.0 ** np.interp(fout[mask], fin, np.log10(H_mag))
+            H_mag_i[mask] = 10.0 ** _interp_extrap(fout[mask], fin, np.log10(H_mag))
         H_mag_i[fout > fin[-1]] = H_mag[-1]
 
     elif mag_method in ('old', 'pchip'):  # treat 'pchip' as linear fallback
-        H_mag_i = np.interp(fout, fin, H_mag)
+        H_mag_i = _interp_extrap(fout, fin, H_mag)
 
     else:
         raise ValueError(f'interp_Sparam: invalid opt_interp_Sparam_mag = {mag_method!r}')
@@ -170,11 +185,11 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
         H_ph_i[0] = 0.0
     elif ph_method == 'interp_to_DC':
         if fin[0] != 0:
-            H_ph_i = np.interp(fout, np.concatenate([[0.0], fin]), np.concatenate([[0.0], H_ph]))
+            H_ph_i = _interp_extrap(fout, np.concatenate([[0.0], fin]), np.concatenate([[0.0], H_ph]))
     elif ph_method == 'interp_and_shift_to_DC':
         if fin[0] != 0:
             dc_t = H_ph[0] - (H_ph[1] - H_ph[0]) / (fin[1] - fin[0]) * fin[0] if len(fin) > 1 else 0.0
-            H_ph_i = np.interp(fout, np.concatenate([[0.0], fin]),
+            H_ph_i = _interp_extrap(fout, np.concatenate([[0.0], fin]),
                                 np.concatenate([[0.0], H_ph - dc_t]))
     elif ph_method == 'trend_and_shift_to_DC':
         gd = -np.diff(H_ph) / np.diff(fin)
@@ -194,7 +209,7 @@ def _interp_Sparam(Sin, fin, fout, opt_mag, opt_phase, OP, param):
             all_gd = -np.diff(ph_x) / np.diff(fin_x)
             hf_pt = ph_x[-1] - np.median(all_gd) * (fout[-1] - fin_x[-1])
             fin_x = np.concatenate([fin_x, [fout[-1]]]); ph_x = np.concatenate([ph_x, [hf_pt]])
-        H_ph_i = np.interp(fout, fin_x, ph_x)
+        H_ph_i = _interp_extrap(fout, fin_x, ph_x)
     elif ph_method == 'extrap_cubic_to_dc_linear_to_inf':
         # Full port of MATLAB L8198-8228. This was previously a stub
         # (`np.interp(fout, fin, H_ph)  # simplified: use linear`) that skipped the

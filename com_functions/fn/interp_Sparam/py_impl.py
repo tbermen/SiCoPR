@@ -90,7 +90,22 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             fin_x = np.concatenate([[0.0], fin_x])
             H_mag_x = np.concatenate([[dc_val], H_mag_x])
 
-        hf_logtrend_val = H_mag[-1]
+        # UPSTREAM DEFECT (ML 8494 in the 'linear_trend_to_DC_log_trend_to_inf'
+        # branch): hf_logtrend_val is assigned ONLY inside
+        # `if hf_trend_val>H_mag(end)` or `elseif hf_trend_val<eps`. For a
+        # normal HF trend, between eps and H_mag(end), neither runs and the
+        # line that reads it references an undefined variable.
+        #
+        # COM Octave, on the 10 MHz to 40 GHz channel these tests use:
+        #   error: 'hf_logtrend_val' undefined
+        #       interp_Sparam at line 55 column 13
+        # MATLAB raises the same "Undefined function or variable". So the
+        # option is unusable on an ordinary channel in the reference itself.
+        #
+        # This used to be pre-initialised to H_mag[-1], which answered where
+        # the reference stops. Copying the reference's bug is the ruling;
+        # knowing it occurred is the point, so it raises with the reason named.
+        hf_logtrend_val = None
         if fin[-1] < fout[-1]:
             # MATLAB: mid_freq_ind = round(length(fin)/2), used as a 1-BASED index
             # into fin. Python needs the 0-based equivalent, and MATLAB's round is
@@ -110,11 +125,21 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             H_mag_x = np.concatenate([H_mag_x, [hf_val]])
 
-        H_mag_i = np.interp(fout, fin_x, H_mag_x)
+        H_mag_i = _interp_extrap(fout, fin_x, H_mag_x)
 
         if mag_method == 'linear_trend_to_DC_log_trend_to_inf' and fin[-1] < fout[-1]:
+            if hf_logtrend_val is None:
+                raise ValueError(
+                    "interp_Sparam: opt_interp_Sparam_mag="
+                    "'linear_trend_to_DC_log_trend_to_inf' cannot run on this "
+                    'channel. The reference assigns hf_logtrend_val only when '
+                    'the HF trend exceeds H_mag(end) or falls below eps; this '
+                    'trend is between the two, so the reference reaches an '
+                    'undefined variable. COM Octave: '
+                    "\"error: 'hf_logtrend_val' undefined, interp_Sparam at "
+                    'line 55\". Reported upstream; not a port failure.')
             logmag_x = np.concatenate([np.log(H_mag_x[:-1]), [np.log(max(hf_logtrend_val, eps))]])
-            H_logmag_i = np.exp(np.interp(fout, fin_x, logmag_x))
+            H_logmag_i = np.exp(_interp_extrap(fout, fin_x, logmag_x))
             idx = np.searchsorted(fout, fin[-1], side='right')
             H_mag_i[idx:] = H_logmag_i[idx:]
 
@@ -138,7 +163,7 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             H_mag_x = np.concatenate([H_mag_x, [hf_val]])
         with np.errstate(divide='ignore', invalid='ignore'):
-            H_mag_i = 10.0 ** np.interp(fout, fin_x, np.log10(H_mag_x + eps))
+            H_mag_i = 10.0 ** _interp_extrap(fout, fin_x, np.log10(H_mag_x + eps))
 
     elif mag_method == 'extrap_to_DC_or_zero':
         if fin[0] > 0 and 20 * np.log10(H_mag[0] + eps) < -20:
@@ -146,23 +171,23 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             H_log_x = np.concatenate([[-100.0], np.log10(H_mag)])
             mask = fout <= fin[-1]
             H_mag_i = np.zeros(len(fout))
-            H_mag_i[mask] = 10.0 ** np.interp(fout[mask], fin_x2, H_log_x)
+            H_mag_i[mask] = 10.0 ** _interp_extrap(fout[mask], fin_x2, H_log_x)
         else:
             mask = fout <= fin[-1]
             H_mag_i = np.zeros(len(fout))
             with np.errstate(divide='ignore', invalid='ignore'):
-                H_mag_i[mask] = 10.0 ** np.interp(fout[mask], fin, np.log10(H_mag))
+                H_mag_i[mask] = 10.0 ** _interp_extrap(fout[mask], fin, np.log10(H_mag))
         H_mag_i[fout > fin[-1]] = H_mag[-1]
 
     elif mag_method == 'extrap_to_DC':
         mask = fout <= fin[-1]
         H_mag_i = np.zeros(len(fout))
         with np.errstate(divide='ignore', invalid='ignore'):
-            H_mag_i[mask] = 10.0 ** np.interp(fout[mask], fin, np.log10(H_mag))
+            H_mag_i[mask] = 10.0 ** _interp_extrap(fout[mask], fin, np.log10(H_mag))
         H_mag_i[fout > fin[-1]] = H_mag[-1]
 
     elif mag_method == 'old':
-        H_mag_i = np.interp(fout, fin, H_mag)
+        H_mag_i = _interp_extrap(fout, fin, H_mag)
 
     else:
         raise ValueError(f'interp_Sparam: invalid opt_interp_Sparam_mag = {mag_method!r}')
@@ -188,14 +213,14 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
         if fin[0] != 0:
             fin_ext = np.concatenate([[0.0], fin])
             ph_ext = np.concatenate([[0.0], H_ph])
-            H_ph_i = np.interp(fout, fin_ext, ph_ext)
+            H_ph_i = _interp_extrap(fout, fin_ext, ph_ext)
 
     elif ph_method == 'interp_and_shift_to_DC':
         if fin[0] != 0:
             dc_trend = H_ph[0] - (H_ph[1] - H_ph[0]) / (fin[1] - fin[0]) * fin[0] if len(fin) > 1 else 0.0
             fin_ext = np.concatenate([[0.0], fin])
             ph_ext = np.concatenate([[0.0], H_ph - dc_trend])
-            H_ph_i = np.interp(fout, fin_ext, ph_ext)
+            H_ph_i = _interp_extrap(fout, fin_ext, ph_ext)
 
     elif ph_method == 'trend_and_shift_to_DC':
         group_delay = -np.diff(H_ph) / np.diff(fin)
@@ -224,7 +249,7 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             ph_x = np.concatenate([ph_x, [hf_phase_trend]])
 
-        H_ph_i = np.interp(fout, fin_x, ph_x)
+        H_ph_i = _interp_extrap(fout, fin_x, ph_x)
 
     elif ph_method == 'extrap_cubic_to_dc_linear_to_inf':
         if fin[0] != 0:

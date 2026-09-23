@@ -366,3 +366,82 @@ def test_trend_and_shift_differs_from_the_default_phase_method():
                                    - float(np.max(np.abs(b)))) > 1e-6, (
         'the two phase methods now agree on this channel, so this test no '
         'longer exercises the branch it claims to; re-craft the fixture')
+
+
+# --------------------------------------------------------------------------
+# The remaining option branches, against COM Octave.
+#
+# All seven were in test_option_coverage.py's KNOWN_UNCOVERED. This function
+# carries an INLINED copy of interp_Sparam, and it had the same defect the
+# canonical did: MATLAB calls interp1 with 'linear','extrap' at every site and
+# the copy used bare np.interp, which CLAMPS. Ten sites converted to the file's
+# own _interp_extrap. Classic inlined-copy drift: fixing the canonical does not
+# reach the copy, which is why tests/test_inlined_copies.py exists.
+#
+# Values are COM Octave's own s21_to_impulse_DC on _default_path_channel().
+# --------------------------------------------------------------------------
+
+#            mag, phase                            -> N, argmax, peak, caus, trunc
+_OCT_OPTIONS = {
+    ('extrap_to_DC', 'extrap_cubic_to_dc_linear_to_inf'): (
+        972, 600, 0.68308176349369054, -17.797306168157391, -41.450970575421195),
+    ('extrap_to_DC_or_zero', 'extrap_cubic_to_dc_linear_to_inf'): (
+        972, 600, 0.68308176349369054, -17.797306168157391, -41.450970575421195),
+    ('trend_to_DC', 'extrap_cubic_to_dc_linear_to_inf'): (
+        854, 600, 0.66640309000961351, -17.422961353967331, -43.587036781115096),
+    ('linear_trend_to_DC', 'interp_and_shift_to_DC'): (
+        636, 600, 0.48378585071500818, -17.782922594327346, -50.778860416357986),
+    ('linear_trend_to_DC', 'interp_to_DC'): (
+        636, 600, 0.48379154847927469, -17.778515404803066, -50.780564888335846),
+    ('linear_trend_to_DC', 'zero_DC'): (
+        636, 600, 0.48379154847927469, -17.778515404803066, -50.780564888335846),
+}
+
+
+def _op_options(mag_m, ph_m):
+    return SimpleNamespace(
+        interp_sparam_mag=mag_m, interp_sparam_phase=ph_m,
+        DEBUG=0, ZERO_PAD=0, ENFORCE_CAUSALITY=1,
+        EC_PULSE_TOL=0.05, EC_REL_TOL=1e-3, EC_DIFF_TOL=1e-5,
+        impulse_response_truncation_threshold=1e-3)
+
+
+@pytest.mark.parametrize('combo', sorted(_OCT_OPTIONS))
+def test_every_option_matches_com_octave(combo):
+    mag_m, ph_m = combo
+    n, argmax0, peak, caus_db, trunc_db = _OCT_OPTIONS[combo]
+    IL, fin, ts = _default_path_channel()
+    v, _t, caus, trunc = s21_to_impulse_DC(IL, fin, ts,
+                                           _op_options(mag_m, ph_m), _param())
+    v = np.asarray(v).ravel()
+    assert v.size == n, ('mag=%s ph=%s length %d, COM Octave gives %d'
+                         % (mag_m, ph_m, v.size, n))
+    assert int(np.argmax(np.abs(v))) == argmax0
+    for got, want, label in ((np.max(np.abs(v)), peak, 'peak'),
+                             (caus, caus_db, 'causality_correction_dB'),
+                             (trunc, trunc_db, 'truncation_dB')):
+        rel = abs(float(got) - want) / abs(want)
+        assert rel < 1e-12, ('mag=%s ph=%s %s is %.17g, COM Octave gives %.17g'
+                             % (mag_m, ph_m, label, float(got), want))
+
+
+def test_log_trend_to_inf_is_refused_like_the_reference():
+    """UPSTREAM: the reference cannot run this option on an ordinary channel.
+
+    Its hf_logtrend_val is assigned only when the HF trend exceeds H_mag(end)
+    or falls below eps. Between the two, neither branch runs and ML 8494 reads
+    an undefined variable.
+
+        COM Octave: error: 'hf_logtrend_val' undefined
+                    interp_Sparam at line 55 column 13
+                    s21_to_impulse_DC at line 20 column 5
+
+    The inlined copy here pre-initialised it and answered where the reference
+    stops. It now refuses, naming the upstream defect.
+    """
+    IL, fin, ts = _default_path_channel()
+    with pytest.raises(ValueError, match='hf_logtrend_val'):
+        s21_to_impulse_DC(IL, fin, ts,
+                          _op_options('linear_trend_to_DC_log_trend_to_inf',
+                                      'extrap_cubic_to_dc_linear_to_inf'),
+                          _param())
