@@ -184,7 +184,12 @@ def main():
     inl = texts.get('test_inlined_copies.py', '')
 
     sha = git('rev-parse', 'HEAD')[:9]
-    dirty = bool(git('status', '--porcelain'))
+    # The anchor directory is this tool's OUTPUT, not an input to it. Counting
+    # it would mean --approve dirties the tree by writing the very file whose
+    # promise is that the tree was clean, and the next run would then report
+    # itself as unreproducible.
+    dirty = bool([ln for ln in git('status', '--porcelain').splitlines()
+                  if 'verification/approved/' not in ln.replace('\\', '/')])
     anchor_sha, anchor_file = anchor()
     untrailered = untrailered_commits(anchor_sha)
 
