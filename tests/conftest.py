@@ -66,7 +66,19 @@ def reference_chdata_td(reference_chdata_processed):
     """Run COM_FD_to_TD on the reference channel."""
     import sicopr
     chdata, param, OP = reference_chdata_processed
-    chdata_out = sicopr.COM_FD_to_TD(chdata, param, OP)
+    # Inject the REAL dependencies, exactly as sicopr's own run path does at
+    # its _wired_COM_FD_to_TD. Called bare, COM_FD_to_TD falls back to the
+    # module-level stubs it carries for unit testing -- including a "minimal
+    # s21->impulse via ifft" that stands in for the whole of
+    # s21_to_impulse_DC. Every checkpoint below, and reference_result which
+    # chains off this fixture, was therefore asserting on a stubbed pipeline
+    # while reading as though it validated the engine.
+    chdata_out = sicopr.COM_FD_to_TD(
+        chdata, param, OP,
+        _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+        _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+        _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+        _get_cm_noise_fn=sicopr.get_cm_noise)
     return chdata_out, param, OP
 
 
