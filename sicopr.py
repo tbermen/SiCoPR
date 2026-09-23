@@ -13532,6 +13532,29 @@ def _get_pdf_full__mround(x):
     # send 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
     return int(round(x))
 
+_EPS = np.finfo(float).eps
+
+
+def _get_pdf_full__colon(step, limit):
+    """MATLAB `0:step:limit`, for a positive step.
+
+    Verbatim from get_StepR/get_PulseR, where it was verified against COM
+    Octave. A colon stops at or BEFORE the limit: `arange(0, limit+step, step)`
+    is one element too long when limit/step is not an integer, and
+    `floor(limit/step)+1` is one too short when the quotient lands a fraction
+    of an eps below an integer.
+    """
+    n = int(round(limit / step + 1.0))
+    if n > 0 and (n - 1) * step > limit + 3.0 * _EPS * abs(limit):
+        n -= 1
+    out = np.arange(max(n, 0)) * step
+    if out.size:
+        out[0] = 0.0
+    if out.size > 1 and out[-1] > limit:
+        out[-1] = limit
+    return out
+
+
 def _get_pdf_full__get_center_of_UI(samp_UI):
     M = int(samp_UI)
     return M // 2 + 1  # 1-based MATLAB half_UI
@@ -13579,11 +13602,25 @@ def get_pdf_full(chdata, delta_y, t_s, param, OP, pdf_range=None):
     original_sample_time = old_time[t_s_orig]
     old_time = old_time - original_sample_time
 
-    # New time axis forcing 0 in axis
-    new_timea = np.arange(0, int(np.floor(np.abs(min(old_time)) * samp_UI)) + 2) / samp_UI
-    new_timea = -new_timea[::-1]  # negative side from 0 downward
-    new_timeb = np.arange(0, int(np.floor(max(old_time) * samp_UI)) + 2) / samp_UI
-    # combine: timea + timeb[1:] (dedup 0)
+    # New time axis forcing 0 in axis. ML 7990-7992:
+    #     new_timea=[0:-1/samp_UI:min(old_time)];
+    #     new_timeb=[0:1/samp_UI:max(old_time)];
+    #     new_time =[fliplr(new_timea) new_timeb(2:end)];
+    #
+    # D12. The port used arange(..., floor(x*samp_UI) + 2), which is one point
+    # LONGER than the colon on each side, and that extra point lies OUTSIDE
+    # [min(old_time), max(old_time)]: a MATLAB colon stops at or before its
+    # limit and never steps past it. Two extra samples shift the cursor
+    # t_s = argmin(|new_time|) by one, which moves the sampling phase and the
+    # centring circshift, and the port disagreed with the MATLAB-faithful
+    # oracle in 1 of 32 phase columns.
+    #
+    # _get_pdf_full__colon is the helper verified against COM Octave for get_StepR and
+    # get_PulseR, which are the same reference construct. It takes a POSITIVE
+    # step, and the two colons here are symmetric about zero, so the negative
+    # side is built on the magnitude and negated.
+    new_timea = -_get_pdf_full__colon(1.0 / samp_UI, abs(min(old_time)))[::-1]
+    new_timeb = _get_pdf_full__colon(1.0 / samp_UI, max(old_time))
     new_time = np.concatenate([new_timea, new_timeb[1:]])
 
     SBR = np.interp(new_time, old_time, pulse_orig)

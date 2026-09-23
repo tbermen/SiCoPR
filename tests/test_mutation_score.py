@@ -152,7 +152,7 @@ KNOWN_SURVIVORS = frozenset([
 EQUIVALENT = frozenset([
     'drop_dot_copy:MMSE:371',
     'drop_dot_copy:get_PSDs:472',   # was :436 before the 2026-09-23 oracle pass
-    'drop_dot_copy:get_pdf_full:128',
+    'drop_dot_copy:get_pdf_full:165',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local
     # that its own branch has already finished reading, so the in-place write
     # corrupts something nobody looks at again. Verified by reading each

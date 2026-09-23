@@ -388,6 +388,30 @@ Only executing the reference separates them. So the chain is:
 Each link does one job and none substitutes for another. "Preferred" is not
 enough for step 2, because a reading is precisely what produced `np.std`.
 
+## The reference wins, and that is not a decision to escalate
+
+When the port and the reference disagree, change the port. This is settled and
+needs no ruling.
+
+That includes a defect in the reference. Reproduce it, make its occurrence
+detectable where that is possible, and record it for the COM ad hoc. Do NOT
+silently improve on the reference. The silent correction is its own defect
+class: ML 10268 defaults a CTLE pole to `1e9*(param.fb/4)` where `param.fb` is
+already in Hz, giving 1.3e19 Hz, and the port was written as
+`param.fb/4/1e9` so the units came out sensible. A test written from the same
+reading then pinned the corrected value and made it look verified. Nobody could
+have caught it by reading, because the Python reads as MORE correct than the
+MATLAB.
+
+The `waived` status and its recorded approval exist for rows that do not apply
+at all, not for choosing between the reference's behaviour and a nicer one.
+There is no choice to make there.
+
+The short list of things that DO go back to the owner: repository visibility,
+publishing anything, sending mail, authorising a long corpus run, and any
+change whose blast radius cannot be bounded by running the suite. A numeric
+difference from the reference is never one of them.
+
 ## Row status vocabulary
 
 Computed: `open`, `pass`, `finding`, `unreachable`, `stale`.

@@ -179,3 +179,89 @@ def test_eighth_phase_pdf_matches_com_octave():
     pdfs, _h, _a = _run(_T_S1 - 1)
     assert pdfs[7].Min == _OCT_PDF[7][0]
     assert np.asarray(pdfs[7].y).size == _OCT_PDF[7][1]
+
+
+# --------------------------------------------------------------------------
+# D12: the new_time grid, against COM Octave.
+#
+# tests/test_noise_pdf_composite.py compares get_pdf_full against gpf_oracle,
+# which is a Python TRANSCRIPTION of the MATLAB. docs/VERIFICATION.md is
+# explicit that a reading is not verification, so the construct D12 was
+# actually about is pinned here against the reference itself.
+#
+# ML 7990-7992, lifted verbatim and executed under Octave:
+#     new_timea=[0:-1/samp_UI:min(old_time)];
+#     new_timeb=[0:1/samp_UI:max(old_time)];
+#     new_time =[fliplr(new_timea) new_timeb(2:end)];
+#
+# The port built new_timea/b with arange(..., floor(x*samp_UI) + 2), one point
+# LONGER than the colon on each side, and that extra point lies OUTSIDE
+# [min(old_time), max(old_time)] -- a colon stops at or before its limit. Two
+# extra samples shift t_s = argmin(|new_time|) by one, which moves the sampling
+# phase and the centring circshift, and the port then disagreed with the oracle
+# in 1 of 32 phase columns.
+#
+# COM Octave, (numel(new_time), 1-based t_s) over eight cases including the
+# cursor at either end of the pulse and non-integer M -> samples_for_C2M
+# ratios. All eight agree.
+# --------------------------------------------------------------------------
+
+#            n_pulse, M_orig, samp_UI, t_s_orig  ->  (numel, t_s 1-based)
+_OCT_NEW_TIME = {
+    (200, 32, 32, 60): (200, 61),
+    (200, 32, 64, 60): (399, 121),
+    (200, 32, 63, 60): (392, 119),
+    (157, 32, 64, 41): (313, 83),
+    (301, 16, 40, 77): (750, 193),
+    (97, 8, 13, 22): (156, 36),
+    (200, 32, 64, 1): (399, 3),
+    (200, 32, 64, 199): (399, 399),
+}
+
+
+@pytest.mark.parametrize('case', sorted(_OCT_NEW_TIME))
+def test_new_time_grid_matches_com_octave(case):
+    """numel(new_time) and the cursor it puts at zero."""
+    import sicopr
+    colon = sicopr.__dict__['_get_pdf_full__colon']
+    n_pulse, M_orig, samp_UI, t_s_orig = case
+    want_n, want_ts = _OCT_NEW_TIME[case]
+
+    old_time = np.arange(n_pulse) / M_orig
+    old_time = old_time - old_time[t_s_orig]
+    a = -colon(1.0 / samp_UI, abs(min(old_time)))[::-1]
+    b = colon(1.0 / samp_UI, max(old_time))
+    new_time = np.concatenate([a, b[1:]])
+
+    assert new_time.size == want_n, (
+        'numel(new_time) is %d, COM Octave gives %d for %r'
+        % (new_time.size, want_n, case))
+    got_ts = int(np.argmin(np.abs(new_time))) + 1       # 1-based, as Octave
+    assert got_ts == want_ts, (
+        't_s is %d, COM Octave gives %d for %r' % (got_ts, want_ts, case))
+    # A colon never steps past its limit.
+    assert new_time[0] >= min(old_time) - 1e-12, 'grid runs below min(old_time)'
+    assert new_time[-1] <= max(old_time) + 1e-12, 'grid runs above max(old_time)'
+
+
+def test_get_pdf_full_builds_new_time_with_the_colon():
+    """The parametrized cases above pin the RECIPE against COM Octave, but they
+    rebuild the grid themselves, so they keep passing if get_pdf_full stops
+    using it. Re-seeding the D12 defect left them green and only the composite
+    check in tests/test_noise_pdf_composite.py went red -- which is the honest
+    discriminator, but it lives in another file and reports a phase-column
+    count rather than the cause.
+
+    This asserts the wiring directly: both sides of new_time come from the
+    colon helper, not from an arange with a floor()+2 bound.
+    """
+    import inspect
+    import sicopr
+    src = inspect.getsource(sicopr.get_pdf_full)
+    head = src[:src.index('SBR')]           # the time-axis construction only
+    assert '_get_pdf_full__colon(' in head, (
+        'get_pdf_full no longer builds new_time with the colon helper; D12 was '
+        'exactly this, and the parametrized cases above cannot see it')
+    assert '+ 2) / samp_UI' not in head and '+ 2)/samp_UI' not in head, (
+        'new_time is back to an arange with a floor()+2 bound, which carries a '
+        'point past min/max(old_time) and shifts t_s by one')

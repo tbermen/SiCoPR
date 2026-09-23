@@ -279,14 +279,20 @@ for k in cols_common:
         mismatch_cols.append(k)
     max_col_err = max(max_col_err, e)
 
-xcheck("get_pdf_full_matches_matlab_oracle",
+# D12, RESOLVED 2026-09-23. This was an xcheck: get_pdf_full disagreed with the
+# MATLAB-faithful oracle in 1 of 32 phase columns, because new_time was built
+# with arange(..., floor(x*samp_UI) + 2) where ML 7990-7992 uses a colon. A
+# colon stops at or BEFORE its limit, so the port carried one extra point
+# OUTSIDE [min(old_time), max(old_time)] on each side; two extra samples shift
+# t_s = argmin(|new_time|) by one, moving the sampling phase and the centring
+# circshift. Replaced with the _colon helper already verified against COM
+# Octave for get_StepR and get_PulseR, which are the same reference construct.
+# The xcheck XPASSed on the fix, which is exactly what that mechanism is for.
+check("get_pdf_full_matches_matlab_oracle",
       len(mismatch_cols) == 0,
-      "DIVERGENT (D12, C2M-only): get_pdf_full diverges from the MATLAB-faithful "
-      "oracle in %d/%d phase columns (max relerr %.3g). Cause: py 11218-11222 "
-      "new_time uses arange(...,floor(x)+2), adding an extra out-of-range point "
-      "per side vs MATLAB colon (ML 7665-7667); the cursor t_s then shifts by one "
-      "sample, moving the phase and centering circshift. (half_UI is correctly "
-      "1-based via _get_pdf_full__get_center_of_UI=M//2+1.)"
+      "get_pdf_full diverges from the MATLAB-faithful oracle in %d/%d phase "
+      "columns (max relerr %.3g). D12 was this, and its cause was new_time "
+      "carrying an extra out-of-range point per side; check the colon."
       % (len(mismatch_cols), len(cols_common), max_col_err))
 
 finish()
