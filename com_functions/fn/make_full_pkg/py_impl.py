@@ -24,6 +24,39 @@ import copy
 from types import SimpleNamespace
 
 
+def _lin(arr, k, name):
+    """MATLAB `A(k)`: linear indexing is COLUMN-major, and out of range errors.
+
+    COM Octave, make_full_pkg('RX', ...) with mele=1 and the shipped 2x4
+    param.pkg_Z_c = [87.5 92.5 90 95; 88 93 91 96] (the workbook stores
+    package_Z_c as cases-by-[Tx Rx] and transposes it, so it is 2-by-mele):
+    pkg_Z_c(2) is element (2,1) = 88, not the row-major (1,2) = 92.5 that
+    numpy's .ravel()[1] returns.  s21 at 1 GHz was
+    0.78218388281501161-0.57074890734687478j from the reference against
+    0.78497930629192492-0.57106813157164604j from the port.
+    COM Octave, C_bump=[1.5e-13] for 'RX': "error: C_bump(2): out of bound 1
+    (dimensions are 1x1)" — the reference refuses, it does not fall back.
+    """
+    a = np.asarray(arr, dtype=float).ravel(order='F')
+    if k >= a.size:
+        raise IndexError('make_full_pkg: %s(%d): out of bound %d'
+                         % (name, k + 1, a.size))
+    return float(a[k])
+
+
+def _row(arr, i, name):
+    """MATLAB `A(i,:)`: a whole row, and a row that is not there errors.
+
+    COM Octave, make_full_pkg('RX', ...) with mele=4 and a 1-D pkg_Z_c:
+    "error: param(2,_): out of bound 1 (dimensions are 1x4)".
+    """
+    a = np.atleast_2d(np.asarray(arr, dtype=float))
+    if i >= a.shape[0]:
+        raise IndexError('make_full_pkg: %s(%d,:): out of bound %d'
+                         % (name, i + 1, a.shape[0]))
+    return a[i, :]
+
+
 def _make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     """Inlined make_pkg (MATLAB lines 8359-8405)."""
     f = np.asarray(f, dtype=float)
@@ -113,9 +146,9 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             setattr(pkg_param, field, getattr(pkg_struct, field))
 
     C_diepad = np.asarray(param.C_diepad, dtype=float)
-    C_pkg_board = np.asarray(param.C_pkg_board, dtype=float).ravel()
+    C_pkg_board = np.asarray(param.C_pkg_board, dtype=float)
     L_comp = np.asarray(param.L_comp, dtype=float)
-    C_bump = np.asarray(param.C_bump, dtype=float).ravel()
+    C_bump = np.asarray(param.C_bump, dtype=float)
 
     if not include_die:
         C_diepad = C_diepad * 0
@@ -127,31 +160,32 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
 
     # Determine vector vs matrix C_diepad/L_comp
     is_vector_cd = (C_diepad.ndim == 1) or (C_diepad.ndim == 2 and min(C_diepad.shape) == 1)
-    C_diepad_flat = C_diepad.ravel()
-    L_comp_flat = L_comp.ravel()
 
     if is_vector_cd:
-        Cd_Tx = C_diepad_flat[0] if len(C_diepad_flat) > 0 else 0.0
-        Cd_Rx = C_diepad_flat[1] if len(C_diepad_flat) > 1 else 0.0
-        Lcomp_Tx = L_comp_flat[0] if len(L_comp_flat) > 0 else 0.0
-        Lcomp_Rx = L_comp_flat[1] if len(L_comp_flat) > 1 else 0.0
+        # MATLAB C_diepad(1)/(2), L_comp(1)/(2): a 1-element parameter is
+        # "error: C_diepad(2): out of bound 1", not a silent zero.
+        Cd_Tx = _lin(C_diepad, 0, 'C_diepad')
+        Cd_Rx = _lin(C_diepad, 1, 'C_diepad')
+        Lcomp_Tx = _lin(L_comp, 0, 'L_comp')
+        Lcomp_Rx = _lin(L_comp, 1, 'L_comp')
         num_blocks = mele
         extra_LC = 0
     else:
         # 2D matrix: row 0 = TX, row 1 = RX
-        C_diepad_2d = C_diepad.reshape(2, -1)
-        L_comp_2d = L_comp.reshape(2, -1)
-        Cd_Tx = C_diepad_2d[0, :]
-        Cd_Rx = C_diepad_2d[1, :]
-        Lcomp_Tx = L_comp_2d[0, :]
-        Lcomp_Rx = L_comp_2d[1, :]
+        Cd_Tx = _row(C_diepad, 0, 'C_diepad')
+        Cd_Rx = _row(C_diepad, 1, 'C_diepad')
+        Lcomp_Tx = _row(L_comp, 0, 'L_comp')
+        Lcomp_Rx = _row(L_comp, 1, 'L_comp')
         extra_LC = len(Cd_Tx) - 1
         num_blocks = mele + extra_LC
 
     insert_zeros = np.zeros(extra_LC)
 
-    type_upper = str(type_).upper()
-    if type_upper == 'TX':
+    # MATLAB `switch type / case 'TX'` is case-SENSITIVE, unlike the strcmpi
+    # above.  COM Octave, make_full_pkg('Tx', ...): the switch matches nothing,
+    # Cball is never assigned and it fails with "error: 'Cball' undefined".
+    type_str = str(type_)
+    if type_str == 'TX':
         if mele == 1:
             # MATLAB L8389-8390: Cpad=Cd_Tx; Lcomp=L_comp_Tx -- the WHOLE row
             # when C_diepad/L_comp are given as a 2xN matrix of die LC
@@ -161,13 +195,10 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             # which set mele=4 (z_p_next_cases is 4x4) and zero die values.
             Cpad = np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel()
             Lcomp = np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel()
-            Cbump = np.array([float(C_bump[0])])
-            Cball = np.array([float(C_pkg_board[0])])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float).ravel()
-            Zpkg = np.array([float(pkg_Z_c[0])])
+            Cbump = np.array([_lin(C_bump, 0, 'C_bump')])
+            Cball = np.array([_lin(C_pkg_board, 0, 'C_pkg_board')])
+            Zpkg = np.array([_lin(param.pkg_Z_c, 0, 'pkg_Z_c')])
         elif mele == 4:
-            cd_val = float(Cd_Tx) if np.isscalar(Cd_Tx) else float(np.asarray(Cd_Tx).ravel()[0])
-            lc_val = float(Lcomp_Tx) if np.isscalar(Lcomp_Tx) else float(np.asarray(Lcomp_Tx).ravel()[0])
             # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[L_comp_Tx 0 0 0]  (L8390-8391).
             # Cd_Tx/L_comp_Tx are ROW VECTORS when C_d/L_comp are given as a
             # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
@@ -179,14 +210,10 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
                                    np.zeros(3)])
             Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
                                     np.zeros(3)])
-            Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
-            C_v = np.asarray(param.C_v, dtype=float).ravel()
-            Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float)
-            if pkg_Z_c.ndim == 1:
-                Zpkg = pkg_Z_c[:4]
-            else:
-                Zpkg = pkg_Z_c[0, :4]
+            Cbump = np.array([_lin(C_bump, 0, 'C_bump'), 0.0, 0.0, 0.0])
+            Cball = np.array([0.0, 0.0, _lin(param.C_v, 0, 'C_v'),
+                              _lin(C_pkg_board, 0, 'C_pkg_board')])
+            Zpkg = _row(param.pkg_Z_c, 0, 'pkg_Z_c')
         else:
             raise ValueError(f'make_full_pkg: unsupported mele={mele}')
 
@@ -200,20 +227,21 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
         elif ch_upper == 'NOISE':
             raise ValueError('make_full_pkg: TX pkg should not be used for NOISE channels')
         else:
-            Len = np.asarray(param.Pkg_len_TX, dtype=float).ravel()
+            # MATLAB's channel_type switch has no otherwise, so Len is never
+            # assigned.  COM Octave, channel_type='BOGUS': "error: 'Len'
+            # undefined near line 145" — it does not fall back to Pkg_len_TX.
+            raise ValueError(
+                f'make_full_pkg: unsupported channel_type={channel_type}')
 
-    elif type_upper == 'RX':
+    elif type_str == 'RX':
         if mele == 1:
             # MATLAB L8416-8417: the whole row, as for TX above.
             Cpad = np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel()
             Lcomp = np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel()
-            Cbump = np.array([float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])])
-            Cball = np.array([float(C_pkg_board[1]) if len(C_pkg_board) > 1 else float(C_pkg_board[0])])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float).ravel()
-            Zpkg = np.array([float(pkg_Z_c[1]) if len(pkg_Z_c) > 1 else float(pkg_Z_c[0])])
+            Cbump = np.array([_lin(C_bump, 1, 'C_bump')])
+            Cball = np.array([_lin(C_pkg_board, 1, 'C_pkg_board')])
+            Zpkg = np.array([_lin(param.pkg_Z_c, 1, 'pkg_Z_c')])
         elif mele == 4:
-            cd_val = float(Cd_Rx) if np.isscalar(Cd_Rx) else float(np.asarray(Cd_Rx).ravel()[0])
-            lc_val = float(Lcomp_Rx) if np.isscalar(Lcomp_Rx) else float(np.asarray(Lcomp_Rx).ravel()[0])
             # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[L_comp_Rx 0 0 0]  (L8390-8391).
             # Cd_Rx/L_comp_Rx are ROW VECTORS when C_d/L_comp are given as a
             # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
@@ -225,19 +253,19 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
                                    np.zeros(3)])
             Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
                                     np.zeros(3)])
-            cb_val = float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])
-            Cbump = np.array([cb_val, 0.0, 0.0, 0.0])
-            C_v = np.asarray(param.C_v, dtype=float).ravel()
-            cb_pkg = float(C_pkg_board[1]) if len(C_pkg_board) > 1 else float(C_pkg_board[0])
-            Cball = np.array([0.0, 0.0, float(C_v[1]) if len(C_v) > 1 else float(C_v[0]), cb_pkg])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float)
-            if pkg_Z_c.ndim == 1:
-                Zpkg = pkg_Z_c[:4] if len(pkg_Z_c) >= 4 else np.pad(pkg_Z_c, (0, 4 - len(pkg_Z_c)))
-            else:
-                Zpkg = pkg_Z_c[1, :4] if pkg_Z_c.shape[0] > 1 else pkg_Z_c[0, :4]
+            Cbump = np.array([_lin(C_bump, 1, 'C_bump'), 0.0, 0.0, 0.0])
+            Cball = np.array([0.0, 0.0, _lin(param.C_v, 1, 'C_v'),
+                              _lin(C_pkg_board, 1, 'C_pkg_board')])
+            Zpkg = _row(param.pkg_Z_c, 1, 'pkg_Z_c')
         else:
             raise ValueError(f'make_full_pkg: unsupported mele={mele}')
 
+        # MATLAB's RX switch covers THRU/NEXT/FEXT/NOISE, all of them
+        # Pkg_len_RX, and has no otherwise.  COM Octave, channel_type='BOGUS'
+        # on 'RX': "error: 'Len' undefined near line 145".
+        if str(channel_type).upper() not in ('THRU', 'NEXT', 'FEXT', 'NOISE'):
+            raise ValueError(
+                f'make_full_pkg: unsupported channel_type={channel_type}')
         Len = np.asarray(param.Pkg_len_RX, dtype=float).ravel()
     else:
         raise ValueError(f'make_full_pkg: type must be TX or RX, got {type_}')
@@ -259,20 +287,29 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
 
     # Build and cascade blocks
     n_blocks = int(num_blocks)
-    # Ensure arrays are long enough
-    def _el(arr, j):
+
+    def _el(arr, j, name):
+        # MATLAB indexes Len(j), Cpad(j), ... straight; a vector shorter than
+        # num_blocks is an error, not an implicit zero.  COM Octave, mele=4
+        # with a scalar param.Pkg_len_TX: "error: Len(2): out of bound 1
+        # (dimensions are 1x1)".
         arr = np.asarray(arr, dtype=float).ravel()
-        return float(arr[j]) if j < len(arr) else 0.0
+        if j >= len(arr):
+            raise IndexError('make_full_pkg: %s(%d): out of bound %d'
+                             % (name, j + 1, len(arr)))
+        return float(arr[j])
 
     if n_blocks == 1:
         s11out, s12out, s21out, s22out = _make_pkg(
-            faxis, _el(Len, 0), _el(Cpad, 0), _el(Cball, 0), _el(Zpkg, 0),
-            pkg_param, _el(Lcomp, 0), _el(Cbump, 0))
+            faxis, _el(Len, 0, 'Len'), _el(Cpad, 0, 'Cpad'),
+            _el(Cball, 0, 'Cball'), _el(Zpkg, 0, 'Zpkg'),
+            pkg_param, _el(Lcomp, 0, 'Lcomp'), _el(Cbump, 0, 'Cbump'))
     else:
         for j in range(n_blocks):
             sp11, sp12, sp21, sp22 = _make_pkg(
-                faxis, _el(Len, j), _el(Cpad, j), _el(Cball, j), _el(Zpkg, j),
-                pkg_param, _el(Lcomp, j), _el(Cbump, j))
+                faxis, _el(Len, j, 'Len'), _el(Cpad, j, 'Cpad'),
+                _el(Cball, j, 'Cball'), _el(Zpkg, j, 'Zpkg'),
+                pkg_param, _el(Lcomp, j, 'Lcomp'), _el(Cbump, j, 'Cbump'))
             if j == 0:
                 s11out, s12out, s21out, s22out = sp11, sp12, sp21, sp22
             else:

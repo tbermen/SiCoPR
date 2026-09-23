@@ -48,7 +48,12 @@ def _scale_pdf(pdf, scale_factor):
     pdf_out.Min = int(np.floor(pdf.Min * scale_factor))
     idx = np.arange(pdf_out.Min, -pdf_out.Min + 1)
     pdf_out.x = idx * pdf_out.BinSize
-    pdf_out.y = np.interp(pdf_out.x, np.asarray(pdf.x) * scale_factor, np.asarray(pdf.y))
+    # interp1's default returns NaN OUTSIDE the data range; np.interp clamps,
+    # which makes the reference's two "NAN interp work around" lines below
+    # no-ops. Harmless only while at most one point falls outside at each end.
+    # Matches com_functions/fn/scalePDF, corrected 2026-09-22.
+    pdf_out.y = np.interp(pdf_out.x, np.asarray(pdf.x) * scale_factor,
+                          np.asarray(pdf.y), left=np.nan, right=np.nan)
     if len(pdf_out.y) > 1:
         pdf_out.y[0] = pdf_out.y[1]
         pdf_out.y[-1] = pdf_out.y[-2]

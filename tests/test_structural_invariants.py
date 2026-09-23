@@ -56,9 +56,26 @@ import sicopr  # noqa: E402
 
 def _zp_params(zp_by_key, mele):
     # package_Z_c is validated against mele, so it has to match the fixture.
+    #
+    # C_p, R_d, A_v, A_fe and A_ne are read by read_package_parameters with no
+    # default argument, which makes them MANDATORY in the reference: a missing
+    # one stops with "The data for mandatory parameter <key> is missing or
+    # incorrect". The port used to invent defaults for all five, so this
+    # fixture supplied none of them and still ran. Corrected 2026-09-22 when
+    # the port was made to refuse the same calls the reference refuses; these
+    # are ordinary shipped values, chosen only to let the z_p orientation
+    # checks below reach the code they are actually about.
     return {'z_p (TX)': zp_by_key['TX'], 'z_p (NEXT)': zp_by_key['NEXT'],
             'z_p (FEXT)': zp_by_key['FEXT'], 'z_p (RX)': zp_by_key['RX'],
-            'package_Z_c': np.full((1, mele), 78.2)}
+            # The sheet stores package_Z_c as segments-by-[Tx Rx] and
+            # read_package_parameters transposes it (ML L10403), so a fixture
+            # must supply (mele, 2) to end up with the (2, mele) the mele check
+            # and make_full_pkg's pkg_Z_c(1,:)/(2,:) both expect. It used to be
+            # (1, mele), which only worked while the port skipped the transpose.
+            'package_Z_c': np.full((mele, 2), 78.2),
+            'C_p': np.array([[1.8e-13, 1.8e-13]]),
+            'R_d': np.array([[55.0, 55.0]]),
+            'A_v': 0.413, 'A_fe': 0.413, 'A_ne': 0.606}
 
 
 # (a) non-square: 4 segments x 2 cases in the sheet -> (2 cases, 4 segments).

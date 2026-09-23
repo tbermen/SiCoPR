@@ -5,9 +5,14 @@
 # 1-based vs 0-based: pdf_out.y(1)=pdf_out.y(2) → y[0]=y[1];
 #                     pdf_out.y(end)=pdf_out.y(end-1) → y[-1]=y[-2].
 # Range: (pdf_out.Min:-pdf_out.Min) → np.arange(Min, -Min+1).
-# interp1 default (linear, NaN outside): np.interp clips to boundary
-#   instead of NaN; the neighbour-copy workaround is still applied for
-#   fidelity, and is harmless when np.interp already returned a value.
+# interp1 default (linear) returns NaN OUTSIDE the data range. np.interp
+#   clamps to the end values instead, so it never produces a NaN and the
+#   reference's two "NAN interp work around" lines become no-ops. That is only
+#   harmless while at most ONE point falls outside at each end, which is what
+#   the workaround patches. On a grid where max(x) < -min(x) -- a left-heavy
+#   pdf -- many points fall outside and MATLAB returns NaN for all of them.
+#   COM Octave, Min=-8, x=(-8:0)*0.05, delta_com=1: 19 NaNs, where clamping
+#   gave 19 finite values. left=/right=nan restores it.
 # Output shape: SimpleNamespace with same fields as input pdf.
 # Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
@@ -29,10 +34,12 @@ def scalePDF(pdf, scale_factor):
     idx = np.arange(pdf_out.Min, -pdf_out.Min + 1)
     pdf_out.x = idx * pdf_out.BinSize                     # MATLAB line 11271
 
-    # interp1(pdf.x*scale_factor, pdf.y, pdf_out.x) — linear, clamp at edges
+    # interp1(pdf.x*scale_factor, pdf.y, pdf_out.x) -- linear, NaN OUTSIDE the
+    # data range. np.interp clamps unless told otherwise.
     pdf_out.y = np.interp(pdf_out.x,
                           np.asarray(pdf.x) * scale_factor,
-                          np.asarray(pdf.y))              # MATLAB line 11272
+                          np.asarray(pdf.y),
+                          left=np.nan, right=np.nan)      # MATLAB line 11272
 
     # NaN workaround (MATLAB lines 11273-11274): copy neighbours at edges
     pdf_out.y[0]  = pdf_out.y[1]

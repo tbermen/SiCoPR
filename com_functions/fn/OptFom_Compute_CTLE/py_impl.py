@@ -74,8 +74,12 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     HP_P = None
 
     if ctle_type == 'CL93':
-        H_low = np.ones(len(f))
-        H_low_xc = np.ones(len(f_xc_arr))
+        # MATLAB sets both to the SCALAR 1, and H_low_xc is a return value.
+        # COM Octave, CTLE_type='CL93' with a 3-point f_xc: size(H_low_xc) is
+        # 1x1, not 1x3.  H_ctf is unchanged either way (1.0*ctle_gain is
+        # exact), but the port handed the caller a vector the length of f_xc.
+        H_low = 1.0
+        H_low_xc = 1.0
     elif ctle_type == 'CL120d':
         g_DC_low = float(g_DC_HP_values.ravel()[g_LP_index])
         f_HP = float(np.asarray(param.f_HP).ravel()[g_LP_index])
@@ -94,10 +98,19 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     if OP.INCLUDE_CTLE == 1:
         for k in range(param.num_s4p_files):
             ir = np.asarray(getattr(chdata[k], uneq_field), dtype=float)
-            ir_peak = float(_mmax(np.abs(ir)))
+            # MATLAB max([]) is [], and `[] > []*thr` is empty, so an empty
+            # response reaches the find() below without erroring.  COM Octave,
+            # chdata(1).uneq_pulse_response = []: both fields come back 1x0.
+            # np.max raised "zero-size array to reduction operation maximum".
+            ir_peak = float(_mmax(np.abs(ir))) if ir.size else 0.0
             last_arr = np.where(np.abs(ir) > ir_peak * OP.impulse_response_truncation_threshold)[0]
-            if len(last_arr) > 0:
-                ir = ir[:int(last_arr[-1]) + 1]
+            # find(...,1,'last') is EMPTY when nothing clears the threshold --
+            # an all-zero response, or a truncation threshold of 1 or more --
+            # and MATLAB then evaluates ir(1:[]), which is EMPTY, not the whole
+            # vector.  COM Octave, uneq_pulse_response all zeros: uneq and ctle
+            # both come back 1x0.  Leaving ir alone kept all 64 samples and ran
+            # the CTLE over them.
+            ir = ir[:int(last_arr[-1]) + 1] if len(last_arr) > 0 else ir[:0]
             setattr(chdata[k], uneq_field, ir)
             ctle_out, _, _, _ = _TD_CTLE(ir, baud_rate, CTLE_fz, CTLE_fp1, CTLE_fp2,
                                           g_dc, param.samples_per_ui)
@@ -119,7 +132,7 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
         f2 = np.asarray(chdata[1].faxis, dtype=float)
         ctle_gain2 = _FD_CTLE(f2, CTLE_fz, CTLE_fp1, CTLE_fp2, g_dc)
         if ctle_type == 'CL93':
-            H_low2 = np.ones(len(f2))
+            H_low2 = 1.0                       # MATLAB `H_low2=1`, a scalar
         elif ctle_type == 'CL120d':
             H_low2 = _FD_CTLE(f2, f_HP, f_HP, 100e100, g_DC_low)
         else:  # CL120e

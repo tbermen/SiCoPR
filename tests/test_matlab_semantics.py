@@ -175,7 +175,18 @@ _ALLOWED = (r'int\(round\(p\d\.Min \+ p\d\.Min\)\)',
             r'int\(round\(\(stop - start\) / step\)\)',
             r'return int\(round\(x\)\)',
             r'np\.round\(x\)',
-            r'np\.round\(values\)')
+            r'np\.round\(values\)',
+            # `idx != np.round(idx)` is an INTEGRALITY TEST, not a rounding.
+            # Both conventions agree that x == round(x) exactly when x is an
+            # integer, so the half-away-from-zero rule cannot change the
+            # answer. Used to reject a non-integer MATLAB subscript.
+            r'idx\[idx != np\.round\(idx\)\]',
+            # _colon's `n = int(round(limit / step + 1.0))` is a first guess at
+            # the element count, immediately corrected by an overshoot test on
+            # the next line, so the tie rule cannot decide the answer. Verified
+            # at exactly-half quotients (3620.5, 10.5, 0.5): the result matches
+            # MATLAB's floor(q)+1 in every case.
+            r'n = int\(round\(limit / step \+ 1\.0\)\)')
 def _code_lines(src):
     """Source lines with comments and docstrings dropped, so prose about
     rounding is not mistaken for a rounding call."""

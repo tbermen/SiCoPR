@@ -25,16 +25,30 @@ import numpy as np
 from types import SimpleNamespace
 
 
-def _xls_param(parameter, key, optional=True, default=None):
-    """Minimal xls_parameter: looks up key in a dict or SimpleNamespace."""
+_MANDATORY = object()   # xls_parameter called with nargin<4: no default exists
+
+
+def _xls_param(parameter, key, default=_MANDATORY):
+    """Minimal xls_parameter: looks up key in a dict or SimpleNamespace.
+
+    MATLAB's xls_parameter takes the default as an optional FOURTH argument
+    and, when it is absent, calls missingParameter(param_name) rather than
+    inventing one.  COM Octave, read_package_parameters with 'C_p' left out of
+    the parameter cell: "error: The data for mandatory parameter C_p is
+    missing or incorrect".  The port supplied a default for every key,
+    including the nine the reference treats as mandatory, and answered.
+    """
+    missing = object()
     if isinstance(parameter, dict):
-        val = parameter.get(key, default)
+        val = parameter.get(key, missing)
     else:
-        val = getattr(parameter, key.replace(' ', '_').replace('(', '').replace(')', ''), default)
-    if val is None:
-        if optional:
-            return default
-        raise KeyError(f'Required key {key!r} not found in parameter block')
+        attr = key.replace(' ', '_').replace('(', '').replace(')', '')
+        val = getattr(parameter, attr, missing)
+    if val is missing or val is None:
+        if default is _MANDATORY:
+            raise KeyError('The data for mandatory parameter %s is missing '
+                           'or incorrect' % key)
+        val = default
     return np.atleast_1d(np.asarray(val, dtype=float))
 
 
@@ -48,20 +62,21 @@ def read_package_parameters(parameter, param_struct=None):
     if param_struct is None:
         param_struct = SimpleNamespace()
 
-    def xp(key, default=None):
-        return _xls_param(parameter, key, optional=True, default=default)
+    def xp(key, default=_MANDATORY):
+        return _xls_param(parameter, key, default)
 
-    param_struct.C_pkg_board = xp('C_p', np.array([0.0])) * 1e-9
-    param_struct.R_diepad = xp('R_d', np.array([50.0]))
-    param_struct.a_thru = xp('A_v', np.array([1.0]))
-    param_struct.a_fext = xp('A_fe', np.array([0.0]))
-    param_struct.a_next = xp('A_ne', np.array([0.0]))
+    # No fourth argument in MATLAB for any of these: they are mandatory.
+    param_struct.C_pkg_board = xp('C_p') * 1e-9
+    param_struct.R_diepad = xp('R_d')
+    param_struct.a_thru = xp('A_v')
+    param_struct.a_fext = xp('A_fe')
+    param_struct.a_next = xp('A_ne')
 
     # z_p_tx_cases: MATLAB transposes → shape (ncases, mele).
     # The spreadsheet stores rows = package segments, columns = cases; the engine
     # indexes [case, :]. MATLAB applies .' to all four z_p keywords
     # (com_ieee8023_4p15p0.m L10678/10689/10695/10701).
-    raw = xp('z_p (TX)', np.array([[0.0, 0.0]]))
+    raw = xp('z_p (TX)')
     z_p_tx = np.atleast_2d(raw).T
     ncases, mele = z_p_tx.shape
     if mele == 2:
@@ -75,7 +90,7 @@ def read_package_parameters(parameter, param_struct=None):
     param_struct.z_p_tx_cases = z_p_tx
 
     def _load_zp(key):
-        raw2 = xp(key, np.zeros_like(z_p_tx))
+        raw2 = xp(key)                       # mandatory, like z_p (TX)
         arr = np.atleast_2d(raw2).T          # same transpose as z_p (TX) above
         if arr.shape != (ncases, mele):
             raise ValueError('All TX, NEXT, FEXT, Rx cases must agree')
@@ -87,8 +102,17 @@ def read_package_parameters(parameter, param_struct=None):
 
     param_struct.pkg_gamma0_a1_a2 = xp('package_tl_gamma0_a1_a2', np.array([0.0, 1.734e-3, 1.455e-4]))
     param_struct.pkg_tau = xp('package_tl_tau', np.array([6.141e-3]))
-    raw_zc = xp('package_Z_c', np.array([[78.2, 78.2]]))
-    pkg_Z_c = np.atleast_2d(raw_zc)
+    # MATLAB: param_struct.pkg_Z_c = xls_parameter(..., 78.2).' -- TRANSPOSED,
+    # like the four z_p keywords, and the default is the scalar 78.2.  The
+    # port kept the sheet's orientation, so a 4x2 package_Z_c stayed (4,2)
+    # where the reference gives (2,4), and the mele check compared the wrong
+    # axis: COM Octave read the shipped
+    # [92 92 ; 70 70; 80 80; 100 100] into pkg_Z_c(2,4) = [92 70 80 100;
+    # 92 70 80 100] while the port raised 'tx rx pairs must have the same
+    # number element entries'.  make_full_pkg indexes pkg_Z_c(1,:) for TX and
+    # (2,:) for RX, so the orientation is load-bearing.
+    raw_zc = xp('package_Z_c', 78.2)
+    pkg_Z_c = np.atleast_2d(raw_zc).T
     if pkg_Z_c.shape[1] != mele:
         raise ValueError('tx rx pairs must have the same number element entries as TX, NEXT, FEXT, Rx')
     param_struct.pkg_Z_c = pkg_Z_c
@@ -103,7 +127,11 @@ def read_package_parameters(parameter, param_struct=None):
         param_struct.z_p_next_cases = param_struct.z_p_next_casesx
         param_struct.z_p_tx_cases = param_struct.z_p_tx_casesx
         param_struct.z_p_rx_cases = param_struct.z_p_rx_casesx
+        # MATLAB: [pkg_Z_c' ; [100 100 ; 100 100]]' -- transpose, stack two
+        # rows of 100 underneath, transpose back, so a (2,2) pkg_Z_c becomes
+        # (2,4).  Stacking on the untransposed array made it (4,2) instead:
+        # COM Octave gives [92 70 100 100 ; 92 70 100 100].
         extra = np.array([[100.0, 100.0], [100.0, 100.0]])
-        param_struct.pkg_Z_c = np.vstack([param_struct.pkg_Z_c, extra])
+        param_struct.pkg_Z_c = np.vstack([param_struct.pkg_Z_c.T, extra]).T
 
     return param_struct

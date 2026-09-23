@@ -150,3 +150,242 @@ def test_optional_logging_writes_trajectory(tmp_path):
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, '-v']))
+
+
+# ---------------------------------------------------------------------------
+# COM Octave oracle tests.
+#
+# skip_it values below come from running OptFom_Adaptive_Local_Search verbatim
+# out of octave/com_ieee8023_4p16p0_octave_compat.m (with compute_hard_cap and
+# append_csv_row) through Octave.  The extracted body was first checked
+# identical to matlab/com_ieee8023_4p16p0.m.
+#
+# `persistent adaptive_radius no_improve_count` only means anything across
+# calls, so every probe is a SEQUENCE run in one Octave session, started with
+# `clear -f` and with iter_count==1 on the first call -- which is what
+# optimize_fom does, since it increments iter_count from 0.  A first call with
+# iter_count != 1 leaves the persistents empty, and `[] && x` is not something
+# Octave can be trusted on, so that state is deliberately not pinned.
+#
+# These pin the 4p16p0 path.  The port's default, matlab_version='4p15p0',
+# follows Hansel's branch file, which is not in the compat build and therefore
+# has no oracle here; the only behavioural difference is that 4p16p0 forces
+# vga_index to 1 on both sides.
+# ---------------------------------------------------------------------------
+
+_OCT_VER = dict(matlab_version='4p16p0')
+
+
+def _oct_mk(this_taps, best_taps=(0.0, 0.0, 0.0), ctle_index=3, best_ctle=3,
+            lp=2.0, best_lp=2.0, **extra):
+    BEST = SimpleNamespace(txffe_index=np.asarray(best_taps, float), ctle=best_ctle,
+                           G_high_pass=best_lp, FOM=5.0)
+    THIS = SimpleNamespace(tx_index_vector=np.asarray(this_taps, float),
+                           ctle_index=ctle_index, g_LP_index=lp, FOM=4.0)
+    for k, v in extra.items():
+        (BEST if k.startswith('best_') else THIS).__dict__[
+            k[5:] if k.startswith('best_') else k] = v
+    return BEST, THIS
+
+
+def _seq(calls):
+    """calls: (LSV, this_taps, FOM_history, iter, nruns, kwargs) tuples."""
+    reset_state()
+    out = []
+    for LSV, taps, fom, it, nruns, kw in calls:
+        mkkw = {k: v for k, v in kw.items()
+                if k in ('best_taps', 'ctle_index', 'best_ctle', 'lp', 'best_lp',
+                         'vga_index', 'best_vga_index')}
+        callkw = {k: v for k, v in kw.items() if k == 'Overwrite_Min_Radius'}
+        BEST, THIS = _oct_mk(taps, **mkkw)
+        out.append(OptFom_Adaptive_Local_Search(LSV, BEST, THIS, fom, it, nruns,
+                                                **callkw, **_OCT_VER))
+    return out
+
+
+def _warm(LSV=4, nruns=5, **kw):
+    return (LSV, (0.0, 0.0, 0.0), [1.0], 1, nruns, kw)
+
+
+def test_oracle_radius_trajectory_over_twelve_iterations():
+    """The grow/shrink loop, pinned end to end.
+
+    LocalSearch_Value=8, taps [3 1 0] against [0 0 0], FOM improving by 0.5 a
+    step for four steps and then flat.  COM Octave skip_it, iterations 1..12:
+    0 0 0 0 0 1 1 1 1 1 1 1.
+    """
+    calls = [(8, (3.0, 1.0, 0.0),
+              [1.0 + 0.5 * min(j, 4) for j in range(k + 1)], k + 1, 5, {})
+             for k in range(12)]
+    assert _seq(calls) == [False] * 5 + [True] * 7
+
+
+def test_oracle_widening_tap_distance_sequence():
+    """LocalSearch_Value=4, taps [k 0 0] on iteration k+1, flat FOM.
+
+    COM Octave skip_it for k=0..5: 0 0 0 1 1 1.
+    """
+    calls = [(4, (float(k), 0.0, 0.0), [4.0] * (k + 1), k + 1, 5, {})
+             for k in range(6)]
+    assert _seq(calls) == [False, False, False, True, True, True]
+
+
+def test_oracle_nan_local_search_value_still_decides():
+    """round(NaN) is NaN and max(min_radius, NaN) is min_radius in MATLAB.
+
+    COM Octave, LocalSearch_Value=NaN with taps [3 0 0]: skip_it is 1 on both
+    iterations, because hard_cap falls back to min_radius=2 and raw_L1_TX=3
+    exceeds it.  The port raised ValueError out of _mround.
+    """
+    assert _seq([(float('nan'), (3.0, 0.0, 0.0), [1.0], 1, 5, {}),
+                 (float('nan'), (3.0, 0.0, 0.0), [4.0, 4.0], 2, 5, {})]) \
+        == [True, True]
+
+
+def test_oracle_inf_local_search_value_still_decides():
+    """round(Inf) is Inf, so every radius is Inf and nothing is ever skipped.
+
+    COM Octave, LocalSearch_Value=Inf with taps [3 0 0]: skip_it is 0 on both
+    iterations.  The port raised OverflowError out of _mround, and would have
+    raised again at int(ceil(0.55*Inf)).
+    """
+    assert _seq([(float('inf'), (3.0, 0.0, 0.0), [1.0], 1, 5, {}),
+                 (float('inf'), (3.0, 0.0, 0.0), [4.0, 4.0], 2, 5, {})]) \
+        == [False, False]
+
+
+def test_oracle_fom_history_tail_is_column_major():
+    """`FOM_history(end-1:end)` indexes linearly, which is COLUMN-major.
+
+    COM Octave with FOM_history = [1 1 ; 3 1.0005] on iterations 3, 4 and 5:
+    skip_it is 1, 1, 1.  The window is [1 1.0005], improvement 5e-4, below the
+    0.002 threshold, so the radius shrinks.  A row-major ravel takes
+    [3 1.0005], improvement ~2, treats it as improving and gave 0, 0, 1.
+    """
+    H = [[1.0, 1.0], [3.0, 1.0005]]
+    calls = [_warm()] + [(4, (3.0, 0.0, 0.0), H, it, 5, {}) for it in (3, 4, 5)]
+    assert _seq(calls) == [False, True, True, True]
+    # a 3x2 history, same reasoning
+    H2 = [[1.0, 5.0], [2.0, 5.0], [3.0, 5.0002]]
+    calls2 = [_warm(6)] + [(6, (4.0, 0.0, 0.0), H2, it, 5, {}) for it in (2, 3)]
+    assert _seq(calls2) == [False, True, True]
+
+
+@pytest.mark.parametrize('taps_this,taps_best', [
+    ((), (0.0, 0.0, 0.0)),            # empty THIS.tx_index_vector
+    ((0.0, 0.0, 0.0), ()),            # empty BEST.txffe_index
+])
+def test_oracle_one_sided_empty_taps_is_an_error(taps_this, taps_best):
+    """MATLAB's empty-vector early return sits inside `if log_yes_1_no_0 == 1`.
+
+    With logging off -- the shipped state and this port's default -- it does
+    not fire, and the mismatched vectors reach `this_vec - best_vec`.  COM
+    Octave: "error: operator -: nonconformant arguments (op1 is 2x1, op2 is
+    5x1)".  The port returned False for every empty case.
+    """
+    reset_state()
+    BEST, THIS = _oct_mk(taps_this, best_taps=taps_best)
+    OptFom_Adaptive_Local_Search(4, *_oct_mk((0.0, 0.0, 0.0)), [1.0], 1, 5,
+                                 **_OCT_VER)
+    with pytest.raises(ValueError):
+        OptFom_Adaptive_Local_Search(4, BEST, THIS, [4.0, 4.0], 3, 5,
+                                     **_OCT_VER)
+
+
+def test_oracle_both_taps_empty_is_an_exact_match():
+    """With both empty the vectors are both [lp ; vga], so L1_w is 0.
+
+    COM Octave returns skip_it=0, which is also what the removed early return
+    happened to give -- pinned so the removal is shown not to have moved it.
+    """
+    assert _seq([_warm(), (4, (), [4.0, 4.0], 3, 5, {'best_taps': ()})]) \
+        == [False, False]
+
+
+@pytest.mark.parametrize('kw,expected', [
+    ({}, True),                                  # min_radius = 2
+    ({'Overwrite_Min_Radius': 5}, False),        # floor raised to 5
+    ({'Overwrite_Min_Radius': -1}, True),        # not positive, so ignored
+])
+def test_oracle_overwrite_min_radius(kw, expected):
+    """COM Octave with LocalSearch_Value=4, taps [3 0 0] on iteration 4:
+    skip_it is 1 by default, 0 with Overwrite_Min_Radius=5, and 1 again with
+    -1, which `if Overwrite_Min_Radius > 0` rejects."""
+    calls = [_warm(4, 5, **kw), (4, (3.0, 0.0, 0.0), [4.0, 4.0], 4, 5, kw)]
+    assert _seq(calls) == [False, expected]
+
+
+def test_oracle_nan_in_fom_history_is_skipped_by_max_min():
+    """MATLAB max()/min() ignore NaN, so the window is judged on the rest.
+
+    COM Octave, FOM_history = [4 NaN 4.5] on iteration 3: skip_it=1.  An
+    all-NaN window gives NaN-NaN = NaN, which is not < 0.002, so it counts as
+    improvement: skip_it=0.
+    """
+    assert _seq([_warm(), (4, (3.0, 0.0, 0.0), [4.0, float('nan'), 4.5],
+                          3, 5, {})]) == [False, True]
+    assert _seq([_warm(), (4, (3.0, 0.0, 0.0),
+                           [float('nan'), float('nan')], 3, 5, {})]) \
+        == [False, False]
+
+
+def test_oracle_ctle_index_one_weight_branch():
+    """ctle_index == 1 takes the unscaled lp/vga weights.
+
+    COM Octave, ctle_index=1 with BEST.ctle=1 on iteration 3: skip_it=1.
+    """
+    assert _seq([_warm(), (4, (3.0, 0.0, 0.0), [4.0, 4.0], 3, 5,
+                           {'ctle_index': 1, 'best_ctle': 1})]) == [False, True]
+
+
+def test_oracle_vga_index_is_forced_to_one_on_4p16p0():
+    """ML 4p16p0 writes THIS.vga_index = BEST.vga_index = 1 before reading them.
+
+    COM Octave with the caller setting THIS.vga_index=9 and BEST.vga_index=7:
+    skip_it=1 on iteration 3, the same as if neither had been set, because
+    both assignments are local to the function.
+    """
+    reset_state()
+    OptFom_Adaptive_Local_Search(4, *_oct_mk((0.0, 0.0, 0.0)), [1.0], 1, 5,
+                                 **_OCT_VER)
+    BEST, THIS = _oct_mk((3.0, 0.0, 0.0))
+    BEST.vga_index, THIS.vga_index = 7, 9
+    assert OptFom_Adaptive_Local_Search(4, BEST, THIS, [4.0, 4.0], 3, 5,
+                                        **_OCT_VER) is True
+    # and the caller's structs are not written through
+    assert BEST.vga_index == 7 and THIS.vga_index == 9
+
+
+@pytest.mark.parametrize('LSV,taps,kw', [
+    (2.5, (2.0, 0.0, 0.0), {}),                       # round() tie on the radius
+    (-3, (2.0, 0.0, 0.0), {}),                        # negative LocalSearch_Value
+    (6, (3.0, 0.0, 0.0), {'Overwrite_Min_Radius': 2.5}),  # fractional floor
+])
+def test_oracle_odd_radius_inputs_do_not_skip(LSV, taps, kw):
+    """COM Octave returns skip_it = 0, 0 for each of these two-call runs."""
+    assert _seq([(LSV, taps, [1.0], 1, 5, kw),
+                 (LSV, taps, [4.0, 4.0], 2, 5, kw)]) == [False, False]
+
+
+def test_oracle_inlined_logger_matches_append_csv_row(tmp_path):
+    """The inlined _append_csv_row follows the corrected canonical function.
+
+    The CTLE-too-far return leaves hard_cap unset, so that column logs NaN.
+    COM Octave, append_csv_row(f, {'h'}, {NaN}) writes NaN; the inlined copy
+    wrote Python's lower-case nan.  skip_it must stay numeric: MATLAB logs
+    double(skip_it), and isnumeric() is false for a logical, so passing the
+    bool through the corrected formatter would write "" instead of 1.
+    """
+    log = str(tmp_path / 'ALS_log.csv')
+    py_impl.ALS_LOG_CSV = log
+    try:
+        reset_state()
+        BEST, THIS = _oct_mk((1.0, 0.0, 0.0), ctle_index=9, best_ctle=3)
+        assert OptFom_Adaptive_Local_Search(2, BEST, THIS, [4.0], 1, 5,
+                                            **_OCT_VER) is True
+    finally:
+        py_impl.ALS_LOG_CSV = None
+    header, row = open(log).read().splitlines()
+    cells = dict(zip(header.split(','), row.split(',')))
+    assert cells['hard_cap'] == 'NaN'
+    assert cells['skip_it'] == '1'

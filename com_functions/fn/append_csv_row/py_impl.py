@@ -11,7 +11,51 @@
 # ============================================================
 
 import os
+import warnings
+
 import numpy as np
+
+
+def _is_numeric(v):
+    """MATLAB isnumeric(): true for double/single/int*/complex, FALSE for
+    logical.  A logical therefore falls through to the else branch and is
+    written as "".  COM Octave, append_csv_row(f,{'h'},{true}) writes
+    h\\n""\\n, not h\\n1\\n; bool is an int subclass in Python and the port
+    wrote 1.
+    """
+    if isinstance(v, (bool, np.bool_)):
+        return False
+    if isinstance(v, (int, float, complex, np.number)):
+        return True
+    if isinstance(v, np.ndarray):
+        return v.dtype.kind in 'iufc'      # 'b' is logical, which is not
+    return False
+
+
+def _sprintf_g6(v):
+    """MATLAB `sprintf('%.6g', v)`.
+
+    COM Octave, one cell at a time:
+      {Inf} -> "Inf",  {-Inf} -> "-Inf",  {NaN} -> "NaN"   (Python: inf/nan)
+      {[]}  -> ""       an empty numeric formats to an empty field, not ""
+      {[1 2 3]}    -> "123"    the format is reapplied per element, no
+      {[1 2; 3 4]} -> "1324"   separator, in COLUMN-MAJOR order
+      {1+2i}       -> "1"      the imaginary part is dropped
+    The port answered "" for every one of the array cases and lower-case
+    inf/nan for the others.
+    """
+    a = np.asarray(v)
+    if np.iscomplexobj(a):
+        a = a.real
+    out = []
+    for x in np.asarray(a, dtype=float).ravel(order='F'):
+        if np.isnan(x):
+            out.append('NaN')
+        elif np.isinf(x):
+            out.append('Inf' if x > 0 else '-Inf')
+        else:
+            out.append('%.6g' % x)
+    return ''.join(out)
 
 
 def append_csv_row(file_path, header_cells, row_cells):
@@ -22,16 +66,30 @@ def append_csv_row(file_path, header_cells, row_cells):
     row_cells:    iterable of cell values, or empty/None to write only the header.
     """
     file_exists = os.path.isfile(file_path)
-    with open(file_path, 'a', newline='') as fid:
+    try:
+        fid = open(file_path, 'a', newline='')
+    except OSError:
+        # MATLAB: `if fid == -1, warning('Could not open %s', ...); return;`
+        # COM Octave with a path under a directory that does not exist returns
+        # normally after warning; the port raised FileNotFoundError.
+        warnings.warn('Could not open %s' % file_path)
+        return
+    with fid:
         if not file_exists:
-            fid.write(','.join(str(h) for h in header_cells) + '\n')
+            # strjoin(header_cells, ',') takes a cell array of strings and
+            # errors on anything else.  COM Octave, header {1,'b'}:
+            # "error: Invalid call to strjoin."
+            bad = [h for h in header_cells if not isinstance(h, str)]
+            if bad:
+                raise TypeError(
+                    'append_csv_row: strjoin needs a cell array of strings; '
+                    'header_cells contains %r' % (bad[0],))
+            fid.write(','.join(header_cells) + '\n')
         if row_cells is not None and len(row_cells) > 0:
             out = []
             for v in row_cells:
-                if isinstance(v, (bool, np.bool_)):
-                    out.append(f'{float(v):.6g}')          # numeric in MATLAB
-                elif isinstance(v, (int, float, np.integer, np.floating)):
-                    out.append(f'{v:.6g}')
+                if _is_numeric(v):
+                    out.append(_sprintf_g6(v))
                 elif isinstance(v, str):
                     out.append(f'"{v}"')                   # quote strings for CSV safety
                 else:

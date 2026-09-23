@@ -137,3 +137,45 @@ def test_scaling_preserves_total_probability():
     q = scalePDF(_a_pdf(), 2.5)
     assert abs(float(np.sum(np.asarray(q.y))) - 1.0) < 1e-12, (
         'scaled PDF sums to %r' % float(np.sum(np.asarray(q.y))))
+
+
+# ---------------------------------------------------------------------------
+# COM Octave, 2026-09-22.
+#
+# interp1's default method returns NaN OUTSIDE the data range. np.interp clamps
+# to the end values instead, so it never produces a NaN and the reference's two
+# "NAN interp work around" lines (which patch only y(1) and y(end)) become
+# no-ops. That is harmless only while at most one point falls outside at each
+# end. On a left-heavy grid -- max(x) < -min(x), so pdf_out.x reaches further
+# right than the scaled input does -- MATLAB returns NaN for everything past
+# the data, and the whole normalised result is NaN.
+#
+# The port's own header called this "harmless"; it is not. Reachable through
+# scaleCDF and through adjust_Rx_noise_for_quantization, which import this.
+# ---------------------------------------------------------------------------
+
+def test_octave_left_heavy_grid_is_all_nan():
+    """COM Octave: Min=-8, x=(-8:0)*0.05, scale 1.0 -> 17 values, all NaN.
+
+    pdf_out.x spans (Min:-Min) = -0.40..0.40 while the input only reaches 0.0,
+    so every point right of zero is outside the data and interp1 gives NaN.
+    Normalising by a sum that is NaN then takes the rest with it.
+    """
+    y = np.array([0.02, 0.05, 0.09, 0.14, 0.20, 0.22, 0.15, 0.08, 0.05])
+    x = np.arange(-8, 1) * 0.05
+    out = scalePDF(SimpleNamespace(BinSize=0.05, Min=-8, x=x, y=y), 1.0)
+    got = np.asarray(out.y)
+    assert got.size == 17
+    assert np.isnan(got).all(), (
+        'clamping instead of NaN hides that the scaled pdf does not cover the '
+        'output grid; MATLAB returns NaN here')
+
+
+def test_octave_symmetric_grid_still_returns_finite_values():
+    """The guard: an ordinary symmetric pdf must NOT become NaN."""
+    y = np.array([0.05, 0.15, 0.30, 0.30, 0.15, 0.05])
+    x = np.arange(-3, 3) * 0.05
+    out = scalePDF(SimpleNamespace(BinSize=0.05, Min=-3, x=x, y=y), 1.0)
+    got = np.asarray(out.y)
+    assert np.isfinite(got).all()
+    assert abs(float(np.sum(got)) - 1.0) < 1e-12

@@ -499,6 +499,15 @@
    ]
   },
   {
+   "copy": "_OptFom_Adaptive_Local_Search__g6",
+   "helper": "g6",
+   "inlined_into": "OptFom_Adaptive_Local_Search",
+   "inlined_into_matlab_lines": [
+    2739,
+    2992
+   ]
+  },
+  {
    "copy": "_OptFom_Adaptive_Local_Search__mextreme_complex",
    "helper": "mextreme_complex",
    "inlined_into": "OptFom_Adaptive_Local_Search",
@@ -517,8 +526,26 @@
    ]
   },
   {
+   "copy": "_OptFom_Adaptive_Local_Search__mmax2",
+   "helper": "mmax2",
+   "inlined_into": "OptFom_Adaptive_Local_Search",
+   "inlined_into_matlab_lines": [
+    2739,
+    2992
+   ]
+  },
+  {
    "copy": "_OptFom_Adaptive_Local_Search__mmin",
    "helper": "mmin",
+   "inlined_into": "OptFom_Adaptive_Local_Search",
+   "inlined_into_matlab_lines": [
+    2739,
+    2992
+   ]
+  },
+  {
+   "copy": "_OptFom_Adaptive_Local_Search__mmin2",
+   "helper": "mmin2",
    "inlined_into": "OptFom_Adaptive_Local_Search",
    "inlined_into_matlab_lines": [
     2739,
@@ -532,6 +559,15 @@
    "inlined_into_matlab_lines": [
     2739,
     2992
+   ]
+  },
+  {
+   "copy": "_OptFom_Build_TXFFE__tap_values",
+   "helper": "tap_values",
+   "inlined_into": "OptFom_Build_TXFFE",
+   "inlined_into_matlab_lines": [
+    2734,
+    2816
    ]
   },
   {
@@ -621,6 +657,15 @@
    ]
   },
   {
+   "copy": "_OptFom_Compute_DFE__mrange",
+   "helper": "mrange",
+   "inlined_into": "OptFom_Compute_DFE",
+   "inlined_into_matlab_lines": [
+    3219,
+    3304
+   ]
+  },
+  {
    "copy": "_OptFom_Create_Output__mextreme_complex",
    "helper": "mextreme_complex",
    "inlined_into": "OptFom_Create_Output",
@@ -689,31 +734,8 @@
    ]
   },
   {
-   "copy": "_OptFom_Update_BEST_Post_Optimize__OptFom_Calc_Hr",
-   "helper": "OptFom_Calc_Hr",
-   "inlined_into": "OptFom_Update_BEST_Post_Optimize",
-   "inlined_into_matlab_lines": [
-    3843,
-    3890
-   ],
-   "canonical": "OptFom_Calc_Hr",
-   "canonical_matlab_lines": [
-    2874,
-    2880
-   ]
-  },
-  {
-   "copy": "_OptFom_Update_BEST_Post_Optimize__bessel_poly",
-   "helper": "bessel_poly",
-   "inlined_into": "OptFom_Update_BEST_Post_Optimize",
-   "inlined_into_matlab_lines": [
-    3843,
-    3890
-   ]
-  },
-  {
-   "copy": "_OptFom_Update_BEST_Post_Optimize__tukey_window",
-   "helper": "tukey_window",
+   "copy": "_OptFom_Update_BEST_Post_Optimize__mround_arr",
+   "helper": "mround_arr",
    "inlined_into": "OptFom_Update_BEST_Post_Optimize",
    "inlined_into_matlab_lines": [
     3843,
@@ -894,6 +916,24 @@
    ]
   },
   {
+   "copy": "_SNDR_ref__matlab_peak",
+   "helper": "matlab_peak",
+   "inlined_into": "SNDR_ref",
+   "inlined_into_matlab_lines": [
+    4405,
+    4442
+   ]
+  },
+  {
+   "copy": "_SNDR_ref__matlab_range_index",
+   "helper": "matlab_range_index",
+   "inlined_into": "SNDR_ref",
+   "inlined_into_matlab_lines": [
+    4405,
+    4442
+   ]
+  },
+  {
    "copy": "_S_IN__N_s",
    "helper": "N_s",
    "inlined_into": "S_IN",
@@ -1051,6 +1091,24 @@
    "inlined_into_matlab_lines": [
     4858,
     4896
+   ]
+  },
+  {
+   "copy": "_append_csv_row__is_numeric",
+   "helper": "is_numeric",
+   "inlined_into": "append_csv_row",
+   "inlined_into_matlab_lines": [
+    5157,
+    5187
+   ]
+  },
+  {
+   "copy": "_append_csv_row__sprintf_g6",
+   "helper": "sprintf_g6",
+   "inlined_into": "append_csv_row",
+   "inlined_into_matlab_lines": [
+    5157,
+    5187
    ]
   },
   {
@@ -1436,6 +1494,33 @@
    ]
   },
   {
+   "copy": "_get_PulseR__colon",
+   "helper": "colon",
+   "inlined_into": "get_PulseR",
+   "inlined_into_matlab_lines": [
+    6655,
+    6685
+   ]
+  },
+  {
+   "copy": "_get_PulseR__filter",
+   "helper": "filter",
+   "inlined_into": "get_PulseR",
+   "inlined_into_matlab_lines": [
+    6655,
+    6685
+   ]
+  },
+  {
+   "copy": "_get_PulseR__ones_row",
+   "helper": "ones_row",
+   "inlined_into": "get_PulseR",
+   "inlined_into_matlab_lines": [
+    6655,
+    6685
+   ]
+  },
+  {
    "copy": "_get_RILN_cmp_td__Bessel_Thomson_Filter",
    "helper": "Bessel_Thomson_Filter",
    "inlined_into": "get_RILN_cmp_td",
@@ -1526,6 +1611,15 @@
    "canonical_matlab_lines": [
     11076,
     11146
+   ]
+  },
+  {
+   "copy": "_get_StepR__colon",
+   "helper": "colon",
+   "inlined_into": "get_StepR",
+   "inlined_into_matlab_lines": [
+    6876,
+    6903
    ]
   },
   {
@@ -1845,6 +1939,15 @@
    ]
   },
   {
+   "copy": "_make_full_pkg__lin",
+   "helper": "lin",
+   "inlined_into": "make_full_pkg",
+   "inlined_into_matlab_lines": [
+    8166,
+    8358
+   ]
+  },
+  {
    "copy": "_make_full_pkg__make_pkg",
    "helper": "make_pkg",
    "inlined_into": "make_full_pkg",
@@ -1856,6 +1959,15 @@
    "canonical_matlab_lines": [
     8359,
     8405
+   ]
+  },
+  {
+   "copy": "_make_full_pkg__row",
+   "helper": "row",
+   "inlined_into": "make_full_pkg",
+   "inlined_into_matlab_lines": [
+    8166,
+    8358
    ]
   },
   {
@@ -2155,34 +2267,6 @@
    "inlined_into_matlab_lines": [
     9601,
     10258
-   ]
-  },
-  {
-   "copy": "_read_p4_s4params__rangelimit",
-   "helper": "rangelimit",
-   "inlined_into": "read_p4_s4params",
-   "inlined_into_matlab_lines": [
-    10391,
-    10524
-   ],
-   "canonical": "rangelimit",
-   "canonical_matlab_lines": [
-    9401,
-    9413
-   ]
-  },
-  {
-   "copy": "_read_p4_s4params__read_Nport_touchstone",
-   "helper": "read_Nport_touchstone",
-   "inlined_into": "read_p4_s4params",
-   "inlined_into_matlab_lines": [
-    10391,
-    10524
-   ],
-   "canonical": "read_Nport_touchstone",
-   "canonical_matlab_lines": [
-    9414,
-    9568
    ]
   },
   {

@@ -18,15 +18,59 @@ from com_functions.fn.dfe_clipper.py_impl import dfe_clipper as _dfe_clipper
 from com_functions.fn.findbankloc.py_impl import findbankloc as _findbankloc
 from com_functions.fn.floatingDFE.py_impl import floatingDFE as _floatingDFE
 
+
+def _mrange(x, first, step, last, expr):
+    """MATLAB `x(first:step:last)` with MATLAB's subscript rules, 1-based.
+
+    An empty range indexes nothing and is legal; every subscript a non-empty
+    one produces must be whole, >= 1 and <= numel(x).  A Python slice answers
+    all three cases silently -- a negative start reads from the tail and a
+    long stop truncates -- so the port returned numbers for calls the
+    reference refuses.  COM Octave, OptFom_Compute_DFE:
+
+      ndfe=40 on a 300-sample sbr:
+        "error: sbr(361): out of bound 300 (dimensions are 1x300)"
+      do_C2M=1, cursor_i=5, T_O=20:
+        "error: sbr(-7): subscripts must be either integers 1 to (2^63)-1
+         or logicals"
+      param.N_tail_start=-2:
+        "error: dfetaps(-2): subscripts must be either integers 1 to
+         (2^63)-1 or logicals"      (the port took dfetaps[-3:] instead)
+    """
+    n = int(np.floor((last - first) / step)) + 1 if last >= first else 0
+    if n <= 0:
+        return x[:0]
+    idx = first + step * np.arange(n, dtype=float)
+    bad = idx[idx != np.round(idx)]
+    if bad.size:
+        raise ValueError('OptFom_Compute_DFE: %s(%g): subscripts must be '
+                         'positive integers' % (expr, bad[0]))
+    if idx[0] < 1:
+        raise IndexError('OptFom_Compute_DFE: %s(%d): subscripts must be '
+                         'either integers 1 to (2^63)-1 or logicals'
+                         % (expr, int(idx[0])))
+    if idx[-1] > x.size:
+        raise IndexError('OptFom_Compute_DFE: %s(%d): out of bound %d'
+                         % (expr, int(idx[-1]), x.size))
+    return x[idx.astype(int) - 1]
+
+
 def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
     sbr = np.asarray(sbr, dtype=float)
     cursor_i = int(THIS.cursor_i)  # 0-based
-    M = int(param.samples_per_ui)
-    ndfe = int(param.ndfe)
-    N_tail_start = int(param.N_tail_start)
+    cursor_1 = cursor_i + 1        # the MATLAB subscript
+    # samples_per_ui / ndfe / N_tail_start / T_O go into MATLAB subscript
+    # expressions, and MATLAB refuses a fractional subscript.  Truncating them
+    # here answered calls the reference declines, so they stay as given and
+    # _mrange applies MATLAB's rule.
+    M_f = float(param.samples_per_ui)
+    ndfe_f = float(param.ndfe)
+    N_tail_start = float(param.N_tail_start)
 
-    # Equation 93A-27: DFE cursor samples (0-based Python)
-    dfecursors = sbr[cursor_i + M : cursor_i + M * ndfe + 1 : M]
+    # Equation 93A-27: DFE cursor samples
+    dfecursors = _mrange(sbr, cursor_1 + M_f, M_f,
+                         cursor_1 + M_f * ndfe_f, 'sbr')
+    M = int(M_f)                   # whole: _mrange above would have refused
 
     if param.dfe_delta != 0:
         dfecursors_q = (np.floor(np.abs(dfecursors / sbr[cursor_i]) / param.dfe_delta)
@@ -56,7 +100,8 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
         sbr[cursor_i] * np.asarray(param.use_bmin).ravel())
 
     if do_C2M:
-        dfecursors_windowed = sbr[cursor_i - T_O + M : cursor_i + M * ndfe - T_O + 1 : M]
+        dfecursors_windowed = _mrange(sbr, cursor_1 - T_O + M_f, M_f,
+                                      cursor_1 + M_f * ndfe_f - T_O, 'sbr')
         excess_dfe_cursors = dfecursors_windowed - actual_dfecursors
     else:
         excess_dfe_cursors = dfecursors - actual_dfecursors
@@ -64,15 +109,25 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
     dfetaps = actual_dfecursors / sbr[cursor_i]
 
     if len(dfetaps) >= N_tail_start and N_tail_start != 0:
-        tail_taps = dfetaps[N_tail_start - 1:]  # 1-based → 0-based
+        # MATLAB dfetaps(N_tail_start:end): a negative or fractional
+        # N_tail_start is a subscript error, not a slice from the tail.
+        tail_taps = _mrange(dfetaps, N_tail_start, 1.0, len(dfetaps),
+                            'dfetaps')
+        nts0 = int(N_tail_start) - 1    # whole: _mrange would have refused
         tail_RSS = float(np.linalg.norm(tail_taps))
         if tail_RSS != 0:
             if tail_RSS >= param.B_float_RSS_MAX:
-                scale = min(tail_RSS, param.B_float_RSS_MAX) / tail_RSS
+                # MATLAB: min(...)*sign(t).*t/tail_RSS -- the division comes
+                # LAST.  Factoring it out into a scale first is algebraically
+                # the same and not the same in floating point: COM Octave gave
+                # use_bmax(3)=0.044776673559449504 where the scale-first form
+                # gave 0.04477667355944951, one ulp out.
+                min_v = min(tail_RSS, param.B_float_RSS_MAX)
+                sgn = np.sign(tail_taps)
                 use_bmax = np.asarray(param.use_bmax).ravel().copy()
                 use_bmin = np.asarray(param.use_bmin).ravel().copy()
-                use_bmax[N_tail_start - 1:] = scale * np.abs(tail_taps)
-                use_bmin[N_tail_start - 1:] = -scale * np.abs(tail_taps)
+                use_bmax[nts0:] = min_v * sgn * tail_taps / tail_RSS
+                use_bmin[nts0:] = min_v * -1 * sgn * tail_taps / tail_RSS
                 param.use_bmax = use_bmax
                 param.use_bmin = use_bmin
 

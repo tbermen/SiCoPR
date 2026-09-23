@@ -170,12 +170,23 @@ check("s_for_c4_reorder_is_nontrivial",
       rel_err(reordered, blockdiag) > 1e-3,
       "snp2smp([1 3 2 4]) unexpectedly equals the block-diagonal")
 # EXPECTED FAIL: sicopr.py returns the block-diagonal, skipping the reorder.
-xcheck("s_for_c4_applies_port_reorder",
+# Was DIVERGENT (unused fn): the port returned the block-diagonal and skipped
+# the snp2smp([1 3 2 4]) reorder that ML 11301 applies, on a comment claiming
+# the step "leaves the matrix unchanged". It does not: with M==N==4 no port is
+# terminated, so it reduces to new(i,j)=old(p(i),p(j)), and [1 3 2 4] swaps
+# ports 2 and 3. The consequence was Sdd21 identically ZERO -- a shunt
+# capacitor with no differential insertion loss at any frequency. RESOLVED
+# 2026-09-22; promoted to check().
+#
+# Note the function remains unreachable: its dependency s2_to_s4 is defined
+# nowhere in any release, the 802-COM src tree, or RF Toolbox, so the reference
+# cannot execute it either, and nothing calls s_for_c4. The block-diagonal
+# reading of s2_to_s4 is therefore still an assumption; what is now pinned is
+# the reorder, which the reference plainly does apply.
+check("s_for_c4_applies_port_reorder",
       rel_err(S4, reordered) <= 1e-12,
-      "DIVERGENT (unused fn): py 17167 returns the block-diagonal and skips the "
-      "snp2smp([1 3 2 4]) reorder that ML 11301 applies; the reorder moves the "
-      "off-diagonal cap terms. s_for_c2/s_for_c4 have no callers, so no mainline "
-      "impact; s2_to_s4/snp2smp are external toolbox fns not in the source")
+      "s_for_c4 must apply the snp2smp([1 3 2 4]) reorder of ML 11301; without "
+      "it Sdd21 is identically zero")
 
 # ===========================================================================
 # 5. make_full_pkg dispatch (ML 8296-8488)

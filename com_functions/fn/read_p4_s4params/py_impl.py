@@ -6,7 +6,7 @@
 # T = [[1,1,0,0],[1,-1,0,0],[0,0,1,1],[0,0,1,-1]]
 # sigma_matrix for each frequency point based on TX/RX p/n skew.
 # Snew = sigma_matrix .* S (elementwise, not matrix multiply)
-# W = T * Snew * inv(T)
+# W = T * (Snew / T)  -- mrdivide, a solve, not a multiply by inv(T)
 # D matrix indexing (MATLAB 1-based):
 #   SDD(1,1) = D(2,2); SDD(2,2) = D(4,4); SDD(1,2) = D(2,4); SDD(2,1) = D(4,2)
 #   SDC(1,1) = D(2,1); SDC(2,2) = D(4,3); SDC(1,2) = D(2,3); SDC(2,1) = D(4,1)
@@ -14,117 +14,20 @@
 #   SCD(1,1) = D(1,2); SCD(2,2) = D(3,4); SCD(1,2) = D(1,4); SCD(2,1) = D(3,2)
 # ============================================================
 
+# rangelimit and read_Nport_touchstone are called, not re-inlined: the private
+# copies that used to sit here had drifted from the shared functions, exactly
+# as read_p2_s2params's had. The reader copy defaulted nport to 4 rather than 2
+# for an extension with no digit and did not reject a file it parsed no data
+# from; the rangelimit copy wrote param.flim straight back into the CALLER's
+# object, where MATLAB passes param by value.
+# COM Octave, a 50 GHz file read with param.flim = 100e9: data.flim comes back
+# 50e9 while the caller's param.flim is still 100e9 -- the port left the
+# caller holding 50e9.
+
 import numpy as np
-from com_functions.fn.auto_port_order.py_impl import auto_port_order as _auto_port_order
+from com_functions.fn.rangelimit.py_impl import rangelimit as _rangelimit
+from com_functions.fn.read_Nport_touchstone.py_impl import read_Nport_touchstone as _read_Nport_touchstone
 from types import SimpleNamespace
-
-
-def _read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
-    """Inlined read_Nport_touchstone."""
-    import re, os
-    # r4p15p0: empty port_order -> auto-detect after read
-    if port_order is None:
-        port_order = []
-    else:
-        port_order = [int(p) for p in np.asarray(port_order).ravel()]
-    Z_renorm = float(Z_renorm)
-    ext = os.path.splitext(touchstone_file)[1].lower()
-    m = re.search(r'\d+', ext)
-    nport = int(m.group()) if m else 4
-
-    with open(touchstone_file, 'r', errors='replace') as fid:
-        raw = fid.read()
-
-    lines = raw.splitlines()
-    option_line = None
-    data_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('!'):
-            continue
-        if stripped.startswith('#') and option_line is None:
-            option_line = stripped
-        else:
-            data_lines.append(stripped.split('!')[0].strip())
-
-    if option_line is None:
-        raise ValueError(f'No # option line in {touchstone_file}')
-
-    opt_tokens = option_line[1:].upper().split()
-    freq_scale_map = {'HZ': 1.0, 'KHZ': 1e3, 'MHZ': 1e6, 'GHZ': 1e9}
-    freq_mult = freq_scale_map.get(opt_tokens[0], 1e9)
-    try:
-        s_idx = opt_tokens.index('S')
-        fmt = opt_tokens[s_idx + 1]
-    except (ValueError, IndexError):
-        fmt = 'MA'
-    try:
-        r_idx = opt_tokens.index('R')
-        file_Z0 = float(opt_tokens[r_idx + 1])
-    except (ValueError, IndexError):
-        file_Z0 = 50.0
-
-    all_tokens = []
-    for line in data_lines:
-        all_tokens.extend(line.split())
-    vals = []
-    for t in all_tokens:
-        try:
-            vals.append(float(t))
-        except ValueError:
-            pass
-    vals = np.array(vals, dtype=float)
-    n_per_row = 1 + nport * nport * 2
-    nfreq = len(vals) // n_per_row
-    data = vals[:nfreq * n_per_row].reshape(nfreq, n_per_row)
-    freq = data[:, 0] * freq_mult
-    ri_flat = data[:, 1:]
-    re_data = ri_flat[:, 0::2]
-    im_data = ri_flat[:, 1::2]
-    if fmt == 'RI':
-        cdata = re_data + 1j * im_data
-    elif fmt == 'MA':
-        cdata = re_data * np.exp(1j * im_data * np.pi / 180.0)
-    elif fmt == 'DB':
-        mag = 10.0 ** (re_data / 20.0)
-        cdata = mag * np.exp(1j * im_data * np.pi / 180.0)
-    else:
-        raise ValueError(f'Unsupported format {fmt}')
-
-    sp = np.zeros((nport, nport, nfreq), dtype=complex)
-    for j in range(nport):
-        sp[j, :, :] = cdata[:, j * nport:(j + 1) * nport].T
-    if nport == 2:
-        temp = sp[0, 1, :].copy()
-        sp[0, 1, :] = sp[1, 0, :]
-        sp[1, 0, :] = temp
-
-    if abs(file_Z0 - Z_renorm) > 1e-9:
-        rho = (Z_renorm - file_Z0) / (Z_renorm + file_Z0)
-        I = np.eye(nport)
-        for k in range(nfreq):
-            s_old = sp[:, :, k]
-            sp[:, :, k] = np.linalg.solve(I - rho * s_old, s_old - rho * I)
-
-    sch = np.transpose(sp, (2, 0, 1))
-    # r4p15p0: auto-detect port order when none supplied
-    if len(port_order) == 0:
-        port_order = _auto_port_order(sch, freq)
-    po = [p - 1 for p in port_order]
-    if len(po) == nport:
-        sch = sch[:, po, :][:, :, po]
-    return sch, freq, port_order
-
-
-def _rangelimit(sch, freq, param, OP):
-    flim = float(getattr(param, 'flim', float('inf')))
-    idx = np.where(freq >= flim)[0]
-    if len(idx) > 0:
-        iend = int(idx[0]) + 1
-        return sch[:iend], freq[:iend], 1, param
-    else:
-        param.flim = float(freq[-1])
-        return sch, freq, 0, param
 
 
 def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, param):
@@ -136,7 +39,9 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
     resolved order is returned as the 6th output.
     """
     sch, freq, ports = _read_Nport_touchstone(infile, ports, float(param.Z0))
-    sch, freq, limited, param = _rangelimit(sch, freq, param, OP)
+    # rangelimit returns its OWN param; MATLAB passes param by value, so the
+    # caller's struct is untouched.
+    sch, freq, limited, param_out = _rangelimit(sch, freq, param, OP)
 
     nfreq = len(freq)
 
@@ -150,15 +55,24 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
                   [1.0, -1.0, 0.0, 0.0],
                   [0.0, 0.0, 1.0, 1.0],
                   [0.0, 0.0, 1.0, -1.0]])
-    T_inv = np.linalg.inv(T)
 
     D = np.zeros((nfreq, 4, 4), dtype=complex)
     for i in range(nfreq):
         f = freq[i]
-        s1 = np.exp(2j * np.pi * f * Txpskew * 1e-12)
-        s2 = np.exp(2j * np.pi * f * Txnskew * 1e-12)
-        s3 = np.exp(2j * np.pi * f * Rxpskew * 1e-12)
-        s4 = np.exp(2j * np.pi * f * Rxnskew * 1e-12)
+        # MATLAB's Sigfct is `@(sigma2,sigma1,sigma4,sigma3)...`: the parameter
+        # NAMES are transposed on purpose ("need to swap sigma for 1 and 3 and
+        # 2 and 4", RIM 12/29/2023), so calling it with (Txp, Txn, Rxp, Rxn)
+        # binds sigma1=Txn, sigma2=Txp, sigma3=Rxn, sigma4=Rxp. The port read
+        # the names in call order and built the matrix with 1<->2 and 3<->4
+        # swapped, which is invisible while the p and n skews match and wrong
+        # as soon as they do not.
+        # COM Octave, Txpskew=3 ps, Txnskew=-1 ps, Rx skews 0: max|dSDC| and
+        # max|dSCD| reach 0.1255 (SDC and SCD are O(0.1) here), max|dSDD|
+        # 5.67e-4.
+        s1 = np.exp(2j * np.pi * f * Txnskew * 1e-12)   # MATLAB sigma1
+        s2 = np.exp(2j * np.pi * f * Txpskew * 1e-12)   # MATLAB sigma2
+        s3 = np.exp(2j * np.pi * f * Rxnskew * 1e-12)   # MATLAB sigma3
+        s4 = np.exp(2j * np.pi * f * Rxpskew * 1e-12)   # MATLAB sigma4
         sigma_matrix = np.array([
             [s1 ** 2,   s1 * s2, s1 * s3, s1 * s4],
             [s1 * s2,   s2 ** 2, s2 * s3, s2 * s4],
@@ -167,7 +81,10 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
         ])
         S = sch[i, :, :]
         Snew = sigma_matrix * S  # elementwise (Sigfct .* S)
-        D[i] = T @ Snew @ T_inv
+        # MATLAB's Snew/T is mrdivide, which SOLVES rather than multiplying by
+        # an inverse: Snew/T == (T.'\Snew.').'. T @ Snew @ inv(T) is the same
+        # matrix in exact arithmetic and not in floating point.
+        D[i] = T @ np.linalg.solve(T.T, Snew.T).T
 
     # Extract mixed-mode S-params (0-based Python, MATLAB 1-based → subtract 1)
     SDD = np.zeros((nfreq, 2, 2), dtype=complex)
@@ -197,7 +114,7 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
     data = SimpleNamespace()
     data.m = sch
     data.freq = freq
-    data.flim = getattr(param, 'flim', freq[-1])
+    data.flim = param_out.flim
     data.limited = limited
 
     return data, SDD, SDC, SCC, SCD, ports

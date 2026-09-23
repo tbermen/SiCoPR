@@ -2,18 +2,30 @@ import numpy as np
 
 
 def _N_s(f, param, sigma_ns, OP):
-    """Inlined helper: single-sided noise PSD Ns(f)."""
+    """Inlined helper: single-sided noise PSD Ns(f).
+
+    Kept in step with com_functions/fn/N_s/py_impl.py; the two bodies must
+    stay identical.  This copy had not picked up the column-input and
+    matrix-input corrections made there, so S_IN raised on a call MATLAB
+    answers -- see the COM Octave block in test_verify.py.
+    """
+    f = np.asarray(f, dtype=float)
+    n_out = 0 if f.size == 0 else (max(f.shape) if f.ndim else 1)   # MATLAB length()
+    f = f.ravel(order='F')          # MATLAB linear-index order
     f_b = float(param.fb)
     f_hp = float(param.f_hp)
     mask = f <= f_b / 2
     inq = int(np.where(mask)[0][-1]) + 1 if np.any(mask) else 0
     RIT = str(OP.RIT_REF_PTR).lower()
-    Ns = np.zeros(len(f))
+    # max(): indexing past the end grows the array in MATLAB, which a matrix f
+    # can reach (length() counts only the longest dimension while find() walks
+    # every element).
+    Ns = np.zeros(max(n_out, inq))
     if RIT == 'clause_178':
         Ns[:inq] = 2 * sigma_ns ** 2 / f_b
     elif RIT in ('clause_179', 'annex_176d'):
         if f_hp <= 0:
-            raise ValueError('Parameter f_hp must be > 0')
+            raise ValueError('Parameter f_hp must be greater than 0')
         beta = 1 - (2 * f_hp / f_b) * np.arctan(f_b / (2 * f_hp))
         Ns[:inq] = (
             (2 * sigma_ns ** 2) / (beta * f_b)

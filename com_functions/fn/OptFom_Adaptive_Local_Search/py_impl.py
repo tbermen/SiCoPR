@@ -87,6 +87,13 @@ _ALS_HEADER = ['iter', 'adaptive_radius', 'deterministic_radius', 'raw_L1_TX',
 def _mround(x):
     """MATLAB round(): half away from zero."""
     x = float(x)
+    # MATLAB round(NaN) is NaN and round(Inf) is Inf; int() raises on both.
+    # COM Octave, OptFom_Adaptive_Local_Search with LocalSearch_Value=NaN
+    # returns skip_it=1 and with Inf returns 0, where the port raised
+    # ValueError / OverflowError out of this function.  The same guard is
+    # already in com_functions/fn/compute_hard_cap.
+    if not np.isfinite(x):
+        return x
     t = int(x)                      # int() truncates toward zero
     if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
         return t + (1 if x > 0 else -1)
@@ -95,20 +102,74 @@ def _mround(x):
     return int(round(x))
 
 
+def _mmax2(a, b):
+    """MATLAB max(a,b): a NaN operand is dropped, not propagated.
+
+    Python's max() compares with > and keeps whichever it saw first, so
+    max(2, NaN) is NaN where MATLAB gives 2.  With LocalSearch_Value=NaN the
+    reference still reaches the hard-cap test and returns skip_it=1.
+    """
+    if np.isnan(a):
+        return b
+    if np.isnan(b):
+        return a
+    return a if a > b else b
+
+
+def _mmin2(a, b):
+    """MATLAB min(a,b): the mirror of _mmax2."""
+    if np.isnan(a):
+        return b
+    if np.isnan(b):
+        return a
+    return a if a < b else b
+
+
+def _g6(v):
+    """MATLAB sprintf('%.6g', v); see com_functions/fn/append_csv_row."""
+    a = np.asarray(v)
+    if np.iscomplexobj(a):
+        a = a.real
+    out = []
+    for x in np.asarray(a, dtype=float).ravel(order='F'):
+        if np.isnan(x):
+            out.append('NaN')
+        elif np.isinf(x):
+            out.append('Inf' if x > 0 else '-Inf')
+        else:
+            out.append('%.6g' % x)
+    return ''.join(out)
+
+
 def _append_csv_row(file_path, header_cells, row_cells):
-    """Inlined append_csv_row (MATLAB lines 5157-5187)."""
+    """Inlined append_csv_row (MATLAB lines 5157-5187).
+
+    Kept in step with com_functions/fn/append_csv_row: MATLAB's isnumeric()
+    is false for a logical, sprintf('%.6g', x) prints Inf/NaN capitalised and
+    reapplies itself to every element of an array in column-major order, and
+    an unopenable path warns rather than raising.
+    COM Octave: {Inf} -> Inf, {NaN} -> NaN, {true} -> "", {[1 2 3]} -> 123.
+    """
     import os
     file_exists = os.path.isfile(file_path)
-    with open(file_path, 'a', newline='') as fid:
+    try:
+        fid = open(file_path, 'a', newline='')
+    except OSError:
+        import warnings
+        warnings.warn('Could not open %s' % file_path)
+        return
+    with fid:
         if not file_exists:
             fid.write(','.join(str(h) for h in header_cells) + '\n')
         if row_cells:
             out = []
             for v in row_cells:
                 if isinstance(v, (bool, np.bool_)):
-                    out.append(f'{float(v):.6g}')
-                elif isinstance(v, (int, float, np.integer, np.floating)):
-                    out.append(f'{v:.6g}')
+                    out.append('""')          # isnumeric(logical) is false
+                elif isinstance(v, (int, float, complex, np.number)):
+                    out.append(_g6(v))
+                elif isinstance(v, np.ndarray) and v.dtype.kind in 'iufc':
+                    out.append(_g6(v))
                 elif isinstance(v, str):
                     out.append(f'"{v}"')
                 else:
@@ -184,12 +245,17 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     # always has iter_count == 1 -- the two forms cannot diverge here, and a
     # version branch would add a path with no behavioural difference to test.
     if (not st['initialized']) or iter_count == 1:
-        st['adaptive_radius'] = max(min_radius, _mround(LocalSearch_Value))
+        st['adaptive_radius'] = _mmax2(min_radius, _mround(LocalSearch_Value))
         st['no_improve_count'] = 0
         st['initialized'] = True
 
     # ---- Current FOM value ----
-    FOM_history = np.asarray(FOM_history, dtype=float).ravel()
+    # MATLAB's `end` and `end-k:end` index linearly, which is COLUMN-major.
+    # COM Octave with FOM_history = [1 1 ; 3 1.0005]: the window is
+    # [1 1.0005], improvement 5e-4, so the radius shrinks and skip_it becomes
+    # 1; a row-major ravel takes [3 1.0005], improvement ~2, and kept
+    # evaluating.
+    FOM_history = np.asarray(FOM_history, dtype=float).ravel(order='F')
     FOM = float(FOM_history[-1]) if FOM_history.size > 0 else float('nan')
 
     # ---- ADAPTIVE shrink ----
@@ -200,15 +266,15 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
             st['no_improve_count'] += 1
         else:
             st['no_improve_count'] = 0
-            st['adaptive_radius'] = min(st['adaptive_radius'] + 1, LocalSearch_Value)
+            st['adaptive_radius'] = _mmin2(st['adaptive_radius'] + 1, LocalSearch_Value)
         # shrink only when CTLE is "stable"
         if st['no_improve_count'] >= 1 and abs(THIS.ctle_index - BEST.ctle) <= 1:
-            st['adaptive_radius'] = max(min_radius, _mround(st['adaptive_radius'] * radius_shrink_factor))
+            st['adaptive_radius'] = _mmax2(min_radius, _mround(st['adaptive_radius'] * radius_shrink_factor))
             st['no_improve_count'] = 0
 
     # ---- Deterministic shrink ----
-    deterministic_radius = max(min_radius, _mround(LocalSearch_Value / (1 + deterministic_shrink_rate * iter_count)))
-    st['adaptive_radius'] = max(min_radius, min(st['adaptive_radius'], deterministic_radius))
+    deterministic_radius = _mmax2(min_radius, _mround(LocalSearch_Value / (1 + deterministic_shrink_rate * iter_count)))
+    st['adaptive_radius'] = _mmax2(min_radius, _mmin2(st['adaptive_radius'], deterministic_radius))
     adaptive_radius = st['adaptive_radius']
 
     # ---- Extract tap vectors ----
@@ -241,10 +307,20 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
                 iter_count, adaptive_radius, deterministic_radius, raw_L1_TX,
                 L1_w, L2_w, hard_cap, np.array2string(curr_taps), ctle_index, lp_curr,
                 np.array2string(best_taps), BEST.ctle, lp_best, vga_curr, vga_best,
-                float(THIS.FOM), float(BEST.FOM), FOM, bool(skip_it), reason])
+                # MATLAB logs `double(skip_it)`, not the logical: isnumeric()
+                # is false for a logical, so passing the bool would now write
+                # "" into the skip_it column instead of 1/0.
+                float(THIS.FOM), float(BEST.FOM), FOM, float(bool(skip_it)),
+                reason])
         return bool(skip_it)
 
-    if best_taps.size == 0 or curr_taps.size == 0:
+    # MATLAB puts this early return INSIDE `if log_yes_1_no_0 == 1`, so with
+    # logging off -- the shipped state, and this port's default -- it does not
+    # fire and the empty vectors go on to `this_vec - best_vec`.  COM Octave
+    # with an empty THIS.tx_index_vector and a 3-tap BEST.txffe_index:
+    # "error: operator -: nonconformant arguments (op1 is 2x1, op2 is 5x1)".
+    # Returning False unconditionally answered a call the reference refuses.
+    if ALS_LOG_CSV is not None and (best_taps.size == 0 or curr_taps.size == 0):
         return _finish(False, 'Skip: Empty BEST.txffe_index or THIS.tx_index_vector')
 
     # ---- Build weighted vectors ----
@@ -281,7 +357,8 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
         return _finish(True, 'Skip: TX Exceeds Cap', raw_L1_TX, L1_w, L2_w, hard_cap)
 
     # ---- L1/L2 skip rule ----
-    L2_threshold = max(min_radius, int(np.ceil(l2_to_l1_ratio * adaptive_radius)))
+    # No int(): MATLAB keeps a double, and int(ceil(Inf)) raises OverflowError.
+    L2_threshold = _mmax2(min_radius, float(np.ceil(l2_to_l1_ratio * adaptive_radius)))
     skip_it = (L1_w > adaptive_radius) and (L2_w > L2_threshold)
     reason = 'Skip: Outside L1/L2 Limits' if skip_it else 'Evaluate Candidate'
     return _finish(skip_it, reason, raw_L1_TX, L1_w, L2_w, hard_cap)

@@ -103,3 +103,36 @@ def test_com_monotone_with_noise():
     r1 = MLSE_U1_c_178A(p, b, A_s, 0.1, pdf1, np.cumsum(pdf1.y), _psd_results())
     r2 = MLSE_U1_c_178A(p, b, A_s, 0.1, pdf2, np.cumsum(pdf2.y), _psd_results())
     assert r1.COM >= r2.COM, "lower noise → higher COM"
+
+
+# ---------------------------------------------------------------------------
+# This module carries its own copy of scalePDF as the private _scale_pdf.
+# interp1's default returns NaN OUTSIDE the data range; np.interp clamps, which
+# makes the reference's two "NAN interp work around" lines (patching only y(1)
+# and y(end)) no-ops. That is harmless only while at most one point falls
+# outside at each end.
+#
+# COM Octave on the canonical scalePDF, Min=-8, x=(-8:0)*0.05, scale 1.0:
+# 17 values, ALL NaN. Clamping gave 17 finite ones. Pinned here so the copy
+# cannot drift back -- a canonical fix does not reach an inlined copy, which is
+# the defect class that cost engine defect #6.
+# ---------------------------------------------------------------------------
+
+def test_scale_pdf_copy_returns_nan_outside_the_data_range():
+    from com_functions.fn.MLSE_U1_c_178A.py_impl import _scale_pdf
+    y = np.array([0.02, 0.05, 0.09, 0.14, 0.20, 0.22, 0.15, 0.08, 0.05])
+    x = np.arange(-8, 1) * 0.05          # left-heavy: max(x)=0 < -min(x)=0.4
+    out = _scale_pdf(SimpleNamespace(BinSize=0.05, Min=-8, x=x, y=y), 1.0)
+    got = np.asarray(out.y)
+    assert got.size == 17
+    assert np.isnan(got).all()
+
+
+def test_scale_pdf_copy_keeps_an_ordinary_pdf_finite():
+    """The guard: a symmetric grid must not become NaN."""
+    from com_functions.fn.MLSE_U1_c_178A.py_impl import _scale_pdf
+    y = np.array([0.05, 0.15, 0.30, 0.30, 0.15, 0.05])
+    x = np.arange(-3, 3) * 0.05
+    got = np.asarray(_scale_pdf(SimpleNamespace(BinSize=0.05, Min=-3, x=x, y=y), 1.0).y)
+    assert np.isfinite(got).all()
+    assert abs(float(np.sum(got)) - 1.0) < 1e-12

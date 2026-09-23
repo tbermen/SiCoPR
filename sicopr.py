@@ -3158,7 +3158,12 @@ def _MLSE_U1_c_178A__scale_pdf(pdf, scale_factor):
     pdf_out.Min = int(np.floor(pdf.Min * scale_factor))
     idx = np.arange(pdf_out.Min, -pdf_out.Min + 1)
     pdf_out.x = idx * pdf_out.BinSize
-    pdf_out.y = np.interp(pdf_out.x, np.asarray(pdf.x) * scale_factor, np.asarray(pdf.y))
+    # interp1's default returns NaN OUTSIDE the data range; np.interp clamps,
+    # which makes the reference's two "NAN interp work around" lines below
+    # no-ops. Harmless only while at most one point falls outside at each end.
+    # Matches com_functions/fn/scalePDF, corrected 2026-09-22.
+    pdf_out.y = np.interp(pdf_out.x, np.asarray(pdf.x) * scale_factor,
+                          np.asarray(pdf.y), left=np.nan, right=np.nan)
     if len(pdf_out.y) > 1:
         pdf_out.y[0] = pdf_out.y[1]
         pdf_out.y[-1] = pdf_out.y[-2]
@@ -4006,30 +4011,55 @@ def N_s(f, param, sigma_ns, OP):
 
 
 
+def _OptFom_Build_TXFFE__tap_values(param, field):
+    """MATLAB `param.(this_tx_field)`, as Full_Grid_Matrix's `in{k}(:)`.
+
+    Full_Grid_Matrix takes num_cases from cellfun('length',in) -- the LONGEST
+    dimension -- but then lays out every element of in{k}(:), so a sweep
+    variable that is not a vector makes num_cases/length(C) fractional and
+    repmat refuse it.  COM Octave, tx_ffe_cm1_values = [0 .1 .2; .3 .4 .5]:
+    "conversion of 0.5 to int64_t value failed".  ravel() had flattened it to
+    six values and answered.
+    """
+    val = np.asarray(getattr(param, field))
+    if val.ndim > 1 and val.size != max(val.shape):
+        raise ValueError('param.%s must be a vector, got shape %s'
+                         % (field, val.shape))
+    return list(val.ravel())
+
+
 def OptFom_Build_TXFFE(param):
     param_fields = list(vars(param).keys())
 
-    num_pre = sum(1 for f in param_fields if re.search(r'^tx_ffe_cm\d+_values$', f))
-    num_post = sum(1 for f in param_fields if re.search(r'^tx_ffe_cp\d+_values$', f))
+    # MATLAB's regexp is not anchored, so a field that merely CONTAINS
+    # tx_ffe_cm<n>_values is counted -- and the sprintf'd lookup that follows
+    # then fails.  COM Octave, param.xtx_ffe_cm1_values_extra = [0 0.1]:
+    # "structure has no member 'tx_ffe_cm1_values'".  The anchored ^...$ here
+    # skipped such a field and answered.
+    num_pre = sum(1 for f in param_fields if re.search(r'tx_ffe_cm\d+_values', f))
+    num_post = sum(1 for f in param_fields if re.search(r'tx_ffe_cp\d+_values', f))
     num_taps = num_pre + num_post
     cur = num_pre + 1  # 1-based cursor position
 
     txffe_cell = [None] * num_taps
     for k in range(num_pre, 0, -1):  # k from num_pre down to 1
         idx = num_pre - k  # 0-based
-        field = f'tx_ffe_cm{k}_values'
-        txffe_cell[idx] = list(np.asarray(getattr(param, field)).ravel())
+        txffe_cell[idx] = _OptFom_Build_TXFFE__tap_values(param, f'tx_ffe_cm{k}_values')
     for k in range(1, num_post + 1):
         idx = k + num_pre - 1  # 0-based
-        field = f'tx_ffe_cp{k}_values'
-        txffe_cell[idx] = list(np.asarray(getattr(param, field)).ravel())
+        txffe_cell[idx] = _OptFom_Build_TXFFE__tap_values(param, f'tx_ffe_cp{k}_values')
 
     txffe_lengths = np.array([len(c) for c in txffe_cell], dtype=int)
 
-    # 1-based indices of taps with more than one value, sorted by descending length
+    # 1-based indices of taps with more than one value, sorted by descending
+    # length.  MATLAB's sort is STABLE, so ties keep ascending tap order;
+    # argsort(ascending, stable)[::-1] reverses them.  COM Octave, tap lengths
+    # [2 4 2 4], gives [2 4 1 3] where the reversed form gave [4 2 3 1] -- and
+    # the plainest real case, one swept precursor and one swept postcursor of
+    # equal length, came out [2 1] instead of [1 2].
     raw_sweep = np.where(txffe_lengths > 1)[0] + 1  # 1-based
     if len(raw_sweep) > 0:
-        length_sort = np.argsort(txffe_lengths[raw_sweep - 1], kind='stable')[::-1]
+        length_sort = np.argsort(-txffe_lengths[raw_sweep - 1], kind='stable')
         txffe_sweep_indices = raw_sweep[length_sort]
     else:
         txffe_sweep_indices = np.array([], dtype=int)
@@ -4173,6 +4203,13 @@ _ALS_HEADER = ['iter', 'adaptive_radius', 'deterministic_radius', 'raw_L1_TX',
 def _OptFom_Adaptive_Local_Search__mround(x):
     """MATLAB round(): half away from zero."""
     x = float(x)
+    # MATLAB round(NaN) is NaN and round(Inf) is Inf; int() raises on both.
+    # COM Octave, OptFom_Adaptive_Local_Search with LocalSearch_Value=NaN
+    # returns skip_it=1 and with Inf returns 0, where the port raised
+    # ValueError / OverflowError out of this function.  The same guard is
+    # already in com_functions/fn/compute_hard_cap.
+    if not np.isfinite(x):
+        return x
     t = int(x)                      # int() truncates toward zero
     if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
         return t + (1 if x > 0 else -1)
@@ -4181,20 +4218,74 @@ def _OptFom_Adaptive_Local_Search__mround(x):
     return int(round(x))
 
 
+def _OptFom_Adaptive_Local_Search__mmax2(a, b):
+    """MATLAB max(a,b): a NaN operand is dropped, not propagated.
+
+    Python's max() compares with > and keeps whichever it saw first, so
+    max(2, NaN) is NaN where MATLAB gives 2.  With LocalSearch_Value=NaN the
+    reference still reaches the hard-cap test and returns skip_it=1.
+    """
+    if np.isnan(a):
+        return b
+    if np.isnan(b):
+        return a
+    return a if a > b else b
+
+
+def _OptFom_Adaptive_Local_Search__mmin2(a, b):
+    """MATLAB min(a,b): the mirror of _OptFom_Adaptive_Local_Search__mmax2."""
+    if np.isnan(a):
+        return b
+    if np.isnan(b):
+        return a
+    return a if a < b else b
+
+
+def _OptFom_Adaptive_Local_Search__g6(v):
+    """MATLAB sprintf('%.6g', v); see com_functions/fn/append_csv_row."""
+    a = np.asarray(v)
+    if np.iscomplexobj(a):
+        a = a.real
+    out = []
+    for x in np.asarray(a, dtype=float).ravel(order='F'):
+        if np.isnan(x):
+            out.append('NaN')
+        elif np.isinf(x):
+            out.append('Inf' if x > 0 else '-Inf')
+        else:
+            out.append('%.6g' % x)
+    return ''.join(out)
+
+
 def _OptFom_Adaptive_Local_Search__append_csv_row(file_path, header_cells, row_cells):
-    """Inlined append_csv_row (MATLAB lines 5157-5187)."""
+    """Inlined append_csv_row (MATLAB lines 5157-5187).
+
+    Kept in step with com_functions/fn/append_csv_row: MATLAB's isnumeric()
+    is false for a logical, sprintf('%.6g', x) prints Inf/NaN capitalised and
+    reapplies itself to every element of an array in column-major order, and
+    an unopenable path warns rather than raising.
+    COM Octave: {Inf} -> Inf, {NaN} -> NaN, {true} -> "", {[1 2 3]} -> 123.
+    """
     import os
     file_exists = os.path.isfile(file_path)
-    with open(file_path, 'a', newline='') as fid:
+    try:
+        fid = open(file_path, 'a', newline='')
+    except OSError:
+        import warnings
+        warnings.warn('Could not open %s' % file_path)
+        return
+    with fid:
         if not file_exists:
             fid.write(','.join(str(h) for h in header_cells) + '\n')
         if row_cells:
             out = []
             for v in row_cells:
                 if isinstance(v, (bool, np.bool_)):
-                    out.append(f'{float(v):.6g}')
-                elif isinstance(v, (int, float, np.integer, np.floating)):
-                    out.append(f'{v:.6g}')
+                    out.append('""')          # isnumeric(logical) is false
+                elif isinstance(v, (int, float, complex, np.number)):
+                    out.append(_OptFom_Adaptive_Local_Search__g6(v))
+                elif isinstance(v, np.ndarray) and v.dtype.kind in 'iufc':
+                    out.append(_OptFom_Adaptive_Local_Search__g6(v))
                 elif isinstance(v, str):
                     out.append(f'"{v}"')
                 else:
@@ -4270,12 +4361,17 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
     # always has iter_count == 1 -- the two forms cannot diverge here, and a
     # version branch would add a path with no behavioural difference to test.
     if (not st['initialized']) or iter_count == 1:
-        st['adaptive_radius'] = max(min_radius, _OptFom_Adaptive_Local_Search__mround(LocalSearch_Value))
+        st['adaptive_radius'] = _OptFom_Adaptive_Local_Search__mmax2(min_radius, _OptFom_Adaptive_Local_Search__mround(LocalSearch_Value))
         st['no_improve_count'] = 0
         st['initialized'] = True
 
     # ---- Current FOM value ----
-    FOM_history = np.asarray(FOM_history, dtype=float).ravel()
+    # MATLAB's `end` and `end-k:end` index linearly, which is COLUMN-major.
+    # COM Octave with FOM_history = [1 1 ; 3 1.0005]: the window is
+    # [1 1.0005], improvement 5e-4, so the radius shrinks and skip_it becomes
+    # 1; a row-major ravel takes [3 1.0005], improvement ~2, and kept
+    # evaluating.
+    FOM_history = np.asarray(FOM_history, dtype=float).ravel(order='F')
     FOM = float(FOM_history[-1]) if FOM_history.size > 0 else float('nan')
 
     # ---- ADAPTIVE shrink ----
@@ -4286,15 +4382,15 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
             st['no_improve_count'] += 1
         else:
             st['no_improve_count'] = 0
-            st['adaptive_radius'] = min(st['adaptive_radius'] + 1, LocalSearch_Value)
+            st['adaptive_radius'] = _OptFom_Adaptive_Local_Search__mmin2(st['adaptive_radius'] + 1, LocalSearch_Value)
         # shrink only when CTLE is "stable"
         if st['no_improve_count'] >= 1 and abs(THIS.ctle_index - BEST.ctle) <= 1:
-            st['adaptive_radius'] = max(min_radius, _OptFom_Adaptive_Local_Search__mround(st['adaptive_radius'] * radius_shrink_factor))
+            st['adaptive_radius'] = _OptFom_Adaptive_Local_Search__mmax2(min_radius, _OptFom_Adaptive_Local_Search__mround(st['adaptive_radius'] * radius_shrink_factor))
             st['no_improve_count'] = 0
 
     # ---- Deterministic shrink ----
-    deterministic_radius = max(min_radius, _OptFom_Adaptive_Local_Search__mround(LocalSearch_Value / (1 + deterministic_shrink_rate * iter_count)))
-    st['adaptive_radius'] = max(min_radius, min(st['adaptive_radius'], deterministic_radius))
+    deterministic_radius = _OptFom_Adaptive_Local_Search__mmax2(min_radius, _OptFom_Adaptive_Local_Search__mround(LocalSearch_Value / (1 + deterministic_shrink_rate * iter_count)))
+    st['adaptive_radius'] = _OptFom_Adaptive_Local_Search__mmax2(min_radius, _OptFom_Adaptive_Local_Search__mmin2(st['adaptive_radius'], deterministic_radius))
     adaptive_radius = st['adaptive_radius']
 
     # ---- Extract tap vectors ----
@@ -4327,10 +4423,20 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
                 iter_count, adaptive_radius, deterministic_radius, raw_L1_TX,
                 L1_w, L2_w, hard_cap, np.array2string(curr_taps), ctle_index, lp_curr,
                 np.array2string(best_taps), BEST.ctle, lp_best, vga_curr, vga_best,
-                float(THIS.FOM), float(BEST.FOM), FOM, bool(skip_it), reason])
+                # MATLAB logs `double(skip_it)`, not the logical: isnumeric()
+                # is false for a logical, so passing the bool would now write
+                # "" into the skip_it column instead of 1/0.
+                float(THIS.FOM), float(BEST.FOM), FOM, float(bool(skip_it)),
+                reason])
         return bool(skip_it)
 
-    if best_taps.size == 0 or curr_taps.size == 0:
+    # MATLAB puts this early return INSIDE `if log_yes_1_no_0 == 1`, so with
+    # logging off -- the shipped state, and this port's default -- it does not
+    # fire and the empty vectors go on to `this_vec - best_vec`.  COM Octave
+    # with an empty THIS.tx_index_vector and a 3-tap BEST.txffe_index:
+    # "error: operator -: nonconformant arguments (op1 is 2x1, op2 is 5x1)".
+    # Returning False unconditionally answered a call the reference refuses.
+    if ALS_LOG_CSV is not None and (best_taps.size == 0 or curr_taps.size == 0):
         return _finish(False, 'Skip: Empty BEST.txffe_index or THIS.tx_index_vector')
 
     # ---- Build weighted vectors ----
@@ -4367,7 +4473,8 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
         return _finish(True, 'Skip: TX Exceeds Cap', raw_L1_TX, L1_w, L2_w, hard_cap)
 
     # ---- L1/L2 skip rule ----
-    L2_threshold = max(min_radius, int(np.ceil(l2_to_l1_ratio * adaptive_radius)))
+    # No int(): MATLAB keeps a double, and int(ceil(Inf)) raises OverflowError.
+    L2_threshold = _OptFom_Adaptive_Local_Search__mmax2(min_radius, float(np.ceil(l2_to_l1_ratio * adaptive_radius)))
     skip_it = (L1_w > adaptive_radius) and (L2_w > L2_threshold)
     reason = 'Skip: Outside L1/L2 Limits' if skip_it else 'Evaluate Candidate'
     return _finish(skip_it, reason, raw_L1_TX, L1_w, L2_w, hard_cap)
@@ -5059,8 +5166,12 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     HP_P = None
 
     if ctle_type == 'CL93':
-        H_low = np.ones(len(f))
-        H_low_xc = np.ones(len(f_xc_arr))
+        # MATLAB sets both to the SCALAR 1, and H_low_xc is a return value.
+        # COM Octave, CTLE_type='CL93' with a 3-point f_xc: size(H_low_xc) is
+        # 1x1, not 1x3.  H_ctf is unchanged either way (1.0*ctle_gain is
+        # exact), but the port handed the caller a vector the length of f_xc.
+        H_low = 1.0
+        H_low_xc = 1.0
     elif ctle_type == 'CL120d':
         g_DC_low = float(g_DC_HP_values.ravel()[g_LP_index])
         f_HP = float(np.asarray(param.f_HP).ravel()[g_LP_index])
@@ -5079,10 +5190,19 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
     if OP.INCLUDE_CTLE == 1:
         for k in range(param.num_s4p_files):
             ir = np.asarray(getattr(chdata[k], uneq_field), dtype=float)
-            ir_peak = float(_OptFom_Compute_CTLE__mmax(np.abs(ir)))
+            # MATLAB max([]) is [], and `[] > []*thr` is empty, so an empty
+            # response reaches the find() below without erroring.  COM Octave,
+            # chdata(1).uneq_pulse_response = []: both fields come back 1x0.
+            # np.max raised "zero-size array to reduction operation maximum".
+            ir_peak = float(_OptFom_Compute_CTLE__mmax(np.abs(ir))) if ir.size else 0.0
             last_arr = np.where(np.abs(ir) > ir_peak * OP.impulse_response_truncation_threshold)[0]
-            if len(last_arr) > 0:
-                ir = ir[:int(last_arr[-1]) + 1]
+            # find(...,1,'last') is EMPTY when nothing clears the threshold --
+            # an all-zero response, or a truncation threshold of 1 or more --
+            # and MATLAB then evaluates ir(1:[]), which is EMPTY, not the whole
+            # vector.  COM Octave, uneq_pulse_response all zeros: uneq and ctle
+            # both come back 1x0.  Leaving ir alone kept all 64 samples and ran
+            # the CTLE over them.
+            ir = ir[:int(last_arr[-1]) + 1] if len(last_arr) > 0 else ir[:0]
             setattr(chdata[k], uneq_field, ir)
             ctle_out, _, _, _ = _TD_CTLE(ir, baud_rate, CTLE_fz, CTLE_fp1, CTLE_fp2,
                                           g_dc, param.samples_per_ui)
@@ -5104,7 +5224,7 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
         f2 = np.asarray(chdata[1].faxis, dtype=float)
         ctle_gain2 = _FD_CTLE(f2, CTLE_fz, CTLE_fp1, CTLE_fp2, g_dc)
         if ctle_type == 'CL93':
-            H_low2 = np.ones(len(f2))
+            H_low2 = 1.0                       # MATLAB `H_low2=1`, a scalar
         elif ctle_type == 'CL120d':
             H_low2 = _FD_CTLE(f2, f_HP, f_HP, 100e100, g_DC_low)
         else:  # CL120e
@@ -5135,15 +5255,59 @@ def OptFom_Compute_CTLE(chdata, ctle_gain, THIS, f_xc, param, OP):
 # ============================================================
 
 
+
+def _OptFom_Compute_DFE__mrange(x, first, step, last, expr):
+    """MATLAB `x(first:step:last)` with MATLAB's subscript rules, 1-based.
+
+    An empty range indexes nothing and is legal; every subscript a non-empty
+    one produces must be whole, >= 1 and <= numel(x).  A Python slice answers
+    all three cases silently -- a negative start reads from the tail and a
+    long stop truncates -- so the port returned numbers for calls the
+    reference refuses.  COM Octave, OptFom_Compute_DFE:
+
+      ndfe=40 on a 300-sample sbr:
+        "error: sbr(361): out of bound 300 (dimensions are 1x300)"
+      do_C2M=1, cursor_i=5, T_O=20:
+        "error: sbr(-7): subscripts must be either integers 1 to (2^63)-1
+         or logicals"
+      param.N_tail_start=-2:
+        "error: dfetaps(-2): subscripts must be either integers 1 to
+         (2^63)-1 or logicals"      (the port took dfetaps[-3:] instead)
+    """
+    n = int(np.floor((last - first) / step)) + 1 if last >= first else 0
+    if n <= 0:
+        return x[:0]
+    idx = first + step * np.arange(n, dtype=float)
+    bad = idx[idx != np.round(idx)]
+    if bad.size:
+        raise ValueError('OptFom_Compute_DFE: %s(%g): subscripts must be '
+                         'positive integers' % (expr, bad[0]))
+    if idx[0] < 1:
+        raise IndexError('OptFom_Compute_DFE: %s(%d): subscripts must be '
+                         'either integers 1 to (2^63)-1 or logicals'
+                         % (expr, int(idx[0])))
+    if idx[-1] > x.size:
+        raise IndexError('OptFom_Compute_DFE: %s(%d): out of bound %d'
+                         % (expr, int(idx[-1]), x.size))
+    return x[idx.astype(int) - 1]
+
+
 def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
     sbr = np.asarray(sbr, dtype=float)
     cursor_i = int(THIS.cursor_i)  # 0-based
-    M = int(param.samples_per_ui)
-    ndfe = int(param.ndfe)
-    N_tail_start = int(param.N_tail_start)
+    cursor_1 = cursor_i + 1        # the MATLAB subscript
+    # samples_per_ui / ndfe / N_tail_start / T_O go into MATLAB subscript
+    # expressions, and MATLAB refuses a fractional subscript.  Truncating them
+    # here answered calls the reference declines, so they stay as given and
+    # _OptFom_Compute_DFE__mrange applies MATLAB's rule.
+    M_f = float(param.samples_per_ui)
+    ndfe_f = float(param.ndfe)
+    N_tail_start = float(param.N_tail_start)
 
-    # Equation 93A-27: DFE cursor samples (0-based Python)
-    dfecursors = sbr[cursor_i + M : cursor_i + M * ndfe + 1 : M]
+    # Equation 93A-27: DFE cursor samples
+    dfecursors = _OptFom_Compute_DFE__mrange(sbr, cursor_1 + M_f, M_f,
+                         cursor_1 + M_f * ndfe_f, 'sbr')
+    M = int(M_f)                   # whole: _OptFom_Compute_DFE__mrange above would have refused
 
     if param.dfe_delta != 0:
         dfecursors_q = (np.floor(np.abs(dfecursors / sbr[cursor_i]) / param.dfe_delta)
@@ -5173,7 +5337,8 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
         sbr[cursor_i] * np.asarray(param.use_bmin).ravel())
 
     if do_C2M:
-        dfecursors_windowed = sbr[cursor_i - T_O + M : cursor_i + M * ndfe - T_O + 1 : M]
+        dfecursors_windowed = _OptFom_Compute_DFE__mrange(sbr, cursor_1 - T_O + M_f, M_f,
+                                      cursor_1 + M_f * ndfe_f - T_O, 'sbr')
         excess_dfe_cursors = dfecursors_windowed - actual_dfecursors
     else:
         excess_dfe_cursors = dfecursors - actual_dfecursors
@@ -5181,15 +5346,25 @@ def OptFom_Compute_DFE(sbr, THIS, param, do_C2M, T_O):
     dfetaps = actual_dfecursors / sbr[cursor_i]
 
     if len(dfetaps) >= N_tail_start and N_tail_start != 0:
-        tail_taps = dfetaps[N_tail_start - 1:]  # 1-based → 0-based
+        # MATLAB dfetaps(N_tail_start:end): a negative or fractional
+        # N_tail_start is a subscript error, not a slice from the tail.
+        tail_taps = _OptFom_Compute_DFE__mrange(dfetaps, N_tail_start, 1.0, len(dfetaps),
+                            'dfetaps')
+        nts0 = int(N_tail_start) - 1    # whole: _OptFom_Compute_DFE__mrange would have refused
         tail_RSS = float(np.linalg.norm(tail_taps))
         if tail_RSS != 0:
             if tail_RSS >= param.B_float_RSS_MAX:
-                scale = min(tail_RSS, param.B_float_RSS_MAX) / tail_RSS
+                # MATLAB: min(...)*sign(t).*t/tail_RSS -- the division comes
+                # LAST.  Factoring it out into a scale first is algebraically
+                # the same and not the same in floating point: COM Octave gave
+                # use_bmax(3)=0.044776673559449504 where the scale-first form
+                # gave 0.04477667355944951, one ulp out.
+                min_v = min(tail_RSS, param.B_float_RSS_MAX)
+                sgn = np.sign(tail_taps)
                 use_bmax = np.asarray(param.use_bmax).ravel().copy()
                 use_bmin = np.asarray(param.use_bmin).ravel().copy()
-                use_bmax[N_tail_start - 1:] = scale * np.abs(tail_taps)
-                use_bmin[N_tail_start - 1:] = -scale * np.abs(tail_taps)
+                use_bmax[nts0:] = min_v * sgn * tail_taps / tail_RSS
+                use_bmin[nts0:] = min_v * -1 * sgn * tail_taps / tail_RSS
                 param.use_bmax = use_bmax
                 param.use_bmin = use_bmin
 
@@ -5959,40 +6134,24 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
 # --- inline from FD_CTLE (MATLAB 1681-1683) ---
 
 
-# --- inline from OptFom_Calc_Hr (MATLAB 2874-2880) with its helpers ---
-_BW_POLY = [1, 2.613126, 3.414214, 2.613126, 1]
+# OptFom_Calc_Hr is IMPORTED, not copied. The private copy that used to live
+# here was the pre-oracle form and carried all three defects its own directory
+# had already fixed: `_tukey_window` was an element-wise np.where where
+# MATLAB's Tukey_Window CONCATENATES three counted pieces, `if OP.Butterworth`
+# is not MATLAB's `if` on an array, and np.ones(len(f)) is not
+# ones(1,length(f)). COM Octave, f=[25 0 35 15 40 20 45]*1e9 with
+# RC_Start=20e9, RC_end=40e9: H_r(1) = -0.69940492382039898-0.65853321494420236j
+# where the copy gave -0.59697944412453186-0.562093258433913j (5.8x relative).
 
 
-def _OptFom_Update_BEST_Post_Optimize__bessel_poly(n):
-    a = np.zeros(n + 1)
-    for ii in range(n + 1):
-        a[ii] = (math.factorial(2 * n - ii)
-                 / (2 ** (n - ii) * math.factorial(ii) * math.factorial(n - ii)))
-    return a
-
-
-def _OptFom_Update_BEST_Post_Optimize__tukey_window(f, fr, fb_top):
-    fperiod = 2 * (fb_top - fr)
-    return np.where(
-        f < fr, 1.0,
-        np.where((f >= fr) & (f <= fb_top),
-                 0.5 * np.cos(2 * np.pi * (f - fb_top) / fperiod - np.pi) + 0.5,
-                 0.0))
-
-
-def _OptFom_Update_BEST_Post_Optimize__OptFom_Calc_Hr(f, param, OP):
-    f = np.asarray(f, dtype=float)
-    H_bw = (1.0 / np.polyval(_BW_POLY, 1j * f / (param.fb_BW_cutoff * param.fb))
-            if OP.Butterworth else np.ones(len(f)))
-    if OP.Bessel_Thomson:
-        a = _OptFom_Update_BEST_Post_Optimize__bessel_poly(param.BTorder)
-        s = 1j * f / (param.fb_BT_cutoff * param.fb)
-        H_bt = a[0] / np.polyval(a[::-1], s)
-    else:
-        H_bt = np.ones(len(f))
-    H_rc = (_OptFom_Update_BEST_Post_Optimize__tukey_window(f, param.RC_Start, param.RC_end)
-            if OP.Raised_Cosine else np.ones(len(f)))
-    return H_bw * H_bt * H_rc
+def _OptFom_Update_BEST_Post_Optimize__mround_arr(x):
+    """MATLAB round() on an array: halves go away from zero, where np.round
+    takes them to even. Only exact ties are corrected; adding 0.5 and
+    truncating would send 0.49999999999999994 to 1, since that sum is exactly
+    1.0 in double precision."""
+    x = np.asarray(x, dtype=float)
+    tie = np.abs(x - np.trunc(x)) == 0.5
+    return np.where(tie, np.trunc(x) + np.copysign(1.0, x), np.round(x))
 
 
 def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
@@ -6009,7 +6168,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 
     BEST.cursor = float(sbr[cursor_i])
 
-    BEST.H_r = _OptFom_Update_BEST_Post_Optimize__OptFom_Calc_Hr(f, param, OP)
+    BEST.H_r = _OptFom_Calc_Hr(f, param, OP)
 
     # BEST.ctle is 1-BASED: it is copied straight from THIS.ctle_index, which
     # optimize_fom sets as `ctle_index + 1  # 1-based to match MATLAB`. The
@@ -6019,6 +6178,14 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
     # recomputes ctle_gain in optimize_fom, which does convert -- and it only
     # raises IndexError when the winning CTLE is the LAST in the list.
     ctle_idx = int(BEST.ctle) - 1
+    # A 1-based index of 0 or less is out of bounds for MATLAB; in Python it
+    # wraps round to the LAST entry and answers with the wrong CTLE.
+    # COM Octave, BEST.ctle=0: "param(0): subscripts must be either integers
+    # 1 to (2^63)-1 or logicals".
+    if ctle_idx < 0:
+        raise IndexError('OptFom_Update_BEST_Post_Optimize: BEST.ctle(%r): '
+                         'subscripts must be integers 1 or greater'
+                         % (BEST.ctle,))
     BEST.ctle_gain1 = _FD_CTLE(
         f,
         float(np.asarray(param.CTLE_fz).ravel()[ctle_idx]),
@@ -6031,6 +6198,12 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
         BEST.H_low = 1.0
     elif ctle_type == 'CL120d':
         hp_idx = int(BEST.G_high_pass) - 1  # 1-based, from THIS.g_LP_index
+        # COM Octave, BEST.G_high_pass=0: "param(0): subscripts must be either
+        # integers 1 to (2^63)-1 or logicals".
+        if hp_idx < 0:
+            raise IndexError('OptFom_Update_BEST_Post_Optimize: '
+                             'BEST.G_high_pass(%r): subscripts must be '
+                             'integers 1 or greater' % (BEST.G_high_pass,))
         BEST.H_low = _FD_CTLE(
             f,
             float(np.asarray(param.f_HP).ravel()[hp_idx]),
@@ -6046,17 +6219,30 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 
     BEST.ctle_gain = BEST.H_low * BEST.ctle_gain1 * BEST.H_r
 
-    # Precursor times: all samples from index 0..cursor_i-1
-    # MATLAB: (cursor_i/M:-1:1/M)*ui reversed(end:-1:2) = [1/M .. (cursor_i-1)/M]*ui
-    # Python 0-based: [0..cursor_i-1] → times [0 .. (cursor_i-1)/M]*ui
-    BEST.sampled_sbr_precursors_t = np.arange(0, cursor_i) / M * param.ui
-    BEST.sampled_sbr_precursors = sbr[0:cursor_i]
+    cur1 = cursor_i + 1                      # MATLAB's 1-based cursor index
 
-    # Postcursor times: UI-spaced after cursor (excluding cursor itself)
-    # MATLAB: cursor_i+M, cursor_i+2M, ... (1-based) → Python: cursor_i+M, cursor_i+2M, ...
+    # MATLAB `(cursor_i/M : -1 : 1/M)` steps by a whole UI, NOT by 1/M, so the
+    # precursors are the UI-spaced samples before the cursor -- indices
+    # cursor_i-M, cursor_i-2M, ... -- and `(end:-1:2)` drops the cursor and
+    # puts them in ascending order. Taking every sample from 0 to cursor_i-1
+    # returned M times too many and mislabelled their times.
+    # COM Octave, cursor_i=33, samples_per_ui=8: four precursors at t/ui =
+    # 0.125, 1.125, 2.125, 3.125 (1-based sbr indices 1, 9, 17, 25), not 32.
+    n_colon = int(np.floor((cur1 - 1) / M)) + 1        # numel of that colon
+    pre_t_ui = cur1 / M - np.arange(n_colon - 1, 0, -1)
+    BEST.sampled_sbr_precursors_t = pre_t_ui * param.ui
+    # MATLAB round() is half AWAY FROM ZERO; np.round is half-to-even, and
+    # this is a real translation of `sbr(round(...))`, not an integrality
+    # test, so the tie rule decides which sample is read.
+    BEST.sampled_sbr_precursors = sbr[_OptFom_Update_BEST_Post_Optimize__mround_arr(pre_t_ui * M).astype(int) - 1]
+
+    # Postcursor times: UI-spaced after cursor (excluding cursor itself).
+    # MATLAB's t is the 1-BASED index over M, so the 0-based index needs the
+    # +1 back. COM Octave, cursor_i=33, M=8: the first postcursor time is
+    # 41/8*ui = 9.647e-11, not the 40/8*ui = 9.412e-11 the port returned.
     post_indices = np.arange(cursor_i + M, length_sbr, M)
     if len(post_indices) > 0:
-        BEST.sampled_sbr_postcursors_t = post_indices / M * param.ui
+        BEST.sampled_sbr_postcursors_t = (post_indices + 1) / M * param.ui
         BEST.sampled_sbr_postcursors = sbr[post_indices]
     else:
         BEST.sampled_sbr_postcursors_t = np.array([])
@@ -6072,18 +6258,31 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
 
     # DFE tap clipping
     n_post = len(BEST.sampled_sbr_postcursors)
-    dfe_cursors = BEST.sampled_sbr_postcursors[:min(ndfe, n_post)]
+    # MATLAB `BEST.sampled_sbr_postcursors(1:param.ndfe)` is a READ, so it
+    # errors as soon as there are fewer postcursors than taps.  COM Octave,
+    # ndfe=30 with 20 postcursors: "BEST(30): out of bound 20 (dimensions are
+    # 1x20)"; cursor_i=197 leaves none at all: "BEST(4): out of bound 0".
+    # min(ndfe, n_post) shortened the tap set instead, and answered whenever
+    # bmax happened to be short enough to line up.
+    if ndfe > n_post:
+        raise IndexError('OptFom_Update_BEST_Post_Optimize: '
+                         'sampled_sbr_postcursors(%d): out of bound %d'
+                         % (ndfe, n_post))
+    dfe_cursors = BEST.sampled_sbr_postcursors[:ndfe]
     dfe_SBRcursors = dfe_cursors.copy()
 
     bmax = np.asarray(BEST.bmax).ravel()
     bmin = np.asarray(BEST.bmin).ravel()
     BEST.bmax = bmax
     BEST.bmin = bmin
+    if ndfe > len(bmax) or ndfe > len(bmin):
+        raise IndexError('OptFom_Update_BEST_Post_Optimize: bmax/bmin(%d): '
+                         'out of bound %d/%d' % (ndfe, len(bmax), len(bmin)))
 
     BEST.DFE_taps_mV = _dfe_clipper(
         dfe_cursors,
-        BEST.cursor * bmax[:min(ndfe, len(bmax))],
-        BEST.cursor * bmin[:min(ndfe, len(bmin))])
+        BEST.cursor * bmax[:ndfe],
+        BEST.cursor * bmin[:ndfe])
 
     if getattr(param, 'Floating_DFE', False) and hasattr(BEST, 'floating_tap_locations'):
         # 1-based (see OptFom_Compute_DFE); MATLAB 4143 indexes DFE_taps_mV with
@@ -6093,7 +6292,7 @@ def OptFom_Update_BEST_Post_Optimize(BEST, f, param, OP):
     else:
         BEST.FDFE_taps_mV = np.array([])
 
-    BEST.sampled_sbr_postcursors[:min(ndfe, n_post)] = dfe_SBRcursors - BEST.DFE_taps_mV
+    BEST.sampled_sbr_postcursors[:ndfe] = dfe_SBRcursors - BEST.DFE_taps_mV
 
     return BEST
 
@@ -7183,6 +7382,58 @@ def SL(S, f, R, R_0):
 
 # --- SNDR_ref (MATLAB lines 4405–4442) ---
 
+def _SNDR_ref__matlab_peak(x):
+    """MATLAB `find(x==max(x),1,'first')`, 0-based, or None for no match.
+
+    max() skips NaN where np.argmax returns the NaN's index.  COM Octave,
+    SNDR_ref on a 400-point Gaussian with PR(101)=NaN: SNDR_ref(1) is
+    19.999999999947136, not NaN -- the reference peaks on the largest real
+    sample and carries on.  An all-NaN x matches nothing, and MATLAB then
+    indexes with an empty subscript, which is legal and yields an empty
+    result rather than an error.
+    """
+    if x.size == 0:
+        return None
+    with np.errstate(invalid='ignore'):
+        mx = np.nanmax(x) if not np.all(np.isnan(x)) else np.nan
+    hit = np.flatnonzero(x == mx)
+    return int(hit[0]) if hit.size else None
+
+
+def _SNDR_ref__matlab_range_index(x, first, step, last, expr):
+    """MATLAB `x(first:step:last)` with MATLAB's subscript rules.
+
+    An empty range indexes nothing and is legal; a non-empty one must be
+    whole, >= 1 and <= numel(x).  COM Octave, SNDR_ref with the pulse peak
+    inside D_p UI of the start: "error: PR_FFE(-5): subscripts must be either
+    integers 1 to (2^63)-1 or logicals"; with N_p*M+ipeak past the end:
+    "error: PR_FFE(541): out of bound 400 (dimensions are 400x1)".  A Python
+    slice answers both silently -- a negative start reads from the tail and a
+    long stop truncates, which returned a plausible wrong SNDR.
+    """
+    n = int(np.floor((last - first) / step)) + 1 if last >= first else 0
+    if n <= 0:
+        return x[:0]
+    idx = first + step * np.arange(n, dtype=float)
+    bad = idx[idx != np.round(idx)]
+    if bad.size:
+        # Octave accepts a non-integer RANGE as an index with a warning and
+        # truncates toward zero; MATLAB refuses it.  The port used to refuse
+        # neither and instead truncated D_p/N_p/M themselves, which agrees
+        # with neither: COM Octave with D_p=2.1 gives SNDR_ref(1)
+        # 19.948026128813808 against the port's 19.999999999629168.
+        raise ValueError('SNDR_ref: %s(%g): subscripts must be positive '
+                         'integers' % (expr, bad[0]))
+    if idx[0] < 1:
+        raise IndexError('SNDR_ref: %s(%d): subscripts must be either '
+                         'integers 1 to (2^63)-1 or logicals'
+                         % (expr, int(idx[0])))
+    if idx[-1] > x.size:
+        raise IndexError('SNDR_ref: %s(%d): out of bound %d'
+                         % (expr, int(idx[-1]), x.size))
+    return x[idx.astype(int) - 1]
+
+
 def SNDR_ref(PR_Ref, param):
     """Compute SNDR for 6 TX-FFE presets (MATLAB lines 4405-4442).
 
@@ -7190,7 +7441,12 @@ def SNDR_ref(PR_Ref, param):
     """
     PR_Ref = np.asarray(PR_Ref, dtype=float).ravel()
 
-    if not hasattr(param, 'preset') or param.preset is None or len(param.preset) == 0:
+    # MATLAB tests `~isfield(param,'preset')` -- field existence only.  COM
+    # Octave with param.preset=[]: the loop never runs, the local SNDR_ref is
+    # never assigned, `results.SNDR_ref=SNDR_ref` resolves to the function and
+    # recurses, "error: 'param' undefined near line 2".  Substituting the
+    # defaults for a present-but-empty preset answered where MATLAB refuses.
+    if not hasattr(param, 'preset'):
         param.preset = [
             SimpleNamespace(txffe=[0, 0, 0, 1, 0]),
             SimpleNamespace(txffe=[0, 0, 0, 0.5, 0]),
@@ -7203,17 +7459,26 @@ def SNDR_ref(PR_Ref, param):
     def ss(a): return float(np.sum(np.abs(np.asarray(a).ravel()) ** 2))
 
     SNR_TX = float(np.asarray(param.SNDR).ravel()[0])
-    M = int(param.samples_per_ui)
-    D_p = int(param.D_p)
-    N_p = int(param.N_p)
+    # D_p and N_p stay as given: MATLAB uses them to form a subscript and
+    # refuses a fractional one, so truncating them here would answer a call
+    # the reference declines.  M has to be whole to index at all.
+    M_f = float(param.samples_per_ui)
+    if M_f != np.floor(M_f):
+        raise ValueError('SNDR_ref: samples_per_ui=%g is not an integer'
+                         % M_f)
+    M = int(M_f)
+    D_p = float(param.D_p)
+    N_p = float(param.N_p)
     PR_noFFE = PR_Ref.copy()
 
-    ipeak_0 = int(np.argmax(PR_noFFE))  # 0-based
-    istart_0 = ipeak_0 % M              # 0-based start for subsampling
-    iend_0 = (len(PR_noFFE) // M) * M  # exclusive end for Python slice
-
-    PR_noFFE_sampled = PR_noFFE[istart_0:iend_0:M]
-    sigma_tn_base = ss(PR_noFFE_sampled)
+    ipeak_0 = _SNDR_ref__matlab_peak(PR_noFFE)     # 0-based, or None for an all-NaN PR
+    if ipeak_0 is None:
+        PR_noFFE_sampled = PR_noFFE[:0]
+    else:
+        istart_0 = ipeak_0 % M           # 0-based start for subsampling
+        iend_0 = (len(PR_noFFE) // M) * M  # exclusive end for Python slice
+        PR_noFFE_sampled = PR_noFFE[istart_0:iend_0:M]
+    sigma_tn_base = np.float64(ss(PR_noFFE_sampled))
 
     n_presets = len(param.preset)
     SNDR_ref_arr = np.zeros(n_presets)
@@ -7221,14 +7486,18 @@ def SNDR_ref(PR_Ref, param):
 
     for ipst, preset in enumerate(param.preset):
         PR_FFE = _FFE(preset.txffe, 3, M, PR_noFFE)  # cmx=3: 0-based tap 4
-        ipeak_0_ffe = int(np.argmax(PR_FFE))
-        start_0 = -D_p * M + ipeak_0_ffe
-        end_0 = N_p * M + ipeak_0_ffe
-        hss = PR_FFE[start_0:end_0 + 1:M]
+        ipeak_0_ffe = _SNDR_ref__matlab_peak(PR_FFE)
+        if ipeak_0_ffe is None:
+            hss = PR_FFE[:0]
+        else:
+            ipeak_1 = ipeak_0_ffe + 1    # MATLAB subscripts are 1-based
+            hss = _SNDR_ref__matlab_range_index(PR_FFE, -D_p * M + ipeak_1, M_f,
+                                      N_p * M + ipeak_1, 'PR_FFE')
         ss_hss = ss(hss)
         sigma_iL_arr[ipst] = float(np.sqrt(ss_hss))
-        sigma_ts = ss_hss * 10 ** (SNR_TX / 10)
-        SNDR_ref_arr[ipst] = 10 * np.log10(sigma_ts / sigma_tn_base)
+        sigma_ts = np.float64(ss_hss * 10 ** (SNR_TX / 10))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            SNDR_ref_arr[ipst] = 10 * np.log10(sigma_ts / sigma_tn_base)
 
     results = SimpleNamespace(
         SNDR_ref=SNDR_ref_arr,
@@ -7247,18 +7516,30 @@ def SNDR_ref(PR_Ref, param):
 # --- S_IN (MATLAB lines 4443–4473) ---
 
 def _S_IN__N_s(f, param, sigma_ns, OP):
-    """Inlined helper: single-sided noise PSD Ns(f)."""
+    """Inlined helper: single-sided noise PSD Ns(f).
+
+    Kept in step with com_functions/fn/N_s/py_impl.py; the two bodies must
+    stay identical.  This copy had not picked up the column-input and
+    matrix-input corrections made there, so S_IN raised on a call MATLAB
+    answers -- see the COM Octave block in test_verify.py.
+    """
+    f = np.asarray(f, dtype=float)
+    n_out = 0 if f.size == 0 else (max(f.shape) if f.ndim else 1)   # MATLAB length()
+    f = f.ravel(order='F')          # MATLAB linear-index order
     f_b = float(param.fb)
     f_hp = float(param.f_hp)
     mask = f <= f_b / 2
     inq = int(np.where(mask)[0][-1]) + 1 if np.any(mask) else 0
     RIT = str(OP.RIT_REF_PTR).lower()
-    Ns = np.zeros(len(f))
+    # max(): indexing past the end grows the array in MATLAB, which a matrix f
+    # can reach (length() counts only the longest dimension while find() walks
+    # every element).
+    Ns = np.zeros(max(n_out, inq))
     if RIT == 'clause_178':
         Ns[:inq] = 2 * sigma_ns ** 2 / f_b
     elif RIT in ('clause_179', 'annex_176d'):
         if f_hp <= 0:
-            raise ValueError('Parameter f_hp must be > 0')
+            raise ValueError('Parameter f_hp must be greater than 0')
         beta = 1 - (2 * f_hp / f_b) * np.arctan(f_b / (2 * f_hp))
         Ns[:inq] = (
             (2 * sigma_ns ** 2) / (beta * f_b)
@@ -8134,7 +8415,15 @@ def _adjust_Rx_noise_for_quantization__mmax(a):
 
 def _adjust_Rx_noise_for_quantization__get_pdf_from_sampled_signal(input_vector, L, BinSize):
     input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if _adjust_Rx_noise_for_quantization__mmax(np.abs(input_vector)) > BinSize:
+    # MATLAB max([]) is [], and `if []` is false, so an empty sampled pulse
+    # falls straight through to the delta pdf.  COM Octave,
+    # adjust_Rx_noise_for_quantization with
+    # chdata(1).pulse_sampled_w_tx_ffe_ctle = []: NS.peak_clip = 0.2, the same
+    # answer a wholly sub-bin pulse gives.  np.max raised "zero-size array to
+    # reduction operation maximum".  (The canonical
+    # com_functions/fn/get_pdf_from_sampled_signal/py_impl.py already carries
+    # this guard; this copy had not tracked it.)
+    if input_vector.size and _adjust_Rx_noise_for_quantization__mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
         return _d_cpdf(BinSize, 0, 1)
@@ -8748,6 +9037,49 @@ def capture_RIL_RILN(chdata):
 
 
 
+
+def _append_csv_row__is_numeric(v):
+    """MATLAB isnumeric(): true for double/single/int*/complex, FALSE for
+    logical.  A logical therefore falls through to the else branch and is
+    written as "".  COM Octave, append_csv_row(f,{'h'},{true}) writes
+    h\\n""\\n, not h\\n1\\n; bool is an int subclass in Python and the port
+    wrote 1.
+    """
+    if isinstance(v, (bool, np.bool_)):
+        return False
+    if isinstance(v, (int, float, complex, np.number)):
+        return True
+    if isinstance(v, np.ndarray):
+        return v.dtype.kind in 'iufc'      # 'b' is logical, which is not
+    return False
+
+
+def _append_csv_row__sprintf_g6(v):
+    """MATLAB `sprintf('%.6g', v)`.
+
+    COM Octave, one cell at a time:
+      {Inf} -> "Inf",  {-Inf} -> "-Inf",  {NaN} -> "NaN"   (Python: inf/nan)
+      {[]}  -> ""       an empty numeric formats to an empty field, not ""
+      {[1 2 3]}    -> "123"    the format is reapplied per element, no
+      {[1 2; 3 4]} -> "1324"   separator, in COLUMN-MAJOR order
+      {1+2i}       -> "1"      the imaginary part is dropped
+    The port answered "" for every one of the array cases and lower-case
+    inf/nan for the others.
+    """
+    a = np.asarray(v)
+    if np.iscomplexobj(a):
+        a = a.real
+    out = []
+    for x in np.asarray(a, dtype=float).ravel(order='F'):
+        if np.isnan(x):
+            out.append('NaN')
+        elif np.isinf(x):
+            out.append('Inf' if x > 0 else '-Inf')
+        else:
+            out.append('%.6g' % x)
+    return ''.join(out)
+
+
 def append_csv_row(file_path, header_cells, row_cells):
     """Append a CSV row (MATLAB lines 5157-5187).
 
@@ -8756,16 +9088,30 @@ def append_csv_row(file_path, header_cells, row_cells):
     row_cells:    iterable of cell values, or empty/None to write only the header.
     """
     file_exists = os.path.isfile(file_path)
-    with open(file_path, 'a', newline='') as fid:
+    try:
+        fid = open(file_path, 'a', newline='')
+    except OSError:
+        # MATLAB: `if fid == -1, warning('Could not open %s', ...); return;`
+        # COM Octave with a path under a directory that does not exist returns
+        # normally after warning; the port raised FileNotFoundError.
+        warnings.warn('Could not open %s' % file_path)
+        return
+    with fid:
         if not file_exists:
-            fid.write(','.join(str(h) for h in header_cells) + '\n')
+            # strjoin(header_cells, ',') takes a cell array of strings and
+            # errors on anything else.  COM Octave, header {1,'b'}:
+            # "error: Invalid call to strjoin."
+            bad = [h for h in header_cells if not isinstance(h, str)]
+            if bad:
+                raise TypeError(
+                    'append_csv_row: strjoin needs a cell array of strings; '
+                    'header_cells contains %r' % (bad[0],))
+            fid.write(','.join(header_cells) + '\n')
         if row_cells is not None and len(row_cells) > 0:
             out = []
             for v in row_cells:
-                if isinstance(v, (bool, np.bool_)):
-                    out.append(f'{float(v):.6g}')          # numeric in MATLAB
-                elif isinstance(v, (int, float, np.integer, np.floating)):
-                    out.append(f'{v:.6g}')
+                if _append_csv_row__is_numeric(v):
+                    out.append(_append_csv_row__sprintf_g6(v))
                 elif isinstance(v, str):
                     out.append(f'"{v}"')                   # quote strings for CSV safety
                 else:
@@ -11298,6 +11644,53 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
 
 # --- get_PulseR (MATLAB lines 6655–6685) ---
 
+_EPS = np.finfo(float).eps
+
+
+def _get_PulseR__colon(step, limit):
+    """MATLAB `0:step:limit`.
+
+    np.arange(0, limit + step, step) is one element too long whenever
+    limit/step is not an integer, which it is not for the shipped default
+    TR_TDR = 8e-3 ns.  COM Octave, fb=106.25e9, samples_per_ui=32,
+    TR_TDR=8e-3: numel(0:dt:edge_time*2) is 55, arange gave 56.  Plain
+    floor() is not enough either -- it is one short whenever the quotient
+    lands a fraction of an eps below an integer, e.g. fb=106.25e9,
+    samples_per_ui=32, TR_TDR=0.5325 where the quotient is 3620.9999999999995
+    and Octave returns 3622 elements.  The last element is clamped to the
+    limit when it would overshoot it, as Octave's range::final_value does.
+    """
+    n = int(round(limit / step + 1.0))
+    if n > 0 and (n - 1) * step > limit + 3.0 * _EPS * abs(limit):
+        n -= 1
+    out = np.arange(max(n, 0)) * step
+    if out.size:
+        out[0] = 0.0        # the base, not 0*step, which is NaN for step=Inf
+    if out.size > 1 and out[-1] > limit:
+        out[-1] = limit
+    return out
+
+
+def _get_PulseR__ones_row(n):
+    """MATLAB `ones(1,n)`: n must be an integer value, and n<=0 gives empty."""
+    if float(n) != int(n):
+        # COM Octave: ones(1,2.5) -> "conversion of 2.5 to int64_t value failed"
+        raise ValueError(
+            'param.samples_per_ui must be an integer, got %r' % (n,))
+    return np.ones(max(int(n), 0))
+
+
+def _get_PulseR__filter(b, x):
+    """MATLAB `filter(b,1,x)`; scipy's lfilter refuses the empty cases."""
+    # COM Octave: filter(ones(1,4),1,zeros(1,0)) -> 1x0, and
+    #             filter(zeros(1,0),1,x)         -> zeros(size(x)).
+    if x.size == 0:
+        return np.zeros(0)
+    if b.size == 0:
+        return np.zeros(x.shape)
+    return lfilter(b, [1.0], x)
+
+
 def get_PulseR(ir, param, cb_step, ZT):
     """Compute TDR pulse response from impulse response (MATLAB lines 6655-6682).
 
@@ -11305,18 +11698,23 @@ def get_PulseR(ir, param, cb_step, ZT):
     Returns SimpleNamespace with fields: PDR (TDR response), pulse (filtered IR).
     """
     ir = np.asarray(ir, dtype=float).ravel()
-    M = int(param.samples_per_ui)
+    M = param.samples_per_ui
 
     if cb_step:
-        dt = 1.0 / float(param.fb) / float(param.samples_per_ui)
-        edge_time = float(param.TR_TDR) * 1e-9
-        fedge = 1.0 / edge_time
-        tedge = np.arange(0, edge_time * 2 + dt, dt)
-        edge = 2 * np.cos(2 * np.pi * tedge * fedge / 16 - np.pi / 4) ** 2 - 1
-        drive_pulse = np.concatenate([edge, np.ones(M)])
-        pulse = lfilter(drive_pulse, [1.0], ir)
+        # TR_TDR=0 makes fedge Inf and the cosine argument 0*Inf = NaN, and
+        # samples_per_ui=0 makes dt Inf so tedge collapses to the single base
+        # point.  MATLAB carries both through rather than raising, so these
+        # divisions must be numpy's and not Python's.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            dt = np.float64(1.0) / np.float64(param.fb) / np.float64(M)
+            edge_time = float(param.TR_TDR) * 1e-9
+            fedge = np.float64(1.0) / np.float64(edge_time)
+            tedge = _get_PulseR__colon(dt, edge_time * 2)
+            edge = 2 * np.cos(2 * np.pi * tedge * fedge / 16 - np.pi / 4) ** 2 - 1
+        drive_pulse = np.concatenate([edge, _get_PulseR__ones_row(M)])
+        pulse = _get_PulseR__filter(drive_pulse, ir)
     else:
-        pulse = lfilter(np.ones(M), [1.0], ir)
+        pulse = _get_PulseR__filter(_get_PulseR__ones_row(M), ir)
 
     PDR_response = (1 + pulse) / (1 - pulse) * float(ZT) * 2
     return SimpleNamespace(PDR=PDR_response, pulse=pulse)
@@ -11627,20 +12025,65 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
 
 # --- get_StepR (MATLAB lines 6876–6903) ---
 
+_EPS = np.finfo(float).eps
+
+
+def _get_StepR__colon(step, limit):
+    """MATLAB `0:step:limit`.
+
+    Two wrong spellings were tried here first, and both are recorded because
+    each looked verified:
+
+    `np.arange(0, limit + step, step)` is one element too LONG whenever
+    limit/step is not an integer, which it is not at the shipped default
+    TR_TDR = 8e-3 ns. COM Octave, fb=53.125e9, samples_per_ui=32: numel 28,
+    not 29.
+
+    `int(floor(limit/step)) + 1` is one element too SHORT whenever the
+    quotient lands a fraction of an eps below an integer. fb=106.25e9,
+    samples_per_ui=32, TR_TDR=0.5325 gives 3620.9999999999995, about 2000 eps
+    below 3621, and Octave returns 3622 points. That spelling was accepted on
+    a 660-combination sweep that compared only numel, and numel is exactly
+    what it gets wrong here; a sweep over element VALUES, 672 combinations,
+    caught it.
+
+    The last element is clamped to the limit when accumulation would overshoot
+    it, as Octave's range::final_value does. Identical to the helper in
+    get_PulseR, which is the same reference line.
+    """
+    n = int(round(limit / step + 1.0))
+    if n > 0 and (n - 1) * step > limit + 3.0 * _EPS * abs(limit):
+        n -= 1
+    out = np.arange(max(n, 0)) * step
+    if out.size:
+        out[0] = 0.0        # the base, not 0*step, which is NaN for step=Inf
+    if out.size > 1 and out[-1] > limit:
+        out[-1] = limit
+    return out
+
+
 def get_StepR(ir, param, cb_step, ZT):
     """Compute TDR step response from impulse response (MATLAB lines 6876-6902).
 
     cb_step=True: shaped edge drive; cb_step=False: cumulative sum (ideal step).
     Returns SimpleNamespace with fields: ZSR (TDR response in Ω), pulse (step signal).
     """
-    ir = np.asarray(ir, dtype=float).ravel()
+    # No dtype=float: MATLAB's filter()/cumsum() carry a complex input
+    # through, and the cast silently DISCARDED the imaginary part (a
+    # ComplexWarning only).  COM Octave, cb_step=0 on a complex ir, returns
+    # cumsum of the complex samples; the cast made ZSR wrong by O(1).
+    ir = np.asarray(ir).ravel()
+    if ir.dtype.kind not in 'fc':
+        ir = ir.astype(float)
     M = int(param.samples_per_ui)
 
     if cb_step:
         dt = 1.0 / float(param.fb) / float(param.samples_per_ui)
         edge_time = float(param.TR_TDR) * 1e-9
         fedge = 1.0 / edge_time
-        tedge = np.arange(0, edge_time * 2 + dt, dt)
+        # MATLAB `tedge=0:dt:edge_time*2`, via the shared spelling. See
+        # _get_StepR__colon below for why neither arange-with-limit nor floor is right.
+        tedge = _get_StepR__colon(dt, edge_time * 2)
         edge = 2 * np.cos(2 * np.pi * tedge * fedge / 16 - np.pi / 4) ** 2 - 1
         drive_pulse = np.concatenate([edge, np.ones(M)])
         pulse = lfilter(drive_pulse, [1.0], ir)
@@ -13778,6 +14221,39 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
 
 
 
+def _make_full_pkg__lin(arr, k, name):
+    """MATLAB `A(k)`: linear indexing is COLUMN-major, and out of range errors.
+
+    COM Octave, make_full_pkg('RX', ...) with mele=1 and the shipped 2x4
+    param.pkg_Z_c = [87.5 92.5 90 95; 88 93 91 96] (the workbook stores
+    package_Z_c as cases-by-[Tx Rx] and transposes it, so it is 2-by-mele):
+    pkg_Z_c(2) is element (2,1) = 88, not the row-major (1,2) = 92.5 that
+    numpy's .ravel()[1] returns.  s21 at 1 GHz was
+    0.78218388281501161-0.57074890734687478j from the reference against
+    0.78497930629192492-0.57106813157164604j from the port.
+    COM Octave, C_bump=[1.5e-13] for 'RX': "error: C_bump(2): out of bound 1
+    (dimensions are 1x1)" — the reference refuses, it does not fall back.
+    """
+    a = np.asarray(arr, dtype=float).ravel(order='F')
+    if k >= a.size:
+        raise IndexError('make_full_pkg: %s(%d): out of bound %d'
+                         % (name, k + 1, a.size))
+    return float(a[k])
+
+
+def _make_full_pkg__row(arr, i, name):
+    """MATLAB `A(i,:)`: a whole row, and a row that is not there errors.
+
+    COM Octave, make_full_pkg('RX', ...) with mele=4 and a 1-D pkg_Z_c:
+    "error: param(2,_): out of bound 1 (dimensions are 1x4)".
+    """
+    a = np.atleast_2d(np.asarray(arr, dtype=float))
+    if i >= a.shape[0]:
+        raise IndexError('make_full_pkg: %s(%d,:): out of bound %d'
+                         % (name, i + 1, a.shape[0]))
+    return a[i, :]
+
+
 def _make_full_pkg__make_pkg(f, pkg_len, cpad, cball, pkg_z, pkg_param, lcomp=0.0, cbump=0.0):
     """Inlined make_pkg (MATLAB lines 8359-8405)."""
     f = np.asarray(f, dtype=float)
@@ -13867,9 +14343,9 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             setattr(pkg_param, field, getattr(pkg_struct, field))
 
     C_diepad = np.asarray(param.C_diepad, dtype=float)
-    C_pkg_board = np.asarray(param.C_pkg_board, dtype=float).ravel()
+    C_pkg_board = np.asarray(param.C_pkg_board, dtype=float)
     L_comp = np.asarray(param.L_comp, dtype=float)
-    C_bump = np.asarray(param.C_bump, dtype=float).ravel()
+    C_bump = np.asarray(param.C_bump, dtype=float)
 
     if not include_die:
         C_diepad = C_diepad * 0
@@ -13881,31 +14357,32 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
 
     # Determine vector vs matrix C_diepad/L_comp
     is_vector_cd = (C_diepad.ndim == 1) or (C_diepad.ndim == 2 and min(C_diepad.shape) == 1)
-    C_diepad_flat = C_diepad.ravel()
-    L_comp_flat = L_comp.ravel()
 
     if is_vector_cd:
-        Cd_Tx = C_diepad_flat[0] if len(C_diepad_flat) > 0 else 0.0
-        Cd_Rx = C_diepad_flat[1] if len(C_diepad_flat) > 1 else 0.0
-        Lcomp_Tx = L_comp_flat[0] if len(L_comp_flat) > 0 else 0.0
-        Lcomp_Rx = L_comp_flat[1] if len(L_comp_flat) > 1 else 0.0
+        # MATLAB C_diepad(1)/(2), L_comp(1)/(2): a 1-element parameter is
+        # "error: C_diepad(2): out of bound 1", not a silent zero.
+        Cd_Tx = _make_full_pkg__lin(C_diepad, 0, 'C_diepad')
+        Cd_Rx = _make_full_pkg__lin(C_diepad, 1, 'C_diepad')
+        Lcomp_Tx = _make_full_pkg__lin(L_comp, 0, 'L_comp')
+        Lcomp_Rx = _make_full_pkg__lin(L_comp, 1, 'L_comp')
         num_blocks = mele
         extra_LC = 0
     else:
         # 2D matrix: row 0 = TX, row 1 = RX
-        C_diepad_2d = C_diepad.reshape(2, -1)
-        L_comp_2d = L_comp.reshape(2, -1)
-        Cd_Tx = C_diepad_2d[0, :]
-        Cd_Rx = C_diepad_2d[1, :]
-        Lcomp_Tx = L_comp_2d[0, :]
-        Lcomp_Rx = L_comp_2d[1, :]
+        Cd_Tx = _make_full_pkg__row(C_diepad, 0, 'C_diepad')
+        Cd_Rx = _make_full_pkg__row(C_diepad, 1, 'C_diepad')
+        Lcomp_Tx = _make_full_pkg__row(L_comp, 0, 'L_comp')
+        Lcomp_Rx = _make_full_pkg__row(L_comp, 1, 'L_comp')
         extra_LC = len(Cd_Tx) - 1
         num_blocks = mele + extra_LC
 
     insert_zeros = np.zeros(extra_LC)
 
-    type_upper = str(type_).upper()
-    if type_upper == 'TX':
+    # MATLAB `switch type / case 'TX'` is case-SENSITIVE, unlike the strcmpi
+    # above.  COM Octave, make_full_pkg('Tx', ...): the switch matches nothing,
+    # Cball is never assigned and it fails with "error: 'Cball' undefined".
+    type_str = str(type_)
+    if type_str == 'TX':
         if mele == 1:
             # MATLAB L8389-8390: Cpad=Cd_Tx; Lcomp=L_comp_Tx -- the WHOLE row
             # when C_diepad/L_comp are given as a 2xN matrix of die LC
@@ -13915,13 +14392,10 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
             # which set mele=4 (z_p_next_cases is 4x4) and zero die values.
             Cpad = np.atleast_1d(np.asarray(Cd_Tx, dtype=float)).ravel()
             Lcomp = np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel()
-            Cbump = np.array([float(C_bump[0])])
-            Cball = np.array([float(C_pkg_board[0])])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float).ravel()
-            Zpkg = np.array([float(pkg_Z_c[0])])
+            Cbump = np.array([_make_full_pkg__lin(C_bump, 0, 'C_bump')])
+            Cball = np.array([_make_full_pkg__lin(C_pkg_board, 0, 'C_pkg_board')])
+            Zpkg = np.array([_make_full_pkg__lin(param.pkg_Z_c, 0, 'pkg_Z_c')])
         elif mele == 4:
-            cd_val = float(Cd_Tx) if np.isscalar(Cd_Tx) else float(np.asarray(Cd_Tx).ravel()[0])
-            lc_val = float(Lcomp_Tx) if np.isscalar(Lcomp_Tx) else float(np.asarray(Lcomp_Tx).ravel()[0])
             # MATLAB: Cpad=[Cd_Tx 0 0 0]; Lcomp=[L_comp_Tx 0 0 0]  (L8390-8391).
             # Cd_Tx/L_comp_Tx are ROW VECTORS when C_d/L_comp are given as a
             # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
@@ -13933,14 +14407,10 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
                                    np.zeros(3)])
             Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Tx, dtype=float)).ravel(),
                                     np.zeros(3)])
-            Cbump = np.array([float(C_bump[0]), 0.0, 0.0, 0.0])
-            C_v = np.asarray(param.C_v, dtype=float).ravel()
-            Cball = np.array([0.0, 0.0, float(C_v[0]), float(C_pkg_board[0])])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float)
-            if pkg_Z_c.ndim == 1:
-                Zpkg = pkg_Z_c[:4]
-            else:
-                Zpkg = pkg_Z_c[0, :4]
+            Cbump = np.array([_make_full_pkg__lin(C_bump, 0, 'C_bump'), 0.0, 0.0, 0.0])
+            Cball = np.array([0.0, 0.0, _make_full_pkg__lin(param.C_v, 0, 'C_v'),
+                              _make_full_pkg__lin(C_pkg_board, 0, 'C_pkg_board')])
+            Zpkg = _make_full_pkg__row(param.pkg_Z_c, 0, 'pkg_Z_c')
         else:
             raise ValueError(f'make_full_pkg: unsupported mele={mele}')
 
@@ -13954,20 +14424,21 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
         elif ch_upper == 'NOISE':
             raise ValueError('make_full_pkg: TX pkg should not be used for NOISE channels')
         else:
-            Len = np.asarray(param.Pkg_len_TX, dtype=float).ravel()
+            # MATLAB's channel_type switch has no otherwise, so Len is never
+            # assigned.  COM Octave, channel_type='BOGUS': "error: 'Len'
+            # undefined near line 145" — it does not fall back to Pkg_len_TX.
+            raise ValueError(
+                f'make_full_pkg: unsupported channel_type={channel_type}')
 
-    elif type_upper == 'RX':
+    elif type_str == 'RX':
         if mele == 1:
             # MATLAB L8416-8417: the whole row, as for TX above.
             Cpad = np.atleast_1d(np.asarray(Cd_Rx, dtype=float)).ravel()
             Lcomp = np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel()
-            Cbump = np.array([float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])])
-            Cball = np.array([float(C_pkg_board[1]) if len(C_pkg_board) > 1 else float(C_pkg_board[0])])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float).ravel()
-            Zpkg = np.array([float(pkg_Z_c[1]) if len(pkg_Z_c) > 1 else float(pkg_Z_c[0])])
+            Cbump = np.array([_make_full_pkg__lin(C_bump, 1, 'C_bump')])
+            Cball = np.array([_make_full_pkg__lin(C_pkg_board, 1, 'C_pkg_board')])
+            Zpkg = np.array([_make_full_pkg__lin(param.pkg_Z_c, 1, 'pkg_Z_c')])
         elif mele == 4:
-            cd_val = float(Cd_Rx) if np.isscalar(Cd_Rx) else float(np.asarray(Cd_Rx).ravel()[0])
-            lc_val = float(Lcomp_Rx) if np.isscalar(Lcomp_Rx) else float(np.asarray(Lcomp_Rx).ravel()[0])
             # MATLAB: Cpad=[Cd_Rx 0 0 0]; Lcomp=[L_comp_Rx 0 0 0]  (L8390-8391).
             # Cd_Rx/L_comp_Rx are ROW VECTORS when C_d/L_comp are given as a
             # 2xN matrix (N die LC sections per side), so MATLAB's horizontal
@@ -13979,19 +14450,19 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
                                    np.zeros(3)])
             Lcomp = np.concatenate([np.atleast_1d(np.asarray(Lcomp_Rx, dtype=float)).ravel(),
                                     np.zeros(3)])
-            cb_val = float(C_bump[1]) if len(C_bump) > 1 else float(C_bump[0])
-            Cbump = np.array([cb_val, 0.0, 0.0, 0.0])
-            C_v = np.asarray(param.C_v, dtype=float).ravel()
-            cb_pkg = float(C_pkg_board[1]) if len(C_pkg_board) > 1 else float(C_pkg_board[0])
-            Cball = np.array([0.0, 0.0, float(C_v[1]) if len(C_v) > 1 else float(C_v[0]), cb_pkg])
-            pkg_Z_c = np.asarray(param.pkg_Z_c, dtype=float)
-            if pkg_Z_c.ndim == 1:
-                Zpkg = pkg_Z_c[:4] if len(pkg_Z_c) >= 4 else np.pad(pkg_Z_c, (0, 4 - len(pkg_Z_c)))
-            else:
-                Zpkg = pkg_Z_c[1, :4] if pkg_Z_c.shape[0] > 1 else pkg_Z_c[0, :4]
+            Cbump = np.array([_make_full_pkg__lin(C_bump, 1, 'C_bump'), 0.0, 0.0, 0.0])
+            Cball = np.array([0.0, 0.0, _make_full_pkg__lin(param.C_v, 1, 'C_v'),
+                              _make_full_pkg__lin(C_pkg_board, 1, 'C_pkg_board')])
+            Zpkg = _make_full_pkg__row(param.pkg_Z_c, 1, 'pkg_Z_c')
         else:
             raise ValueError(f'make_full_pkg: unsupported mele={mele}')
 
+        # MATLAB's RX switch covers THRU/NEXT/FEXT/NOISE, all of them
+        # Pkg_len_RX, and has no otherwise.  COM Octave, channel_type='BOGUS'
+        # on 'RX': "error: 'Len' undefined near line 145".
+        if str(channel_type).upper() not in ('THRU', 'NEXT', 'FEXT', 'NOISE'):
+            raise ValueError(
+                f'make_full_pkg: unsupported channel_type={channel_type}')
         Len = np.asarray(param.Pkg_len_RX, dtype=float).ravel()
     else:
         raise ValueError(f'make_full_pkg: type must be TX or RX, got {type_}')
@@ -14013,20 +14484,29 @@ def make_full_pkg(type_, faxis, param, channel_type, mode='dd', include_die=1):
 
     # Build and cascade blocks
     n_blocks = int(num_blocks)
-    # Ensure arrays are long enough
-    def _el(arr, j):
+
+    def _el(arr, j, name):
+        # MATLAB indexes Len(j), Cpad(j), ... straight; a vector shorter than
+        # num_blocks is an error, not an implicit zero.  COM Octave, mele=4
+        # with a scalar param.Pkg_len_TX: "error: Len(2): out of bound 1
+        # (dimensions are 1x1)".
         arr = np.asarray(arr, dtype=float).ravel()
-        return float(arr[j]) if j < len(arr) else 0.0
+        if j >= len(arr):
+            raise IndexError('make_full_pkg: %s(%d): out of bound %d'
+                             % (name, j + 1, len(arr)))
+        return float(arr[j])
 
     if n_blocks == 1:
         s11out, s12out, s21out, s22out = _make_full_pkg__make_pkg(
-            faxis, _el(Len, 0), _el(Cpad, 0), _el(Cball, 0), _el(Zpkg, 0),
-            pkg_param, _el(Lcomp, 0), _el(Cbump, 0))
+            faxis, _el(Len, 0, 'Len'), _el(Cpad, 0, 'Cpad'),
+            _el(Cball, 0, 'Cball'), _el(Zpkg, 0, 'Zpkg'),
+            pkg_param, _el(Lcomp, 0, 'Lcomp'), _el(Cbump, 0, 'Cbump'))
     else:
         for j in range(n_blocks):
             sp11, sp12, sp21, sp22 = _make_full_pkg__make_pkg(
-                faxis, _el(Len, j), _el(Cpad, j), _el(Cball, j), _el(Zpkg, j),
-                pkg_param, _el(Lcomp, j), _el(Cbump, j))
+                faxis, _el(Len, j, 'Len'), _el(Cpad, j, 'Cpad'),
+                _el(Cball, j, 'Cball'), _el(Zpkg, j, 'Zpkg'),
+                pkg_param, _el(Lcomp, j, 'Lcomp'), _el(Cbump, j, 'Cbump'))
             if j == 0:
                 s11out, s12out, s21out, s22out = sp11, sp12, sp21, sp22
             else:
@@ -16786,7 +17266,7 @@ def read_p2_s2params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
 # T = [[1,1,0,0],[1,-1,0,0],[0,0,1,1],[0,0,1,-1]]
 # sigma_matrix for each frequency point based on TX/RX p/n skew.
 # Snew = sigma_matrix .* S (elementwise, not matrix multiply)
-# W = T * Snew * inv(T)
+# W = T * (Snew / T)  -- mrdivide, a solve, not a multiply by inv(T)
 # D matrix indexing (MATLAB 1-based):
 #   SDD(1,1) = D(2,2); SDD(2,2) = D(4,4); SDD(1,2) = D(2,4); SDD(2,1) = D(4,2)
 #   SDC(1,1) = D(2,1); SDC(2,2) = D(4,3); SDC(1,2) = D(2,3); SDC(2,1) = D(4,1)
@@ -16794,114 +17274,16 @@ def read_p2_s2params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
 #   SCD(1,1) = D(1,2); SCD(2,2) = D(3,4); SCD(1,2) = D(1,4); SCD(2,1) = D(3,2)
 # ============================================================
 
+# rangelimit and read_Nport_touchstone are called, not re-inlined: the private
+# copies that used to sit here had drifted from the shared functions, exactly
+# as read_p2_s2params's had. The reader copy defaulted nport to 4 rather than 2
+# for an extension with no digit and did not reject a file it parsed no data
+# from; the rangelimit copy wrote param.flim straight back into the CALLER's
+# object, where MATLAB passes param by value.
+# COM Octave, a 50 GHz file read with param.flim = 100e9: data.flim comes back
+# 50e9 while the caller's param.flim is still 100e9 -- the port left the
+# caller holding 50e9.
 
-
-def _read_p4_s4params__read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
-    """Inlined read_Nport_touchstone."""
-    import re, os
-    # r4p15p0: empty port_order -> auto-detect after read
-    if port_order is None:
-        port_order = []
-    else:
-        port_order = [int(p) for p in np.asarray(port_order).ravel()]
-    Z_renorm = float(Z_renorm)
-    ext = os.path.splitext(touchstone_file)[1].lower()
-    m = re.search(r'\d+', ext)
-    nport = int(m.group()) if m else 4
-
-    with open(touchstone_file, 'r', errors='replace') as fid:
-        raw = fid.read()
-
-    lines = raw.splitlines()
-    option_line = None
-    data_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('!'):
-            continue
-        if stripped.startswith('#') and option_line is None:
-            option_line = stripped
-        else:
-            data_lines.append(stripped.split('!')[0].strip())
-
-    if option_line is None:
-        raise ValueError(f'No # option line in {touchstone_file}')
-
-    opt_tokens = option_line[1:].upper().split()
-    freq_scale_map = {'HZ': 1.0, 'KHZ': 1e3, 'MHZ': 1e6, 'GHZ': 1e9}
-    freq_mult = freq_scale_map.get(opt_tokens[0], 1e9)
-    try:
-        s_idx = opt_tokens.index('S')
-        fmt = opt_tokens[s_idx + 1]
-    except (ValueError, IndexError):
-        fmt = 'MA'
-    try:
-        r_idx = opt_tokens.index('R')
-        file_Z0 = float(opt_tokens[r_idx + 1])
-    except (ValueError, IndexError):
-        file_Z0 = 50.0
-
-    all_tokens = []
-    for line in data_lines:
-        all_tokens.extend(line.split())
-    vals = []
-    for t in all_tokens:
-        try:
-            vals.append(float(t))
-        except ValueError:
-            pass
-    vals = np.array(vals, dtype=float)
-    n_per_row = 1 + nport * nport * 2
-    nfreq = len(vals) // n_per_row
-    data = vals[:nfreq * n_per_row].reshape(nfreq, n_per_row)
-    freq = data[:, 0] * freq_mult
-    ri_flat = data[:, 1:]
-    re_data = ri_flat[:, 0::2]
-    im_data = ri_flat[:, 1::2]
-    if fmt == 'RI':
-        cdata = re_data + 1j * im_data
-    elif fmt == 'MA':
-        cdata = re_data * np.exp(1j * im_data * np.pi / 180.0)
-    elif fmt == 'DB':
-        mag = 10.0 ** (re_data / 20.0)
-        cdata = mag * np.exp(1j * im_data * np.pi / 180.0)
-    else:
-        raise ValueError(f'Unsupported format {fmt}')
-
-    sp = np.zeros((nport, nport, nfreq), dtype=complex)
-    for j in range(nport):
-        sp[j, :, :] = cdata[:, j * nport:(j + 1) * nport].T
-    if nport == 2:
-        temp = sp[0, 1, :].copy()
-        sp[0, 1, :] = sp[1, 0, :]
-        sp[1, 0, :] = temp
-
-    if abs(file_Z0 - Z_renorm) > 1e-9:
-        rho = (Z_renorm - file_Z0) / (Z_renorm + file_Z0)
-        I = np.eye(nport)
-        for k in range(nfreq):
-            s_old = sp[:, :, k]
-            sp[:, :, k] = np.linalg.solve(I - rho * s_old, s_old - rho * I)
-
-    sch = np.transpose(sp, (2, 0, 1))
-    # r4p15p0: auto-detect port order when none supplied
-    if len(port_order) == 0:
-        port_order = _auto_port_order(sch, freq)
-    po = [p - 1 for p in port_order]
-    if len(po) == nport:
-        sch = sch[:, po, :][:, :, po]
-    return sch, freq, port_order
-
-
-def _read_p4_s4params__rangelimit(sch, freq, param, OP):
-    flim = float(getattr(param, 'flim', float('inf')))
-    idx = np.where(freq >= flim)[0]
-    if len(idx) > 0:
-        iend = int(idx[0]) + 1
-        return sch[:iend], freq[:iend], 1, param
-    else:
-        param.flim = float(freq[-1])
-        return sch, freq, 0, param
 
 
 def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, param):
@@ -16912,8 +17294,10 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
     r4p15p0: no [1 3 2 4] default; empty ports triggers auto-detection and the
     resolved order is returned as the 6th output.
     """
-    sch, freq, ports = _read_p4_s4params__read_Nport_touchstone(infile, ports, float(param.Z0))
-    sch, freq, limited, param = _read_p4_s4params__rangelimit(sch, freq, param, OP)
+    sch, freq, ports = _read_Nport_touchstone(infile, ports, float(param.Z0))
+    # rangelimit returns its OWN param; MATLAB passes param by value, so the
+    # caller's struct is untouched.
+    sch, freq, limited, param_out = _rangelimit(sch, freq, param, OP)
 
     nfreq = len(freq)
 
@@ -16927,15 +17311,24 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
                   [1.0, -1.0, 0.0, 0.0],
                   [0.0, 0.0, 1.0, 1.0],
                   [0.0, 0.0, 1.0, -1.0]])
-    T_inv = np.linalg.inv(T)
 
     D = np.zeros((nfreq, 4, 4), dtype=complex)
     for i in range(nfreq):
         f = freq[i]
-        s1 = np.exp(2j * np.pi * f * Txpskew * 1e-12)
-        s2 = np.exp(2j * np.pi * f * Txnskew * 1e-12)
-        s3 = np.exp(2j * np.pi * f * Rxpskew * 1e-12)
-        s4 = np.exp(2j * np.pi * f * Rxnskew * 1e-12)
+        # MATLAB's Sigfct is `@(sigma2,sigma1,sigma4,sigma3)...`: the parameter
+        # NAMES are transposed on purpose ("need to swap sigma for 1 and 3 and
+        # 2 and 4", RIM 12/29/2023), so calling it with (Txp, Txn, Rxp, Rxn)
+        # binds sigma1=Txn, sigma2=Txp, sigma3=Rxn, sigma4=Rxp. The port read
+        # the names in call order and built the matrix with 1<->2 and 3<->4
+        # swapped, which is invisible while the p and n skews match and wrong
+        # as soon as they do not.
+        # COM Octave, Txpskew=3 ps, Txnskew=-1 ps, Rx skews 0: max|dSDC| and
+        # max|dSCD| reach 0.1255 (SDC and SCD are O(0.1) here), max|dSDD|
+        # 5.67e-4.
+        s1 = np.exp(2j * np.pi * f * Txnskew * 1e-12)   # MATLAB sigma1
+        s2 = np.exp(2j * np.pi * f * Txpskew * 1e-12)   # MATLAB sigma2
+        s3 = np.exp(2j * np.pi * f * Rxnskew * 1e-12)   # MATLAB sigma3
+        s4 = np.exp(2j * np.pi * f * Rxpskew * 1e-12)   # MATLAB sigma4
         sigma_matrix = np.array([
             [s1 ** 2,   s1 * s2, s1 * s3, s1 * s4],
             [s1 * s2,   s2 ** 2, s2 * s3, s2 * s4],
@@ -16944,7 +17337,10 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
         ])
         S = sch[i, :, :]
         Snew = sigma_matrix * S  # elementwise (Sigfct .* S)
-        D[i] = T @ Snew @ T_inv
+        # MATLAB's Snew/T is mrdivide, which SOLVES rather than multiplying by
+        # an inverse: Snew/T == (T.'\Snew.').'. T @ Snew @ inv(T) is the same
+        # matrix in exact arithmetic and not in floating point.
+        D[i] = T @ np.linalg.solve(T.T, Snew.T).T
 
     # Extract mixed-mode S-params (0-based Python, MATLAB 1-based → subtract 1)
     SDD = np.zeros((nfreq, 2, 2), dtype=complex)
@@ -16974,7 +17370,7 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
     data = SimpleNamespace()
     data.m = sch
     data.freq = freq
-    data.flim = getattr(param, 'flim', freq[-1])
+    data.flim = param_out.flim
     data.limited = limited
 
     return data, SDD, SDC, SCC, SCD, ports
@@ -17008,16 +17404,30 @@ def read_p4_s4params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
 
 
 
-def _read_package_parameters__xls_param(parameter, key, optional=True, default=None):
-    """Minimal xls_parameter: looks up key in a dict or SimpleNamespace."""
+_MANDATORY = object()   # xls_parameter called with nargin<4: no default exists
+
+
+def _read_package_parameters__xls_param(parameter, key, default=_MANDATORY):
+    """Minimal xls_parameter: looks up key in a dict or SimpleNamespace.
+
+    MATLAB's xls_parameter takes the default as an optional FOURTH argument
+    and, when it is absent, calls missingParameter(param_name) rather than
+    inventing one.  COM Octave, read_package_parameters with 'C_p' left out of
+    the parameter cell: "error: The data for mandatory parameter C_p is
+    missing or incorrect".  The port supplied a default for every key,
+    including the nine the reference treats as mandatory, and answered.
+    """
+    missing = object()
     if isinstance(parameter, dict):
-        val = parameter.get(key, default)
+        val = parameter.get(key, missing)
     else:
-        val = getattr(parameter, key.replace(' ', '_').replace('(', '').replace(')', ''), default)
-    if val is None:
-        if optional:
-            return default
-        raise KeyError(f'Required key {key!r} not found in parameter block')
+        attr = key.replace(' ', '_').replace('(', '').replace(')', '')
+        val = getattr(parameter, attr, missing)
+    if val is missing or val is None:
+        if default is _MANDATORY:
+            raise KeyError('The data for mandatory parameter %s is missing '
+                           'or incorrect' % key)
+        val = default
     return np.atleast_1d(np.asarray(val, dtype=float))
 
 
@@ -17031,20 +17441,21 @@ def read_package_parameters(parameter, param_struct=None):
     if param_struct is None:
         param_struct = SimpleNamespace()
 
-    def xp(key, default=None):
-        return _read_package_parameters__xls_param(parameter, key, optional=True, default=default)
+    def xp(key, default=_MANDATORY):
+        return _read_package_parameters__xls_param(parameter, key, default)
 
-    param_struct.C_pkg_board = xp('C_p', np.array([0.0])) * 1e-9
-    param_struct.R_diepad = xp('R_d', np.array([50.0]))
-    param_struct.a_thru = xp('A_v', np.array([1.0]))
-    param_struct.a_fext = xp('A_fe', np.array([0.0]))
-    param_struct.a_next = xp('A_ne', np.array([0.0]))
+    # No fourth argument in MATLAB for any of these: they are mandatory.
+    param_struct.C_pkg_board = xp('C_p') * 1e-9
+    param_struct.R_diepad = xp('R_d')
+    param_struct.a_thru = xp('A_v')
+    param_struct.a_fext = xp('A_fe')
+    param_struct.a_next = xp('A_ne')
 
     # z_p_tx_cases: MATLAB transposes → shape (ncases, mele).
     # The spreadsheet stores rows = package segments, columns = cases; the engine
     # indexes [case, :]. MATLAB applies .' to all four z_p keywords
     # (com_ieee8023_4p15p0.m L10678/10689/10695/10701).
-    raw = xp('z_p (TX)', np.array([[0.0, 0.0]]))
+    raw = xp('z_p (TX)')
     z_p_tx = np.atleast_2d(raw).T
     ncases, mele = z_p_tx.shape
     if mele == 2:
@@ -17058,7 +17469,7 @@ def read_package_parameters(parameter, param_struct=None):
     param_struct.z_p_tx_cases = z_p_tx
 
     def _load_zp(key):
-        raw2 = xp(key, np.zeros_like(z_p_tx))
+        raw2 = xp(key)                       # mandatory, like z_p (TX)
         arr = np.atleast_2d(raw2).T          # same transpose as z_p (TX) above
         if arr.shape != (ncases, mele):
             raise ValueError('All TX, NEXT, FEXT, Rx cases must agree')
@@ -17070,8 +17481,17 @@ def read_package_parameters(parameter, param_struct=None):
 
     param_struct.pkg_gamma0_a1_a2 = xp('package_tl_gamma0_a1_a2', np.array([0.0, 1.734e-3, 1.455e-4]))
     param_struct.pkg_tau = xp('package_tl_tau', np.array([6.141e-3]))
-    raw_zc = xp('package_Z_c', np.array([[78.2, 78.2]]))
-    pkg_Z_c = np.atleast_2d(raw_zc)
+    # MATLAB: param_struct.pkg_Z_c = xls_parameter(..., 78.2).' -- TRANSPOSED,
+    # like the four z_p keywords, and the default is the scalar 78.2.  The
+    # port kept the sheet's orientation, so a 4x2 package_Z_c stayed (4,2)
+    # where the reference gives (2,4), and the mele check compared the wrong
+    # axis: COM Octave read the shipped
+    # [92 92 ; 70 70; 80 80; 100 100] into pkg_Z_c(2,4) = [92 70 80 100;
+    # 92 70 80 100] while the port raised 'tx rx pairs must have the same
+    # number element entries'.  make_full_pkg indexes pkg_Z_c(1,:) for TX and
+    # (2,:) for RX, so the orientation is load-bearing.
+    raw_zc = xp('package_Z_c', 78.2)
+    pkg_Z_c = np.atleast_2d(raw_zc).T
     if pkg_Z_c.shape[1] != mele:
         raise ValueError('tx rx pairs must have the same number element entries as TX, NEXT, FEXT, Rx')
     param_struct.pkg_Z_c = pkg_Z_c
@@ -17086,8 +17506,12 @@ def read_package_parameters(parameter, param_struct=None):
         param_struct.z_p_next_cases = param_struct.z_p_next_casesx
         param_struct.z_p_tx_cases = param_struct.z_p_tx_casesx
         param_struct.z_p_rx_cases = param_struct.z_p_rx_casesx
+        # MATLAB: [pkg_Z_c' ; [100 100 ; 100 100]]' -- transpose, stack two
+        # rows of 100 underneath, transpose back, so a (2,2) pkg_Z_c becomes
+        # (2,4).  Stacking on the untransposed array made it (4,2) instead:
+        # COM Octave gives [92 70 100 100 ; 92 70 100 100].
         extra = np.array([[100.0, 100.0], [100.0, 100.0]])
-        param_struct.pkg_Z_c = np.vstack([param_struct.pkg_Z_c, extra])
+        param_struct.pkg_Z_c = np.vstack([param_struct.pkg_Z_c.T, extra]).T
 
     return param_struct
 
@@ -19024,18 +19448,23 @@ def s_for_c2(zref, f, cpad):
 # MATLAB lines: 11155–11159
 # ============================================================
 # External dependencies: s2_to_s4 and snp2smp are NOT in the MATLAB file.
-#   They are from the MATLAB RF Toolbox / COM package.
-# s2_to_s4(S2): embeds a 2-port S-matrix into a block-diagonal 4-port:
-#   S4[0:2, 0:2, :] = S2,  S4[2:4, 2:4, :] = S2,  off-diagonal = 0
-# snp2smp(S4, zref, [1 3 2 4]): applies the mixed-mode transformation
-#   for port pairs (1,3) and (2,4). For the symmetric block-diagonal case
-#   (s11=s22, s12=s21 — a shunt capacitor), this transformation leaves the
-#   matrix unchanged (verified analytically via M*S4*M^T = S4 for the
-#   standard mixed-mode matrix M).
-# Therefore s_for_c4.Parameters is the block-diagonal 4-port of s_for_c2.
-# Assumption documented; callers in COM use .Parameters field.
+#   snp2smp is MATLAB RF Toolbox.  s2_to_s4 is defined nowhere — not in any
+#   COM release 4p10p0..4p16p0, not in the 802-COM src tree, and not in RF
+#   Toolbox — so the reference cannot execute this function and no oracle can
+#   settle it.  Nothing in COM calls s_for_c4 either; it is dead code.
+# s2_to_s4(S2): assumed to embed the 2-port into a block-diagonal 4-port,
+#   S4[0:2,0:2,:] = S2, S4[2:4,2:4,:] = S2 — two uncoupled copies of the
+#   shunt cap, one on raw ports 1-2 and one on raw ports 3-4.
+# snp2smp(S, zref, [1 3 2 4]) with M == N == 4 terminates no port, so it is
+#   the pure port permutation new(i,j) = old(p(i), p(j)), p = [1 3 2 4] —
+#   the same operation the reference spells out at line 10050 as
+#   `sch=sch(:,port_order,port_order)`, with the same default vector
+#   (line 10434: `'Port Order', true, [1 3 2 4]  % [ tx+ tx- rx+ rx-]`).
+#   It is NOT a mixed-mode transform and it is NOT a no-op: it swaps ports
+#   2 and 3, turning the block diagonal into the COM [tx+ tx- rx+ rx-] form
+#   where 1,2 are the Tx pair and 3,4 the Rx pair.  Omitting it returned a
+#   4-port whose differential insertion loss Sdd21 was identically zero.
 # Output struct: SimpleNamespace with Parameters shape (4,4,N).
-# Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
@@ -19044,8 +19473,8 @@ def s_for_c4(zref, f, cpad):
     """4-port S-parameters for a balanced shunt capacitor cpad.
 
     Constructs the block-diagonal 4×4 from the 2-port (s_for_c2), then
-    applies the mixed-mode transformation snp2smp([1 3 2 4]).  For this
-    symmetric network the result equals the block-diagonal itself.
+    reorders the ports as snp2smp(...,[1 3 2 4]) does, into COM's
+    [tx+ tx- rx+ rx-] convention.
     """
     S2 = s_for_c2(zref, f, cpad)
     s2p = S2.Parameters        # (2, 2, N)
@@ -19053,12 +19482,13 @@ def s_for_c4(zref, f, cpad):
 
     # s2_to_s4: block-diagonal embedding
     S4P = np.zeros((4, 4, N), dtype=complex)
-    S4P[0:2, 0:2, :] = s2p    # top-left block (ports 1,2)
-    S4P[2:4, 2:4, :] = s2p    # bottom-right block (ports 3,4)
+    S4P[0:2, 0:2, :] = s2p    # top-left block (raw ports 1,2)
+    S4P[2:4, 2:4, :] = s2p    # bottom-right block (raw ports 3,4)
 
-    # snp2smp with port pairs (1,3) and (2,4): for this symmetric matrix,
-    # the mixed-mode transform M*S4*M^T = S4 (analytically verified).
-    params = S4P
+    # snp2smp(S.Parameters, zref, [1 3 2 4]) — MATLAB line 11650.  M == N,
+    # so no port is terminated and this is `sch(port_order, port_order, :)`.
+    perm = [0, 2, 1, 3]                       # 1-based [1 3 2 4]
+    params = S4P[perm, :, :][:, perm, :]
 
     S = SimpleNamespace()
     S.Parameters = params
@@ -19205,9 +19635,16 @@ def _scaleCDF__scale_pdf(pdf, scale_factor):
     pdf_out.Min = int(np.floor(pdf.Min * scale_factor))
     idx = np.arange(pdf_out.Min, -pdf_out.Min + 1)
     pdf_out.x = idx * pdf_out.BinSize
-    pdf_out.y = np.interp(pdf_out.x,
-                          np.asarray(pdf.x) * scale_factor,
-                          np.asarray(pdf.y))
+    xs = np.asarray(pdf.x, dtype=float) * scale_factor
+    pdf_out.y = np.interp(pdf_out.x, xs, np.asarray(pdf.y, dtype=float))
+    # interp1's default is linear with NaN OUTSIDE the data range; np.interp
+    # clamps to the end values instead.  The two-sample "NAN interp work
+    # around" below hides that only while the source grid is symmetric.  When
+    # max(pdf.x) < -min(pdf.x) the new grid runs past the data on the right by
+    # more than one bin and MATLAB returns NaN everywhere (sum is then NaN).
+    # COM Octave: Min=-8, x=(-8:0)*0.05, delta_com=1 -> pdf_out.y is 19 NaNs;
+    # np.interp alone produced 19 finite values.
+    pdf_out.y[(pdf_out.x < xs[0]) | (pdf_out.x > xs[-1])] = np.nan
     pdf_out.y[0] = pdf_out.y[1]
     pdf_out.y[-1] = pdf_out.y[-2]
     pdf_out.y = pdf_out.y / np.sum(pdf_out.y)
@@ -19217,6 +19654,14 @@ def _scaleCDF__scale_pdf(pdf, scale_factor):
 def scaleCDF(pdf, delta_com, DER0, A_s):
     pdf_out = copy.copy(pdf)
     P = np.cumsum(np.asarray(pdf.y, dtype=float))
+    # find(...,1,'first') is EMPTY when the CDF never reaches DER0, and the
+    # next line is then `-1/[]`, which the reference refuses.  COM Octave,
+    # DER0=5 on a normalised pdf: "operator /: nonconformant arguments
+    # (op1 is 1x1, op2 is 1x0)".  np.argmax on an all-False mask returns 0,
+    # so the port answered with the wrong bin and no sign of trouble.
+    if not np.any(P >= DER0):
+        raise ValueError('scaleCDF: cumsum(pdf.y) never reaches DER0=%r; '
+                         'MATLAB errors on the empty find() (-1/[])' % (DER0,))
     ider0 = int(np.argmax(P >= DER0))           # 0-based; equiv to MATLAB 1-based find
     anias = pdf.x[ider0] / A_s
     new_db = 20 * np.log10(-1.0 / anias) - delta_com
@@ -19237,9 +19682,14 @@ def scaleCDF(pdf, delta_com, DER0, A_s):
 # 1-based vs 0-based: pdf_out.y(1)=pdf_out.y(2) → y[0]=y[1];
 #                     pdf_out.y(end)=pdf_out.y(end-1) → y[-1]=y[-2].
 # Range: (pdf_out.Min:-pdf_out.Min) → np.arange(Min, -Min+1).
-# interp1 default (linear, NaN outside): np.interp clips to boundary
-#   instead of NaN; the neighbour-copy workaround is still applied for
-#   fidelity, and is harmless when np.interp already returned a value.
+# interp1 default (linear) returns NaN OUTSIDE the data range. np.interp
+#   clamps to the end values instead, so it never produces a NaN and the
+#   reference's two "NAN interp work around" lines become no-ops. That is only
+#   harmless while at most ONE point falls outside at each end, which is what
+#   the workaround patches. On a grid where max(x) < -min(x) -- a left-heavy
+#   pdf -- many points fall outside and MATLAB returns NaN for all of them.
+#   COM Octave, Min=-8, x=(-8:0)*0.05, delta_com=1: 19 NaNs, where clamping
+#   gave 19 finite values. left=/right=nan restores it.
 # Output shape: SimpleNamespace with same fields as input pdf.
 # Known discrepancy from prior sicopr.py attempt: none found.
 # ============================================================
@@ -19259,10 +19709,12 @@ def scalePDF(pdf, scale_factor):
     idx = np.arange(pdf_out.Min, -pdf_out.Min + 1)
     pdf_out.x = idx * pdf_out.BinSize                     # MATLAB line 11271
 
-    # interp1(pdf.x*scale_factor, pdf.y, pdf_out.x) — linear, clamp at edges
+    # interp1(pdf.x*scale_factor, pdf.y, pdf_out.x) -- linear, NaN OUTSIDE the
+    # data range. np.interp clamps unless told otherwise.
     pdf_out.y = np.interp(pdf_out.x,
                           np.asarray(pdf.x) * scale_factor,
-                          np.asarray(pdf.y))              # MATLAB line 11272
+                          np.asarray(pdf.y),
+                          left=np.nan, right=np.nan)      # MATLAB line 11272
 
     # NaN workaround (MATLAB lines 11273-11274): copy neighbours at edges
     pdf_out.y[0]  = pdf_out.y[1]
@@ -19978,6 +20430,7 @@ _floatingDFE = floatingDFE
 _FFE_Fast = FFE_Fast
 _OptFom_FD_or_TD_Fields = OptFom_FD_or_TD_Fields
 _FD_CTLE = FD_CTLE
+_OptFom_Calc_Hr = OptFom_Calc_Hr
 _dfe_clipper = dfe_clipper
 _FFE = FFE
 _FFE = FFE
@@ -20050,7 +20503,8 @@ _d_cpdf = d_cpdf
 _auto_port_order = auto_port_order
 _rangelimit = rangelimit
 _read_Nport_touchstone = read_Nport_touchstone
-_auto_port_order = auto_port_order
+_rangelimit = rangelimit
+_read_Nport_touchstone = read_Nport_touchstone
 _Bessel_Thomson_Filter = Bessel_Thomson_Filter
 _auto_port_order = auto_port_order
 _bessel = bessel

@@ -62,7 +62,15 @@ from types import SimpleNamespace
 
 def _get_pdf_from_sampled_signal(input_vector, L, BinSize):
     input_vector = np.asarray(input_vector, dtype=float).ravel()
-    if _mmax(np.abs(input_vector)) > BinSize:
+    # MATLAB max([]) is [], and `if []` is false, so an empty sampled pulse
+    # falls straight through to the delta pdf.  COM Octave,
+    # adjust_Rx_noise_for_quantization with
+    # chdata(1).pulse_sampled_w_tx_ffe_ctle = []: NS.peak_clip = 0.2, the same
+    # answer a wholly sub-bin pulse gives.  np.max raised "zero-size array to
+    # reduction operation maximum".  (The canonical
+    # com_functions/fn/get_pdf_from_sampled_signal/py_impl.py already carries
+    # this guard; this copy had not tracked it.)
+    if input_vector.size and _mmax(np.abs(input_vector)) > BinSize:
         input_vector = input_vector[np.abs(input_vector) > BinSize]
     else:
         return _d_cpdf(BinSize, 0, 1)
