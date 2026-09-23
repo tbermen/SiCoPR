@@ -152,3 +152,91 @@ def test_port_order_actually_swaps(tmp_path):
     a = np.asarray(read_Nport_touchstone(p, [1, 3, 2, 4], 100)[0])
     b = np.asarray(read_Nport_touchstone(p, [1, 2, 3, 4], 100)[0])
     assert not np.allclose(a, b), 'the port order had no effect on the matrix'
+
+
+# --------------------------------------------------------------------------
+# Renormalisation: ML 209-216, exactly as written.
+#
+#   if ~isequal(Spar.Z0, Z_renorm)          <- EXACT, not a tolerance
+#       rho = (Z_renorm - Spar.Z0)/(Z_renorm + Spar.Z0);
+#       Spar.S(:,:,k) = inv(eye(p) - rho*s_old(:,:,k)) * (s_old(:,:,k) - rho*eye(p));
+#
+# An EXPLICIT inverse. np.linalg.solve is the same matrix in exact arithmetic
+# and ~4e-16 away in floating point, and numpy reproduces neither Octave nor
+# MATLAB bit for bit, so no tolerance test and no oracle can tell the two
+# forms apart. What can be pinned is the form, by replaying the reference
+# expression here and demanding exact equality. read_s4p_files carries the
+# same block inlined twice and is tested the same way.
+#
+# Each test carries its own negative control: it asserts that the form the
+# reference does NOT use gives a different answer on this very input.
+# --------------------------------------------------------------------------
+
+def _write_s2p_matrix(path, freqs_GHz, S_per_freq, Z0):
+    with open(path, 'w') as f:
+        f.write('# GHz S RI R %g\n' % Z0)
+        for i, fg in enumerate(freqs_GHz):
+            S = S_per_freq[i]
+            row = '%g' % fg
+            for r in range(2):
+                for c in range(2):
+                    row += ' %.17g %.17g' % (float(S[r, c].real),
+                                            float(S[r, c].imag))
+            f.write(row + '\n')
+
+
+def _renorm_case(tmp_path, file_Z0, Z_renorm):
+    # unstructured on purpose: a reciprocal S makes the two forms agree
+    # exactly at some elements, which would leave the control unable to fail
+    rng = np.random.default_rng(20260924)
+    freqs = np.array([1.0, 2.0, 3.0, 4.0])
+    S = [(rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2))) * 0.3
+         for _ in freqs]
+    p = str(tmp_path / 'renorm.s2p')
+    _write_s2p_matrix(p, freqs, S, file_Z0)
+    sch = read_Nport_touchstone(p, [1, 2], Z_renorm)[0]
+    return np.asarray(sch, dtype=complex), S
+
+
+def _expect(s_old_all, file_Z0, Z_renorm, how):
+    """Replay ML 209-216 on the matrix the reader itself returns unrenormalised.
+
+    Taking s_old from a Z_renorm == file_Z0 read rather than re-deriving it
+    from the file keeps this test about the renormalisation expression and
+    free of any assumption about port order or token layout.
+    """
+    out = np.empty_like(s_old_all)
+    eye = np.eye(s_old_all.shape[1])
+    rho = (Z_renorm - file_Z0) / (Z_renorm + file_Z0)
+    for k in range(s_old_all.shape[0]):
+        s_old = s_old_all[k]
+        if how == 'inv':
+            out[k] = np.linalg.inv(eye - rho * s_old) @ (s_old - rho * eye)
+        else:
+            out[k] = np.linalg.solve(eye - rho * s_old, s_old - rho * eye)
+    return out
+
+
+def test_renormalisation_uses_the_reference_explicit_inverse(tmp_path):
+    """ML 215 writes inv(A)*B, and inv(A)*B is what has to come out."""
+    got, _ = _renorm_case(tmp_path, file_Z0=50.0, Z_renorm=100.0)
+    s_old, _ = _renorm_case(tmp_path, file_Z0=50.0, Z_renorm=50.0)
+    want = _expect(s_old, 50.0, 100.0, 'inv')
+    assert np.array_equal(got, want), (
+        'worst |delta| = %.3e against the reference form'
+        % float(np.max(np.abs(got - want))))
+    other = _expect(s_old, 50.0, 100.0, 'solve')
+    assert not np.array_equal(want, other), (
+        'inv and solve agree on this input, so the test proves nothing')
+
+
+def test_renormalisation_guard_is_exact_not_a_tolerance(tmp_path):
+    """ML 209 is ~isequal: a tenth of a nano-ohm still renormalises."""
+    got, _ = _renorm_case(tmp_path, file_Z0=100.0, Z_renorm=100.0 + 1e-10)
+    skipped, _ = _renorm_case(tmp_path, file_Z0=100.0, Z_renorm=100.0)
+    renormalised = _expect(skipped, 100.0, 100.0 + 1e-10, 'inv')
+    assert not np.array_equal(renormalised, skipped), (
+        'renormalising at this Z0 changes nothing, so the test cannot tell '
+        'an exact guard from a tolerance')
+    assert np.array_equal(got, renormalised), (
+        'this file was NOT renormalised, where the reference renormalises it')

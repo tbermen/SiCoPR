@@ -387,3 +387,135 @@ def test_scmr_has_no_epsilon_floor_on_a_perfectly_balanced_channel():
         assert np.isnan(v), (
             '%s is %.17g; COM Octave gives nan for 10*log10(0/0), and -inf '
             'for the floored form.' % (name, v))
+
+
+# --------------------------------------------------------------------------
+# The whole function, against COM Octave.
+#
+# Every test above drives COM_FD_to_TD BARE, so they run the module's stubs --
+# including a "minimal s21->impulse via ifft" standing in for the whole of
+# s21_to_impulse_DC. This one injects the four real functions, exactly as
+# sicopr's _wired_COM_FD_to_TD does, and compares against the reference.
+#
+# Three things had to be right before the reference would run at all, and each
+# is a trap worth recording:
+#
+#   sample_dt is a TIME, 1/(fb*M). _make_param computes faxis[-1]/N, which is a
+#   FREQUENCY (~3.9e8) used as a time, so fmax = 1/sample_dt/2 comes out near
+#   1e-9 Hz, n_steps rounds to 0, and Octave SPINS rather than erroring. The
+#   stub ignored sample_dt, which is how that value survived in the fixture.
+#
+#   chdata fields must be ROW vectors. As columns, sdd21 .* H_bt broadcasts a
+#   column against a row into an N-by-N matrix and polyfit dies downstream.
+#
+#   param.matlab_version selects ML 1236, uneq_step_response, which is in
+#   4p16p0 and absent from 4p15p0 (verified: 1 occurrence against 0).
+#
+# All 12 shared fields agree to 5e-16 of the field's own peak. Scalars that are
+# non-finite on both sides -- SCMR on a perfectly balanced channel, and
+# truncation_dB on a channel with no truncation -- are compared as patterns,
+# because nan == nan is False and a relative error through +/-inf is nan.
+# --------------------------------------------------------------------------
+
+_OCT_FD_N = 64
+_OCT_FD_M = 4
+_OCT_FD_FB = 53.125e9
+
+#                              (n, argmax of |x|, max|x|)
+_OCT_FD_VEC = {
+    'uneq_imp_response': (536, 0, 0.34165900459226128),
+    'uneq_pulse_response': (536, 3, 0.55054396464995581),
+    'uneq_step_response': (134, 133, 0.69111503994230572),
+    'uneq_pulse_response_raw': (536, 3, 0.55054396464995581),
+    'uneq_pulse_response_orig': (536, 3, 0.55054396464995581),
+    't': (536, 535, 2.5152985074626867e-09),
+}
+_OCT_FD_SCA = {
+    'P_signal': 0.33855571341214097,
+    'CD_CM_RMS': 0.0,
+    'causality_correction_dB': 1.2910311246824258,
+}
+_OCT_FD_NONFINITE = {
+    'SCMR_CD_ch': np.inf,
+    'SCMR_DC_ch': np.inf,
+    'truncation_dB': -np.inf,
+}
+
+
+def _oct_fd_inputs():
+    faxis = np.linspace(0, 25e9, _OCT_FD_N)
+    # real-valued: Octave's abs() of a complex number and numpy's differ by an
+    # ULP, which would force a tolerance wide enough to hide a real defect
+    sdd21 = (0.9 * np.exp(-faxis / 40e9)).astype(complex)
+    ch = SimpleNamespace(
+        faxis=faxis, sdd21=sdd21.copy(), sdd21_raw=sdd21.copy(),
+        sdd21_orig=sdd21.copy(),
+        scd21_orig=np.zeros(_OCT_FD_N, dtype=complex),
+        sdc21_orig=np.zeros(_OCT_FD_N, dtype=complex),
+        A=1.0, type='THRU', base='test')
+    param = SimpleNamespace(
+        samples_per_ui=_OCT_FD_M, sample_dt=1.0 / (_OCT_FD_FB * _OCT_FD_M),
+        number_of_s4p_files=1, package_testcase_i=1, sigma_X=1.0, ndfe=4,
+        f2=10e9, f1=0.5e9, levels=4, P_peak=1e-4, fb=_OCT_FD_FB,
+        fb_BT_cutoff=0.473, fb_BW_cutoff=0.75, BTorder=4, BWorder=4,
+        Z0=50.0, T_r=8e-3, f_r=0.75, matlab_version='4p16p0')
+    op = SimpleNamespace(
+        Bessel_Thomson=False, Butterworth=False,
+        transmitter_transition_time=8e-3, RX_CALIBRATION=False,
+        PSDRXCAL=False, DEBUG=False, DISPLAY_WINDOW=False,
+        ENFORCE_CAUSALITY=False, interp_sparam_mag='linear_trend_to_DC',
+        interp_sparam_phase='extrap_cubic_to_dc_linear_to_inf',
+        ZERO_PAD=False, EC_PULSE_TOL=0.05, EC_REL_TOL=1e-3,
+        EC_DIFF_TOL=1e-5, impulse_response_truncation_threshold=1e-3)
+    return ch, param, op
+
+
+def _oct_fd_run():
+    import sicopr
+    ch, param, op = _oct_fd_inputs()
+    return COM_FD_to_TD(
+        [ch], param, op,
+        _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+        _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+        _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+        _get_cm_noise_fn=sicopr.get_cm_noise)[0]
+
+
+@pytest.mark.parametrize('field', sorted(_OCT_FD_VEC))
+def test_octave_time_domain_vectors(field):
+    """Length, peak location and peak value against COM Octave."""
+    r0 = _oct_fd_run()
+    want_n, want_i, want_pk = _OCT_FD_VEC[field]
+    v = np.ravel(np.asarray(getattr(r0, field))).astype(float)
+    assert v.size == want_n, ('%s length %d, COM Octave gives %d'
+                              % (field, v.size, want_n))
+    assert int(np.argmax(np.abs(v))) == want_i, (
+        '%s peaks at %d, COM Octave at %d'
+        % (field, int(np.argmax(np.abs(v))), want_i))
+    got = float(np.max(np.abs(v)))
+    assert abs(got - want_pk) <= 1e-11 * max(abs(want_pk), 1e-300), (
+        '%s peak is %.17g, COM Octave gives %.17g' % (field, got, want_pk))
+
+
+@pytest.mark.parametrize('field', sorted(_OCT_FD_SCA))
+def test_octave_finite_scalars(field):
+    r0 = _oct_fd_run()
+    want = _OCT_FD_SCA[field]
+    got = float(np.ravel(np.asarray(getattr(r0, field)))[0])
+    assert abs(got - want) <= 1e-11 * max(abs(want), 1e-12), (
+        '%s is %.17g, COM Octave gives %.17g' % (field, got, want))
+
+
+@pytest.mark.parametrize('field', sorted(_OCT_FD_NONFINITE))
+def test_octave_nonfinite_scalars(field):
+    """On this channel the reference returns +/-inf, and so must the port.
+
+    A finite number here means an epsilon floor is back in a denominator:
+    COM Octave gives 3000 for 10*log10(1/(0+1e-300)) where the reference form
+    gives inf, and 3000 dB is indistinguishable from a measurement.
+    """
+    r0 = _oct_fd_run()
+    want = _OCT_FD_NONFINITE[field]
+    got = float(np.ravel(np.asarray(getattr(r0, field)))[0])
+    assert np.isinf(got) and np.sign(got) == np.sign(want), (
+        '%s is %.17g, COM Octave gives %r' % (field, got, want))

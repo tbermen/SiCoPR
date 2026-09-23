@@ -204,3 +204,85 @@ def test_main_tap_is_unity_and_taps_are_unclipped():
     b = np.asarray(r.blim).ravel()
     assert np.all(np.abs(b) < 0.85 - 1e-9), (
         'a DFE tap is on its limit (%r)' % list(b))
+
+
+# --------------------------------------------------------------------------
+# MMSE carries its own copy of MMSE_FOM as _MMSE_FOM, so the copy has to be
+# checked, not only the canonical. read_s4p_files is the cautionary tale: its
+# inlined reader had drifted from read_p4_s4params on the skew binding and was
+# 0.19 out while the canonical was right.
+#
+# Two things are pinned here. That the copy agrees with the canonical bit for
+# bit on a well-conditioned problem, and that it takes the same decision the
+# canonical does when the solve is singular -- ML 2645 is a backslash on a
+# SQUARE system, where MATLAB warns and returns Inf, Octave returns a
+# minimum-norm answer (a third behaviour), and the 2026-09-23 force() ruling
+# has the port stop so the degenerate case stays visible.
+# --------------------------------------------------------------------------
+
+import scipy.linalg                                                # noqa: E402
+from com_functions.fn.MMSE.py_impl import _MMSE_FOM                # noqa: E402
+from com_functions.fn.MMSE_FOM.py_impl import MMSE_FOM as _canonical_MMSE_FOM  # noqa: E402
+
+
+def _fom_case(singular=False):
+    cmx, cpx, Nb, d = 2, 3, 2, 4
+    Nw = cmx + 1 + cpx
+    L = 4
+    sigma_X2 = (L ** 2 - 1) / (3.0 * (L - 1) ** 2)
+    h = np.array([0.02, 0.10, 0.62, 0.21, 0.07, 0.03, 0.01, 0.004])
+    H = scipy.linalg.toeplitz(np.concatenate([h, np.zeros(Nw - 1)]),
+                              np.concatenate([[h[0]], np.zeros(Nw - 1)]))
+    rn = 0.02 ** 2 * (0.6 ** np.arange(Nw))
+    Rnn = scipy.linalg.toeplitz(rn, rn)
+    if singular:
+        # a duplicate column makes R = H'H rank deficient, and no noise floor
+        # leaves A EXACTLY singular rather than merely ill-conditioned
+        H[:, 1] = H[:, 0]
+        Rnn = np.zeros_like(Rnn)
+    p = SimpleNamespace(RxFFE_cmx=cmx, RxFFE_cpx=cpx, N_bg=0, N_bf=0,
+                        N_bmax=0, levels=L, R_LM=1,
+                        bmax=np.full(Nb, 1.5), bmin=np.full(Nb, -1.5))
+    return (p, H, Nb, Rnn, cmx, d, np.full(Nw, 50.0), np.full(Nw, -50.0),
+            np.full(Nb, -1.5), np.full(Nb, 1.5), sigma_X2, None)
+
+
+def test_inlined_MMSE_FOM_matches_the_canonical():
+    args = _fom_case()
+    a = _MMSE_FOM(*args)
+    b = _canonical_MMSE_FOM(*args)
+    assert float(a[0]) == float(b[0]), (
+        'sigma_e: copy %.17g, canonical %.17g' % (a[0], b[0]))
+    assert float(a[1]) == float(b[1]), (
+        'FOM: copy %.17g, canonical %.17g' % (a[1], b[1]))
+    assert int(a[4]) == int(b[4])
+    for name, i in (('w', 2), ('blim', 5)):
+        x, y = np.ravel(np.asarray(a[i])), np.ravel(np.asarray(b[i]))
+        assert x.shape == y.shape, '%s shape %s vs %s' % (name, x.shape, y.shape)
+        assert np.array_equal(x, y), (
+            'the inlined copy has drifted: %s differs by up to %.3e'
+            % (name, float(np.max(np.abs(x - y)))))
+
+
+def test_inlined_singular_solve_stops_rather_than_guessing():
+    args = _fom_case(singular=True)
+    H = args[1]
+    assert np.linalg.matrix_rank(H.T @ H) < H.shape[1], (
+        'this fixture is not rank deficient any more, so the test cannot '
+        'reach the singular branch')
+    # the phrase has to name THIS solve: with lstsq substituted here the
+    # call runs on and raises from the clipped-DFE solve instead
+    with pytest.raises(ValueError, match=r'-Hb ib'):
+        _MMSE_FOM(*args)
+
+
+def test_inlined_singular_clipped_dfe_solve_stops():
+    """h0 = 0 leaves A full rank and [R -h0'; h0 0] one short, which is
+    the only way to reach ML 2669 with ML 2645 healthy."""
+    args = list(_fom_case())
+    H = np.array(args[1], dtype=float, copy=True)
+    H[args[5], :] = 0.0          # args[5] is d
+    args[1] = H
+    with pytest.raises(ValueError, match=r'clipped-DFE'):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            _MMSE_FOM(*args)

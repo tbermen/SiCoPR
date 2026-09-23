@@ -46,7 +46,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, finish  # noqa: E402
+from audit_check import check, finish, xcheck  # noqa: E402
 import sicopr  # noqa: E402
 
 TOL = 1e-9   # linear-algebra agreement tolerance (double-precision solves)
@@ -315,5 +315,65 @@ check("mmse_fom_D17_dfe_clip_matches_matlab",
       _found is None,
       "REGRESSION (B12-D17): sicopr.py diverges from MATLAB on a DFE-clip-only "
       "case. " + _detail)
+
+
+# ---------------------------------------------------------------------------
+# The singular MMSE solve: a DECIDED divergence, recorded rather than fixed.
+#
+# ML 2645 (Z = A\Ct) and ML 2669 are backslashes on SQUARE systems, and the
+# three languages part company on exactly one input:
+#
+#   MATLAB  warns, returns Inf, and the NaNs that follow make the candidate
+#           lose the FOM comparison. Measured 2026-09-23 under Octave with
+#           octave/patches/mldivide_matlab.m restoring MATLAB semantics on a
+#           rank-deficient H: sigma_e NaN, FOM NaN, w all NaN.
+#   Octave  returns a minimum-norm least-squares answer instead: a finite
+#           sigma_e of 0.0904 and FOM 11.34 on that same case.
+#   SiCoPR  raises, so the run stops.
+#
+# The 2026-09-23 ruling on force() settled the class: a silent minimum-norm
+# answer is the one outcome NEITHER reference produces, and a degenerate case
+# is worth seeing. The cost is real and belongs on the record -- MMSE_FOM runs
+# ~130k times per case, so where MATLAB discards one candidate SiCoPR stops
+# the run -- which is why this is an xcheck and not a comment.
+#
+# The condition is written as "agrees with MATLAB", so the day the port starts
+# returning NaN and continuing, this goes green and the ledger says so.
+# ---------------------------------------------------------------------------
+
+def _singular_mmse_args():
+    import scipy.linalg
+    cmx, cpx, Nb, d = 2, 3, 2, 4
+    Nw = cmx + 1 + cpx
+    L = 4
+    sigma_X2 = (L ** 2 - 1) / (3.0 * (L - 1) ** 2)
+    h = np.array([0.02, 0.10, 0.62, 0.21, 0.07, 0.03, 0.01, 0.004])
+    H = scipy.linalg.toeplitz(np.concatenate([h, np.zeros(Nw - 1)]),
+                              np.concatenate([[h[0]], np.zeros(Nw - 1)]))
+    H[:, 1] = H[:, 0]                       # rank-deficient R
+    p = SimpleNamespace(RxFFE_cmx=cmx, RxFFE_cpx=cpx, N_bg=0, N_bf=0,
+                        N_bmax=0, levels=L, R_LM=1,
+                        bmax=np.full(Nb, 1.5), bmin=np.full(Nb, -1.5))
+    return (p, H, Nb, np.zeros((Nw, Nw)), cmx, d, np.full(Nw, 50.0),
+            np.full(Nw, -50.0), np.full(Nb, -1.5), np.full(Nb, 1.5),
+            sigma_X2, None)
+
+
+_sing_outcome = None
+try:
+    _r = sicopr.MMSE_FOM(*_singular_mmse_args())
+    _sing_outcome = ('returned sigma_e=%r FOM=%r' % (_r[0], _r[1]))
+except Exception as _e:                       # noqa: BLE001
+    _sing_outcome = '%s: %s' % (type(_e).__name__, str(_e).split('.')[0])
+
+xcheck("mmse_fom_singular_solve_matches_matlab",
+       _sing_outcome.startswith('returned') and 'nan' in _sing_outcome.lower(),
+       "DECIDED (2026-09-23, following the force() ruling): on an exactly "
+       "singular A, MATLAB returns Inf and the candidate loses the FOM "
+       "comparison (COM Octave with mldivide_matlab: sigma_e NaN, FOM NaN, w "
+       "all NaN), Octave's own backslash returns a finite minimum-norm answer "
+       "(sigma_e 0.0904, FOM 11.34), and SiCoPR stops so the degenerate case "
+       "is visible. SiCoPR here: " + _sing_outcome)
+
 
 finish()

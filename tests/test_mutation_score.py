@@ -65,6 +65,14 @@ from com_functions.verification import mutations   # noqa: E402
 # run green. An entry here is a REAL GAP, not an accepted divergence: unlike an
 # xcheck there is no argument that the gap is correct, only that it is known.
 KNOWN_SURVIVORS = frozenset([
+    # 2026-09-23: solve_to_lstsq and ne_zero_to_gt_zero closed. Six entries
+    # removed because their tests now CATCH the mutant, not because the
+    # site moved: MMSE and MMSE_FOM gained singular-solve tests that name
+    # WHICH of the two square backslashes failed, read_p4_s4params and
+    # read_s4p_files gained exact-form tests for ML 10923's mrdivide, and
+    # Output_Arg_Fill and get_sigma_eta_ACCM_noise gained a NEGATIVE
+    # AC_CM_RMS case, which is the only input on which the reference's
+    # `~= 0` and a `> 0` differ.
     'drop_dot_copy:Bathtub_Contribution_Wrapper',
     'drop_dot_copy:COM_FD_to_TD',
     'drop_dot_copy:COM_eye_width',
@@ -126,13 +134,10 @@ KNOWN_SURVIVORS = frozenset([
     'mround_to_np_round:calculate_delay_CausalityEnforcement',
     'mround_to_np_round:get_ILN_cmp_td',
     'mround_to_np_round:optimize_fom',
-    'ne_zero_to_gt_zero:Output_Arg_Fill',
-    'ne_zero_to_gt_zero:get_sigma_eta_ACCM_noise',
-    'solve_to_lstsq:MMSE',
-    'solve_to_lstsq:MMSE_FOM',
-    'solve_to_lstsq:read_Nport_touchstone',
-    'solve_to_lstsq:read_p4_s4params',
-    'solve_to_lstsq:read_s4p_files',
+    # 'solve_to_lstsq:read_Nport_touchstone' removed 2026-09-23: the site
+    # is gone, not covered. ML 215 computes an EXPLICIT inverse and the
+    # port now does too, so there is no np.linalg.solve left there to
+    # mutate. Not a gain.
 ])
 
 # Mutants that provably change nothing. They read as "not caught" and are not
@@ -150,7 +155,7 @@ KNOWN_SURVIVORS = frozenset([
 # happens to cover this input" is a reason to write a test, and belongs in
 # KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
-    'drop_dot_copy:MMSE:371',
+    'drop_dot_copy:MMSE:392',
     'drop_dot_copy:get_PSDs:472',   # was :436 before the 2026-09-23 oracle pass
     'drop_dot_copy:get_pdf_full:165',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local

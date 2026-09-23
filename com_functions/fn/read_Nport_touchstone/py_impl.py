@@ -127,13 +127,18 @@ def read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
     Spar_Z0 = file_Z0
 
     # Renormalize if needed
-    if abs(Spar_Z0 - Z_renorm) > 1e-9:
+    # ML 209: ~isequal, which is EXACT. A tolerance here renormalises
+    # on a different set of files than the reference does.
+    if Spar_Z0 != Z_renorm:
         print(f'INFO: S-parameter reference impedance of {Spar_Z0:.6g} ohms renormalized to {Z_renorm:.6g} ohms')
         rho = (Z_renorm - Spar_Z0) / (Z_renorm + Spar_Z0)
         I = np.eye(nport)
         for k in range(nfreq):
             s_old = Spar_S[:, :, k]
-            Spar_S[:, :, k] = np.linalg.solve(I - rho * s_old, s_old - rho * I)
+            # ML 215 computes an EXPLICIT inverse. solve() is the same
+            # matrix in exact arithmetic and a different one in floating
+            # point, so the reference form is the one to carry.
+            Spar_S[:, :, k] = np.linalg.inv(I - rho * s_old) @ (s_old - rho * I)
 
     # Shift: put frequency as first dimension → (nfreq, nport, nport)
     sch = np.transpose(Spar_S, (2, 0, 1))

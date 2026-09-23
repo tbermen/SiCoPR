@@ -210,3 +210,102 @@ def test_case_is_not_degenerate():
     assert np.all(np.abs(b) < 1.5 - 1e-9), (
         'the DFE taps are sitting on their limit (%r), so the clipping branch '
         'is masking the solve' % list(b))
+
+
+# --------------------------------------------------------------------------
+# The MMSE solve when its matrix is singular.
+#
+# ML 2645 (Z = A\Ct) and ML 2669 (wl = [R -h0'; h0 0]\[...]) are backslashes
+# on SQUARE systems, and the three languages disagree on exactly one input:
+#
+#   MATLAB   warns, returns Inf, and the NaNs that follow make the candidate
+#            lose. Measured under Octave with octave/patches/mldivide_matlab.m
+#            restoring MATLAB semantics: sigma_e NaN, FOM NaN, w all NaN.
+#   Octave   returns a minimum-norm least-squares answer instead: a finite
+#            sigma_e of 0.0904 and a FOM of 11.34 on this very case, which is
+#            a different answer, not a rounding difference.
+#   numpy    np.linalg.solve raises; np.linalg.lstsq would give Octave's.
+#
+# The 2026-09-23 ruling on force() settled which of those the port takes: a
+# silent minimum-norm answer is the one outcome NEITHER reference produces, so
+# the port stops and the degenerate case stays visible. The divergence from
+# the reference's NaN-and-continue is recorded in tests/test_optimizer_mmse.py.
+#
+# This test is also what stops the solve silently becoming an lstsq: lstsq
+# returns rather than raising, so swapping it makes this fail.
+# --------------------------------------------------------------------------
+
+def _singular_mmse_case():
+    """A rank-deficient MMSE problem.
+
+    Two identical columns in H make R = H'H rank deficient, and Rnn = 0 leaves
+    no noise floor to regularise it, so A is EXACTLY singular rather than
+    merely ill-conditioned. That distinction is the one that matters: MATLAB
+    returns a finite answer for an ill-conditioned matrix and Inf only for an
+    exactly singular one.
+    """
+    a = _mmse_case()
+    H = np.array(a['H'], dtype=float, copy=True)
+    H[:, 1] = H[:, 0]
+    a['H'] = H
+    a['Rnn'] = np.zeros_like(np.asarray(a['Rnn'], dtype=float))
+    return a
+
+
+def test_singular_mmse_solve_stops_rather_than_guessing():
+    a = _singular_mmse_case()
+    A_is_singular = np.linalg.matrix_rank(a['H'].T @ a['H']) < a['H'].shape[1]
+    assert A_is_singular, (
+        'this fixture is not rank deficient any more, so the test cannot '
+        'reach the singular branch')
+
+    # the phrase has to name THIS solve: with lstsq substituted here the
+    # call runs on and raises from the clipped-DFE solve instead, and a
+    # looser match would pass on the mutant
+    with pytest.raises(ValueError, match=r'-Hb ib'):
+        MMSE_FOM(a['param'], a['H'], a['Nb'], a['Rnn'], a['dw'], a['d'],
+                 a['wmax'], a['wmin'], a['bmin'], a['bmax'], a['sigma_X2'],
+                 None)
+
+
+def _zero_h0_case():
+    """A healthy A with a singular clipped-DFE system behind it.
+
+    h0 is H[d], so zeroing row d makes h0 = 0. For a positive-definite R
+    the bordered matrix [R -h0'; h0 0] is singular exactly when
+    h0' inv(R) h0 is zero, so A stays full rank (8 of 8) while Rb loses
+    one (6 of 7). That is the only way to reach ML 2669 with ML 2645
+    healthy.
+    """
+    a = _mmse_case()
+    H = np.array(a['H'], dtype=float, copy=True)
+    H[a['d'], :] = 0.0
+    a['H'] = H
+    return a
+
+
+def test_singular_clipped_dfe_solve_stops_rather_than_guessing():
+    a = _zero_h0_case()
+    with pytest.raises(ValueError, match=r'clipped-DFE'):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            MMSE_FOM(a['param'], a['H'], a['Nb'], a['Rnn'], a['dw'],
+                     a['d'], a['wmax'], a['wmin'], a['bmin'], a['bmax'],
+                     a['sigma_X2'], None)
+
+
+def test_singular_case_would_otherwise_return_octaves_answer():
+    """Guard the guard: show the case really does separate solve from lstsq.
+
+    If lstsq failed on this input too, the test above would pass for the wrong
+    reason. It does not: lstsq returns the minimum-norm answer, which is what
+    Octave's backslash gives and what the port must not silently adopt.
+    """
+    a = _singular_mmse_case()
+    R = a['H'].T @ a['H'] + np.asarray(a['Rnn'], dtype=float)
+    rhs = np.zeros(R.shape[0])
+    rhs[a['dw']] = 1.0
+    with pytest.raises(np.linalg.LinAlgError):
+        np.linalg.solve(R, rhs)
+    x, _res, _rank, _sv = np.linalg.lstsq(R, rhs, rcond=None)
+    assert np.all(np.isfinite(x)), (
+        'lstsq also fails here, so this input does not separate the two')

@@ -274,7 +274,20 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     A[_n:, _n:] = ib
     C = np.concatenate([h0, zb])
     Ct = C.reshape(-1, 1)
-    Z = np.linalg.solve(A, Ct)
+    # ML 2645: Z = A\\Ct on a SQUARE system. MATLAB warns and returns Inf
+    # when A is exactly singular, and the NaNs that follow make this candidate
+    # lose; numpy raises. Measured under Octave with MATLAB backslash
+    # semantics: sigma_e NaN, FOM NaN, w all NaN. Following the 2026-09-23
+    # force() ruling the port stops rather than absorbing the case, but it
+    # says which solve failed instead of reporting a bare LinAlgError.
+    try:
+        Z = np.linalg.solve(A, Ct)
+    except np.linalg.LinAlgError:
+        raise ValueError(
+            'MMSE_FOM: the [R -Hb\'; -Hb ib] system is singular to working '
+            'precision, so the tap solve has no unique answer. MATLAB returns '
+            'Inf here and the candidate loses; SiCoPR stops instead, so the '
+            'degenerate case is visible. Nw=%d, Nb=%d.' % (Nw_cols, Nb))
     S_inv = float(np.dot(C, Z.ravel()))
     wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
     Nw_used = Nw_cols
@@ -293,7 +306,15 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         Rb[_m, :_m] = h0
         Rb[_m, _m] = 0.0
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
-        wl_full = np.linalg.solve(Rb, rhs)
+        # ML 2669, the same square backslash after the DFE taps are clipped
+        try:
+            wl_full = np.linalg.solve(Rb, rhs)
+        except np.linalg.LinAlgError:
+            raise ValueError(
+                'MMSE_FOM: the clipped-DFE system [R -h0; h0 0] is singular '
+                'to working precision. MATLAB returns Inf here and the '
+                'candidate loses; SiCoPR stops instead. Nw=%d, Nb=%d.'
+                % (Nw_cols, Nb))
         w = wl_full[:Nw_used]
     wmax_arr = np.asarray(wmax, dtype=float).ravel()[:Nw_used]
     wmin_arr = np.asarray(wmin, dtype=float).ravel()[:Nw_used]

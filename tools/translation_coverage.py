@@ -104,16 +104,50 @@ def inlined_definitions():
     LFSR has no fn/ directory because PRBS13Q carries it as _lfsr. Counting
     that as untranslated is a false negative, so every py_impl is scanned for
     a matching def, allowing the leading underscore and a case change.
+
+    Returns {name_lower: host directory}: an inlined helper can still be
+    tested directly, and the host is where such a test lives.
     """
-    names = set()
-    for d in os.listdir(FN):
+    hosts = {}
+    for d in sorted(os.listdir(FN)):
         p = os.path.join(FN, d, 'py_impl.py')
         if not os.path.isfile(p):
             continue
         src = io.open(p, encoding='utf-8', errors='replace').read()
-        names |= {m.lower()
-                  for m in re.findall(r'(?m)^def _?(\w+)\s*\(', src)}
-    return names
+        for m in re.findall(r'(?m)^def _?(\w+)\s*\(', src):
+            hosts.setdefault(m.lower(), d)
+    return hosts
+
+
+def direct_tests(host_dir, helper):
+    """Source of the host's test functions that call `helper` themselves.
+
+    An inlined helper is credited only with the assertions of tests that
+    actually drive it. Handing it the host's whole test file would give LFSR
+    every check PRBS13Q has, which is the opposite of measuring it.
+    """
+    import ast
+    path = os.path.join(FN, host_dir, 'test_verify.py')
+    if not os.path.isfile(path):
+        return ''
+    src = io.open(path, encoding='utf-8', errors='replace').read()
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return ''
+    lines = src.split('\n')
+    wanted = {helper.lower(), '_' + helper.lower()}
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if not node.name.startswith('test_'):
+            continue
+        called = {n.func.id.lower() for n in ast.walk(node)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        if called & wanted:
+            out.append('\n'.join(lines[node.lineno - 1:node.end_lineno]))
+    return '\n'.join(out)
 
 
 def survey(ref=DEFAULT_REF):
@@ -126,15 +160,30 @@ def survey(ref=DEFAULT_REF):
         impl = os.path.join(d, 'py_impl.py')
         test = os.path.join(d, 'test_verify.py')
         deps = callees(ml[name], known) - {name}
+        host = inlined.get(name.lower())
         r = {'function': name,
              'kind': 'leaf' if not deps else 'composite',
              'callees': len(deps),
-             'translated': os.path.isfile(impl) or name.lower() in inlined,
-             'inlined_only': (not os.path.isfile(impl)) and name.lower() in inlined,
+             'translated': os.path.isfile(impl) or host is not None,
+             'inlined_only': (not os.path.isfile(impl)) and host is not None,
              'has_test': os.path.isfile(test),
              'oracle': False, 'value_checks': 0, 'shape_checks': 0, 'checks': 0}
-        if r['has_test']:
+        # An inlined helper has no directory of its own, so its tests are the
+        # host's tests that call it by name -- and only those.
+        src = None
+        if r['inlined_only']:
+            src = direct_tests(host, name)
+            r['has_test'] = bool(src.strip())
+            if r['has_test']:
+                host_src = io.open(os.path.join(FN, host, 'test_verify.py'),
+                                   encoding='utf-8', errors='replace').read()
+                # the oracle marker is a comment ABOVE the block, so it is
+                # looked for in the host file, not inside the function bodies
+                src = src + '\n' + '\n'.join(
+                    L for L in host_src.split('\n') if L.lstrip().startswith('#'))
+        elif r['has_test']:
             src = io.open(test, encoding='utf-8', errors='replace').read()
+        if r['has_test']:
             checks = re.findall(r'assert [^\n]*|pytest\.raises\([^\n]*'
                                 r'|np\.testing\.[^\n]*', src)
             r['checks'] = len(checks)
@@ -157,7 +206,9 @@ def grade(r):
         return 'not translated'
     if r['function'] in NON_NUMERIC:
         return 'no numeric result'
-    if r.get('inlined_only'):
+    # An inlined helper with no test of its own is still a gap. One the host
+    # drives by name is not, so it grades like any other function.
+    if r.get('inlined_only') and not r['has_test']:
         return 'inlined in caller'
     if not r['has_test'] or not r['checks']:
         return 'no test'

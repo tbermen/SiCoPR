@@ -122,6 +122,12 @@ def _oracle_call(nch=1, eta_0=1.5e-14, rms=0.01, tx=0.01, fmax=30e9):
     (dict(fmax=250e6), 0.00028187493175470095),
     (dict(eta_0=0.0), 0.00016265127422702803),
     (dict(rms=0.0, tx=0.01), 4.4333040522859273e-07),
+    # ML 12 guards this branch with `~= 0`, not `> 0`. A negative RMS is
+    # not physical, but the two conditions differ on exactly that input
+    # and nothing else covered it: COM Octave takes the branch and gives
+    # the same figure as +0.01, where `> 0` would fall through to the
+    # 4.43e-07 of the rms=0 row.
+    (dict(rms=-0.01), 0.00016265187840761039),
 ])
 def test_octave_sigma_values(kw, expected):
     """COM Octave sigma_N for each configuration of the AC CM branch. The last

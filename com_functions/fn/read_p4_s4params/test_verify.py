@@ -230,3 +230,69 @@ def test_octave_rangelimit_does_not_write_back_to_the_caller(tmp_path):
     assert data.flim == pytest.approx(50e9)
     assert data.limited == 0
     assert param.flim == pytest.approx(100e9)
+
+
+# --------------------------------------------------------------------------
+# The single-ended to mixed-mode transform is MRDIVIDE.
+#
+#   ML read_p4_s4params 10923:  W = T * (Snew / T)
+#   ML read_p2_s2params 10801:  W = T * (S / T)
+#
+# MATLAB's `/` SOLVES. inv(T) is exactly representable for both of these T,
+# which is what makes T @ S @ inv(T) look interchangeable; it is not, and the
+# two disagree at ~5e-16 on essentially every input. No tolerance test can see
+# that and no oracle can either, since numpy does not reproduce Octave's
+# LAPACK bit for bit, so what is pinned here is the FORM: the reference
+# expression is replayed on the reader's own single-ended matrix and exact
+# equality is required.
+#
+# Each test carries its own negative control, asserting that the form the
+# reference does NOT use gives a different answer on this very input.
+# --------------------------------------------------------------------------
+
+def _sigma_matrix(f, param):
+    # ML 10921 declares Sigfct as @(sigma2, sigma1, sigma4, sigma3), so calling
+    # it with (Txp, Txn, Rxp, Rxn) binds sigma1 = Txn and sigma2 = Txp
+    s1 = np.exp(2j * np.pi * f * param.Txnskew * 1e-12)
+    s2 = np.exp(2j * np.pi * f * param.Txpskew * 1e-12)
+    s3 = np.exp(2j * np.pi * f * param.Rxnskew * 1e-12)
+    s4 = np.exp(2j * np.pi * f * param.Rxpskew * 1e-12)
+    return np.array([[s1 ** 2, s1 * s2, s1 * s3, s1 * s4],
+                     [s1 * s2, s2 ** 2, s2 * s3, s2 * s4],
+                     [s1 * s3, s2 * s3, s3 ** 2, s3 * s4],
+                     [s1 * s4, s2 * s4, s3 * s4, s4 ** 2]])
+
+
+def _mixed_mode(sch, freq, param, how):
+    """Replay ML 10923 on the reader's own sch. `how` picks the form."""
+    T = np.array([[1.0, 1.0, 0.0, 0.0], [1.0, -1.0, 0.0, 0.0],
+                  [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, -1.0]])
+    out = np.empty((len(freq), 4, 4), dtype=complex)
+    for i, f in enumerate(freq):
+        Snew = _sigma_matrix(f, param) * sch[i]
+        if how == 'mrdivide':
+            out[i] = T @ np.linalg.solve(T.T, Snew.T).T
+        else:
+            out[i] = T @ Snew @ np.linalg.inv(T)
+    return out
+
+
+def test_mixed_mode_transform_is_mrdivide_not_inv(tmp_path):
+    """ML 10923: W = T * (Snew / T), a solve, not a multiply by inv(T)."""
+    data, SDD, SDC, SCC, SCD, ports, param = _run_oracle_case(tmp_path)
+    sch = np.asarray(data.m, dtype=complex)
+    freq = np.asarray(data.freq, dtype=float)
+
+    want = _mixed_mode(sch, freq, param, 'mrdivide')
+    # ML 10930-10937: SDD(:,1,1)=D(2,2), SDD(:,2,2)=D(4,4),
+    #                 SDD(:,1,2)=D(2,4), SDD(:,2,1)=D(4,2)
+    got = np.asarray(SDD, dtype=complex)
+    ref = np.stack([want[:, 1, 1], want[:, 1, 3],
+                    want[:, 3, 1], want[:, 3, 3]], axis=1).reshape(-1, 2, 2)
+    assert np.array_equal(got, ref), (
+        'worst |delta| = %.3e against the reference form'
+        % float(np.max(np.abs(got - ref))))
+
+    other = _mixed_mode(sch, freq, param, 'inv')
+    assert not np.array_equal(want, other), (
+        'the two forms agree on this input, so the test proves nothing')

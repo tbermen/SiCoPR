@@ -3727,7 +3727,20 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     A[_n:, _n:] = ib
     C = np.concatenate([h0, zb])
     Ct = C.reshape(-1, 1)
-    Z = np.linalg.solve(A, Ct)
+    # ML 2645: Z = A\\Ct on a SQUARE system. MATLAB warns and returns Inf
+    # when A is exactly singular, and the NaNs that follow make this candidate
+    # lose; numpy raises. Measured under Octave with MATLAB backslash
+    # semantics: sigma_e NaN, FOM NaN, w all NaN. Following the 2026-09-23
+    # force() ruling the port stops rather than absorbing the case, but it
+    # says which solve failed instead of reporting a bare LinAlgError.
+    try:
+        Z = np.linalg.solve(A, Ct)
+    except np.linalg.LinAlgError:
+        raise ValueError(
+            'MMSE_FOM: the [R -Hb\'; -Hb ib] system is singular to working '
+            'precision, so the tap solve has no unique answer. MATLAB returns '
+            'Inf here and the candidate loses; SiCoPR stops instead, so the '
+            'degenerate case is visible. Nw=%d, Nb=%d.' % (Nw_cols, Nb))
     S_inv = float(np.dot(C, Z.ravel()))
     wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
     Nw_used = Nw_cols
@@ -3746,7 +3759,15 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         Rb[_m, :_m] = h0
         Rb[_m, _m] = 0.0
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
-        wl_full = np.linalg.solve(Rb, rhs)
+        # ML 2669, the same square backslash after the DFE taps are clipped
+        try:
+            wl_full = np.linalg.solve(Rb, rhs)
+        except np.linalg.LinAlgError:
+            raise ValueError(
+                'MMSE_FOM: the clipped-DFE system [R -h0; h0 0] is singular '
+                'to working precision. MATLAB returns Inf here and the '
+                'candidate loses; SiCoPR stops instead. Nw=%d, Nb=%d.'
+                % (Nw_cols, Nb))
         w = wl_full[:Nw_used]
     wmax_arr = np.asarray(wmax, dtype=float).ravel()[:Nw_used]
     wmin_arr = np.asarray(wmin, dtype=float).ravel()[:Nw_used]
@@ -4025,7 +4046,20 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     A[_n:, _n:] = ib
     C = np.concatenate([h0, zb])    # row vector as 1D
     Ct = C.reshape(-1, 1)           # column vector
-    Z = np.linalg.solve(A, Ct)
+    # ML 2645: Z = A\\Ct on a SQUARE system. MATLAB warns and returns Inf
+    # when A is exactly singular, and the NaNs that follow make this candidate
+    # lose; numpy raises. Measured under Octave with MATLAB backslash
+    # semantics: sigma_e NaN, FOM NaN, w all NaN. Following the 2026-09-23
+    # force() ruling the port stops rather than absorbing the case, but it
+    # says which solve failed instead of reporting a bare LinAlgError.
+    try:
+        Z = np.linalg.solve(A, Ct)
+    except np.linalg.LinAlgError:
+        raise ValueError(
+            'MMSE_FOM: the [R -Hb\'; -Hb ib] system is singular to working '
+            'precision, so the tap solve has no unique answer. MATLAB returns '
+            'Inf here and the candidate loses; SiCoPR stops instead, so the '
+            'degenerate case is visible. Nw=%d, Nb=%d.' % (Nw_cols, Nb))
     S_inv = float(np.dot(C, Z.ravel()))
     wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
 
@@ -4049,7 +4083,15 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         Rb[_m, :_m] = h0
         Rb[_m, _m] = 0.0
         rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
-        wl_full = np.linalg.solve(Rb, rhs)
+        # ML 2669, the same square backslash after the DFE taps are clipped
+        try:
+            wl_full = np.linalg.solve(Rb, rhs)
+        except np.linalg.LinAlgError:
+            raise ValueError(
+                'MMSE_FOM: the clipped-DFE system [R -h0; h0 0] is singular '
+                'to working precision. MATLAB returns Inf here and the '
+                'candidate loses; SiCoPR stops instead. Nw=%d, Nb=%d.'
+                % (Nw_cols, Nb))
         w = wl_full[:Nw_used]
 
     # Apply wlim
@@ -16502,13 +16544,18 @@ def read_Nport_touchstone(touchstone_file, port_order, Z_renorm):
     Spar_Z0 = file_Z0
 
     # Renormalize if needed
-    if abs(Spar_Z0 - Z_renorm) > 1e-9:
+    # ML 209: ~isequal, which is EXACT. A tolerance here renormalises
+    # on a different set of files than the reference does.
+    if Spar_Z0 != Z_renorm:
         print(f'INFO: S-parameter reference impedance of {Spar_Z0:.6g} ohms renormalized to {Z_renorm:.6g} ohms')
         rho = (Z_renorm - Spar_Z0) / (Z_renorm + Spar_Z0)
         I = np.eye(nport)
         for k in range(nfreq):
             s_old = Spar_S[:, :, k]
-            Spar_S[:, :, k] = np.linalg.solve(I - rho * s_old, s_old - rho * I)
+            # ML 215 computes an EXPLICIT inverse. solve() is the same
+            # matrix in exact arithmetic and a different one in floating
+            # point, so the reference form is the one to carry.
+            Spar_S[:, :, k] = np.linalg.inv(I - rho * s_old) @ (s_old - rho * I)
 
     # Shift: put frequency as first dimension → (nfreq, nport, nport)
     sch = np.transpose(Spar_S, (2, 0, 1))
@@ -18457,12 +18504,14 @@ def _read_s4p_files__read_p4_s4params_inline(infile, ports, param, OP):
         sp[j, :, :] = cdata[:, j * nport:(j + 1) * nport].T
     if nport == 2:
         sp[0, 1, :], sp[1, 0, :] = sp[1, 0, :].copy(), sp[0, 1, :].copy()
-    if abs(file_Z0 - Z_renorm) > 1e-9:
+    # ML read_Nport_touchstone 209-216, inlined here. ~isequal is exact,
+    # and the reference computes an EXPLICIT inverse rather than a solve.
+    if file_Z0 != Z_renorm:
         rho = (Z_renorm - file_Z0) / (Z_renorm + file_Z0)
         I = np.eye(nport)
         for k in range(nfreq):
             s_old = sp[:, :, k]
-            sp[:, :, k] = np.linalg.solve(I - rho * s_old, s_old - rho * I)
+            sp[:, :, k] = np.linalg.inv(I - rho * s_old) @ (s_old - rho * I)
     sch = np.transpose(sp, (2, 0, 1))
     # r4p15p0: auto-detect port order when none supplied (before range-limiting)
     if len(port_order) == 0:
@@ -18484,7 +18533,6 @@ def _read_s4p_files__read_p4_s4params_inline(infile, ports, param, OP):
     nf = len(freq)
     T = np.array([[1.0, 1.0, 0.0, 0.0], [1.0, -1.0, 0.0, 0.0],
                   [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 1.0, -1.0]])
-    T_inv = np.linalg.inv(T)
     Txpskew = float(getattr(param, 'Txpskew', 0.0))
     Txnskew = float(getattr(param, 'Txnskew', 0.0))
     Rxpskew = float(getattr(param, 'Rxpskew', 0.0))
@@ -18492,13 +18540,23 @@ def _read_s4p_files__read_p4_s4params_inline(infile, ports, param, OP):
     D = np.zeros((nf, 4, 4), dtype=complex)
     for i in range(nf):
         f = freq[i]
-        s1 = np.exp(2j * np.pi * f * Txpskew * 1e-12)
-        s2 = np.exp(2j * np.pi * f * Txnskew * 1e-12)
-        s3 = np.exp(2j * np.pi * f * Rxpskew * 1e-12)
-        s4 = np.exp(2j * np.pi * f * Rxnskew * 1e-12)
+        # ML 10921: Sigfct is @(sigma2,sigma1,sigma4,sigma3), so the
+        # parameter names are transposed and calling it with
+        # (Txp, Txn, Rxp, Rxn) binds sigma1=Txn, sigma2=Txp,
+        # sigma3=Rxn, sigma4=Rxp. Reading the names in CALL order is
+        # invisible while the p and n skews match and wrong the moment
+        # they do not. read_p4_s4params has the COM Octave test that
+        # pins this; this copy had drifted from it.
+        s1 = np.exp(2j * np.pi * f * Txnskew * 1e-12)   # MATLAB sigma1
+        s2 = np.exp(2j * np.pi * f * Txpskew * 1e-12)   # MATLAB sigma2
+        s3 = np.exp(2j * np.pi * f * Rxnskew * 1e-12)   # MATLAB sigma3
+        s4 = np.exp(2j * np.pi * f * Rxpskew * 1e-12)   # MATLAB sigma4
         sigma = np.array([[s1**2, s1*s2, s1*s3, s1*s4], [s1*s2, s2**2, s2*s3, s2*s4],
                            [s1*s3, s2*s3, s3**2, s3*s4], [s1*s4, s2*s4, s3*s4, s4**2]])
-        D[i] = T @ (sigma * sch[i]) @ T_inv
+        # ML 10923: W = T * (Snew / T). MATLAB's / SOLVES, so this is
+        # T @ (Snew / T), not T @ Snew @ inv(T). inv(T) is exact for this
+        # T and the two forms still differ at ~5e-16 on every trial.
+        D[i] = T @ np.linalg.solve(T.T, (sigma * sch[i]).T).T
 
     SDD = np.zeros((nf, 2, 2), dtype=complex)
     SDD[:, 0, 0] = D[:, 1, 1]; SDD[:, 1, 1] = D[:, 3, 3]
@@ -18576,12 +18634,14 @@ def _read_s4p_files__read_p2_s2params_inline(infile, ports, param, OP):
     for j in range(2):
         sp[j, :, :] = cdata[:, j * 2:(j + 1) * 2].T
     sp[0, 1, :], sp[1, 0, :] = sp[1, 0, :].copy(), sp[0, 1, :].copy()
-    if abs(file_Z0 - Z_renorm) > 1e-9:
+    # ML read_Nport_touchstone 209-216, inlined here. ~isequal is exact,
+    # and the reference computes an EXPLICIT inverse rather than a solve.
+    if file_Z0 != Z_renorm:
         rho = (Z_renorm - file_Z0) / (Z_renorm + file_Z0)
         I2 = np.eye(2)
         for k in range(nfreq):
             s_old = sp[:, :, k]
-            sp[:, :, k] = np.linalg.solve(I2 - rho * s_old, s_old - rho * I2)
+            sp[:, :, k] = np.linalg.inv(I2 - rho * s_old) @ (s_old - rho * I2)
     sch = np.transpose(sp, (2, 0, 1))
     flim = float(getattr(param, 'flim', float('inf')))
     idx_lim = np.where(freq >= flim)[0]
@@ -18592,10 +18652,10 @@ def _read_s4p_files__read_p2_s2params_inline(infile, ports, param, OP):
         param.flim = float(freq[-1]); limited = 0
     nf = len(freq)
     T = np.array([[1.0, 1.0], [1.0, -1.0]])
-    T_inv = np.linalg.inv(T)
     D = np.zeros((nf, 2, 2), dtype=complex)
     for i in range(nf):
-        D[i] = T @ sch[i] @ T_inv
+        # ML 10801: W = T * (S / T), the same mrdivide as the 4-port path
+        D[i] = T @ np.linalg.solve(T.T, sch[i].T).T
     SDD = np.zeros((nf, 1, 1), dtype=complex); SDD[:, 0, 0] = D[:, 1, 1]
     SDC = np.zeros((nf, 1, 1), dtype=complex); SDC[:, 0, 0] = D[:, 1, 0]
     SCC = np.zeros((nf, 1, 1), dtype=complex); SCC[:, 0, 0] = D[:, 0, 0]

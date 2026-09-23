@@ -395,3 +395,36 @@ def test_burst_probability_simple_ep_model():
         np.ravel(out.burst_probabilities),
         [0.016129577635929825, 0.0064277643243150157,
          0.0025615149473537414, 0.0010207839762724749], rtol=1e-12)
+
+
+# --------------------------------------------------------------------------
+# ML 176 guards the AC common-mode outputs with `sum(param.AC_CM_RMS) ~= 0`,
+# not `> 0`. The two conditions differ on exactly one input -- a negative sum
+# -- and nothing covered it, so the reference's `~= 0` silently becoming `> 0`
+# was invisible. A negative RMS is not physical; the branch condition the
+# reference writes is still the one the port has to carry.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize('ac_cm,populated', [
+    (np.array([0.0, 0.0]), False),
+    (np.array([0.01, 0.0]), True),
+    (np.array([-0.01, 0.0]), True),     # ~= 0 takes the branch; > 0 would not
+    (np.array([0.01, -0.01]), False),   # the SUM is zero, so neither does
+])
+def test_ac_cm_branch_is_not_equal_zero_not_greater_than_zero(ac_cm, populated):
+    COM, Noise, param, OP, fom, chdata = _oracle_structs()
+    param.AC_CM_RMS = ac_cm
+    out = _fill(COM, Noise, param, OP, fom, chdata)
+
+    got_tp0 = out.sigma_ACCM_at_tp0_mV
+    got_rx = out.sigma_AC_CCM_at_rxpkg_output_mV
+    if populated:
+        # chdata[0].sigma_ACCM_at_tp0 = 0.002 and CD_CM_RMS = 0.003, in volts
+        assert got_tp0 == pytest.approx(2.0), (
+            'sum(AC_CM_RMS) = %g is non-zero, so ML 177 runs; got %r'
+            % (float(np.sum(ac_cm)), got_tp0))
+        assert got_rx == pytest.approx(3.0)
+    else:
+        assert got_tp0 == [] and got_rx == [], (
+            'sum(AC_CM_RMS) = %g is zero, so ML 180 runs and both come back '
+            'empty; got %r and %r' % (float(np.sum(ac_cm)), got_tp0, got_rx))
