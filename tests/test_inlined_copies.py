@@ -97,7 +97,6 @@ KNOWN_ARITY = {
     ('get_pdf_from_sampled_signal', 'RILN_TD'),
     ('get_pdf_from_sampled_signal', 'adjust_Rx_noise_for_quantization'),
     ('get_pdf_from_sampled_signal', 'get_ILN_cmp_td'),
-    ('get_pdf_from_sampled_signal', 'get_RILN_cmp_td'),
     ('get_pdf_from_sampled_signal', 'get_TDR'),
     ('get_pdf_from_sampled_signal', 'get_cm_noise'),
     ('get_pdf_from_sampled_signal', 'get_pdf'),
@@ -413,9 +412,6 @@ KNOWN_BEHAVIOUR = {
         'fallback stub spans +/-nsigma; ML 8542 uses -round(2*nsigma*sigma/'
         'binsize) to "capture more of the tails" -> 1000 bins vs 2001. '
         'Dead in production: sicopr.py injects _normal_dist_fn=normal_dist.',
-    ('normal_dist', 'get_RILN_cmp_td'):
-        'same +/-nsigma truncation, and the stub omits the BinSize and Min '
-        'fields entirely. get_RILN_cmp_td has no wired caller.',
     ('pdf_to_cdf', 'COM_eye_width'):
         'canonical returns a CDF with yB/yT tails; this stub returns a PDF-'
         'shaped x/y/BinSize/Min. Dead in production (injected).',
@@ -483,13 +479,11 @@ KNOWN_BEHAVIOUR = {
         'fallback stub; injected at sicopr.py:149.',
     ('get_pdf_from_sampled_signal', 'COM_eye_width'):
         'fallback stub (Gaussian); injected at sicopr.py:167 (_get_pdf_ss_fn).',
-    ('Bessel_Thomson_Filter', 'get_RILN_cmp_td'):
-        'fallback stub. get_RILN_cmp_td has no wired caller, so dead by '
-        'unreachability rather than by injection.',
-    ('Butterworth_Filter', 'get_RILN_cmp_td'):
-        'fallback stub; get_RILN_cmp_td has no wired caller.',
-    ('get_pdf_from_sampled_signal', 'get_RILN_cmp_td'):
-        'fallback stub (Gaussian); get_RILN_cmp_td has no wired caller.',
+    # get_RILN_cmp_td's six fallback stubs (Bessel_Thomson_Filter,
+    # Butterworth_Filter, s21_to_impulse_DC, calculate_delay_...,
+    # get_pdf_from_sampled_signal, normal_dist) were removed on 2026-09-23: it
+    # now calls the canonical functions by name.  Against the Octave oracle the
+    # stubbed Butterworth alone moved REF_noise.PR by a factor of 2.6.
 
     # These two are LIVE -- called directly, not injected -- and are recorded
     # because they are correct where they stand, not because they are dead.
@@ -539,9 +533,6 @@ def _flat(v):
 EXTRA_STUBS = {
     ('_COM_eye_width__conv_fct_MeanNotZero',
      'a one-line delegate to the _conv_fct stub above it'),
-    ('_get_RILN_cmp_td__Butterworth_Filter',
-     'sits under the "Callee stubs" header and computes 1/sqrt(1+(f/(fb/2))^8), '
-     'not the reference polynomial'),
 }
 _EXTRA_STUB_NAMES = {n for n, _ in EXTRA_STUBS}
 
@@ -688,7 +679,7 @@ print("\n%d inlined copies of %d functions; %d comparison(s) made, "
 # whole 2026-09-22 propagation pass while this test reported success. The set is
 # pinned so a NEW undrivable copy has to be looked at, and so the count can only
 # go down.
-BASELINE_UNDRIVABLE = 36
+BASELINE_UNDRIVABLE = 34
 _undrivable = sorted({(c, p) for _, c, p in COPIES if c not in FACTORY})
 
 check("undrivable_copy_set_does_not_grow",

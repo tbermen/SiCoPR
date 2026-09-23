@@ -376,6 +376,15 @@
    ]
   },
   {
+   "copy": "_FD_Processing__db10_ratio",
+   "helper": "db10_ratio",
+   "inlined_into": "FD_Processing",
+   "inlined_into_matlab_lines": [
+    1684,
+    2025
+   ]
+  },
+  {
    "copy": "_FD_Processing__find_idx_ge",
    "helper": "find_idx_ge",
    "inlined_into": "FD_Processing",
@@ -387,6 +396,24 @@
   {
    "copy": "_FD_Processing__find_idx_le",
    "helper": "find_idx_le",
+   "inlined_into": "FD_Processing",
+   "inlined_into_matlab_lines": [
+    1684,
+    2025
+   ]
+  },
+  {
+   "copy": "_FD_Processing__interp1",
+   "helper": "interp1",
+   "inlined_into": "FD_Processing",
+   "inlined_into_matlab_lines": [
+    1684,
+    2025
+   ]
+  },
+  {
+   "copy": "_FD_Processing__neg20log10",
+   "helper": "neg20log10",
    "inlined_into": "FD_Processing",
    "inlined_into_matlab_lines": [
     1684,
@@ -1462,6 +1489,15 @@
    ]
   },
   {
+   "copy": "_get_PSDs__check_h_index",
+   "helper": "check_h_index",
+   "inlined_into": "get_PSDs",
+   "inlined_into_matlab_lines": [
+    6380,
+    6654
+   ]
+  },
+  {
    "copy": "_get_PSDs__detach",
    "helper": "detach",
    "inlined_into": "get_PSDs",
@@ -1527,99 +1563,6 @@
    "inlined_into_matlab_lines": [
     6655,
     6685
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__Bessel_Thomson_Filter",
-   "helper": "Bessel_Thomson_Filter",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ],
-   "canonical": "Bessel_Thomson_Filter",
-   "canonical_matlab_lines": [
-    1028,
-    1037
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__Butterworth_Filter",
-   "helper": "Butterworth_Filter",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ],
-   "canonical": "Butterworth_Filter",
-   "canonical_matlab_lines": [
-    1133,
-    1138
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__calculate_delay_CausalityEnforcement",
-   "helper": "calculate_delay_CausalityEnforcement",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ],
-   "canonical": "calculate_delay_CausalityEnforcement",
-   "canonical_matlab_lines": [
-    4933,
-    5086
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__get_pdf_from_sampled_signal",
-   "helper": "get_pdf_from_sampled_signal",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ],
-   "canonical": "get_pdf_from_sampled_signal",
-   "canonical_matlab_lines": [
-    7473,
-    7519
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__length",
-   "helper": "length",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__normal_dist",
-   "helper": "normal_dist",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ],
-   "canonical": "normal_dist",
-   "canonical_matlab_lines": [
-    8410,
-    8416
-   ]
-  },
-  {
-   "copy": "_get_RILN_cmp_td__s21_to_impulse_DC",
-   "helper": "s21_to_impulse_DC",
-   "inlined_into": "get_RILN_cmp_td",
-   "inlined_into_matlab_lines": [
-    6694,
-    6875
-   ],
-   "canonical": "s21_to_impulse_DC",
-   "canonical_matlab_lines": [
-    11076,
-    11146
    ]
   },
   {

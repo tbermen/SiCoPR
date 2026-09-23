@@ -168,10 +168,21 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
     ]))
 
     pdf_from_norm = _normal_dist(result.FOM, 7, BinSize)
-    fit_peak = float(FIT_PR[ipeak])
-    result.SNR_ISI_FOM = float(20 * np.log10(fit_peak / result.FOM)) if result.FOM > 0 else np.inf
-    result.SNR_ISI_FOM_PDF = (float(20 * np.log10(fit_peak / result.FOM_PDF))
-                               if result.FOM_PDF > 0 else np.inf)
+    fit_peak = np.float64(FIT_PR[ipeak])
+    # MATLAB's local `db = @(x) 20*log10(abs(x))` — the abs() is the point. The
+    # ratio is NEGATIVE whenever FIT.PR at REF.PR's peak has the opposite sign
+    # (an inverted or badly mismatched fit), and MATLAB then reports a finite
+    # negative dB. Dropping the abs() and guarding with `FOM > 0` instead gave
+    # log10 of a negative -> NaN: COM Octave returns SNR_ISI_FOM
+    # -6.0602241763211184 and SNR_ISI_FOM_PDF -7.3036991416734809 on the case
+    # the unit test pins, where the port returned nan for both.
+    # The guards are not needed either: FOM = 0 gives MATLAB's 20*log10(Inf) =
+    # Inf, and numpy's float64 division gives the same Inf.
+    with np.errstate(divide='ignore', invalid='ignore'):
+        result.SNR_ISI_FOM = float(
+            20 * np.log10(np.abs(fit_peak / np.float64(result.FOM))))
+        result.SNR_ISI_FOM_PDF = float(
+            20 * np.log10(np.abs(fit_peak / np.float64(result.FOM_PDF))))
 
     print(f'SNR ISI FOM rms = {result.SNR_ISI_FOM:.6g} dB;   '
           f'SNR ISI FOM PDF = {result.SNR_ISI_FOM_PDF:.6g} dB')

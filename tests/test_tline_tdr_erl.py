@@ -197,7 +197,7 @@ check("get_TDR_s2p_RL_matches_matlab",
       "max|RL_py|=%.3g (reflection>1 is non-physical)" % np.max(np.abs(res_s2p.RL)))
 
 # ===========================================================================
-# 5. get_TDR s4p end-to-end: matched line -> avgZport ~ 2*ZT (physics)
+# 5. get_TDR s4p end-to-end: matched line -> TDR trace reads 2*ZT (physics)
 # ===========================================================================
 S11_4 = np.zeros(Nf, dtype=complex)                       # no reflection
 S21_4 = np.exp(-1j * 2 * np.pi * faxis * tau_s)           # ideal delay
@@ -219,9 +219,27 @@ res_s4p = sicopr.get_TDR(S4, OP_tdr, param4, ZT, 0,
 check("get_TDR_s4p_matched_zero_reflection",
       np.max(np.abs(res_s4p.RL)) <= 1e-9,
       "matched s4p (Zin==Zout, s11=0) produced nonzero RL: %g" % np.max(np.abs(res_s4p.RL)))
-check("get_TDR_s4p_avgZport_is_2ZT",
-      abs(res_s4p.avgZport - 2 * ZT) <= 1e-3 * (2 * ZT),
-      "matched line avgZport=%.3f expected ~%.3f" % (res_s4p.avgZport, 2 * ZT))
+# The physics claim -- a matched line reads 2*ZT -- belongs to the TDR trace,
+# and that is what is asserted. It used to be read off avgZport instead, which
+# passed only because the port CLAMPED tfstart into range.
+#
+# s11 = 0 exactly makes RL identically zero, so s21_to_impulse_DC takes its
+# all-zero branch (IL = eps) and returns a ONE-sample impulse; the windowed
+# vector is one sample at t = -500 ps, and `find(t >= 3*TR_TDR*1e-9, 1)` is
+# therefore EMPTY. MATLAB then evaluates TDR_results.t([]:end), and COM Octave
+# confirms `numel([]:5)` and `numel((10:20)([]:end))` are both 0 -- so x is
+# empty, x(1) errors, and the catch reports avgZport = 0. Clamping tfstart to
+# the last sample returned that sample instead, which is how this check used to
+# see 2*ZT. 4p16p0 says the same thing outright: mean(abs(RL)) < 1e-6 takes the
+# degenerate branch, which assigns avgZport = 0.
+check("get_TDR_s4p_matched_tdr_is_2ZT",
+      np.max(np.abs(np.asarray(res_s4p.tdr).ravel() - 2 * ZT)) <= 1e-3 * (2 * ZT),
+      "matched line TDR trace %s expected ~%.3f"
+      % (np.asarray(res_s4p.tdr).ravel()[:4], 2 * ZT))
+check("get_TDR_s4p_avgZport_zero_when_gate_is_empty",
+      res_s4p.avgZport == 0.0,
+      "matched line leaves the 3*TR_TDR gate empty, so MATLAB's catch reports "
+      "avgZport = 0; got %.6g" % res_s4p.avgZport)
 
 # ===========================================================================
 # 6. TDR_ERL_Processing (ML 4503-4597 vs py 6632-6725)

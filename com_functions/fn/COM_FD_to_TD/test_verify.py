@@ -313,3 +313,77 @@ def test_output_fields_exist():
     ]
     for fld in required_fields:
         assert hasattr(ch_out, fld), f'Missing field: {fld}'
+
+
+# --------------------------------------------------------------------------
+# SCMR on a perfectly balanced channel: no epsilon floor.
+#
+# ML 1342-1345 is 10*log10(V_peak^2/CMn^2) with nothing added to the
+# denominator. The port had `+ 1e-300`, which turns the divide-by-zero into a
+# finite number. COM Octave, on the arithmetic itself:
+#
+#     10*log10(1.0/0.0)            ->  inf        the reference's form
+#     10*log10(1.0/(0.0+1e-300))   ->  3000       the floored form
+#     10*log10(0.0/0.0)            ->  nan        the reference's form
+#     10*log10(0.0/(0.0+1e-300))   -> -inf        the floored form
+#
+# 3000 dB reads like a measurement. Inf does not, which is the point.
+#
+# This is the time-domain twin of the defect found in FD_Processing's
+# SCMR_FD_CD_ch_dB, whose own test fixture used scd21_orig = zeros, so that one
+# was live rather than hypothetical.
+# --------------------------------------------------------------------------
+
+def test_scmr_has_no_epsilon_floor_on_a_perfectly_balanced_channel():
+    """scd21_orig and sdc21_orig identically zero means no common-mode
+    conversion at all, so CMn is exactly 0 and the ratio has no finite value.
+
+    This fixture exercises BOTH forms at once: the peak fields divide a
+    non-zero V_peak by zero and must be +inf, while the average fields divide a
+    P_signal that is also zero and must be nan. The floored version turns those
+    into 3000 and -inf respectively, so either substitution is caught.
+    """
+    ch, faxis = _make_chdata()
+    ch.scd21_orig = np.zeros(len(faxis), dtype=complex)
+    ch.sdc21_orig = np.zeros(len(faxis), dtype=complex)
+
+    # Inject the REAL dependencies, as sicopr's _wired_COM_FD_to_TD does.
+    # Called bare this runs the module's stubs, and the get_cm_noise stub
+    # returns CMn = RMS(pulse_resp) rather than the true common-mode noise, so
+    # the denominator is never zero and the test reads 599.8 dB instead. That
+    # is precisely the trap tests/test_stub_reachability.py exists to catch,
+    # walked into while writing a test about a different floor.
+    import sicopr
+    # _make_op() was written for the stub and lacks the fields the real
+    # s21_to_impulse_DC reads, which is itself a sign of how long the stub has
+    # stood in. Extend it locally rather than change what other tests drive.
+    op = _make_op()
+    op.EC_PULSE_TOL = 0.05
+    op.EC_REL_TOL = 1e-3
+    op.EC_DIFF_TOL = 1e-5
+    op.impulse_response_truncation_threshold = 1e-3
+    op.interp_sparam_mag = 'linear_trend_to_DC'
+    op.interp_sparam_phase = 'extrap_cubic_to_dc_linear_to_inf'
+    result = COM_FD_to_TD(
+        [ch], _make_param(faxis), op,
+        _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+        _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+        _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+        _get_cm_noise_fn=sicopr.get_cm_noise)
+    r0 = result[0]
+
+    assert float(r0.VCM_CD_HF_struct.CMn) == 0.0, (
+        'fixture no longer gives a zero common-mode term, so it cannot '
+        'distinguish the floor; CMn = %r' % r0.VCM_CD_HF_struct.CMn)
+
+    for name in ('SCMR_CD_ch_pk', 'SCMR_DC_ch_pk'):
+        v = float(np.ravel(np.asarray(getattr(r0, name)))[0])
+        assert np.isinf(v) and v > 0, (
+            '%s is %.17g; COM Octave gives inf for 10*log10(x/0), and 3000 dB '
+            'for the floored form, which is indistinguishable from data.'
+            % (name, v))
+    for name in ('SCMR_CD_ch', 'SCMR_DC_ch'):
+        v = float(np.ravel(np.asarray(getattr(r0, name)))[0])
+        assert np.isnan(v), (
+            '%s is %.17g; COM Octave gives nan for 10*log10(0/0), and -inf '
+            'for the floored form.' % (name, v))

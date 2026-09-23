@@ -69,7 +69,8 @@ REVIEWED = {
     'optimize_fom:optimize_fom': 'see test_reference_leaks KNOWN set',
     'get_TDR:get_TDR': 'see test_reference_leaks KNOWN set',
     'SNDR_ref:SNDR_ref': 'see test_reference_leaks KNOWN set',
-    'OptFom_Compute_RxFFE:OptFom_Compute_RxFFE': 'see test_reference_leaks KNOWN set',
+    # OptFom_Compute_RxFFE no longer writes to the caller's OP before its early
+    # return: it copies OP first (fixed 2026-09-23, oracle-backed).
 
     # --- reviewed here
     'OptFom_Itick_BoxSearch:OptFom_Itick_BoxSearch':

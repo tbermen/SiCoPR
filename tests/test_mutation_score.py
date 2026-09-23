@@ -96,7 +96,9 @@ KNOWN_SURVIVORS = frozenset([
     'drop_dot_copy:s21_pkg',
     'drop_dot_copy:s21_to_impulse_DC',
     'drop_dot_copy:synth_tline',
-    'mlength_to_len:get_RILN_cmp_td',
+    # 'mlength_to_len:get_RILN_cmp_td' removed 2026-09-23: the _length
+    # helper went with get_RILN_cmp_td's fallback stubs, so the site is
+    # gone rather than covered. Not a gain.
     'mmax_to_np_max:Burst_Probability_Calc',
     'mmax_to_np_max:COM_eye_width',
     'mmax_to_np_max:Create_Noise_PDF',
@@ -149,16 +151,16 @@ KNOWN_SURVIVORS = frozenset([
 # KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
     'drop_dot_copy:MMSE:371',
-    'drop_dot_copy:get_PSDs:436',
+    'drop_dot_copy:get_PSDs:472',   # was :436 before the 2026-09-23 oracle pass
     'drop_dot_copy:get_pdf_full:128',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local
     # that its own branch has already finished reading, so the in-place write
     # corrupts something nobody looks at again. Verified by reading each
     # branch; triage_copies.py reports some of them as load-bearing because it
     # is flow-insensitive and sees the read in a sibling elif.
-    'drop_dot_copy:interp_Sparam:234',
-    'drop_dot_copy:interp_Sparam:264',
-    'drop_dot_copy:interp_Sparam:298',
+    'drop_dot_copy:interp_Sparam:238',
+    'drop_dot_copy:interp_Sparam:268',
+    'drop_dot_copy:interp_Sparam:302',
     'drop_dot_copy:s21_to_impulse_DC:200',
     'drop_dot_copy:s21_to_impulse_DC:233',
     # force's non-square else-branch is unreachable: VV is built square as

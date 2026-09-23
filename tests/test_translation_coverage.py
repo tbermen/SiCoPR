@@ -58,7 +58,7 @@ check('every_leaf_function_checks_its_values',
 
 # Composites are reported, not gated. The number is pinned so that adding one
 # without a value check is visible, and lowering it is the way to improve.
-BASELINE_WEAK_COMPOSITES = 1
+BASELINE_WEAK_COMPOSITES = 0
 check('composite_gap_does_not_grow',
       len(weak_comp) <= BASELINE_WEAK_COMPOSITES,
       'composite functions without a value check rose from %d to %d: %s'
@@ -93,7 +93,7 @@ check('shape_baseline_is_current',
 # MATLAB. A test written from a reading cannot see that `std(x)` and
 # `np.std(x)` differ, which is how the N-vs-N-1 defect survived to 2026-09-21.
 # 2026-09-22 took this from 22 to 56 in one pass; ratcheted so it cannot slip.
-BASELINE_ORACLE_BACKED = 137
+BASELINE_ORACLE_BACKED = 144
 n_oracle = sum(1 for r in bearing if r['grade'] == 'oracle')
 
 check('oracle_coverage_does_not_fall',

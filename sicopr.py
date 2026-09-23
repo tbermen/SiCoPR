@@ -1634,10 +1634,26 @@ def COM_FD_to_TD(chdata, param, OP,
 
         CMn_cd = ch.VCM_CD_HF_struct.CMn
         CMn_dc = ch.VCM_DC_HF_struct.CMn
-        ch.SCMR_CD_ch_pk = 10.0 * np.log10(V_peak ** 2 / (CMn_cd ** 2 + 1e-300))
-        ch.SCMR_CD_ch = 10.0 * np.log10(P_signal / (CMn_cd ** 2 + 1e-300))
-        ch.SCMR_DC_ch_pk = 10.0 * np.log10(V_peak ** 2 / (CMn_dc ** 2 + 1e-300))
-        ch.SCMR_DC_ch = 10.0 * np.log10(P_signal / (CMn_dc ** 2 + 1e-300))
+        # ML 1342-1345: 10*log10(V_peak^2/CMn^2) with NO 1e-300 floor on the
+        # denominator. On a perfectly balanced channel CMn is exactly 0, where
+        # the reference gives +Inf and the floored form gives a finite ~2993 dB
+        # that reads like a measurement. Same defect FD_Processing carried on
+        # its SCMR_FD_CD_ch_dB, and its test fixture used scd21_orig = zeros,
+        # so that one was live. errstate only silences numpy; MATLAB divides by
+        # zero quietly.
+        # np.float64, not Python float: a Python scalar divided by zero RAISES
+        # ZeroDivisionError, where MATLAB and numpy both give Inf. errstate
+        # governs numpy's warning only, so the operands have to be numpy types
+        # for the reference's own answer to come out at all.
+        _cd = np.float64(CMn_cd) ** 2
+        _dc = np.float64(CMn_dc) ** 2
+        _vp = np.float64(V_peak) ** 2
+        _ps = np.float64(P_signal)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ch.SCMR_CD_ch_pk = 10.0 * np.log10(_vp / _cd)
+            ch.SCMR_CD_ch = 10.0 * np.log10(_ps / _cd)
+            ch.SCMR_DC_ch_pk = 10.0 * np.log10(_vp / _dc)
+            ch.SCMR_DC_ch = 10.0 * np.log10(_ps / _dc)
 
         # ---- Console output (matches MATLAB fprintf) ----
         if not OP.DISPLAY_WINDOW and i == 0:
@@ -2454,9 +2470,73 @@ MATLAB lines 1684–2025.
 
 
 
+_EPS0 = np.nextafter(0.0, 1.0)   # MATLAB eps(0) = 4.9406564584124654e-324
+
+
 def _FD_Processing__W(f, ft, fr, fb):
-    """Power weighting function, eq 93A-57: sinc^2 * 4th-order * 8th-order rolloff."""
-    return np.sinc(f / (fb + 1e-300))**2 / (fb + 1e-300) / (1.0 + (f / (ft + 1e-300))**4) / (1.0 + (f / (fr + 1e-300))**8)
+    """Power weighting function, eq 93A-57: sinc^2 * 4th-order * 8th-order rolloff.
+
+    Transcribed operation for operation from the reference, which is
+        Sinc = @(x) sin(pi*x+eps(0))./(pi*x+eps(0));
+        W = @(f,ft,fr,fb) 1/fb * Sinc(f/fb).^2 .* (1./(1+(f/ft).^4)) .* (1./(1+(f/fr).^8));
+    The order matters: `1/fb * A` rounds the reciprocal first and is not the
+    same double as `A / fb`, and the earlier `+1e-300` guards on fb/ft/fr were
+    an invented floor.  The previous spelling differed from the reference in
+    15 of 32 samples at the last bit; this one is bit-identical.
+    """
+    x = f / fb
+    sinc = np.sin(np.pi * x + _EPS0) / (np.pi * x + _EPS0)
+    return (1.0 / fb * sinc**2
+            * (1.0 / (1.0 + (f / ft)**4))
+            * (1.0 / (1.0 + (f / fr)**8)))
+
+
+def _FD_Processing__neg20log10(x):
+    """MATLAB -20*log10(abs(x)).
+
+    No epsilon floor: at |x| = 0 the reference returns +Inf, and every metric
+    built on it (a ratio in dB, an interp1 through the bin) inherits that Inf.
+    `-20*log10(|x| + 1e-300)` returns ~6000 dB instead, which is finite and
+    plausible and therefore worse than the Inf.
+    """
+    with np.errstate(divide='ignore'):
+        return -20.0 * np.log10(np.abs(x))
+
+
+def _FD_Processing__db10_ratio(num, den):
+    """MATLAB 10*log10(num/den) -- +Inf at den == 0, with no epsilon floor."""
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return float(10.0 * np.log10(np.float64(num) / np.float64(den)))
+
+
+def _FD_Processing__interp1(x, v, xq):
+    """MATLAB interp1(x, v, xq) at one point: linear, NaN outside the data.
+
+    Two things np.interp does differently, both of which showed up against the
+    reference:
+
+    * np.interp CLAMPS outside [x[0], x[-1]] and returns the end value, where
+      interp1 with no extrapolation argument returns NaN.  A channel whose
+      frequency axis starts above Nyquist came back with the first bin's loss
+      instead of NaN.
+    * np.interp carries a NaN-avoidance retry: when `slope*(xq-x[i]) + v[i]`
+      is NaN it recomputes from the right-hand end.  interp1 has no such
+      fallback, so where v[i] is +Inf (a zero S-parameter bin) it returns NaN
+      and np.interp returned +Inf.
+      COM Octave: interp1([0 1 2 3],[1 Inf 3 4],[0 0.5 1 1.5 2]) ->
+        [NaN Inf NaN NaN 3];  np.interp gave [1 Inf Inf Inf 3].
+
+    So spell out interp1's own `s*dy(k) + v(k)` on the bracket `lookup` picks.
+    """
+    xa = np.asarray(x, dtype=float).ravel()
+    va = np.asarray(v, dtype=float).ravel()
+    if xq < xa[0] or xq > xa[-1]:
+        return float('nan')
+    k = int(np.searchsorted(xa, xq, side='right')) - 1
+    k = min(max(k, 0), len(xa) - 2)
+    s = (xq - xa[k]) / (xa[k + 1] - xa[k])
+    with np.errstate(invalid='ignore'):      # Inf-Inf is a result, not a warning
+        return float(s * (va[k + 1] - va[k]) + va[k])
 
 
 def _FD_Processing__find_idx_ge(faxis, f):
@@ -2490,7 +2570,15 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
         A_fext = float(np.asarray(param.a_fext).ravel()[pkg_tc])
         A_next = float(np.asarray(param.a_next).ravel()[pkg_tc])
 
-    for ch in chdata:
+    # MATLAB loops `for i=1:param.number_of_s4p_files`, not over every element of
+    # chdata: with PSDRXCAL the noise path sits past that count and the reference
+    # never touches it.  Iterating the whole list gave it an A, a PWF and -- for a
+    # crosstalk type -- a place in the ICN power sum (ICN_mV 4.2335 vs 3.1327 on a
+    # 3-channel/count-2 case).
+    n_files = int(param.number_of_s4p_files)
+    chdata_in_scope = chdata[:n_files]
+
+    for ch in chdata_in_scope:
         if ch.type == 'THRU':
             ch.A = A_thru
             ch.Aicn = A_thru
@@ -2505,7 +2593,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             ch.Aicn = 1.0
 
     if getattr(OP, 'TDMODE', False):
-        for ch in chdata:
+        for ch in chdata_in_scope:
             # MATLAB indices 11,10 (1-based) → Python 10,9 (0-based)
             ch.delta_f = float(np.asarray(ch.faxis).ravel()[10] - np.asarray(ch.faxis).ravel()[9])
 
@@ -2524,7 +2612,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
     # ── Apply receiver filter (INCLUDE_FILTER path) ─────────────────────────
     if getattr(OP, 'INCLUDE_FILTER', False):
-        for ch in chdata:
+        for ch in chdata_in_scope:
             f = np.asarray(ch.faxis).ravel()
             H_bt = _Bessel_Thomson_Filter_fn(param, f, OP.Bessel_Thomson)
             H_bw = _Butterworth_Filter_fn(param, f, OP.Butterworth)
@@ -2549,7 +2637,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
     MDFEXT = np.zeros(nf)
     MDNEXT = np.zeros(nf)
 
-    for ch in chdata:
+    for ch in chdata_in_scope:
         faxis = np.asarray(ch.faxis).ravel()
 
         # Frequency boundary indices (0-based)
@@ -2569,7 +2657,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
         if ch.type == 'THRU':
             sdd21f = np.asarray(ch.sdd21f).ravel()
-            Il_dB = -20.0 * np.log10(np.abs(sdd21f) + 1e-300)
+            Il_dB = _FD_Processing__neg20log10(sdd21f)
             fslice = faxis[idx_f1:idx_f2 + 1]
 
             P_signal = 2.0 * delta_f * np.sum(
@@ -2587,8 +2675,11 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             W_slice = _FD_Processing__W(fslice, float(ch.ftr), fr, fb)
             EC_CD = 2.0 * delta_f * np.sum(W_slice * np.abs(scd21_o)**2 * sigma_X**2 * qv2)
             EC_DC = 2.0 * delta_f * np.sum(W_slice * np.abs(sdc21_o)**2 * sigma_X**2 * qv2)
-            output_args.SCMR_FD_CD_ch_dB = float(10.0 * np.log10(P_signal / (EC_CD + 1e-300)))
-            output_args.SCMR_FD_DC_ch_dB = float(10.0 * np.log10(P_signal / (EC_DC + 1e-300)))
+            # A perfectly balanced channel has scd21_orig/sdc21_orig identically
+            # zero, so EC_CD/EC_DC are 0 and the reference reports Inf dB of
+            # common-mode rejection.  `/(EC + 1e-300)` reported ~2993 dB.
+            output_args.SCMR_FD_CD_ch_dB = _FD_Processing__db10_ratio(P_signal, EC_CD)
+            output_args.SCMR_FD_DC_ch_dB = _FD_Processing__db10_ratio(P_signal, EC_DC)
 
             # ILD fit over [f1, f2_ild]
             ILD_magft, ch.fit_f2_ild = _get_ILN_fn(
@@ -2597,7 +2688,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
             fnq = 1.0 / (float(param.ui) * 2.0)
             if faxis[idx_f2] >= fnq:
-                ch.fit_ILatNq = float(np.interp(fnq, faxis, -np.asarray(ch.fit_orig)))
+                ch.fit_ILatNq = _FD_Processing__interp1(faxis, -np.asarray(ch.fit_orig).ravel(), fnq)
                 output_args.fitted_IL_dB_at_Fnq = ch.fit_ILatNq
             else:
                 ch.fit_ILatNq = []
@@ -2607,16 +2698,16 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             output_args.fitted_IL_dB_at_F2_ild = float(-fit_f2_ild_arr[-1])
 
             if faxis[-1] >= fnq:
-                ch.ILatNq = float(np.interp(fnq, faxis, -20.0 * np.log10(np.abs(sdd21f) + 1e-300)))
+                ch.ILatNq = _FD_Processing__interp1(faxis, _FD_Processing__neg20log10(sdd21f), fnq)
             else:
                 ch.ILatNq = []
             output_args.IL_dB_channel_only_at_Fnq = ch.ILatNq if isinstance(ch.ILatNq, list) else float(ch.ILatNq)
 
             if getattr(OP, 'include_pcb', False):
-                output_args.cable__assembley_loss = float(np.interp(
-                    fnq, faxis, -20.0 * np.log10(np.abs(np.asarray(ch.sdd21_orig).ravel()) + 1e-300)))
-                output_args.loss_with_PCB = float(np.interp(
-                    fnq, faxis, -20.0 * np.log10(np.abs(np.asarray(ch.sdd21_raw).ravel()) + 1e-300)))
+                output_args.cable__assembley_loss = _FD_Processing__interp1(
+                    faxis, _FD_Processing__neg20log10(np.asarray(ch.sdd21_orig).ravel()), fnq)
+                output_args.loss_with_PCB = _FD_Processing__interp1(
+                    faxis, _FD_Processing__neg20log10(np.asarray(ch.sdd21_raw).ravel()), fnq)
 
             # TD/RILN metrics
             if getattr(OP, 'COMPUTE_TDILN', False) or getattr(OP, 'COMPUTE_RILN', False):
@@ -2646,7 +2737,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
             if ch.type == 'FEXT':
                 MDFEXT = np.sqrt(np.abs(sdd21f)**2 + MDFEXT**2)
-                MDFEXT_dBloss = -20.0 * np.log10(MDFEXT + 1e-300)
+                MDFEXT_dBloss = _FD_Processing__neg20log10(MDFEXT)
                 MDFEXT_ICN = float(np.sqrt(
                     2.0 * delta_f / fb *
                     np.sum(ch.Aicn**2 * PWF[idx_f1:idx_f2 + 1] *
@@ -2655,7 +2746,9 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
                 PS_MDFEXT = _FD_Processing__W(faxis, float(ch.ftr), fr, fb) * 10.0**(-MDFEXT_dBloss / 10.0)
                 sqrd_mdfext = 2.0 * delta_f * np.sum(PS_MDFEXT[idx_f1:idx_f2 + 1]) * float(param.sigma_X)**2
-                output_args.SNR_MDFEXT = float(10.0 * np.log10(P_signal / (sqrd_mdfext + 1e-300)))
+                # No FEXT coupling at all makes sqrd_mdfext 0, where the
+                # reference reports Inf dB SNR; `+1e-300` reported ~2993 dB.
+                output_args.SNR_MDFEXT = _FD_Processing__db10_ratio(P_signal, sqrd_mdfext)
 
             else:  # NEXT
                 MDNEXT = np.sqrt(np.abs(sdd21f)**2 + MDNEXT**2)
@@ -2674,15 +2767,17 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
         # else NOISE → skip (no PSXT update, as in MATLAB `continue`)
 
     # ── Final Nyquist loss interpolation ────────────────────────────────────
-    fax_last = np.asarray(chdata[-1].faxis).ravel()
+    # MATLAB reads chdata(i).faxis, where i is whatever the loop above left
+    # behind -- the LAST channel it visited, which is number_of_s4p_files, not
+    # the last element of chdata.
+    fax_last = np.asarray(chdata_in_scope[-1].faxis).ravel()
     fnq = 1.0 / (float(param.ui) * 2.0)
     ch0 = chdata[0]
 
     def _il_at_fnq(sig):
-        arr = np.asarray(sig).ravel()
-        if fax_last[-1] >= fnq:
-            return float(np.interp(fnq, fax_last, -20.0 * np.log10(np.abs(arr) + 1e-300)))
-        return float('nan')
+        # interp1 returns NaN outside the data range, which the reference leaves
+        # unguarded here; _FD_Processing__interp1 reproduces that rather than clamping.
+        return _FD_Processing__interp1(fax_last, _FD_Processing__neg20log10(np.asarray(sig).ravel()), fnq)
 
     output_args.VTF_loss_dB_at_Fnq = _il_at_fnq(ch0.sdd21)
     output_args.IL_db_die_to_die_at_Fnq = _il_at_fnq(ch0.sdd21p_nodie)
@@ -5480,6 +5575,12 @@ def OptFom_Compute_RxFFE(sbr, THIS, Noise_XC, chdata, param, OP):
     g_DC_low = THIS.g_DC_low
 
     if str(OP.FFE_OPT_METHOD).upper() == 'MMSE':
+        # MATLAB passes OP BY VALUE, so `OP.WO_TXFFE=0` here is local to this
+        # call: the caller's OP still reads 1 afterwards (verified by running
+        # the reference under Octave).  Python passes it by reference, so the
+        # bare assignment cleared the caller's flag for the rest of the run.
+        # Only get_PSDs/MMSE below may see the 0; nothing else may.
+        OP = SimpleNamespace(**vars(OP))
         OP.WO_TXFFE = 0
         PSD_results = get_PSDs(PSD_results, sbr, cursor_i, txffe, g_dc, g_DC_low,
                                param, chdata, OP,
@@ -7249,10 +7350,21 @@ def RILN_TD(sdd21, RIL, faxis_f2, OP, param, A_T=None):
     ]))
 
     pdf_from_norm = _normal_dist(result.FOM, 7, BinSize)
-    fit_peak = float(FIT_PR[ipeak])
-    result.SNR_ISI_FOM = float(20 * np.log10(fit_peak / result.FOM)) if result.FOM > 0 else np.inf
-    result.SNR_ISI_FOM_PDF = (float(20 * np.log10(fit_peak / result.FOM_PDF))
-                               if result.FOM_PDF > 0 else np.inf)
+    fit_peak = np.float64(FIT_PR[ipeak])
+    # MATLAB's local `db = @(x) 20*log10(abs(x))` — the abs() is the point. The
+    # ratio is NEGATIVE whenever FIT.PR at REF.PR's peak has the opposite sign
+    # (an inverted or badly mismatched fit), and MATLAB then reports a finite
+    # negative dB. Dropping the abs() and guarding with `FOM > 0` instead gave
+    # log10 of a negative -> NaN: COM Octave returns SNR_ISI_FOM
+    # -6.0602241763211184 and SNR_ISI_FOM_PDF -7.3036991416734809 on the case
+    # the unit test pins, where the port returned nan for both.
+    # The guards are not needed either: FOM = 0 gives MATLAB's 20*log10(Inf) =
+    # Inf, and numpy's float64 division gives the same Inf.
+    with np.errstate(divide='ignore', invalid='ignore'):
+        result.SNR_ISI_FOM = float(
+            20 * np.log10(np.abs(fit_peak / np.float64(result.FOM))))
+        result.SNR_ISI_FOM_PDF = float(
+            20 * np.log10(np.abs(fit_peak / np.float64(result.FOM_PDF))))
 
     print(f'SNR ISI FOM rms = {result.SNR_ISI_FOM:.6g} dB;   '
           f'SNR ISI FOM PDF = {result.SNR_ISI_FOM_PDF:.6g} dB')
@@ -11046,10 +11158,12 @@ def get_ILN(sdd21, faxis_f2):
 # Computes complex IL fitting and TD ILN.
 # Polynomial fit: fmbg = [ones sdd21, sqrt(f)*sdd21, f*sdd21, f^2*sdd21] (column matrix).
 # LGw = (sdd21 * log(abs(sdd21)) + 1j*unwrap(angle(sdd21))) transposed.
-# alpha = pinv(fmbg) @ LGw → least-squares.
+# alpha = inv(fmbg'*fmbg) * fmbg'*LGw -- the NORMAL EQUATIONS (ML 6740),
+# NOT a least-squares solve: fmbg is nearly singular and the two differ by ~0.9 dB.
 # efit_C = sum(alpha_i * basis_i); FIT = exp(efit_C).
 # efit = dB(FIT); ILN = dB(sdd21) - efit.
-# TD: calls the real s21_to_impulse_DC for non-zero sdd21 (eps-valued path for all-zero).
+# TD: calls the real s21_to_impulse_DC. An all-zero sdd21 has no answer and the
+# reference stops on it; so does this.
 # ipeak: 0-based argmax of TD_ILN.REF.PR.
 # Loop im=0..M-1: norm, pdf, cdf → FOM_PDF.
 # ============================================================
@@ -11185,17 +11299,45 @@ def get_ILN_cmp_td(sdd21, faxis_f2, OP, param, A_T=None):
         f ** 2 * sdd21,
     ])  # shape (N, 4)
 
-    unwraplog = np.log(np.abs(sdd21) + np.finfo(float).eps) + 1j * np.unwrap(np.angle(sdd21))
+    # ML 6738: unwraplog=log(abs(sdd21))+1i*unwrap(angle(sdd21)) -- NO eps
+    # floor. The floor changes every value slightly and, at |sdd21| = 0,
+    # replaces the reference's -Inf with a finite ~-708.
+    with np.errstate(divide='ignore'):
+        unwraplog = np.log(np.abs(sdd21)) + 1j * np.unwrap(np.angle(sdd21))
     LGw = (sdd21 * unwraplog).reshape(-1, 1)
 
-    # Least-squares: alpha = pinv(fmbg) @ LGw
-    alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
+    # ML 6740: alpha = ((fmbg'*fmbg)^-1)*fmbg'*LGw -- the NORMAL EQUATIONS with
+    # an explicit inverse, not a least-squares solve.
+    #
+    # They are the same answer only for a well-conditioned system, and this one
+    # is not: ML 6737 is `warning('off','MATLAB:nearlySingularMatrix')`, so the
+    # reference knows fmbg'*fmbg is nearly singular and proceeds anyway. On a
+    # near-singular system np.linalg.lstsq truncates the small singular values
+    # and returns the minimum-norm answer, while the explicit inverse amplifies
+    # them; the two fits differ by about 0.9 dB across the band.
+    #
+    # Measured on a smooth real sdd21 = 0.9*exp(-f/40e9), 40 points:
+    #   COM Octave ILN[0:3] = 3.33e-14, 5.33e-14, 6.06e-14   (a near-exact fit)
+    #   lstsq      ILN[0:3] = -0.905,   -0.807,   -0.713
+    # The reference's fit reproduces this channel essentially exactly, which is
+    # what ILN is supposed to do; the lstsq fit does not.
+    #
+    # `fmbg.conj().T` is MATLAB's `'`, the CONJUGATE transpose, which matters
+    # because fmbg is complex.
+    fmbg_h = fmbg.conj().T
+    alpha = np.linalg.inv(fmbg_h @ fmbg) @ (fmbg_h @ LGw)
     alpha = alpha.ravel()
 
     efit_C = (alpha[0] + alpha[1] * np.sqrt(f) + alpha[2] * f + alpha[3] * f ** 2)
     FIT = np.exp(efit_C)
 
-    dB = lambda x: 20.0 * np.log10(np.abs(x) + np.finfo(float).eps)
+    # ML 6731: db = @(x) 20*log10(abs(x)) -- NO eps floor. Same defect as
+    # plot_modal carried: at |x| = 0 the reference gives -Inf and the
+    # epsilon version gives a plausible -313 dB that reads like data.
+    # errstate only silences numpy's warning; MATLAB returns -Inf quietly.
+    def dB(x):
+        with np.errstate(divide='ignore'):
+            return 20.0 * np.log10(np.abs(x))
     efit = dB(np.abs(FIT))
     ILN = dB(sdd21) - efit
 
@@ -11376,6 +11518,29 @@ def _get_PSDs__H_interp(sdd21p, faxis, fvec, fb):
 # Helper: build conjugate-symmetric double-sided vector
 # ---------------------------------------------------------------------------
 
+def _get_PSDs__check_h_index(idx, n):
+    """Refuse an h() index the reference would refuse, with its own message.
+
+    `idx` is 0-based; the message quotes the 1-based index MATLAB reports.
+    """
+    idx = np.asarray(idx)
+    # Which offending index the reference names: the FIRST non-positive one,
+    # but the LARGEST over-bound one.
+    #   COM Octave: h=1:10; h([3 -5 -1]) -> "h(-5): ...";  h([-1 -5 3]) ->
+    #   "h(-1): ...";  h([3 12 15]) and h([3 15 12]) both -> "h(15): out of
+    #   bound 10".
+    bad = idx[idx < 0]
+    if bad.size:
+        raise IndexError(
+            'get_PSDs: h(%d): subscripts must be either integers 1 to '
+            '(2^63)-1 or logicals - the jitter sampling window starts '
+            'before the pulse response' % (int(bad[0]) + 1))
+    if idx.size and int(idx.max()) >= n:
+        raise IndexError(
+            'get_PSDs: h(%d): out of bound %d - the jitter sampling window '
+            'runs past the pulse response' % (int(idx.max()) + 1, n))
+
+
 def _get_PSDs__to_double_sided(S_ss):
     """Convert single-sided spectrum to double-sided (conjugate symmetric).
 
@@ -11496,8 +11661,12 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
 
             # ---- S_in (eq 178A-24): input noise ----
             if OP.PSDRXCAL:
-                H_noise = H_interp_fn(chdata[-1].sdd21p, chdata[0].faxis, fvec, fb)
-                S_IN_of_f = S_IN_fn(fvec, H_noise, G_DC, G_DC2, param, OP)
+                # MATLAB L7215 keeps the interpolated noise-path VTF on the
+                # result struct; the port computed it into a local and dropped
+                # it, so result.H_noise never existed.
+                result.H_noise = H_interp_fn(chdata[-1].sdd21p, chdata[0].faxis,
+                                             fvec, fb)
+                S_IN_of_f = S_IN_fn(fvec, result.H_noise, G_DC, G_DC2, param, OP)
                 inn_psd = _get_PSDs__to_double_sided(S_IN_of_f)
                 inn_rms = np.sqrt(np.sum(inn_psd) * delta_f)
                 S_in_full = _get_PSDs__fold_psd(inn_psd, num_ui, M)
@@ -11606,10 +11775,19 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
                 # h(cursor_i-1+M*(-1:ndfe)) / h(cursor_i+1+M*(-1:ndfe)), centered at the cursor.
                 idx_early = cursor_i - 1 + M * np.arange(-1, Nb + 1)
                 idx_late = cursor_i + 1 + M * np.arange(-1, Nb + 1)
-                valid_early = (idx_early >= 0) & (idx_early < len(h))
-                valid_late = (idx_late >= 0) & (idx_late < len(h))
-                cursors_early_sample = h[idx_early[valid_early]]
-                cursors_late_sample = h[idx_late[valid_late]]
+                # No masking: MATLAB indexes h() with the whole vector and
+                # refuses an index off either end rather than quietly taking
+                # the jitter slope from fewer UI.  Dropping the out-of-range
+                # entries left a shorter h_J that still FFTs to a plausible
+                # S_jn, which is the worst kind of wrong.
+                # COM Octave: cursor_i=4 (1-based), M=4 -> "error: h(-1):
+                #   subscripts must be either integers 1 to (2^63)-1 or
+                #   logicals"; ndfe=14 with len(h)=64 -> "error: h(69): out of
+                #   bound 64 (dimensions are 64x1)".
+                _get_PSDs__check_h_index(idx_early, len(h))
+                _get_PSDs__check_h_index(idx_late, len(h))
+                cursors_early_sample = h[idx_early]
+                cursors_late_sample = h[idx_late]
             else:
                 cursors_early_sample = h[sampling_offset - 2::M]
                 cursors_late_sample = h[sampling_offset::M]
@@ -11835,85 +12013,25 @@ def get_RAW_FIR(H, f, OP, param):
 # Row/col: MATLAB uses row vectors; Python uses 1D arrays (ravel).
 # 1000-echo sum: geometric series in FD; looped faithfully.
 # fmin_idx: MATLAB 1-based find(f>=fmin,1,'first') → np.searchsorted(f,fmin)
-# fmbg least squares: np.linalg.lstsq(fmbg, LGw) replaces normal equations
+# fmbg least squares: MATLAB's normal equations ((fmbg'*fmbg)^-1)*fmbg'*LGw,
+#   reproduced term for term.  np.linalg.lstsq is NOT a substitute: fmbg is
+#   conditioned ~1e21 (its columns span sdd21 .. f^2*sdd21) and lstsq's SVD
+#   cutoff throws away the very modes that carry the fit (see test_verify).
 # filter(ones(1,M),1,x) → lfilter(ones(M),1,x)
 # ipeak: MATLAB 1-based argmax → 0-based np.argmax; range ipeak:range_end
 #   MATLAB inclusive → Python slice [ipeak:range_end] (exclusive upper OK since
 #   MATLAB range_end = min(len,len) and slicing is safe)
-# calculate_delay_CausalityEnforcement: may raise; caught with try/except
+# calculate_delay_CausalityEnforcement: MATLAB's `try ... catch end` leaves
+#   delay_sec undefined, so the next line raises. Matched, not papered over.
 # get_pdf_from_sampled_signal: returns SimpleNamespace with .x and .y
-# All callee functions are stubbed; no cross-py_impl imports.
+# Bessel_Thomson_Filter / Butterworth_Filter / s21_to_impulse_DC /
+#   calculate_delay_CausalityEnforcement / get_pdf_from_sampled_signal /
+#   normal_dist are top-level functions of the assembled module and are called
+#   by name.  They used to be hand-written stubs here; the stubbed Butterworth
+#   response alone (1/sqrt(1+(2f/fb)^8), magnitude only) put REF_noise.PR out
+#   by a factor of 2.6 against the reference.  A stub is not a translation.
 # ============================================================
 
-
-
-# ---------------------------------------------------------------------------
-# Callee stubs
-# ---------------------------------------------------------------------------
-
-def _get_RILN_cmp_td__Bessel_Thomson_Filter(param, faxis, enable):
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb_BT_cutoff * param.fb
-    s = 1j * faxis / (f0 + 1e-300)
-    b = [105, 105, 45, 10, 1]
-    return np.abs(b[0] / np.polyval(b, s))
-
-
-def _get_RILN_cmp_td__length(x):
-    """MATLAB length(): the longest dimension, 0 when empty, 1 for a scalar."""
-    if x.size == 0:
-        return 0
-    return max(x.shape) if x.ndim else 1
-
-
-def _get_RILN_cmp_td__Butterworth_Filter(param, faxis, enable):
-    faxis = np.asarray(faxis, dtype=float)
-    # MATLAB `if enable` is true only for a non-empty value whose elements are
-    # ALL non-zero; `not enable` raised on any numpy array of more than one
-    # element.  ones(1,length(f)) uses the LONGEST dimension, and len(f) raised
-    # TypeError on a scalar f where MATLAB gives 1.
-    use = np.asarray(enable)
-    if not (use.size and np.all(use)):
-        return np.ones(_get_RILN_cmp_td__length(faxis))
-    f0 = param.fb / 2.0
-    return 1.0 / np.sqrt(1.0 + (faxis / (f0 + 1e-300)) ** 8)
-
-
-def _get_RILN_cmp_td__s21_to_impulse_DC(sdd21, faxis, sample_dt, OP, param):
-    N = len(sdd21)
-    S = np.zeros(2 * N - 2, dtype=complex)
-    S[:N] = sdd21
-    S[N:] = np.conj(sdd21[-2:0:-1])
-    ir = np.real(np.fft.ifft(S))
-    t = np.arange(len(ir)) * sample_dt
-    return ir, t, 0.0, 0.0
-
-
-def _get_RILN_cmp_td__calculate_delay_CausalityEnforcement(faxis, sdd21, param, OP):
-    """Stub: returns delay = 0."""
-    return 0.0, 0
-
-
-def _get_RILN_cmp_td__get_pdf_from_sampled_signal(samples, levels, bin_size, flag):
-    """Stub: Gaussian PDF approximation from sample RMS."""
-    rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=float)**2))) + 1e-30
-    n_bins = max(64, int(8 * rms / (bin_size + 1e-30)))
-    x = np.linspace(-4 * rms, 4 * rms, n_bins)
-    dx = x[1] - x[0]
-    y = np.exp(-0.5 * (x / rms)**2) / (rms * np.sqrt(2 * np.pi)) * dx
-    y = y / y.sum()
-    return SimpleNamespace(x=x, y=y)
-
-
-def _get_RILN_cmp_td__normal_dist(sigma, n_sigma, bin_size):
-    """Stub: Gaussian PDF with given sigma."""
-    n_bins = max(64, int(n_sigma * 2 * sigma / (bin_size + 1e-300)))
-    x = np.linspace(-n_sigma * sigma, n_sigma * sigma, n_bins)
-    dx = x[1] - x[0]
-    y = np.exp(-0.5 * (x / (sigma + 1e-300))**2) / ((sigma + 1e-300) * np.sqrt(2 * np.pi)) * dx
-    y = y / y.sum()
-    return SimpleNamespace(x=x, y=y)
 
 
 # ---------------------------------------------------------------------------
@@ -11944,12 +12062,12 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
         REF, FIT, RIL, REF_noise — each with FIR, PR, t, causality/truncation dBs
         ILN, t, FOM, FOM_PDF, SNR_ISI_FOM, SNR_ISI_FOM_PDF, PDF
     """
-    bt_fn = _Bessel_Thomson_Filter_fn or _get_RILN_cmp_td__Bessel_Thomson_Filter
-    bw_fn = _Butterworth_Filter_fn or _get_RILN_cmp_td__Butterworth_Filter
-    s21_fn = _s21_to_impulse_DC_fn or _get_RILN_cmp_td__s21_to_impulse_DC
-    delay_fn = _calculate_delay_fn or _get_RILN_cmp_td__calculate_delay_CausalityEnforcement
-    pdf_fn = _get_pdf_fn or _get_RILN_cmp_td__get_pdf_from_sampled_signal
-    norm_fn = _normal_dist_fn or _get_RILN_cmp_td__normal_dist
+    bt_fn = _Bessel_Thomson_Filter_fn or Bessel_Thomson_Filter
+    bw_fn = _Butterworth_Filter_fn or Butterworth_Filter
+    s21_fn = _s21_to_impulse_DC_fn or s21_to_impulse_DC
+    delay_fn = _calculate_delay_fn or calculate_delay_CausalityEnforcement
+    pdf_fn = _get_pdf_fn or get_pdf_from_sampled_signal
+    norm_fn = _normal_dist_fn or normal_dist
 
     M = int(param.samples_per_ui)
 
@@ -12006,9 +12124,19 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
         f * sdd21,
         f**2 * sdd21,
     ])  # N×4
-    unwraplog = np.log(np.abs(sdd21) + 1e-300) + 1j * np.unwrap(np.angle(sdd21))
-    LGw = sdd21 * unwraplog  # N, complex
-    alpha, _, _, _ = np.linalg.lstsq(fmbg, LGw, rcond=None)
+    # MATLAB has no floor here: log(0) is -Inf and 0*-Inf is NaN, which then
+    # poisons alpha and every output.  An eps floor quietly returns a plausible
+    # number instead, so a channel with a null in it would look healthy.
+    with np.errstate(divide='ignore', invalid='ignore'):
+        unwraplog = np.log(np.abs(sdd21)) + 1j * np.unwrap(np.angle(sdd21))
+        LGw = sdd21 * unwraplog  # N, complex
+    # MATLAB L6755: alpha = ((fmbg'*fmbg)^-1)*fmbg'*LGw.  `'` is the conjugate
+    # transpose and `^-1` is inv().  Spelled out because a least-squares solver
+    # is NOT interchangeable with it here: cond(fmbg) ~ 1e21, so lstsq's SVD
+    # cutoff discards the sqrt(f) and f modes and returns a different fit.
+    fmbgH = fmbg.conj().T
+    with np.errstate(divide='ignore', invalid='ignore'):
+        alpha = np.linalg.inv(fmbgH @ fmbg) @ (fmbgH @ LGw)
     efit_C = alpha[0] + alpha[1] * np.sqrt(f) + alpha[2] * f + alpha[3] * f**2
     FIT = np.exp(efit_C)
 
@@ -12046,10 +12174,20 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
     RILN_TD_struct.RIL.PR = lfilter(np.ones(M), 1, RILN_TD_struct.RIL.FIR)
 
     # ---- Channel delay → apply to port2 noise ----
+    # MATLAB: `try [delay_sec, delay_idx] = calculate_delay_...; catch end`.
+    # The empty catch swallows the failure and leaves delay_sec UNDEFINED, so
+    # the very next line dies with "'delay_sec' undefined" — confirmed by
+    # running the reference under Octave against a failing delay function.
+    # That is an upstream defect (the catch should set a fallback), but it is
+    # the reference's behaviour; the port used to substitute a silent zero
+    # delay, which is a different answer, not a recovered one.
     try:
         delay_sec, _ = delay_fn(f, sdd21, param, OP)
-    except Exception:
-        delay_sec = 0.0
+    except Exception as exc:
+        raise NameError(
+            "'delay_sec' undefined: calculate_delay_CausalityEnforcement "
+            "failed and the reference's empty catch leaves delay_sec unset "
+            '(upstream defect, COM 4p16p0 get_RILN_cmp_td)') from exc
     port2_rn = port2_rn * np.exp(-1j * 2 * np.pi * f_rn * delay_sec)
 
     # ---- TD response for REF_noise (port2 reflection/re-reflection) ----
@@ -12104,11 +12242,17 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
     RILN_TD_struct.PDF = best_pdf
 
     # ---- SNR metrics ----
-    FIT_peak = float(RILN_TD_struct.FIT.PR[ipeak]) if ipeak < len(RILN_TD_struct.FIT.PR) else 1.0
-    RILN_TD_struct.SNR_ISI_FOM = 20.0 * np.log10(
-        abs(FIT_peak) / (abs(RILN_TD_struct.FOM) + 1e-300))
-    RILN_TD_struct.SNR_ISI_FOM_PDF = 20.0 * np.log10(
-        abs(FIT_peak) / (abs(RILN_TD_struct.FOM_PDF) + 1e-300))
+    # MATLAB: db = @(x) 20*log10(abs(x)), applied to FIT.PR(ipeak)/FOM.  No eps
+    # floor on the denominator: a zero FOM gives +Inf, and the floored form
+    # reported a plausible ~6000 dB instead.  FIT.PR(ipeak) is indexed with no
+    # guard, exactly as MATLAB does — it raises when FIT.PR was truncated
+    # shorter than REF.PR, and that is the reference's behaviour.
+    FIT_peak = np.float64(RILN_TD_struct.FIT.PR[ipeak])
+    with np.errstate(divide='ignore', invalid='ignore'):
+        RILN_TD_struct.SNR_ISI_FOM = 20.0 * np.log10(
+            np.abs(FIT_peak / np.float64(RILN_TD_struct.FOM)))
+        RILN_TD_struct.SNR_ISI_FOM_PDF = 20.0 * np.log10(
+            np.abs(FIT_peak / np.float64(RILN_TD_struct.FOM_PDF)))
 
     return RILN_TD_struct
 
@@ -12391,16 +12535,21 @@ def get_TDR(S, OP, param, ZT, nport,
         maxtime = 2e-9
 
     # ---- Transmitter filter with delay and Gaussian edge ----
-    delay_ns = TDR_results.delay / 1e-9
+    # MATLAB L7040: exp(-(1j)*2*pi*f9*TDR_results.delay/1e-9).  `*` and `/` are
+    # equal precedence and left-associative, so the 1e-9 division happens LAST,
+    # after the multiply by delay.  Pre-computing delay/1e-9 = 0.5 and
+    # multiplying reorders the rounding: at f9=2.5 the reference gives
+    # 1.1943401194869635e-15-1j and the pre-divided form 3.0616169978683831e-16-1j.
+    # That is ~4e-15 relative on tx_filter and it propagates into the impulse.
     H_t = (np.exp(-2 * (np.pi * f9 * tr / 1.6832)**2) *
-           np.exp(-1j * 2 * np.pi * f9 * delay_ns) *
+           np.exp(-1j * 2 * np.pi * f9 * TDR_results.delay / 1e-9) *
            np.exp(-1j * 2 * np.pi * f9 * tr * 3))
 
     Use_gaussian = bool(getattr(OP, 'cb_Guassian', True))
     if Use_gaussian:
         RLf = RL.ravel() * H_t.ravel()
     else:
-        RLf = RL.ravel() * np.exp(-1j * 2 * np.pi * f9 * delay_ns)
+        RLf = RL.ravel() * np.exp(-1j * 2 * np.pi * f9 * TDR_results.delay / 1e-9)
 
     # ---- Receiver filters (BT disabled, BW optional, Tukey optional) ----
     OP.TDR_Bessel_Thomson = 0
@@ -12456,14 +12605,21 @@ def get_TDR(S, OP, param, ZT, nport,
 
     # ---- Time windowing ----
     t = t - TDR_results.delay
+    # MATLAB L7098-7101:  tend = find(t>=maxtime+tfx,1);  IR = IR(1:tend)
+    # The MATLAB 1-based index IS the Python exclusive bound, so the sample AT
+    # the threshold is KEPT.  Slicing with the 0-based index instead dropped it,
+    # making every windowed array (tdr, t, ptdr_RL, WC_ptdr_samples) one sample
+    # short and shifting avgZport and ERLRMS with it.
     tend_arr = np.where(t >= maxtime + tfx)[0]
-    tend = int(tend_arr[0]) if len(tend_arr) > 0 else len(t)
+    tend = int(tend_arr[0]) + 1 if len(tend_arr) > 0 else len(t)
     IR = IR[:tend]
     t = t[:tend]
 
     tstart_arr = np.where(t >= tr * 1e-9)[0]
     tstart = int(tstart_arr[0]) if len(tstart_arr) > 0 else 0
-    if tstart >= tend:
+    # MATLAB `tstart >= tend` compares two 1-based indices; tstart is 0-based here
+    # and tend is the exclusive bound (== the MATLAB 1-based tend after the cut).
+    if tstart + 1 >= tend:
         tend = len(t)
         tstart = 0
 
@@ -12486,12 +12642,21 @@ def get_TDR(S, OP, param, ZT, nport,
             # samples later than 3*tr. Searching the windowed vector instead (as Python
             # did) starts at a different point and biases avgZport -> Z11est/Z22est by a
             # constant ~1.4% independent of package case. Reproduce MATLAB exactly.
+            #
+            # No clamp: when tfstart runs past the windowed vector MATLAB's slice is
+            # EMPTY, x(1) then errors and the catch sets avgZport = 0. Clamping to the
+            # last sample instead returned that one sample's impedance.
             tfstart_arr = np.where(t >= 3 * tr * 1e-9)[0]
-            tfstart = int(tfstart_arr[0]) if len(tfstart_arr) > 0 else 0
-            tfstart = min(tfstart, max(0, len(TDR_results.t) - 1))
+            # find(...) empty -> MATLAB `t([]:end)` is also empty, same path.
+            tfstart = (int(tfstart_arr[0]) if len(tfstart_arr) > 0
+                       else len(TDR_results.t))
             T_k = float(getattr(OP, 'T_k', 1e-9))
             x = TDR_results.t[tfstart:]
             y = TDR_results.tdr[tfstart:]
+            # MATLAB L7185-7186 assigns x/y BEFORE the average, and with the tdr and t
+            # vectors SWAPPED relative to the local x/y it just built.
+            TDR_results.x = np.asarray(TDR_results.tdr).ravel()
+            TDR_results.y = np.asarray(TDR_results.t).ravel()
             w = np.exp(-(x - x[0]) / (T_k + 1e-300))
             TDR_results.avgZport = float(np.mean(y * w) / (np.mean(w) + 1e-300))
         except Exception:
@@ -12578,9 +12743,21 @@ def get_TDR(S, OP, param, ZT, nport,
             if rl_fom > RL_equiv:
                 RL_equiv = rl_fom
                 best_ki = ki
-                if not RL_norm_test:
-                    best_erl = rl_test
-                    best_pdf = testpdf
+            # UPSTREAM DEFECT B06-D10 (com_ieee8023_4p14p0/4p15p0/4p16p0, and the
+            # adaptive-local-search build, all identical): the reference's
+            #     if ~OP.RL_norm_test
+            #         best_erl=rl_test; best_pdf=testpdf; best_cdf=cdf_test;
+            #     end
+            # sits OUTSIDE the `rl_fom > RL_equiv` guard, so ERL is reported for
+            # the LAST phase while WC_ptdr_samples still come from best_ki.
+            # Reproduced deliberately: COM Octave on a case whose worst phase is
+            # not the last gives ERL = 35.391021572434525 dB (last phase,
+            # rl_test = 0.017) where picking best_ki gives 32.39577516576788 dB
+            # (rl_test = 0.024). Not reached with the default ERL_FOM = 1, which
+            # takes the post-loop recompute below.
+            if not RL_norm_test:
+                best_erl = rl_test
+                best_pdf = testpdf
 
         if RL_norm_test:
             tps = PTDR.pulse[best_ki::M]
@@ -12592,12 +12769,17 @@ def get_TDR(S, OP, param, ZT, nport,
             else:
                 best_erl = 0.0
 
-        ERLRMS = float(np.sqrt(np.mean(PTDR.pulse**2)))
+        # MATLAB `rms = @(x) norm(x)/sqrt(length(x))`, evaluated BEFORE the ki loop.
+        ERLRMS = float(np.linalg.norm(PTDR.pulse) / np.sqrt(len(PTDR.pulse)))
         TDR_results.ptdr_RL = PTDR.pulse
         TDR_results.WC_ptdr_samples_t = t_ptdr[best_ki::M]
         TDR_results.WC_ptdr_samples = PTDR.pulse[best_ki::M]
-        TDR_results.ERL = -20.0 * np.log10(abs(best_erl) + 1e-300)
-        TDR_results.ERLRMS = -20.0 * np.log10(ERLRMS + 1e-300)
+        # MATLAB `db = @(x) 20*log10(abs(x))` — NO epsilon floor. At best_erl = 0
+        # (the degenerate single-bin pdf) the reference reports ERL = +Inf; the
+        # +1e-300 floor reported a plausible-looking 6000 dB instead.
+        with np.errstate(divide='ignore'):
+            TDR_results.ERL = -20.0 * np.log10(abs(best_erl))
+            TDR_results.ERLRMS = -20.0 * np.log10(abs(ERLRMS))
 
     return TDR_results
 
@@ -14135,24 +14317,28 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
         if fin[0] > 0:
             n_pts = min(10, len(fin))
             with np.errstate(divide='ignore', invalid='ignore'):
-                p = np.polyfit(fin[:n_pts], np.log10(H_mag[:n_pts] + eps), 1)
+                p = np.polyfit(fin[:n_pts], np.log10(H_mag[:n_pts]), 1)
             dc_val = 10.0 ** float(np.polyval(p, 0))
             fin_x = np.concatenate([[0.0], fin_x])
             H_mag_x = np.concatenate([[dc_val], H_mag_x])
         if fin[-1] < fout[-1]:
             mid = max(0, len(fin) // 2)
             with np.errstate(divide='ignore', invalid='ignore'):
-                p2 = np.polyfit(fin[mid:], np.log10(H_mag[mid:] + eps), 1)
+                p2 = np.polyfit(fin[mid:], np.log10(H_mag[mid:]), 1)
             hf_val = 10.0 ** float(np.polyval(p2, fout[-1]))
             if hf_val > H_mag[-1]:
                 hf_val = H_mag[-1]
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             H_mag_x = np.concatenate([H_mag_x, [hf_val]])
         with np.errstate(divide='ignore', invalid='ignore'):
-            H_mag_i = 10.0 ** _interp_Sparam__interp_extrap(fout, fin_x, np.log10(H_mag_x + eps))
+            H_mag_i = 10.0 ** _interp_Sparam__interp_extrap(fout, fin_x, np.log10(H_mag_x))
 
     elif mag_method == 'extrap_to_DC_or_zero':
-        if fin[0] > 0 and 20 * np.log10(H_mag[0] + eps) < -20:
+        # ML 88: 20*log10(H_mag(1)) with NO eps floor. errstate only
+        # silences numpy; MATLAB compares against -Inf quietly.
+        with np.errstate(divide='ignore'):
+            _ac_coupled = fin[0] > 0 and 20 * np.log10(H_mag[0]) < -20
+        if _ac_coupled:
             fin_x2 = np.concatenate([[0.0], fin])
             H_log_x = np.concatenate([[-100.0], np.log10(H_mag)])
             mask = fout <= fin[-1]

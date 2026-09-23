@@ -381,3 +381,32 @@ def test_linear_trend_to_DC_log_trend_to_inf_is_refused_like_the_reference():
         interp_Sparam(Sin, fin, fout, 'linear_trend_to_DC_log_trend_to_inf',
                       'extrap_cubic_to_dc_linear_to_inf',
                       _op(debug=False), _param())
+
+
+# --------------------------------------------------------------------------
+# NOT TESTED, and said so rather than implied.
+#
+# Four epsilon floors were removed from this file on 2026-09-23, because the
+# reference has none at any of them:
+#
+#     ML 67  p = polyfit(fin(1:10), log10(H_mag(1:10)), 1)
+#     ML 75  p = polyfit(fin(mid:end), log10(H_mag(mid:end)), 1)
+#     ML 84  H_mag_i = 10.^interp1(fin_x, log10(H_mag_x), fout, 'linear','extrap')
+#     ML 88  if fin(1)>0 && 20*log10(H_mag(1)) < -20
+#
+# The port wrote `log10(H_mag + eps)` at each. This is the same class that was
+# live elsewhere tonight -- plot_modal, get_ILN_cmp_td, get_RILN_cmp_td, get_TDR
+# and FD_Processing all carried it, and FD_Processing's was reached by its own
+# fixture.
+#
+# Here it is NOT demonstrated. A channel with one exactly-zero magnitude bin
+# was driven through COM Octave with mag='trend_to_DC', which reaches both
+# polyfit sites, and the two agreed to the printed digits with every output
+# finite on both sides -- the zero bin does not survive into a distinguishable
+# result on any input that could be built. At every non-zero magnitude the
+# added eps is a no-op in double.
+#
+# So the change ships as an unverified faithfulness correction. A test was
+# attempted and not kept, because one that passes before and after the fix
+# measures nothing.
+# --------------------------------------------------------------------------

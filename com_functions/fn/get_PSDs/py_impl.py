@@ -109,6 +109,29 @@ def _H_interp(sdd21p, faxis, fvec, fb):
 # Helper: build conjugate-symmetric double-sided vector
 # ---------------------------------------------------------------------------
 
+def _check_h_index(idx, n):
+    """Refuse an h() index the reference would refuse, with its own message.
+
+    `idx` is 0-based; the message quotes the 1-based index MATLAB reports.
+    """
+    idx = np.asarray(idx)
+    # Which offending index the reference names: the FIRST non-positive one,
+    # but the LARGEST over-bound one.
+    #   COM Octave: h=1:10; h([3 -5 -1]) -> "h(-5): ...";  h([-1 -5 3]) ->
+    #   "h(-1): ...";  h([3 12 15]) and h([3 15 12]) both -> "h(15): out of
+    #   bound 10".
+    bad = idx[idx < 0]
+    if bad.size:
+        raise IndexError(
+            'get_PSDs: h(%d): subscripts must be either integers 1 to '
+            '(2^63)-1 or logicals - the jitter sampling window starts '
+            'before the pulse response' % (int(bad[0]) + 1))
+    if idx.size and int(idx.max()) >= n:
+        raise IndexError(
+            'get_PSDs: h(%d): out of bound %d - the jitter sampling window '
+            'runs past the pulse response' % (int(idx.max()) + 1, n))
+
+
 def _to_double_sided(S_ss):
     """Convert single-sided spectrum to double-sided (conjugate symmetric).
 
@@ -229,8 +252,12 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
 
             # ---- S_in (eq 178A-24): input noise ----
             if OP.PSDRXCAL:
-                H_noise = H_interp_fn(chdata[-1].sdd21p, chdata[0].faxis, fvec, fb)
-                S_IN_of_f = S_IN_fn(fvec, H_noise, G_DC, G_DC2, param, OP)
+                # MATLAB L7215 keeps the interpolated noise-path VTF on the
+                # result struct; the port computed it into a local and dropped
+                # it, so result.H_noise never existed.
+                result.H_noise = H_interp_fn(chdata[-1].sdd21p, chdata[0].faxis,
+                                             fvec, fb)
+                S_IN_of_f = S_IN_fn(fvec, result.H_noise, G_DC, G_DC2, param, OP)
                 inn_psd = _to_double_sided(S_IN_of_f)
                 inn_rms = np.sqrt(np.sum(inn_psd) * delta_f)
                 S_in_full = _fold_psd(inn_psd, num_ui, M)
@@ -339,10 +366,19 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
                 # h(cursor_i-1+M*(-1:ndfe)) / h(cursor_i+1+M*(-1:ndfe)), centered at the cursor.
                 idx_early = cursor_i - 1 + M * np.arange(-1, Nb + 1)
                 idx_late = cursor_i + 1 + M * np.arange(-1, Nb + 1)
-                valid_early = (idx_early >= 0) & (idx_early < len(h))
-                valid_late = (idx_late >= 0) & (idx_late < len(h))
-                cursors_early_sample = h[idx_early[valid_early]]
-                cursors_late_sample = h[idx_late[valid_late]]
+                # No masking: MATLAB indexes h() with the whole vector and
+                # refuses an index off either end rather than quietly taking
+                # the jitter slope from fewer UI.  Dropping the out-of-range
+                # entries left a shorter h_J that still FFTs to a plausible
+                # S_jn, which is the worst kind of wrong.
+                # COM Octave: cursor_i=4 (1-based), M=4 -> "error: h(-1):
+                #   subscripts must be either integers 1 to (2^63)-1 or
+                #   logicals"; ndfe=14 with len(h)=64 -> "error: h(69): out of
+                #   bound 64 (dimensions are 64x1)".
+                _check_h_index(idx_early, len(h))
+                _check_h_index(idx_late, len(h))
+                cursors_early_sample = h[idx_early]
+                cursors_late_sample = h[idx_late]
             else:
                 cursors_early_sample = h[sampling_offset - 2::M]
                 cursors_late_sample = h[sampling_offset::M]

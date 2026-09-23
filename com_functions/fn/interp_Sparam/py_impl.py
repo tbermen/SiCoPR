@@ -149,24 +149,28 @@ def interp_Sparam(Sin, fin, fout, opt_interp_Sparam_mag, opt_interp_Sparam_phase
         if fin[0] > 0:
             n_pts = min(10, len(fin))
             with np.errstate(divide='ignore', invalid='ignore'):
-                p = np.polyfit(fin[:n_pts], np.log10(H_mag[:n_pts] + eps), 1)
+                p = np.polyfit(fin[:n_pts], np.log10(H_mag[:n_pts]), 1)
             dc_val = 10.0 ** float(np.polyval(p, 0))
             fin_x = np.concatenate([[0.0], fin_x])
             H_mag_x = np.concatenate([[dc_val], H_mag_x])
         if fin[-1] < fout[-1]:
             mid = max(0, len(fin) // 2)
             with np.errstate(divide='ignore', invalid='ignore'):
-                p2 = np.polyfit(fin[mid:], np.log10(H_mag[mid:] + eps), 1)
+                p2 = np.polyfit(fin[mid:], np.log10(H_mag[mid:]), 1)
             hf_val = 10.0 ** float(np.polyval(p2, fout[-1]))
             if hf_val > H_mag[-1]:
                 hf_val = H_mag[-1]
             fin_x = np.concatenate([fin_x, [fout[-1]]])
             H_mag_x = np.concatenate([H_mag_x, [hf_val]])
         with np.errstate(divide='ignore', invalid='ignore'):
-            H_mag_i = 10.0 ** _interp_extrap(fout, fin_x, np.log10(H_mag_x + eps))
+            H_mag_i = 10.0 ** _interp_extrap(fout, fin_x, np.log10(H_mag_x))
 
     elif mag_method == 'extrap_to_DC_or_zero':
-        if fin[0] > 0 and 20 * np.log10(H_mag[0] + eps) < -20:
+        # ML 88: 20*log10(H_mag(1)) with NO eps floor. errstate only
+        # silences numpy; MATLAB compares against -Inf quietly.
+        with np.errstate(divide='ignore'):
+            _ac_coupled = fin[0] > 0 and 20 * np.log10(H_mag[0]) < -20
+        if _ac_coupled:
             fin_x2 = np.concatenate([[0.0], fin])
             H_log_x = np.concatenate([[-100.0], np.log10(H_mag)])
             mask = fout <= fin[-1]

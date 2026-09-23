@@ -250,10 +250,26 @@ def COM_FD_to_TD(chdata, param, OP,
 
         CMn_cd = ch.VCM_CD_HF_struct.CMn
         CMn_dc = ch.VCM_DC_HF_struct.CMn
-        ch.SCMR_CD_ch_pk = 10.0 * np.log10(V_peak ** 2 / (CMn_cd ** 2 + 1e-300))
-        ch.SCMR_CD_ch = 10.0 * np.log10(P_signal / (CMn_cd ** 2 + 1e-300))
-        ch.SCMR_DC_ch_pk = 10.0 * np.log10(V_peak ** 2 / (CMn_dc ** 2 + 1e-300))
-        ch.SCMR_DC_ch = 10.0 * np.log10(P_signal / (CMn_dc ** 2 + 1e-300))
+        # ML 1342-1345: 10*log10(V_peak^2/CMn^2) with NO 1e-300 floor on the
+        # denominator. On a perfectly balanced channel CMn is exactly 0, where
+        # the reference gives +Inf and the floored form gives a finite ~2993 dB
+        # that reads like a measurement. Same defect FD_Processing carried on
+        # its SCMR_FD_CD_ch_dB, and its test fixture used scd21_orig = zeros,
+        # so that one was live. errstate only silences numpy; MATLAB divides by
+        # zero quietly.
+        # np.float64, not Python float: a Python scalar divided by zero RAISES
+        # ZeroDivisionError, where MATLAB and numpy both give Inf. errstate
+        # governs numpy's warning only, so the operands have to be numpy types
+        # for the reference's own answer to come out at all.
+        _cd = np.float64(CMn_cd) ** 2
+        _dc = np.float64(CMn_dc) ** 2
+        _vp = np.float64(V_peak) ** 2
+        _ps = np.float64(P_signal)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ch.SCMR_CD_ch_pk = 10.0 * np.log10(_vp / _cd)
+            ch.SCMR_CD_ch = 10.0 * np.log10(_ps / _cd)
+            ch.SCMR_DC_ch_pk = 10.0 * np.log10(_vp / _dc)
+            ch.SCMR_DC_ch = 10.0 * np.log10(_ps / _dc)
 
         # ---- Console output (matches MATLAB fprintf) ----
         if not OP.DISPLAY_WINDOW and i == 0:

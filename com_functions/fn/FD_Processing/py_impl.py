@@ -8,9 +8,73 @@ from types import SimpleNamespace
 from scipy.special import erfcinv
 
 
+_EPS0 = np.nextafter(0.0, 1.0)   # MATLAB eps(0) = 4.9406564584124654e-324
+
+
 def _W(f, ft, fr, fb):
-    """Power weighting function, eq 93A-57: sinc^2 * 4th-order * 8th-order rolloff."""
-    return np.sinc(f / (fb + 1e-300))**2 / (fb + 1e-300) / (1.0 + (f / (ft + 1e-300))**4) / (1.0 + (f / (fr + 1e-300))**8)
+    """Power weighting function, eq 93A-57: sinc^2 * 4th-order * 8th-order rolloff.
+
+    Transcribed operation for operation from the reference, which is
+        Sinc = @(x) sin(pi*x+eps(0))./(pi*x+eps(0));
+        W = @(f,ft,fr,fb) 1/fb * Sinc(f/fb).^2 .* (1./(1+(f/ft).^4)) .* (1./(1+(f/fr).^8));
+    The order matters: `1/fb * A` rounds the reciprocal first and is not the
+    same double as `A / fb`, and the earlier `+1e-300` guards on fb/ft/fr were
+    an invented floor.  The previous spelling differed from the reference in
+    15 of 32 samples at the last bit; this one is bit-identical.
+    """
+    x = f / fb
+    sinc = np.sin(np.pi * x + _EPS0) / (np.pi * x + _EPS0)
+    return (1.0 / fb * sinc**2
+            * (1.0 / (1.0 + (f / ft)**4))
+            * (1.0 / (1.0 + (f / fr)**8)))
+
+
+def _neg20log10(x):
+    """MATLAB -20*log10(abs(x)).
+
+    No epsilon floor: at |x| = 0 the reference returns +Inf, and every metric
+    built on it (a ratio in dB, an interp1 through the bin) inherits that Inf.
+    `-20*log10(|x| + 1e-300)` returns ~6000 dB instead, which is finite and
+    plausible and therefore worse than the Inf.
+    """
+    with np.errstate(divide='ignore'):
+        return -20.0 * np.log10(np.abs(x))
+
+
+def _db10_ratio(num, den):
+    """MATLAB 10*log10(num/den) -- +Inf at den == 0, with no epsilon floor."""
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return float(10.0 * np.log10(np.float64(num) / np.float64(den)))
+
+
+def _interp1(x, v, xq):
+    """MATLAB interp1(x, v, xq) at one point: linear, NaN outside the data.
+
+    Two things np.interp does differently, both of which showed up against the
+    reference:
+
+    * np.interp CLAMPS outside [x[0], x[-1]] and returns the end value, where
+      interp1 with no extrapolation argument returns NaN.  A channel whose
+      frequency axis starts above Nyquist came back with the first bin's loss
+      instead of NaN.
+    * np.interp carries a NaN-avoidance retry: when `slope*(xq-x[i]) + v[i]`
+      is NaN it recomputes from the right-hand end.  interp1 has no such
+      fallback, so where v[i] is +Inf (a zero S-parameter bin) it returns NaN
+      and np.interp returned +Inf.
+      COM Octave: interp1([0 1 2 3],[1 Inf 3 4],[0 0.5 1 1.5 2]) ->
+        [NaN Inf NaN NaN 3];  np.interp gave [1 Inf Inf Inf 3].
+
+    So spell out interp1's own `s*dy(k) + v(k)` on the bracket `lookup` picks.
+    """
+    xa = np.asarray(x, dtype=float).ravel()
+    va = np.asarray(v, dtype=float).ravel()
+    if xq < xa[0] or xq > xa[-1]:
+        return float('nan')
+    k = int(np.searchsorted(xa, xq, side='right')) - 1
+    k = min(max(k, 0), len(xa) - 2)
+    s = (xq - xa[k]) / (xa[k + 1] - xa[k])
+    with np.errstate(invalid='ignore'):      # Inf-Inf is a result, not a warning
+        return float(s * (va[k + 1] - va[k]) + va[k])
 
 
 def _find_idx_ge(faxis, f):
@@ -44,7 +108,15 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
         A_fext = float(np.asarray(param.a_fext).ravel()[pkg_tc])
         A_next = float(np.asarray(param.a_next).ravel()[pkg_tc])
 
-    for ch in chdata:
+    # MATLAB loops `for i=1:param.number_of_s4p_files`, not over every element of
+    # chdata: with PSDRXCAL the noise path sits past that count and the reference
+    # never touches it.  Iterating the whole list gave it an A, a PWF and -- for a
+    # crosstalk type -- a place in the ICN power sum (ICN_mV 4.2335 vs 3.1327 on a
+    # 3-channel/count-2 case).
+    n_files = int(param.number_of_s4p_files)
+    chdata_in_scope = chdata[:n_files]
+
+    for ch in chdata_in_scope:
         if ch.type == 'THRU':
             ch.A = A_thru
             ch.Aicn = A_thru
@@ -59,7 +131,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             ch.Aicn = 1.0
 
     if getattr(OP, 'TDMODE', False):
-        for ch in chdata:
+        for ch in chdata_in_scope:
             # MATLAB indices 11,10 (1-based) → Python 10,9 (0-based)
             ch.delta_f = float(np.asarray(ch.faxis).ravel()[10] - np.asarray(ch.faxis).ravel()[9])
 
@@ -78,7 +150,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
     # ── Apply receiver filter (INCLUDE_FILTER path) ─────────────────────────
     if getattr(OP, 'INCLUDE_FILTER', False):
-        for ch in chdata:
+        for ch in chdata_in_scope:
             f = np.asarray(ch.faxis).ravel()
             H_bt = _Bessel_Thomson_Filter_fn(param, f, OP.Bessel_Thomson)
             H_bw = _Butterworth_Filter_fn(param, f, OP.Butterworth)
@@ -103,7 +175,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
     MDFEXT = np.zeros(nf)
     MDNEXT = np.zeros(nf)
 
-    for ch in chdata:
+    for ch in chdata_in_scope:
         faxis = np.asarray(ch.faxis).ravel()
 
         # Frequency boundary indices (0-based)
@@ -123,7 +195,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
         if ch.type == 'THRU':
             sdd21f = np.asarray(ch.sdd21f).ravel()
-            Il_dB = -20.0 * np.log10(np.abs(sdd21f) + 1e-300)
+            Il_dB = _neg20log10(sdd21f)
             fslice = faxis[idx_f1:idx_f2 + 1]
 
             P_signal = 2.0 * delta_f * np.sum(
@@ -141,8 +213,11 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             W_slice = _W(fslice, float(ch.ftr), fr, fb)
             EC_CD = 2.0 * delta_f * np.sum(W_slice * np.abs(scd21_o)**2 * sigma_X**2 * qv2)
             EC_DC = 2.0 * delta_f * np.sum(W_slice * np.abs(sdc21_o)**2 * sigma_X**2 * qv2)
-            output_args.SCMR_FD_CD_ch_dB = float(10.0 * np.log10(P_signal / (EC_CD + 1e-300)))
-            output_args.SCMR_FD_DC_ch_dB = float(10.0 * np.log10(P_signal / (EC_DC + 1e-300)))
+            # A perfectly balanced channel has scd21_orig/sdc21_orig identically
+            # zero, so EC_CD/EC_DC are 0 and the reference reports Inf dB of
+            # common-mode rejection.  `/(EC + 1e-300)` reported ~2993 dB.
+            output_args.SCMR_FD_CD_ch_dB = _db10_ratio(P_signal, EC_CD)
+            output_args.SCMR_FD_DC_ch_dB = _db10_ratio(P_signal, EC_DC)
 
             # ILD fit over [f1, f2_ild]
             ILD_magft, ch.fit_f2_ild = _get_ILN_fn(
@@ -151,7 +226,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
             fnq = 1.0 / (float(param.ui) * 2.0)
             if faxis[idx_f2] >= fnq:
-                ch.fit_ILatNq = float(np.interp(fnq, faxis, -np.asarray(ch.fit_orig)))
+                ch.fit_ILatNq = _interp1(faxis, -np.asarray(ch.fit_orig).ravel(), fnq)
                 output_args.fitted_IL_dB_at_Fnq = ch.fit_ILatNq
             else:
                 ch.fit_ILatNq = []
@@ -161,16 +236,16 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             output_args.fitted_IL_dB_at_F2_ild = float(-fit_f2_ild_arr[-1])
 
             if faxis[-1] >= fnq:
-                ch.ILatNq = float(np.interp(fnq, faxis, -20.0 * np.log10(np.abs(sdd21f) + 1e-300)))
+                ch.ILatNq = _interp1(faxis, _neg20log10(sdd21f), fnq)
             else:
                 ch.ILatNq = []
             output_args.IL_dB_channel_only_at_Fnq = ch.ILatNq if isinstance(ch.ILatNq, list) else float(ch.ILatNq)
 
             if getattr(OP, 'include_pcb', False):
-                output_args.cable__assembley_loss = float(np.interp(
-                    fnq, faxis, -20.0 * np.log10(np.abs(np.asarray(ch.sdd21_orig).ravel()) + 1e-300)))
-                output_args.loss_with_PCB = float(np.interp(
-                    fnq, faxis, -20.0 * np.log10(np.abs(np.asarray(ch.sdd21_raw).ravel()) + 1e-300)))
+                output_args.cable__assembley_loss = _interp1(
+                    faxis, _neg20log10(np.asarray(ch.sdd21_orig).ravel()), fnq)
+                output_args.loss_with_PCB = _interp1(
+                    faxis, _neg20log10(np.asarray(ch.sdd21_raw).ravel()), fnq)
 
             # TD/RILN metrics
             if getattr(OP, 'COMPUTE_TDILN', False) or getattr(OP, 'COMPUTE_RILN', False):
@@ -200,7 +275,7 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
             if ch.type == 'FEXT':
                 MDFEXT = np.sqrt(np.abs(sdd21f)**2 + MDFEXT**2)
-                MDFEXT_dBloss = -20.0 * np.log10(MDFEXT + 1e-300)
+                MDFEXT_dBloss = _neg20log10(MDFEXT)
                 MDFEXT_ICN = float(np.sqrt(
                     2.0 * delta_f / fb *
                     np.sum(ch.Aicn**2 * PWF[idx_f1:idx_f2 + 1] *
@@ -209,7 +284,9 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
 
                 PS_MDFEXT = _W(faxis, float(ch.ftr), fr, fb) * 10.0**(-MDFEXT_dBloss / 10.0)
                 sqrd_mdfext = 2.0 * delta_f * np.sum(PS_MDFEXT[idx_f1:idx_f2 + 1]) * float(param.sigma_X)**2
-                output_args.SNR_MDFEXT = float(10.0 * np.log10(P_signal / (sqrd_mdfext + 1e-300)))
+                # No FEXT coupling at all makes sqrd_mdfext 0, where the
+                # reference reports Inf dB SNR; `+1e-300` reported ~2993 dB.
+                output_args.SNR_MDFEXT = _db10_ratio(P_signal, sqrd_mdfext)
 
             else:  # NEXT
                 MDNEXT = np.sqrt(np.abs(sdd21f)**2 + MDNEXT**2)
@@ -228,15 +305,17 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
         # else NOISE → skip (no PSXT update, as in MATLAB `continue`)
 
     # ── Final Nyquist loss interpolation ────────────────────────────────────
-    fax_last = np.asarray(chdata[-1].faxis).ravel()
+    # MATLAB reads chdata(i).faxis, where i is whatever the loop above left
+    # behind -- the LAST channel it visited, which is number_of_s4p_files, not
+    # the last element of chdata.
+    fax_last = np.asarray(chdata_in_scope[-1].faxis).ravel()
     fnq = 1.0 / (float(param.ui) * 2.0)
     ch0 = chdata[0]
 
     def _il_at_fnq(sig):
-        arr = np.asarray(sig).ravel()
-        if fax_last[-1] >= fnq:
-            return float(np.interp(fnq, fax_last, -20.0 * np.log10(np.abs(arr) + 1e-300)))
-        return float('nan')
+        # interp1 returns NaN outside the data range, which the reference leaves
+        # unguarded here; _interp1 reproduces that rather than clamping.
+        return _interp1(fax_last, _neg20log10(np.asarray(sig).ravel()), fnq)
 
     output_args.VTF_loss_dB_at_Fnq = _il_at_fnq(ch0.sdd21)
     output_args.IL_db_die_to_die_at_Fnq = _il_at_fnq(ch0.sdd21p_nodie)

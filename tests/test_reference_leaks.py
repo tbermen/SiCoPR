@@ -61,8 +61,10 @@ KNOWN = {
         'ML returns only results',
     ('end_display_control', 'end_display_control', 'param'):
         'ML returns only msg; display bookkeeping only',
-    ('OptFom_Compute_RxFFE', 'OptFom_Compute_RxFFE', 'OP'):
-        'ML returns [sbr, THIS, skip_it]',
+    # OptFom_Compute_RxFFE's OP.WO_TXFFE leak was FIXED on 2026-09-23: running
+    # the reference under Octave showed the caller still reads WO_TXFFE = 1 on
+    # return from every branch, so the function now copies OP first. Its guard
+    # is asserted below.
     ('read_s4p_files', '_read_p2_s2params_inline', 'param'):
         'ML read_p2_s2params returns no param; flim set identically by the caller',
     ('read_s4p_files', '_read_p4_s4params_inline', 'param'):
@@ -147,7 +149,8 @@ check("known_leak_list_is_current",
 # The remedy must stay where it was applied.
 gset = {(d, f, p) for d, f, p, _ in guarded}
 for _d, _f, _p in (('process_sxp', 'process_sxp', 'OP'),
-                   ('get_RILN_cmp_td', 'get_RILN_cmp_td', 'OP')):
+                   ('get_RILN_cmp_td', 'get_RILN_cmp_td', 'OP'),
+                   ('OptFom_Compute_RxFFE', 'OptFom_Compute_RxFFE', 'OP')):
     check("copy_guard_retained__%s" % _d,
           (_d, _f, _p) in gset,
           "%s no longer copies %s before writing to it -- this is the exact "

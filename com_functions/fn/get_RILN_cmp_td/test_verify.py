@@ -1,225 +1,390 @@
 # ============================================================
-# MATLAB GROUND TRUTH
-# get_RILN_cmp_td: reflection/re-reflection noise analysis.
-# MATLAB lines 6694–6875
+# MATLAB GROUND TRUTH — get_RILN_cmp_td, MATLAB lines 6694-6875 (4p16p0 7134-)
 #
-# Key invariants:
-# 1. Echo series: port2_rn = sum_{m=1}^{1000} |RIL|*RIL^{2m}*rho1^m*rho2^m*(1+rho1)*(1+rho2)
-#    For small RIL and rho (|rho|<0.5), this converges quickly.
-#    For RIL=0 → port2_rn=0 → REF_noise.PR≈0 → FOM≈0
+# Reflection / re-reflection noise: a 1000-echo sum over RIL and the two port
+# reflection coefficients, a log-domain polynomial fit of sdd21 (FIT), four
+# time-domain responses (REF / FIT / RIL / REF_noise) and an ILN figure of
+# merit taken over the samples_per_ui sample phases.
 #
-# 2. fmin_idx: data below 1 GHz is removed
-#    → f_rn starts at or above 1 GHz
+# The expected values below were not read off the MATLAB and they were not
+# produced by this port: they come from running the reference function itself,
+# verbatim, under Octave (tools/octave_oracle.py) on the very inputs these
+# tests build.  See the "COM Octave" block for how.
 #
-# 3. FOM = max over M phases of norm(ILN[phase::M])
-#    For zero noise (RIL=0), FOM should be 0 (or very small due to numerics)
-#
-# 4. Least-squares fit: FIT = exp(alpha·features) matches sdd21 trend
-#    For a pure exponential sdd21 = exp(-a*f), FIT should closely match sdd21
-#
-# 5. All 4 sub-structs present: REF, FIT, RIL, REF_noise
+# Bessel_Thomson_Filter / Butterworth_Filter / s21_to_impulse_DC /
+# calculate_delay_CausalityEnforcement / get_pdf_from_sampled_signal /
+# normal_dist are top-level functions of the assembled sicopr.py, so this is an
+# INTEGRATION test with the real dependencies injected — the same set Octave
+# runs.  They used to be hand-written stubs inside py_impl.py and the stubbed
+# Butterworth magnitude alone put REF_noise.PR out by a factor of 2.6.
 # ============================================================
+
+import os
+import sys
 
 import numpy as np
 import pytest
 from types import SimpleNamespace
-from scipy.signal import lfilter
 
-from com_functions.fn.get_RILN_cmp_td.py_impl import get_RILN_cmp_td
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+import sicopr                                                    # noqa: E402
+import com_functions.fn.get_RILN_cmp_td.py_impl as _mod          # noqa: E402
+from com_functions.fn.get_RILN_cmp_td.py_impl import get_RILN_cmp_td  # noqa: E402
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_ril_struct(N, f, rho_val=0.1, ril_val=0.05):
-    return SimpleNamespace(
-        RIL=ril_val * np.ones(N, dtype=complex),
-        rho_port1=rho_val * np.ones(N, dtype=complex),
-        rho_port2=rho_val * np.ones(N, dtype=complex),
-        freq=f,
-    )
-
-
-def _make_param(M=4, fb=53.125e9):
-    return SimpleNamespace(
-        samples_per_ui=M, sample_dt=1.0 / (2 * fb),
-        fb=fb, fb_BT_cutoff=0.473, levels=4, specBER=1e-4,
-    )
-
-
-def _make_op():
-    return SimpleNamespace(
-        transmitter_transition_time=8e-3, BinSize=1e-3,
-        impulse_response_truncation_threshold=1e-7,
-    )
-
-
-def _stub_s21_to_ir(sdd21, faxis, dt, OP, param):
-    """Stub: zero impulse response (trivial channel)."""
-    N_ir = 64
-    ir = np.zeros(N_ir)
-    t = np.arange(N_ir) * dt
-    return ir, t, 0.0, 0.0
-
-
-def _stub_pdf(samples, levels, bin_size, flag):
-    """Returns a single-bin PDF."""
-    x = np.array([0.0])
-    y = np.array([1.0])
-    return SimpleNamespace(x=x, y=y)
+for _n in dir(sicopr):
+    _v = getattr(sicopr, _n)
+    if callable(_v) and not _n.startswith('__') and not hasattr(_mod, _n):
+        setattr(_mod, _n, _v)
 
 
 # ---------------------------------------------------------------------------
-# Test 1 – Nominal: output struct has all required fields
+# Fixtures — exactly the inputs handed to the Octave oracle
+# ---------------------------------------------------------------------------
+
+FB = 26.5625e9
+N = 48
+
+
+def _faxis():
+    return np.linspace(0.0, 2 * FB, N)
+
+
+def _op(bin_size):
+    return SimpleNamespace(
+        DISPLAY_WINDOW=False, DEBUG=False, ZERO_PAD=0,
+        transmitter_transition_time=10e-12,
+        impulse_response_truncation_threshold=1e-3,
+        ENFORCE_CAUSALITY=0, EC_PULSE_TOL=0.01, EC_REL_TOL=1e-2,
+        EC_DIFF_TOL=1e-3, BinSize=bin_size,
+        interp_sparam_mag='linear_trend_to_DC',
+        interp_sparam_phase='extrap_cubic_to_dc_linear_to_inf')
+
+
+def _param(samples_per_ui=4):
+    return SimpleNamespace(
+        fb=FB, samples_per_ui=samples_per_ui, sample_dt=1.0 / (FB * 4),
+        fb_BT_cutoff=0.75, fb_BW_cutoff=0.75, BTorder=4, f_r=0.75,
+        levels=4, specBER=1e-4, zero_pad_tukey_window_in_fb=0)
+
+
+def _ril_struct(RIL, rho1, rho2, f):
+    return SimpleNamespace(RIL=RIL.astype(complex),
+                           rho_port1=(rho1 * np.ones(len(f))).astype(complex),
+                           rho_port2=(rho2 * np.ones(len(f))).astype(complex),
+                           freq=f)
+
+
+def case_A():
+    """Smooth channel, weak reflections: the noise never clears one PDF bin."""
+    f = _faxis()
+    sdd21 = np.exp(-0.30 * np.sqrt(f / 1e9) - 0.010 * f / 1e9)
+    RIL = 0.050 * np.exp(-0.05 * f / 1e9)
+    return sdd21, _ril_struct(RIL, 0.11, 0.07, f), f, _op(1e-4), _param(4)
+
+
+def case_B():
+    """Rippled channel, strong reflections: a real multi-bin ILN PDF."""
+    f = _faxis()
+    sdd21 = (np.exp(-0.30 * np.sqrt(f / 1e9) - 0.010 * f / 1e9)
+             * (1.0 + 0.05 * np.cos(2 * np.pi * f / 5e9)))
+    RIL = 0.30 * np.exp(-0.02 * f / 1e9)
+    return sdd21, _ril_struct(RIL, 0.30, 0.25, f), f, _op(1e-5), _param(4)
+
+
+def case_C():
+    """case_B inputs with samples_per_ui far larger than len(ILN), so most of
+    the sample-phase loop draws an empty slice."""
+    sdd21, ril, f, op, _ = case_B()
+    return sdd21, ril, f, op, _param(128)
+
+
+CASES = {'A': case_A, 'B': case_B, 'C': case_C}
+
+
+# ===========================================================================
+# COM Octave — reference values
+#
+# Generated by running the verbatim 4p16p0 reference get_RILN_cmp_td under
+# Octave on the inputs built above, with the reference Bessel_Thomson_Filter,
+# Butterworth_Filter, Tukey_Window, s21_to_impulse_DC, interp_Sparam,
+# calculate_delay_CausalityEnforcement, get_pdf_from_sampled_signal,
+# normal_dist, d_cpdf, conv_fct and bessel:
+#
+#   import sys; sys.path.insert(0, 'tools')
+#   from octave_oracle import call
+#   out = call('get_RILN_cmp_td',
+#              args=["sdd21(:).'", 'RIL_struct', "faxis(:).'", 'OP', 'param', '1.0'],
+#              inputs=dict(sdd21=sdd21, faxis=f, RIL=RIL, rho1=rho1, rho2=rho2),
+#              outputs=['RILN_TD_struct'], setup=<the OP/param/RIL_struct above>,
+#              needs=[...])
+#
+# FIR and PR are pinned every 8th sample plus the last; `caus`/`trunc` are
+# causality_correction_dB / truncation_dB.  Octave's %.17g throughout.
+# ===========================================================================
+
+_IDX = list(range(0, 94, 8)) + [93]
+
+OCT = {
+ 'A': {
+  'ipeak': 4,
+  'REF': dict(n=94, caus=-8.5602273961676421, trunc=-np.inf, idx=_IDX,
+    FIR=[0.046251060260488627, 0.014594045376324092, 0.0053500810778321752, 0.0034419736878589843, 0.0027697734946656206, 0.0024744489040633964, 0.0023745243835903316, 0.0024217949209148154, 0.0026397678684269049, 0.0031551060960454146, 0.0044314770950161092, 0.0091399553389539326, 0.028833311253993365],
+    PR=[0.046251060260488627, 0.06377934786299487, 0.02385767053809117, 0.014633218892372133, 0.011418285649132963, 0.010043003301499971, 0.0095320173583437577, 0.0096248834353229486, 0.010365655903372656, 0.012161951118841136, 0.016483052778350687, 0.03093684889386851, 0.077691341375959275]),
+  'FIT': dict(n=94, caus=-8.5602273961675817, trunc=-np.inf, idx=_IDX,
+    FIR=[0.046251060260488898, 0.014594045376324066, 0.0053500810778321422, 0.0034419736878589608, 0.0027697734946655912, 0.0024744489040633552, 0.0023745243835903221, 0.002421794920914779, 0.0026397678684268793, 0.0031551060960453895, 0.0044314770950160806, 0.00913995533895391, 0.028833311253993514],
+    PR=[0.046251060260488898, 0.063779347862995425, 0.023857670538091041, 0.01463321889237202, 0.01141828564913284, 0.010043003301499834, 0.0095320173583436814, 0.0096248834353228237, 0.010365655903372541, 0.012161951118841012, 0.016483052778350549, 0.030936848893868392, 0.077691341375959538]),
+  'RIL': dict(n=94, caus=-10.796882343428848, trunc=-np.inf, idx=_IDX,
+    FIR=[0.0028750142342334386, 0.00044083684109287098, 8.6913719972304647e-05, 3.398936038353757e-05, 2.1661244889404394e-05, 1.6670854661486705e-05, 1.5009722529953941e-05, 1.5611111761857269e-05, 1.8959827765696159e-05, 2.7940434579473759e-05, 5.510486921325696e-05, 0.00020071822535770113, 0.0013462500382510323],
+    PR=[0.0028750142342334386, 0.0015688785787465922, 0.00038814121055196003, 0.00015500555948284604, 9.1635392368002183e-05, 6.8612993255913457e-05, 6.0650461498275552e-05, 6.2070153033894835e-05, 7.380970852524524e-05, 0.0001050912530336237, 0.0001946456562230096, 0.00061180679833176604, 0.0029612889742293004]),
+  'REF_noise': dict(n=94, caus=-2.9394504585230523, trunc=-np.inf, idx=_IDX,
+    FIR=[8.1498543388079703e-08, 2.190488300850773e-08, 5.1300430454818178e-09, 2.3175788941634159e-09, 1.4741266113943961e-09, 1.1491514388777061e-09, 1.0475466961675495e-09, 1.1001652297199127e-09, 1.3415356230936152e-09, 1.968001322576115e-09, 3.8109711669306353e-09, 1.2919365399692972e-08, 5.6144491424751551e-08],
+    PR=[8.1498543388079703e-08, 1.6338492249254641e-07, 2.5258249149355745e-08, 1.0497579565284751e-08, 6.3277725738943535e-09, 4.764276823839118e-09, 4.2231991377772176e-09, 4.3199570457332117e-09, 5.1177994010011355e-09, 7.2338520111737249e-09, 1.3213229736164997e-08, 3.9527275388926387e-08, 1.4443074609739747e-07]),
+  'FOM': 5.3002535988098223e-07,
+  'FOM_PDF': -0.0,
+  'SNR_ISI_FOM': 119.39567012191267,
+  'SNR_ISI_FOM_PDF': np.inf,
+  'ILN_n': 90,
+  'ILN_head': [4.8657266458634678e-07, 4.4474795233929518e-07, 3.5259673162017092e-07, 2.4761190673797895e-07],
+  'ILN_tail': [6.0735911569930145e-08, 7.8379533661527151e-08, 1.045455080311521e-07, 1.4443074609739747e-07],
+  't_head': [3.764705882352942e-11, 4.705882352941177e-11],
+  't_tail': [8.6588235294117657e-10, 8.7529411764705893e-10],
+  'PDF_BinSize': 0.0001,
+  'PDF_Min': 0,
+  'PDF_n': 1,
+  'PDF_x_head': [0.0],
+  'PDF_x_tail': [0.0],
+ },
+ 'B': {
+  'ipeak': 4,
+  'REF': dict(n=94, caus=-8.4930401633008934, trunc=-np.inf, idx=_IDX,
+    FIR=[0.046428483051847443, 0.014783988470575002, 0.0056714653061719807, 0.0074960587711299202, 0.0030497631464049091, 0.0026466122288978096, 0.002526779560139259, 0.00258467252307279, 0.002867608319637891, 0.0040100341270695285, 0.004735522161952636, 0.0093539198885904239, 0.029013717404526018],
+    PR=[0.046428483051847443, 0.064514183574058345, 0.024967745051063462, 0.02540881592148167, 0.012931778347058272, 0.010776112173528477, 0.010146028868192545, 0.01025814183223378, 0.011196513541344121, 0.014497576043874558, 0.019629466607642206, 0.031823398101115549, 0.078429561983266116]),
+  'FIT': dict(n=94, caus=-8.5635465524935892, trunc=-np.inf, idx=_IDX,
+    FIR=[0.046352348765064694, 0.015501649825114984, 0.005961303425555264, 0.0039283365756752802, 0.0031954814959532425, 0.0028708358954260219, 0.0027607837427117096, 0.0028135599711088823, 0.0030545296888430371, 0.0036192548011952912, 0.0049962678534222335, 0.0099123946861460945, 0.029322918437599394],
+    PR=[0.046352348765064694, 0.06613673207140873, 0.026469906907647597, 0.016651461061404024, 0.01315719757721772, 0.011645214815746605, 0.01108045961815401, 0.011183230627364866, 0.012000956692713274, 0.013970214091305652, 0.018643063876946621, 0.033831423584774437, 0.080561246397176087]),
+  'RIL': dict(n=94, caus=-21.834999762057382, trunc=-np.inf, idx=_IDX,
+    FIR=[0.0088078989547232707, 0.0029580188871370467, 0.00028271209574246209, 9.3803499292973756e-05, 6.0819105520193259e-05, 4.3623677124512621e-05, 3.5091262575201633e-05, 3.1851995292726481e-05, 3.4281778750620778e-05, 4.7784358738355206e-05, 9.7916848094752834e-05, 0.00040073389551554384, 0.0037967734502518894],
+    PR=[0.0088078989547232707, -0.015363669941131853, 0.0011533508652397302, 0.00037639744967715315, 0.00021813394592478397, 0.00016353301932818076, 0.00014447052264279721, 0.00014779367212873129, 0.00017568616209129911, 0.00025007097285138612, 0.00046313020731703536, 0.0014588999549957154, 0.0076090028368685086]),
+  'REF_noise': dict(n=94, caus=-8.906226578679501, trunc=-np.inf, idx=_IDX,
+    FIR=[0.00020834853550740729, 3.1126177279349288e-05, 6.738897883892085e-06, 2.7471230452904984e-06, 1.7622420381402069e-06, 1.3718915230408384e-06, 1.246140851238803e-06, 1.3012544182393687e-06, 1.5771056700978684e-06, 2.3060762267897856e-06, 4.4950508596817532e-06, 1.6127729554934104e-05, 0.00010303785091849171],
+    PR=[0.00020834853550740729, 0.00017321136759794752, 3.0673535511678007e-05, 1.2532510954864458e-05, 7.5035473881980674e-06, 5.6642346081477819e-06, 5.0285345125090931e-06, 5.1420087943636977e-06, 6.079590221643038e-06, 8.5771687857812782e-06, 1.57220833904703e-05, 4.8892740704902841e-05, 0.00023039770488709642]),
+  'FOM': 0.0023691988850851925,
+  'FOM_PDF': 0.0028800000000000002,
+  'SNR_ISI_FOM': 46.405771152219216,
+  'SNR_ISI_FOM_PDF': 44.709951788944686,
+  'ILN_n': 90,
+  'ILN_head': [0.0023553144208062161, 0.0020428261276973698, 0.001314624113480398, 0.000586284707340054],
+  'ILN_tail': [7.8109133088774614e-05, 0.00010468115428449902, 0.00014840931464685711, 0.00023039770488709642],
+  't_head': [3.764705882352942e-11, 4.705882352941177e-11],
+  't_tail': [8.6588235294117657e-10, 8.7529411764705893e-10],
+  'PDF_BinSize': 1.0000000000000001e-05,
+  'PDF_Min': -294,
+  'PDF_n': 589,
+  'PDF_x_head': [-0.0029400000000000003, -0.0029300000000000003],
+  'PDF_x_tail': [0.0029299999999999999, 0.0029400000000000003],
+ },
+ 'C': {
+  'FOM': 0.0033172925281098327,
+  'FOM_PDF': 0.0033200000000000005,
+  'SNR_ISI_FOM': 49.977490579623165,
+  'SNR_ISI_FOM_PDF': 49.970404315686196,
+  'ILN_n': 1,
+  'PDF_Min': -332,
+  'PDF_n': 665,
+ },
+}
+
+# Residual between this port and Octave on these cases is <= 6e-14 relative,
+# from the FFT and interp1 in s21_to_impulse_DC. Anything looser would have
+# let the two confirmed defects through: the lstsq fit was out by 160% and the
+# stubbed Butterworth by 160%.
+RTOL = 1e-11
+
+
+# ---------------------------------------------------------------------------
+# Oracle-backed tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('tag', ['A', 'B'])
+def test_td_responses_match_reference(tag):
+    """REF / FIT / RIL / REF_noise FIR, PR and the two dB figures."""
+    sdd21, ril, f, op, param = CASES[tag]()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    exp = OCT[tag]
+
+    for sub in ('REF', 'FIT', 'RIL', 'REF_noise'):
+        e = exp[sub]
+        got = getattr(R, sub)
+        assert len(got.FIR) == e['n'], '%s.FIR length' % sub
+        assert len(got.PR) == e['n'], '%s.PR length' % sub
+        np.testing.assert_allclose(np.asarray(got.FIR)[e['idx']], e['FIR'],
+                                   rtol=RTOL, err_msg='%s.FIR' % sub)
+        np.testing.assert_allclose(np.asarray(got.PR)[e['idx']], e['PR'],
+                                   rtol=RTOL, err_msg='%s.PR' % sub)
+        np.testing.assert_allclose(float(got.causality_correction_dB), e['caus'],
+                                   rtol=RTOL, err_msg='%s.causality' % sub)
+        assert float(got.truncation_dB) == e['trunc'], '%s.truncation_dB' % sub
+
+
+@pytest.mark.parametrize('tag', ['A', 'B'])
+def test_fit_is_the_reference_normal_equation_fit(tag):
+    """FIT is driven entirely by alpha = ((fmbg'*fmbg)^-1)*fmbg'*LGw.
+
+    fmbg is conditioned around 1e21, so a least-squares solver is not a
+    substitute for MATLAB's normal equations: np.linalg.lstsq drops the modes
+    that carry the sqrt(f) and f terms and the fit moves by more than 100%.
+    """
+    sdd21, ril, f, op, param = CASES[tag]()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    e = OCT[tag]['FIT']
+    np.testing.assert_allclose(np.asarray(R.FIT.FIR)[e['idx']], e['FIR'], rtol=RTOL)
+
+
+@pytest.mark.parametrize('tag', ['A', 'B'])
+def test_iln_and_fom_match_reference(tag):
+    sdd21, ril, f, op, param = CASES[tag]()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    exp = OCT[tag]
+
+    assert int(np.argmax(np.asarray(R.REF.PR))) == exp['ipeak']
+    assert len(R.ILN) == exp['ILN_n']
+    assert len(R.t) == exp['ILN_n']
+    np.testing.assert_allclose(np.asarray(R.ILN)[:4], exp['ILN_head'], rtol=RTOL)
+    np.testing.assert_allclose(np.asarray(R.ILN)[-4:], exp['ILN_tail'], rtol=RTOL)
+    np.testing.assert_allclose(np.asarray(R.t)[:2], exp['t_head'], rtol=RTOL)
+    np.testing.assert_allclose(np.asarray(R.t)[-2:], exp['t_tail'], rtol=RTOL)
+    np.testing.assert_allclose(float(R.FOM), exp['FOM'], rtol=RTOL)
+
+
+@pytest.mark.parametrize('tag', ['A', 'B'])
+def test_pdf_matches_reference(tag):
+    """The winning sample phase's PDF, straight from get_pdf_from_sampled_signal."""
+    sdd21, ril, f, op, param = CASES[tag]()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    exp = OCT[tag]
+    y = np.asarray(R.PDF.y).ravel()
+    x = np.asarray(R.PDF.x).ravel()
+    assert float(R.PDF.BinSize) == exp['PDF_BinSize']
+    assert int(R.PDF.Min) == exp['PDF_Min']
+    assert len(y) == exp['PDF_n']
+    np.testing.assert_allclose(x[:len(exp['PDF_x_head'])], exp['PDF_x_head'],
+                               rtol=RTOL, atol=1e-300)
+    np.testing.assert_allclose(x[-len(exp['PDF_x_tail']):], exp['PDF_x_tail'],
+                               rtol=RTOL, atol=1e-300)
+    np.testing.assert_allclose(y.sum(), 1.0, rtol=1e-12)
+    np.testing.assert_allclose(float(R.FOM_PDF), exp['FOM_PDF'],
+                               rtol=RTOL, atol=1e-300)
+
+
+def test_snr_has_no_epsilon_floor():
+    """db(x) is 20*log10(abs(x)) with NO floor on the denominator.
+
+    Case A's reflections never clear one PDF bin, so FOM_PDF comes back -0 and
+    the reference reports SNR_ISI_FOM_PDF = +Inf.  Dividing by
+    abs(FOM_PDF) + 1e-300 instead returns a finite ~6000 dB, which reads like a
+    measurement.
+    """
+    sdd21, ril, f, op, param = CASES['A']()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    assert float(R.FOM_PDF) == 0.0
+    assert np.isinf(R.SNR_ISI_FOM_PDF) and R.SNR_ISI_FOM_PDF > 0, \
+        'expected +Inf, got %r' % (R.SNR_ISI_FOM_PDF,)
+    np.testing.assert_allclose(float(R.SNR_ISI_FOM), OCT['A']['SNR_ISI_FOM'],
+                               rtol=RTOL)
+
+
+def test_snr_finite_case_matches_reference():
+    sdd21, ril, f, op, param = CASES['B']()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    np.testing.assert_allclose(float(R.SNR_ISI_FOM), OCT['B']['SNR_ISI_FOM'],
+                               rtol=RTOL)
+    np.testing.assert_allclose(float(R.SNR_ISI_FOM_PDF),
+                               OCT['B']['SNR_ISI_FOM_PDF'], rtol=RTOL)
+
+
+def test_empty_sample_phases_match_reference():
+    """samples_per_ui = 128 with len(ILN) = 1: 127 of the 128 phases are empty.
+
+    MATLAB takes norm([]) = 0 and a delta PDF for those; this port skips them.
+    The reference says the two agree, because rms_fom is already >= 0 by then.
+    """
+    sdd21, ril, f, op, param = CASES['C']()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    exp = OCT['C']
+    assert len(R.ILN) == exp['ILN_n']
+    np.testing.assert_allclose(float(R.FOM), exp['FOM'], rtol=RTOL)
+    np.testing.assert_allclose(float(R.FOM_PDF), exp['FOM_PDF'], rtol=RTOL)
+    np.testing.assert_allclose(float(R.SNR_ISI_FOM), exp['SNR_ISI_FOM'], rtol=RTOL)
+    np.testing.assert_allclose(float(R.SNR_ISI_FOM_PDF), exp['SNR_ISI_FOM_PDF'],
+                               rtol=RTOL)
+    assert int(R.PDF.Min) == exp['PDF_Min']
+    assert len(np.asarray(R.PDF.y).ravel()) == exp['PDF_n']
+
+
+def test_delay_failure_reproduces_the_reference_error():
+    """MATLAB's `try ... catch end` leaves delay_sec undefined, so the next
+    line dies.  Running the reference under Octave with a failing
+    calculate_delay_CausalityEnforcement gives
+
+        error: 'delay_sec' undefined near line 111, column 124
+
+    so the port must fail there too.  Swallowing it and substituting a zero
+    delay is a different answer, not a recovery: exp(-j2*pi*f*0) = 1 leaves the
+    port2 echo train un-delayed and REF_noise lands at the wrong time.
+    """
+    sdd21, ril, f, op, param = CASES['A']()
+
+    def raising_delay(faxis, sdd21_in, param_, OP_):
+        raise RuntimeError('synthetic failure inside calculate_delay')
+
+    with pytest.raises(NameError, match='delay_sec'):
+        get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0,
+                        _calculate_delay_fn=raising_delay)
+
+
+# ---------------------------------------------------------------------------
+# Structural invariants (kept from the original file, now run against the real
+# dependencies rather than the stubs that used to live in py_impl.py)
 # ---------------------------------------------------------------------------
 
 def test_output_fields_present():
-    """RILN_TD_struct has REF, FIT, RIL, REF_noise, ILN, t, FOM, FOM_PDF, SNR_ISI_FOM."""
-    N = 32
-    f = np.linspace(1e9, 26.5625e9, N)
-    sdd21 = np.exp(-0.01 * f / 1e9) * np.exp(-1j * 2 * np.pi * f * 1e-10)
-    RIL_struct = _make_ril_struct(N, f)
-    param = _make_param()
-    OP = _make_op()
-
-    result = get_RILN_cmp_td(sdd21, RIL_struct, f, OP, param, 1.0,
-                              _s21_to_impulse_DC_fn=_stub_s21_to_ir,
-                              _get_pdf_fn=_stub_pdf)
-
+    sdd21, ril, f, op, param = CASES['B']()
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
     for field in ('REF', 'FIT', 'RIL', 'REF_noise', 'ILN', 't', 'FOM', 'FOM_PDF',
-                  'SNR_ISI_FOM', 'SNR_ISI_FOM_PDF'):
-        assert hasattr(result, field), f'Missing field: {field}'
+                  'PDF', 'SNR_ISI_FOM', 'SNR_ISI_FOM_PDF'):
+        assert hasattr(R, field), 'Missing field: %s' % field
     for sub in ('REF', 'FIT', 'RIL', 'REF_noise'):
-        s = getattr(result, sub)
+        s = getattr(R, sub)
         for sf in ('FIR', 'PR', 't', 'causality_correction_dB', 'truncation_dB'):
-            assert hasattr(s, sf), f'Missing {sub}.{sf}'
+            assert hasattr(s, sf), 'Missing %s.%s' % (sub, sf)
 
-
-# ---------------------------------------------------------------------------
-# Test 2 – Nominal: FOM is non-negative
-# ---------------------------------------------------------------------------
-
-def test_fom_non_negative():
-    """FOM (max norm over M phases) should be >= 0."""
-    N = 32
-    f = np.linspace(1e9, 26.5625e9, N)
-    sdd21 = np.exp(-0.01 * f / 1e9) * np.exp(-1j * 2 * np.pi * f * 1e-10)
-    RIL_struct = _make_ril_struct(N, f)
-    param = _make_param()
-    OP = _make_op()
-
-    result = get_RILN_cmp_td(sdd21, RIL_struct, f, OP, param, 1.0,
-                              _s21_to_impulse_DC_fn=_stub_s21_to_ir,
-                              _get_pdf_fn=_stub_pdf)
-
-    assert result.FOM >= 0 or result.FOM == -np.inf, f"FOM={result.FOM}"
-
-
-# ---------------------------------------------------------------------------
-# Test 3 – Nominal: FIT matches sdd21 trend (exp decay)
-# ---------------------------------------------------------------------------
-
-def test_fit_matches_exp_trend():
-    """For sdd21 = exp(-a*f), polynomial fit in log-domain should reproduce it closely."""
-    N = 64
-    f = np.linspace(0.5e9, 26.5625e9, N)
-    a = 0.005 / 1e9  # per Hz
-    sdd21 = np.exp(-a * f)  # purely real positive
-    RIL_struct = _make_ril_struct(N, f, rho_val=0.01, ril_val=0.01)
-    param = _make_param()
-    OP = _make_op()
-
-    result = get_RILN_cmp_td(sdd21, RIL_struct, f, OP, param, 1.0,
-                              _s21_to_impulse_DC_fn=_stub_s21_to_ir,
-                              _get_pdf_fn=_stub_pdf)
-
-    # REF.FIR comes from sdd21 * H_bw * H_t → stub returns zeros; just check shape
-    assert len(result.REF.FIR) > 0
-
-
-# ---------------------------------------------------------------------------
-# Test 4 – Boundary: fmin truncation removes low-frequency echo data
-# ---------------------------------------------------------------------------
 
 def test_fmin_truncation_removes_sub_1GHz():
-    """port2_rn and f_rn should start at or above 1 GHz (fmin_idx logic)."""
-    N = 64
-    # Frequency axis starting below 1 GHz
-    f_ril = np.linspace(0.1e9, 26.5625e9, N)
-    sdd21 = np.exp(-0.01 * f_ril / 1e9) * np.exp(-1j * 2 * np.pi * f_ril * 1e-10)
-    RIL_struct = _make_ril_struct(N, f_ril)
-    param = _make_param()
-    OP = _make_op()
+    """port2_rn and f_rn start at or above 1 GHz (fmin_idx), and the REF_noise
+    branch is the one that gets the truncated axis."""
+    sdd21, ril, f, op, param = CASES['B']()
+    seen = []
+    real_s21 = sicopr.s21_to_impulse_DC
 
-    # Track f_rn frequencies used in REF_noise s21 call
-    called_with = {}
+    def track(IL, faxis, dt, OP_, param_):
+        seen.append(np.asarray(faxis).ravel().copy())
+        return real_s21(IL, faxis, dt, OP_, param_)
 
-    def track_s21(sdd21_in, faxis, dt, OP_, param_):
-        # The 4th s21 call is REF_noise — store faxis
-        called_with.setdefault('faxes', []).append(faxis.copy())
-        N_ir = 64
-        return np.zeros(N_ir), np.arange(N_ir) * dt, 0.0, 0.0
-
-    result = get_RILN_cmp_td(sdd21, RIL_struct, f_ril, OP, param, 1.0,
-                              _s21_to_impulse_DC_fn=track_s21,
-                              _get_pdf_fn=_stub_pdf)
-
-    # The last faxis passed to s21 (for REF_noise) should start at or above 1 GHz
-    if 'faxes' in called_with and len(called_with['faxes']) >= 4:
-        f_rn_used = called_with['faxes'][-1]
-        assert f_rn_used[0] >= 1e9 - 1, f"f_rn starts at {f_rn_used[0]:.2e} < 1 GHz"
+    get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0, _s21_to_impulse_DC_fn=track)
+    assert len(seen) == 4, 's21_to_impulse_DC should run once per sub-struct'
+    assert seen[0][0] == 0.0 and seen[1][0] == 0.0 and seen[2][0] == 0.0
+    assert seen[3][0] >= 1e9, 'f_rn starts at %.3e' % seen[3][0]
+    assert len(seen[3]) == len(f) - int(np.searchsorted(f, 1e9))
 
 
-# ---------------------------------------------------------------------------
-# Test 5 – Boundary: ILN length = range_end - ipeak
-# ---------------------------------------------------------------------------
-
-def test_iln_length():
-    """ILN should span from ipeak to min(len(REF.PR), len(REF_noise.PR))."""
-    N = 32
-    f = np.linspace(1e9, 26.5625e9, N)
-    sdd21 = np.exp(-0.01 * f / 1e9) * np.exp(-1j * 2 * np.pi * f * 1e-10)
-    RIL_struct = _make_ril_struct(N, f, rho_val=0.2, ril_val=0.1)
-    param = _make_param(M=4)
-    OP = _make_op()
-
-    N_ir = 32
-
-    def fixed_ir(sdd21_in, faxis, dt, OP_, param_):
-        ir = np.zeros(N_ir)
-        return ir, np.arange(N_ir) * dt, 0.0, 0.0
-
-    result = get_RILN_cmp_td(sdd21, RIL_struct, f, OP, param, 1.0,
-                              _s21_to_impulse_DC_fn=fixed_ir,
-                              _get_pdf_fn=_stub_pdf)
-
-    # ILN length should equal range_end - ipeak
-    # ipeak = argmax(REF.PR) = 0 (all zeros PR → argmax=0)
-    # range_end = min(len(REF.PR), len(REF_noise.PR)) = min(N_ir, N_ir) = N_ir
-    assert len(result.ILN) == len(result.t), "ILN and t should have same length"
+def test_op_is_not_mutated_in_the_caller():
+    """MATLAB passes OP by value; the interp_sparam_* and truncation-threshold
+    overrides must not reach the caller's OP."""
+    sdd21, ril, f, op, param = CASES['A']()
+    before = dict(vars(op))
+    get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    assert vars(op) == before
 
 
-# ---------------------------------------------------------------------------
-# Test 6 – Nominal: delay stub doesn't raise; FOM is finite
-# ---------------------------------------------------------------------------
-
-def test_delay_exception_handled():
-    """If delay calculation raises, FOM is still computed (fallback delay=0)."""
-    N = 32
-    f = np.linspace(1e9, 26.5625e9, N)
-    sdd21 = np.exp(-0.01 * f / 1e9) * np.exp(-1j * 2 * np.pi * f * 1e-10)
-    RIL_struct = _make_ril_struct(N, f)
-    param = _make_param()
-    OP = _make_op()
-
-    def raising_delay(faxis, sdd21_in, param_, OP_):
-        raise RuntimeError("no delay")
-
-    result = get_RILN_cmp_td(sdd21, RIL_struct, f, OP, param, 1.0,
-                              _s21_to_impulse_DC_fn=_stub_s21_to_ir,
-                              _calculate_delay_fn=raising_delay,
-                              _get_pdf_fn=_stub_pdf)
-
-    # Should not raise; FOM might be -inf (zero ILN) but that's OK
-    assert hasattr(result, 'FOM')
+if __name__ == '__main__':
+    sys.exit(pytest.main([__file__, '-v']))

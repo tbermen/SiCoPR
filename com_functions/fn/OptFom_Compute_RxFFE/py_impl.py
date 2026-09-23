@@ -27,6 +27,12 @@ def OptFom_Compute_RxFFE(sbr, THIS, Noise_XC, chdata, param, OP):
     g_DC_low = THIS.g_DC_low
 
     if str(OP.FFE_OPT_METHOD).upper() == 'MMSE':
+        # MATLAB passes OP BY VALUE, so `OP.WO_TXFFE=0` here is local to this
+        # call: the caller's OP still reads 1 afterwards (verified by running
+        # the reference under Octave).  Python passes it by reference, so the
+        # bare assignment cleared the caller's flag for the rest of the run.
+        # Only get_PSDs/MMSE below may see the 0; nothing else may.
+        OP = SimpleNamespace(**vars(OP))
         OP.WO_TXFFE = 0
         PSD_results = get_PSDs(PSD_results, sbr, cursor_i, txffe, g_dc, g_DC_low,
                                param, chdata, OP,

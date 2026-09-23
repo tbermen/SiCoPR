@@ -204,16 +204,21 @@ def get_TDR(S, OP, param, ZT, nport,
         maxtime = 2e-9
 
     # ---- Transmitter filter with delay and Gaussian edge ----
-    delay_ns = TDR_results.delay / 1e-9
+    # MATLAB L7040: exp(-(1j)*2*pi*f9*TDR_results.delay/1e-9).  `*` and `/` are
+    # equal precedence and left-associative, so the 1e-9 division happens LAST,
+    # after the multiply by delay.  Pre-computing delay/1e-9 = 0.5 and
+    # multiplying reorders the rounding: at f9=2.5 the reference gives
+    # 1.1943401194869635e-15-1j and the pre-divided form 3.0616169978683831e-16-1j.
+    # That is ~4e-15 relative on tx_filter and it propagates into the impulse.
     H_t = (np.exp(-2 * (np.pi * f9 * tr / 1.6832)**2) *
-           np.exp(-1j * 2 * np.pi * f9 * delay_ns) *
+           np.exp(-1j * 2 * np.pi * f9 * TDR_results.delay / 1e-9) *
            np.exp(-1j * 2 * np.pi * f9 * tr * 3))
 
     Use_gaussian = bool(getattr(OP, 'cb_Guassian', True))
     if Use_gaussian:
         RLf = RL.ravel() * H_t.ravel()
     else:
-        RLf = RL.ravel() * np.exp(-1j * 2 * np.pi * f9 * delay_ns)
+        RLf = RL.ravel() * np.exp(-1j * 2 * np.pi * f9 * TDR_results.delay / 1e-9)
 
     # ---- Receiver filters (BT disabled, BW optional, Tukey optional) ----
     OP.TDR_Bessel_Thomson = 0
@@ -269,14 +274,21 @@ def get_TDR(S, OP, param, ZT, nport,
 
     # ---- Time windowing ----
     t = t - TDR_results.delay
+    # MATLAB L7098-7101:  tend = find(t>=maxtime+tfx,1);  IR = IR(1:tend)
+    # The MATLAB 1-based index IS the Python exclusive bound, so the sample AT
+    # the threshold is KEPT.  Slicing with the 0-based index instead dropped it,
+    # making every windowed array (tdr, t, ptdr_RL, WC_ptdr_samples) one sample
+    # short and shifting avgZport and ERLRMS with it.
     tend_arr = np.where(t >= maxtime + tfx)[0]
-    tend = int(tend_arr[0]) if len(tend_arr) > 0 else len(t)
+    tend = int(tend_arr[0]) + 1 if len(tend_arr) > 0 else len(t)
     IR = IR[:tend]
     t = t[:tend]
 
     tstart_arr = np.where(t >= tr * 1e-9)[0]
     tstart = int(tstart_arr[0]) if len(tstart_arr) > 0 else 0
-    if tstart >= tend:
+    # MATLAB `tstart >= tend` compares two 1-based indices; tstart is 0-based here
+    # and tend is the exclusive bound (== the MATLAB 1-based tend after the cut).
+    if tstart + 1 >= tend:
         tend = len(t)
         tstart = 0
 
@@ -299,12 +311,21 @@ def get_TDR(S, OP, param, ZT, nport,
             # samples later than 3*tr. Searching the windowed vector instead (as Python
             # did) starts at a different point and biases avgZport -> Z11est/Z22est by a
             # constant ~1.4% independent of package case. Reproduce MATLAB exactly.
+            #
+            # No clamp: when tfstart runs past the windowed vector MATLAB's slice is
+            # EMPTY, x(1) then errors and the catch sets avgZport = 0. Clamping to the
+            # last sample instead returned that one sample's impedance.
             tfstart_arr = np.where(t >= 3 * tr * 1e-9)[0]
-            tfstart = int(tfstart_arr[0]) if len(tfstart_arr) > 0 else 0
-            tfstart = min(tfstart, max(0, len(TDR_results.t) - 1))
+            # find(...) empty -> MATLAB `t([]:end)` is also empty, same path.
+            tfstart = (int(tfstart_arr[0]) if len(tfstart_arr) > 0
+                       else len(TDR_results.t))
             T_k = float(getattr(OP, 'T_k', 1e-9))
             x = TDR_results.t[tfstart:]
             y = TDR_results.tdr[tfstart:]
+            # MATLAB L7185-7186 assigns x/y BEFORE the average, and with the tdr and t
+            # vectors SWAPPED relative to the local x/y it just built.
+            TDR_results.x = np.asarray(TDR_results.tdr).ravel()
+            TDR_results.y = np.asarray(TDR_results.t).ravel()
             w = np.exp(-(x - x[0]) / (T_k + 1e-300))
             TDR_results.avgZport = float(np.mean(y * w) / (np.mean(w) + 1e-300))
         except Exception:
@@ -391,9 +412,21 @@ def get_TDR(S, OP, param, ZT, nport,
             if rl_fom > RL_equiv:
                 RL_equiv = rl_fom
                 best_ki = ki
-                if not RL_norm_test:
-                    best_erl = rl_test
-                    best_pdf = testpdf
+            # UPSTREAM DEFECT B06-D10 (com_ieee8023_4p14p0/4p15p0/4p16p0, and the
+            # adaptive-local-search build, all identical): the reference's
+            #     if ~OP.RL_norm_test
+            #         best_erl=rl_test; best_pdf=testpdf; best_cdf=cdf_test;
+            #     end
+            # sits OUTSIDE the `rl_fom > RL_equiv` guard, so ERL is reported for
+            # the LAST phase while WC_ptdr_samples still come from best_ki.
+            # Reproduced deliberately: COM Octave on a case whose worst phase is
+            # not the last gives ERL = 35.391021572434525 dB (last phase,
+            # rl_test = 0.017) where picking best_ki gives 32.39577516576788 dB
+            # (rl_test = 0.024). Not reached with the default ERL_FOM = 1, which
+            # takes the post-loop recompute below.
+            if not RL_norm_test:
+                best_erl = rl_test
+                best_pdf = testpdf
 
         if RL_norm_test:
             tps = PTDR.pulse[best_ki::M]
@@ -405,12 +438,17 @@ def get_TDR(S, OP, param, ZT, nport,
             else:
                 best_erl = 0.0
 
-        ERLRMS = float(np.sqrt(np.mean(PTDR.pulse**2)))
+        # MATLAB `rms = @(x) norm(x)/sqrt(length(x))`, evaluated BEFORE the ki loop.
+        ERLRMS = float(np.linalg.norm(PTDR.pulse) / np.sqrt(len(PTDR.pulse)))
         TDR_results.ptdr_RL = PTDR.pulse
         TDR_results.WC_ptdr_samples_t = t_ptdr[best_ki::M]
         TDR_results.WC_ptdr_samples = PTDR.pulse[best_ki::M]
-        TDR_results.ERL = -20.0 * np.log10(abs(best_erl) + 1e-300)
-        TDR_results.ERLRMS = -20.0 * np.log10(ERLRMS + 1e-300)
+        # MATLAB `db = @(x) 20*log10(abs(x))` — NO epsilon floor. At best_erl = 0
+        # (the degenerate single-bin pdf) the reference reports ERL = +Inf; the
+        # +1e-300 floor reported a plausible-looking 6000 dB instead.
+        with np.errstate(divide='ignore'):
+            TDR_results.ERL = -20.0 * np.log10(abs(best_erl))
+            TDR_results.ERLRMS = -20.0 * np.log10(abs(ERLRMS))
 
     return TDR_results
 
