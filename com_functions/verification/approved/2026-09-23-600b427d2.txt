@@ -1,0 +1,30 @@
+SiCoPR verification report
+==================================================================
+tree            600b427d2
+anchor          2026-09-23-600b427d2.txt
+
+GATES  (is the inventory complete?)
+  40 audit scripts, 534 checks
+  0 failed, 0 unexpected passes, 25 accepted divergences
+
+COVERAGE  (against the reference, not against a reading of it)
+  functions translated       156
+  checked against Octave     134
+  option branches uncovered  29
+
+DISCRIMINATION  (are the tests awake?)
+  205 mutants, 42 caught
+  27 survivors a repo-wide lint still forbids
+  40 survivors NOTHING blocks          <-- the real gaps
+  8 equivalent mutants argued in equivalent_mutants.md
+
+OPENS  none
+
+NOT MEASURED BY THIS REPORT
+  The contract also asks for an inventory row set, a per-row
+  oracle_id, Octave exposure sets and waiver approval. None of those
+  are built. "No opens" below means no open GATE, which is a weaker
+  claim than the contract intends, and is stated here every run so
+  that nobody has to remember the difference.
+  The 208-case and 1368-case corpus runs are separate and are not
+  part of this.
