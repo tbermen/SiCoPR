@@ -220,7 +220,9 @@ check("interp_Sparam_linear_trend_mag_interior",
 
 # --- FINDING B: base phase interp CLAMPS where MATLAB extrapolates (py 11855) ---
 # Pure delay so unwrapped phase is exactly linear: MATLAB interp1(...'extrap')
-# continues the line beyond fin[-1]; np.interp holds it flat.
+# continues the line beyond fin[-1]. The port used np.interp, which HOLDS IT
+# FLAT, until 51f30f2 converted every interp1 site in interp_Sparam to the
+# file's _interp_extrap helper. Both checks below now pass.
 Sin_del = np.exp(-1j * 2 * np.pi * fin * tau2)   # |S|=1, phase = -2*pi*f*tau2
 Sout_del = sicopr.interp_Sparam(Sin_del, fin, fout_wide, 'old',
                              'extrap_cubic_to_dc_linear_to_inf', OPi, pari)
@@ -232,16 +234,21 @@ band_out = fout_wide > fin[-1]
 check("interp_Sparam_phase_interior_matches",
       np.max(np.abs(ph_py[band_in] - ph_oracle[band_in])) <= 1e-6,
       "interior phase diverges from linear")
-# Extrapolation region: EXPECTED FAIL (Python flat vs MATLAB ramp).
+# Extrapolation region: ML 8185 continues the end-segment slope.
 ph_gap = float(np.max(np.abs(ph_py[band_out] - ph_oracle[band_out])))
 check("interp_Sparam_phase_extrap_matches_matlab",
       ph_gap <= 1e-3,
-      "DIVERGENT: py 11855 np.interp clamps phase beyond fin[-1] (flat) vs ML "
-      "8185 interp1 'extrap' (linear ramp); max gap %.3f rad at 30 GHz" % ph_gap)
-# Positive confirmation that Python IS holding it flat (not some other value).
-xcheck("interp_Sparam_phase_extrap_is_flat",
-      abs(ph_py[-1] - ph_py[band_in][-1]) <= 1e-6,
-      "extrapolated phase is not the clamped endpoint value")
+      "phase beyond fin[-1] does not follow ML 8185's interp1 'extrap' linear "
+      "ramp; max gap %.3f rad at 30 GHz" % ph_gap)
+# There used to be a companion xcheck here, "interp_Sparam_phase_extrap_is_flat",
+# asserting that the port held the phase FLAT. It was written with INVERTED
+# polarity: an xcheck's condition is meant to be the same "agrees with MATLAB"
+# condition a check takes, so that resolving the divergence makes it XPASS and
+# fails the run until the ledger is updated. This one's condition was the
+# DIVERGENCE itself, so once the port started extrapolating correctly it
+# XFAILed -- reporting correct behaviour as an accepted divergence -- and it
+# would have XPASSed only if the port regressed. Deleted rather than inverted,
+# because the check above already asserts the agreement directly.
 
 # --- FINDING A: magnitude floor uses tiny (2.2e-308) not MATLAB eps (2.2e-16) ---
 fin_e = np.arange(0.0, 20e9 + 1.0, 1e8)
