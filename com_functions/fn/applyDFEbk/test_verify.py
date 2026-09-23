@@ -190,3 +190,30 @@ def test_quantization_and_negative_curval_bit_exact():
     _, tc2, _ = applyDFEbk(np.array([1.0, -2.3, 3.7, -0.9, 5.0, 6.0]),
                            np.full(6, 9.0), 1, 3, -4.0, 0.5, 0)
     np.testing.assert_array_equal(tc2, [-0.5, 0.5, -0.22500000000000001])
+
+
+def test_caller_arrays_are_not_modified():
+    """MATLAB passes by value: applyDFEbk must not write the caller's arrays.
+
+    The function reduces hisi and zeroes hisi_ref over the bank, and it does
+    that on a .copy() of each. Drop either copy and the writes land on the
+    array the CALLER still holds. That aliasing class accounted for five of the
+    eight defects found in 2026-08, yet every test above reads only the RETURN
+    values, so all of them pass with both copies removed.
+
+    Pinned by tests/test_mutation_score.py: with this test in place the
+    drop_dot_copy mutants at py_impl lines 18 and 19 are caught.
+    """
+    hisi = np.array([0.0, 0.3, 0.4, 0.2, 0.0])
+    hisi_ref = np.ones(5)
+    hisi_before = hisi.copy()
+    hisi_ref_before = hisi_ref.copy()
+
+    applyDFEbk(hisi, hisi_ref, 1, 2, 0.5, 1.0, 0)
+
+    np.testing.assert_array_equal(
+        hisi, hisi_before,
+        err_msg='applyDFEbk modified the caller\'s hisi in place')
+    np.testing.assert_array_equal(
+        hisi_ref, hisi_ref_before,
+        err_msg='applyDFEbk modified the caller\'s hisi_ref in place')

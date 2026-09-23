@@ -62,6 +62,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tokenize
@@ -254,11 +255,32 @@ def write_bytes(path, raw):
 
 
 def run_test(fn_dir):
-    """Run one function's bound test. True if it PASSED."""
+    """Run one function's bound test. True if it PASSED.
+
+    Bytecode caching has to be defeated here, and it is not optional.
+
+    Python validates a .pyc by (mtime, size). EVERY mutant in this catalogue
+    removes or replaces a few bytes, so consecutive mutants of the same file
+    can have the SAME size, and consecutive runs fall in the same mtime second.
+    The result is that pytest silently imports the PREVIOUS mutant's bytecode.
+
+    That is not theoretical: it scored OptFom_Compute_DFE's three .copy() sites
+    as survived/survived/caught when the truth is survived/caught/caught. Every
+    site was being judged against the one before it, which makes the whole run
+    worthless while looking perfectly healthy.
+
+    So the cache is removed before each run and writing is disabled.
+    """
+    for base in (os.path.join(FN, fn_dir), FN, _ROOT):
+        pyc = os.path.join(base, '__pycache__')
+        if os.path.isdir(pyc):
+            shutil.rmtree(pyc, ignore_errors=True)
+    env = dict(os.environ)
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
     r = subprocess.run(
-        [sys.executable, '-m', 'pytest', os.path.join(FN, fn_dir), '-q',
+        [sys.executable, '-B', '-m', 'pytest', os.path.join(FN, fn_dir), '-q',
          '-x', '--no-header', '-p', 'no:cacheprovider'],
-        cwd=_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        cwd=_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
     return r.returncode == 0
 
 

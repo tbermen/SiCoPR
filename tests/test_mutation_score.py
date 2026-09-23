@@ -9,10 +9,17 @@ be closed by a test that catches nothing.
 happened in this port, runs that function's own test, and records whether the
 test failed. A test that still passes did not discriminate.
 
-On its first run, 4 of the 6 `np.std(..., ddof=1)` sites SURVIVED -- the very
-defect that prompted the verification contract. It was fixed in d5bff6c, and the
-suite would not have noticed it coming back. That is the value of asking this
-question by computation instead of from memory.
+3 of the 6 `np.std(..., ddof=1)` sites SURVIVE -- the very defect that prompted
+the verification contract. It was fixed in d5bff6c, and the suite would still
+not notice it coming back at interp_Sparam lines 205 and 249 or
+s21_to_impulse_DC line 182. That is the value of asking this question by
+computation instead of from memory.
+
+(The first run of this gate reported 4 of 6, and was wrong. It was measuring
+stale bytecode: see the note in `mutations.run_test`. The number above is from
+the corrected engine. A tool that measures whether tests lie has no business
+lying itself, so both the bug and the wrong number are recorded rather than
+quietly replaced.)
 
 ## Why this is a pinned set and not a score
 
@@ -61,7 +68,6 @@ KNOWN_SURVIVORS = frozenset([
     'drop_dot_copy:Bathtub_Contribution_Wrapper',
     'drop_dot_copy:COM_FD_to_TD',
     'drop_dot_copy:COM_eye_width',
-    'drop_dot_copy:MMSE',
     'drop_dot_copy:OptFom_Compute_DFE',
     'drop_dot_copy:OptFom_Compute_TXFFE',
     'drop_dot_copy:OptFom_Create_Output',
@@ -78,8 +84,6 @@ KNOWN_SURVIVORS = frozenset([
     'drop_dot_copy:floatingDFE',
     'drop_dot_copy:get_PSDs',
     'drop_dot_copy:get_TDR',
-    'drop_dot_copy:get_pdf',
-    'drop_dot_copy:get_pdf_full',
     'drop_dot_copy:interp_Sparam',
     'drop_dot_copy:make_full_pkg',
     'drop_dot_copy:make_pkg',
@@ -158,21 +162,47 @@ KNOWN_SURVIVORS = frozenset([
     'std_ddof:s21_to_impulse_DC',
 ])
 
-# Mutants that provably change nothing (ddof=1 on a single-element array, a
-# .copy() on a value that is never written again). They read as "not caught"
-# and are not test failures. Decided state, and falsifiable: if the mutant ever
-# stops being equivalent a test starts catching it and the entry is
-# contradicted by this gate.
+# Mutants that provably change nothing. They read as "not caught" and are not
+# test failures. Decided state, and falsifiable: if the mutant ever stops being
+# equivalent a test starts catching it and the entry is contradicted below.
+#
+# Keyed `operator:function:line`, NOT `operator:function`. A whole function is
+# far too coarse: MMSE has several .copy() sites and only ONE of them is
+# provably redundant, so a function-level entry would excuse the other five.
+# Line numbers move when a file is edited, and that is the safe direction --
+# a stale entry stops matching, the site reappears as a survivor, and the gate
+# says so rather than staying quiet.
+#
+# The argument must be that the mutant CANNOT change the result. "No test
+# happens to cover this input" is a reason to write a test, and belongs in
+# KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
+    'drop_dot_copy:MMSE:371',
+    'drop_dot_copy:get_PSDs:436',
+    'drop_dot_copy:get_pdf_full:128',
 ])
 
 
 def main():
     rows = mutations.evaluate()
 
+    # Filter equivalent mutants per SITE, before collapsing to operator:
+    # function, so excusing one redundant copy does not excuse the others in
+    # the same function.
+    def site(r):
+        return '%s:%s:%d' % (r['op'], r['fn'], r['line'])
+
+    real = [r for r in rows if site(r) not in EQUIVALENT]
     survived = sorted({'%s:%s' % (r['op'], r['fn'])
-                       for r in rows if r['outcome'] == 'survived'})
-    survived = [k for k in survived if k not in EQUIVALENT]
+                       for r in real if r['outcome'] == 'survived'})
+
+    matched = {site(r) for r in rows}
+    orphan = sorted(EQUIVALENT - matched)
+    check('every_equivalent_mutant_entry_still_matches_a_site',
+          not orphan,
+          'these EQUIVALENT entries match no mutation site any more, so the '
+          'argument they record is about code that has moved or gone. '
+          'Re-check each and update the line, or delete it: %s' % orphan)
 
     bugs = ['%s:%s line %d' % (r['op'], r['fn'], r['line']) for r in rows
             if r['outcome'] == 'catalogue_bug_mutant_does_not_parse']

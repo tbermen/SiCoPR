@@ -212,3 +212,30 @@ def test_octave_cancellation_window_past_end_raises():
     ch = SimpleNamespace(eq_pulse_response=sbr, type='THRU', base='b')
     with pytest.raises(IndexError):
         get_pdf(ch, 1e-3, 40, _octave_param(), _OP())
+
+
+def test_caller_eq_pulse_response_is_not_modified():
+    """MATLAB passes chdata by value: get_pdf must not write the caller's SBR.
+
+    SBR is np.asarray(chdata.eq_pulse_response).ravel(), and for an array that
+    is already float64 and 1-D both of those return a VIEW, not a copy. So SBR
+    aliases the caller's chdata, and residual_response = SBR.copy() is the only
+    thing standing between the subtraction loop and the caller's pulse
+    response.
+
+    This is the same class as the OptFom_Calc_FOM leak, where a LOSING EQ
+    candidate's response was written back into chdata and carried into the next
+    tick. Every other test in this file reads only the returned pdf, so all of
+    them pass with that copy removed.
+
+    Pinned by tests/test_mutation_score.py: the drop_dot_copy mutant at
+    py_impl line 142 is caught only by this test.
+    """
+    ch = _thru_chdata()
+    before = ch.eq_pulse_response.copy()
+
+    get_pdf(ch, 1e-3, 40, _param(), _OP())
+
+    np.testing.assert_array_equal(
+        ch.eq_pulse_response, before,
+        err_msg='get_pdf modified the caller\'s chdata.eq_pulse_response')

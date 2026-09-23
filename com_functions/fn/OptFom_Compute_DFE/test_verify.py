@@ -313,3 +313,39 @@ def test_oracle_zero_cursor_gives_nan_taps():
     assert np.all(np.isnan(np.asarray(THIS.dfetaps)))
     np.testing.assert_array_equal(np.asarray(THIS.excess_dfe_cursors),
                                   np.zeros(5))
+
+
+def test_tail_rescale_does_not_write_the_callers_bmax():
+    """The tail-RSS rescale must not reach back into the caller's bmax array.
+
+    Line 93 sets `param.use_bmax = param.bmax`, which ALIASES the array the
+    caller passed in. The tail branch then rewrites use_bmax[nts0:], so the
+    .copy() on line 127 is the only thing keeping that write off the caller's
+    bmax. np.asarray(...).ravel() returns a VIEW for an array that is already
+    float64 and 1-D, so it provides no protection of its own.
+
+    This is the process_sxp OP-leak class, which accounted for five of the
+    eight defects found in 2026-08. The oracle test above pins the VALUES the
+    branch computes and passes either way, because it reads the returned param
+    rather than the array the caller still holds.
+
+    Pinned by tests/test_mutation_score.py: the drop_dot_copy mutants at
+    py_impl lines 127 and 128 are caught only by this test.
+    """
+    bmax = np.full(5, 0.5)
+    bmin = -np.full(5, 0.5)
+    bmax_before = bmax.copy()
+    bmin_before = bmin.copy()
+
+    OptFom_Compute_DFE(
+        _oct_sbr(), SimpleNamespace(cursor_i=_OCT_CUR),
+        _oct_param(bmax=bmax, bmin=bmin, N_tail_start=3,
+                   B_float_RSS_MAX=0.05),
+        False, 0)
+
+    np.testing.assert_array_equal(
+        bmax, bmax_before,
+        err_msg="OptFom_Compute_DFE wrote the caller's bmax array")
+    np.testing.assert_array_equal(
+        bmin, bmin_before,
+        err_msg="OptFom_Compute_DFE wrote the caller's bmin array")
