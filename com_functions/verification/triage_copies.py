@@ -6,8 +6,13 @@ ever writes, and removing them genuinely changes nothing. Those are equivalent
 mutants, not sleeping tests.
 
 Arguing 104 sites by hand is how a list becomes a chore and then a lie, so the
-split is computed. It cuts 104 down to about 4 worth reading. For each
-surviving site this asks what the copy is FOR:
+split is computed. As of 2026-09-23 it puts ZERO in the load-bearing bucket:
+the handful it first surfaced were each read, and each turned out to be a copy
+whose source nothing reads again, so all nine are argued in
+`equivalent_mutants.md` and excluded here. What remains is the lower-risk
+material below.
+
+For each surviving site this asks what the copy is FOR:
 
   load-bearing   the copied-to name is written in place afterwards (subscript
                  assignment, augmented assignment, an in-place method, `out=`).
@@ -35,10 +40,11 @@ surviving site this asks what the copy is FOR:
 KNOWN LIMITATION, and the reason this closes nothing on its own: the analysis
 is FLOW-INSENSITIVE. `interp_Sparam:209` is reported load-bearing because
 `H_ph` is read at line 231 -- in a sibling `elif` that cannot run when 209 ran.
-A human has to settle those. Making it flow-sensitive is not worth it: the job
-is to turn 104 sites into a handful worth reading, and a tool that tried to
-settle them itself would be a tool whose verdicts nobody checks, which is the
-2026-07 ledger with better tooling.
+A human has to settle those, and has: every site it flagged was read and
+argued. Making it flow-sensitive is not worth it: the job is to turn 104 sites
+into a handful worth reading, and a tool that tried to settle them itself would
+be a tool whose verdicts nobody checks, which is the 2026-07 ledger with better
+tooling.
 
 This is a TRIAGE AID and not a verification method: it cannot be given a
 negative control, so it closes no rows. It says where to look. What closes a
@@ -55,6 +61,7 @@ import collections
 import io
 import json
 import os
+import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -210,8 +217,26 @@ def main():
             '  python com_functions/verification/mutations.py --run '
             '--json com_functions/verification/_last_run.json')
     rows = json.load(io.open(LAST_RUN, encoding='utf-8'))
+
+    # Sites already ARGUED equivalent are settled; re-reporting them as
+    # load-bearing sends a reader back to a question that has an answer, and
+    # made the headline number read 4 when the true count of unaddressed
+    # load-bearing sites was 0.
+    settled = set()
+    try:
+        tests = os.path.join(_ROOT, 'tests', 'test_mutation_score.py')
+        src = io.open(tests, encoding='utf-8').read()
+        block = src[src.index('EQUIVALENT = frozenset(['):]
+        block = block[:block.index('])')]
+        settled = set(re.findall(r"'([^']+)'", block))
+    except (OSError, ValueError):
+        pass
+
     sites = [r for r in rows
-             if r['op'] == 'drop_dot_copy' and r['outcome'] == 'survived']
+             if r['op'] == 'drop_dot_copy' and r['outcome'] == 'survived'
+             and '%s:%s:%d' % (r['op'], r['fn'], r['line']) not in settled]
+    print('(%d site(s) excluded as already argued in equivalent_mutants.md)\n'
+          % len(settled))
 
     buckets = collections.defaultdict(list)
     for r in sites:
