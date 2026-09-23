@@ -40,3 +40,10 @@ tests/results.csv
 # and are tied to one Octave version, so they are never committed.
 octave/*.oct
 octave/accel/*.o
+
+# Mutation results are DERIVED state: recomputed from the implementation and
+# its bound test, cached only so an unchanged pair is not re-run. Committing
+# them would turn a computed answer into a stored one, which is the 2026-07
+# ledger defect this framework exists to prevent.
+com_functions/verification/.mutation_cache.json
+com_functions/verification/_last_run.json
