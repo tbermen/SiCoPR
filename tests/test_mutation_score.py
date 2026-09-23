@@ -128,7 +128,6 @@ KNOWN_SURVIVORS = frozenset([
     'ne_zero_to_gt_zero:get_sigma_eta_ACCM_noise',
     'solve_to_lstsq:MMSE',
     'solve_to_lstsq:MMSE_FOM',
-    'solve_to_lstsq:force',
     'solve_to_lstsq:read_Nport_touchstone',
     'solve_to_lstsq:read_p4_s4params',
     'solve_to_lstsq:read_s4p_files',
@@ -162,6 +161,11 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:interp_Sparam:273',
     'drop_dot_copy:s21_to_impulse_DC:185',
     'drop_dot_copy:s21_to_impulse_DC:218',
+    # force's non-square else-branch is unreachable: VV is built square as
+    # zeros(num_taps, num_taps) in both languages, so nothing in that branch
+    # can change a result. The SQUARE site at line 330 is caught, by the
+    # singular-VV test added under the 2026-09-23 ruling.
+    'solve_to_lstsq:force:341',
 ])
 
 

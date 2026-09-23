@@ -10792,22 +10792,37 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
         VVt = VV.T
         if VV.shape[0] == VV.shape[1]:
-            # HELD FOR REVIEW (2026-09-22) -- the singular case has no single
-            # right answer, because the two references disagree with each other:
-            #   MATLAB  VV'\FV'  warns "Matrix is singular to working precision"
-            #                    and returns Inf.
-            #   Octave  VV'\FV'  returns a minimum-norm least-squares solution.
-            #                    Measured: [1 2; 2 4] \ [1; 3] -> [0.28 0.56].
-            #   here             LinAlgError -> lstsq, i.e. the Octave answer.
-            # So this matches COM Octave and not the MATLAB reference, and the
-            # Octave oracle cannot adjudicate it. VV is built square at L87
-            # (zeros(num_taps,num_taps)), so the else-branch below is dead in
-            # both languages and only this path matters. Do not "fix" either way
-            # without a decision on which reference wins here.
+            # RULED 2026-09-23 (owner): reproduce MATLAB's CONDITION, but make
+            # its occurrence loud instead of silent.
+            #
+            # The three references disagreed:
+            #   MATLAB  VV'\FV'  warns "Matrix is singular to working
+            #                    precision" and returns Inf.
+            #   Octave  VV'\FV'  returned a minimum-norm least-squares
+            #                    solution: [1 2; 2 4] \ [1; 3] -> [0.28 0.56].
+            #   here             LinAlgError -> lstsq, i.e. the OCTAVE answer.
+            #
+            # Octave was repaired in 4c73cba: force's backslash now goes
+            # through octave/patches/mldivide_matlab.m, which returns inv(A)*b
+            # for rcond(A)==0, so the oracle gives MATLAB's Inf. The oracle can
+            # therefore adjudicate this now, and the port was the odd one out.
+            #
+            # A silent lstsq answer is the one outcome NEITHER reference
+            # produces, and it hides a degenerate channel by quietly returning
+            # something plausible. MATLAB's Inf poisons the taps and propagates;
+            # knowing the case occurred is worth more than either. So: raise.
+            #
+            # VV is built square (zeros(num_taps,num_taps)), so the else-branch
+            # below is dead in both languages and only this path matters.
             try:
                 C_solved = np.linalg.solve(VVt, FV)
             except np.linalg.LinAlgError:
-                C_solved, _, _, _ = np.linalg.lstsq(VVt, FV, rcond=None)
+                raise ValueError(
+                    'force: VV is singular to working precision, so the tap '
+                    'solve has no unique answer. MATLAB returns Inf here and '
+                    'carries it into the taps; SiCoPR stops instead, so the '
+                    'degenerate channel is visible rather than silently '
+                    'absorbed. num_taps=%d, cmx=%d.' % (num_taps, cmx))
         else:
             VVVt = VV @ VV.T
             try:
@@ -10844,15 +10859,26 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
         tap_constraint = str(getattr(OP, 'RXFFE_TAP_CONSTRAINT', 'unity cursor')).lower()
         if tap_constraint == 'unity cursor':
-            # DIVERGENCE, REPORTED NOT FIXED (2026-09-22): ML 6238 is
-            # `Cmod=Cmod/Cmod(cmx+1)` with no guard, so a vanishing cursor tap
-            # gives Inf/NaN taps, while the 1e-12 floor below silently leaves
-            # the taps UNNORMALISED -- and for a small-but-legal cursor tap the
-            # two answers differ by the whole scale factor. No oracle case was
-            # found: Cmod(cmx+1) only collapses when VV is degenerate, which is
-            # the very case the HELD decision above covers, so this is left for
-            # the same ruling rather than resolved here.
-            cursor_val = float(Cmod[cmx]) if abs(Cmod[cmx]) > 1e-12 else 1.0
+            # RULED 2026-09-23 (owner), the same ruling as the singular VV
+            # above: Cmod(cmx+1) only collapses when VV is degenerate.
+            #
+            # ML 6238 is `Cmod=Cmod/Cmod(cmx+1)` with NO guard. The 1e-12 floor
+            # that used to stand here diverged twice over. For a cursor tap
+            # below 1e-12 but LEGAL it substituted 1.0, leaving the taps
+            # unnormalised and differing from MATLAB by the whole scale factor;
+            # and for a cursor tap of exactly zero it silently returned
+            # unnormalised taps where MATLAB returns Inf or NaN.
+            #
+            # So divide exactly as MATLAB does, however small the tap, and stop
+            # only on the one value MATLAB cannot divide by. Small is not
+            # degenerate; zero is.
+            cursor_val = float(Cmod[cmx])
+            if cursor_val == 0.0:
+                raise ValueError(
+                    'force: the cursor tap Cmod[%d] is exactly zero, so the '
+                    'unity-cursor normalisation has no answer. MATLAB divides '
+                    'anyway and carries Inf or NaN into every tap; SiCoPR '
+                    'stops instead, so the degenerate case is visible.' % cmx)
             Cmod = Cmod / cursor_val
         else:
             Cmod = C_solved[:num_taps]

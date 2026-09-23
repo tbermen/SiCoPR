@@ -219,3 +219,73 @@ def test_octave_tap_quantisation():
     _, got, _ = force(V_ORACLE_B, p, _oracle_op(), 22 - 1, None, 0)
     np.testing.assert_allclose(np.asarray(got).ravel(),
                                [0, -0.21875, 1, 0, 0, -0.03125], atol=1e-15)
+
+
+# --------------------------------------------------------------------------
+# The singular-VV ruling, 2026-09-23.
+#
+# MATLAB's `VV'\FV'` warns and returns Inf. Octave returned a minimum-norm
+# least-squares solution until 4c73cba repaired it to match MATLAB. This port
+# used to fall back to lstsq on LinAlgError, which is the OLD Octave answer:
+# the one outcome NEITHER reference produces, silently returning something
+# plausible for a degenerate channel.
+#
+# Ruled: reproduce MATLAB's condition, make its occurrence loud. Copying a
+# reference bug is fine; hiding one is not, and knowing the case occurred is
+# worth more than either answer.
+# --------------------------------------------------------------------------
+
+def _geometric_V(n=64, spui=4):
+    """A pulse whose SAMPLED values are geometric, so VV's columns are
+    proportional and the matrix is exactly rank 1.
+
+    A constant V does NOT work: vsampled is zero-padded at both ends, so the
+    window that VV is built from comes out upper-triangular and invertible.
+    """
+    V = np.zeros(n)
+    for k in range(n // spui):
+        V[k * spui] = 2.0 ** k
+    return V
+
+
+def _param_gain(gain_dB, cmx=1, cpx=1, spui=4):
+    p = _make_param(cmx=cmx, cpx=cpx, spui=spui)
+    p.current_ffegain = gain_dB
+    return p
+
+
+def test_singular_VV_is_refused_rather_than_answered_by_lstsq():
+    """A degenerate VV must stop the run, not return a quiet lstsq answer."""
+    with pytest.raises(ValueError, match='singular to working precision'):
+        force(_geometric_V(), _param_gain(0.0), _make_OP(), ix=24)
+
+
+def test_singular_VV_would_have_a_finite_lstsq_answer():
+    """Guard the guard: prove the refusal above is doing work.
+
+    If VV were merely ill-conditioned rather than singular, np.linalg.solve
+    would return normally and the test above would pass for the wrong reason.
+    This shows lstsq -- what the code used to fall back to -- produces a finite
+    answer on this exact matrix, so the raise is a deliberate choice and not an
+    unavoidable failure.
+    """
+    V = _geometric_V()
+    vs = V[::4]
+    VV = np.array([[vs[3], vs[4], vs[5]],
+                   [vs[2], vs[3], vs[4]],
+                   [vs[1], vs[2], vs[3]]])
+    assert np.linalg.matrix_rank(VV) < 3, 'fixture is no longer singular'
+    answer, _, _, _ = np.linalg.lstsq(VV.T, np.array([0.0, 1.0, 0.0]),
+                                      rcond=None)
+    assert np.all(np.isfinite(answer)), (
+        'lstsq no longer answers here, so the raise is not a choice')
+
+
+# NOT TESTED, and said so rather than implied: the 1e-12 cursor-tap floor was
+# removed as a fidelity correction (MATLAB divides by the tap however small),
+# but no reaching case could be constructed. The obvious lever, param
+# .current_ffegain, is dead in BOTH languages -- force sets it to 0 at the top
+# and reads it back further down, which the reference does too at ML 6568/6634
+# -- so it cannot drive the cursor tap small. A test was written for it and
+# then deleted, because it passed on the old floor and the new divide alike.
+# A test that cannot fail is the exact thing this suite exists to find.

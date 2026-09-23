@@ -77,3 +77,15 @@ being equivalent, a test starts catching it, and
 `known_survivor_list_is_current` contradicts the entry. The claim is checked on
 every run, which is the whole point of writing it here rather than in a
 comment.
+
+## Unreachable code
+
+| operator | site | why the mutant cannot change the result |
+|---|---|---|
+| `solve_to_lstsq` | `force:341` | The non-square else-branch. `VV` is built as `zeros(num_taps, num_taps)` in both languages, so the branch cannot execute and nothing in it can change a result. Its SQUARE counterpart at line 330 is caught, by the singular-VV test added under the 2026-09-23 ruling |
+
+This is equivalence of a different kind from the rest of the file: not "the
+write cannot be observed" but "the code cannot run". It is the weaker claim of
+the two, because it rests on a reading of how `VV` is built rather than on a
+property of the values, so it is worth re-checking if `force` is ever
+restructured.
