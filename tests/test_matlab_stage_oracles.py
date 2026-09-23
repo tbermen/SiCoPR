@@ -67,7 +67,14 @@ sys.path.insert(0, _ROOT)
 
 from audit_check import check, finish  # noqa: E402
 
-ORACLE = os.path.join(_HERE, 'oracles', 'matlab_stage_oracles.json')
+# The oracle lives outside the repository because it is derived from the MATLAB
+# reference workbooks. COM_STAGE_ORACLES points at the local copy, so the same
+# test that SKIPS in a fresh clone runs for real on a machine that holds the
+# data. Without it, ~800 KB of genuine MATLAB output that is already on disk
+# sits unused and this file contributes zero checks -- which is how it stood
+# until 2026-09-22.
+ORACLE = os.environ.get('COM_STAGE_ORACLES') or os.path.join(
+    _HERE, 'oracles', 'matlab_stage_oracles.json')
 COMPARE = os.path.join(_ROOT, 'report_data', 'compare.csv')
 REGISTRY = os.path.join(_ROOT, 'com_functions', 'registry.json')
 
@@ -80,7 +87,8 @@ if not os.path.exists(ORACLE):
     print("SKIP matlab_stage_oracles: %s not present. It is generated from the "
           "MATLAB reference workbooks, which are not redistributable, by tooling that "
           "is likewise kept local (README section 1). This project documents its "
-          "verification rather than offering to reproduce it."
+          "verification rather than offering to reproduce it. If you hold the "
+          "data, point COM_STAGE_ORACLES at it and this runs for real."
           % os.path.relpath(ORACLE, _ROOT))
     finish()
 
