@@ -55,8 +55,6 @@ KNOWN = {
         'ML returns only result; mutations persist across package cases',
     ('get_TDR', 'get_TDR', 'OP'):
         'ML 7034 returns only TDR_results; contained because process_sxp copies OP',
-    ('force', 'force', 'param'):
-        'ML returns [Vfiltered, Cmod, idx]; current_ffegain is read back by the caller',
     ('SNDR_ref', 'SNDR_ref', 'param'):
         'ML returns only results',
     ('get_cm_noise', 'get_cm_noise', 'OP'):

@@ -82,7 +82,7 @@ comment.
 
 | operator | site | why the mutant cannot change the result |
 |---|---|---|
-| `solve_to_lstsq` | `force:341` | The non-square else-branch. `VV` is built as `zeros(num_taps, num_taps)` in both languages, so the branch cannot execute and nothing in it can change a result. Its SQUARE counterpart at line 330 is caught, by the singular-VV test added under the 2026-09-23 ruling |
+| `solve_to_lstsq` | `force:352` | The non-square else-branch. `VV` is built as `zeros(num_taps, num_taps)` in both languages, so the branch cannot execute and nothing in it can change a result. Its SQUARE counterpart at line 341 is caught, by the singular-VV test added under the 2026-09-23 ruling |
 
 This is equivalence of a different kind from the rest of the file: not "the
 write cannot be observed" but "the code cannot run". It is the weaker claim of

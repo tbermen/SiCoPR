@@ -10698,7 +10698,18 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
     cstep = float(getattr(param, 'RxFFE_stepz', 0))
     ndfe = int(param.ndfe)
     spui = int(param.samples_per_ui)
-    param.current_ffegain = 0
+    # ML 6568 is `param.current_ffegain=0;` here, and ML 6634 reads it back a
+    # few lines down, so inside force the gain is ALWAYS 0 in the reference.
+    #
+    # MATLAB passes param BY VALUE, so that write never reaches the caller.
+    # This used to write the caller's object, zeroing a value the caller had
+    # set. COM Octave, on its own force with param.current_ffegain = 7:
+    #   caller param.current_ffegain BEFORE the call: 7
+    #   caller param.current_ffegain AFTER  the call: 7
+    # SiCoPR gave 0. Keeping the write local restores by-value semantics and
+    # leaves the reference's own logic untouched, because the only reader is
+    # inside this function.
+    current_ffegain = 0.0
 
     idx = np.array([], dtype=int)
 
@@ -10783,7 +10794,7 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
         # Build forcing vector FV
         FV = np.zeros(num_taps)
-        cursor_gain_dB = float(getattr(param, 'current_ffegain', 0))
+        cursor_gain_dB = current_ffegain      # ML 6634, always 0: see L213
         FV[cmx] = vsampled[ivs] * 10 ** (cursor_gain_dB / 20.0)
         if ndfe != 0 and cpx > 0 and ivs + 1 < len(vsampled):
             bmax_arr = np.asarray(param.bmax, dtype=float).ravel()

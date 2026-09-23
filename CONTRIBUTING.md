@@ -265,3 +265,23 @@ not useful; "`nui` used banker's rounding where MATLAB rounds half away from
 zero — one tie in 98,145 calls, dropped one ISI sample, closed the last COM
 miss" is. `docs/FIX_SUMMARY.md` is the running ledger; add an entry there for
 anything that changes a number.
+
+## Verifying a function port
+
+`docs/VERIFICATION.md` is the contract. Read it before any function-level
+verification work.
+
+The short form: a reading of the MATLAB is not verification. `sigma = std(x)`
+and `sigma = np.std(x)` read alike and are not alike, and a reading is exactly
+what produced that defect. Execute the reference with `tools/octave_oracle.py`,
+pin the values it returns as literals in the test, and head the block with the
+string `COM Octave` so the coverage tool can see it.
+
+COM MATLAB is the reference behaviour. COM Octave is a proxy for it that can be
+run at any level, from a single function to a whole case. Where Octave diverges
+from MATLAB, fix Octave (see `octave/make_octave_compat.py`) and document the
+fix, so it stays trustworthy as the oracle.
+
+Run `tests\run_all.ps1`, never bare `pytest tests`, which collects almost
+nothing and exits 0. Then `python com_functions/verification/report.py` answers
+"are there any opens?" from the suite rather than from memory.

@@ -1,6 +1,6 @@
 """The answer to "are there any opens?", computed rather than remembered.
 
-`dev/prompts/SiCoPR_VERIFICATION_OBJECTIVE.md` sets the objective: reach a state
+`docs/VERIFICATION.md` sets the objective: reach a state
 where that question is answered by running this, and it prints zero. Completion
 is never asserted from judgment. The report IS the answer, and it derives that
 answer from executing the suite.

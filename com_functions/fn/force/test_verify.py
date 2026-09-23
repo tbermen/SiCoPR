@@ -289,3 +289,51 @@ def test_singular_VV_would_have_a_finite_lstsq_answer():
 # -- so it cannot drive the cursor tap small. A test was written for it and
 # then deleted, because it passed on the old floor and the new divide alike.
 # A test that cannot fail is the exact thing this suite exists to find.
+
+
+# --------------------------------------------------------------------------
+# By-value semantics for param, against COM Octave itself.
+#
+# ML 6568 sets param.current_ffegain = 0 inside force and ML 6634 reads it back
+# a few lines down, so the gain is always 0 INSIDE the function. MATLAB passes
+# param by value, so that write never reaches the caller. SiCoPR wrote the
+# caller's object and zeroed a value the caller had set.
+#
+# Measured on COM Octave's own force, param.current_ffegain = 7 going in:
+#     caller param.current_ffegain BEFORE the call: 7
+#     caller param.current_ffegain AFTER  the call: 7
+#     Cmod = [-0.089603040 1 -0.076439460]
+# SiCoPR returned the same Cmod and left current_ffegain at 0.
+# --------------------------------------------------------------------------
+
+_OCT_BYVAL_CMOD = [-0.089603037901920146, 1.0, -0.076439464286159539]
+
+
+def _byval_V():
+    rng = np.random.default_rng(3)
+    V = np.zeros(64)
+    for k in range(16):
+        V[k * 4] = rng.normal()
+    return V
+
+
+def test_force_does_not_zero_the_callers_current_ffegain():
+    """COM Octave leaves the caller's param.current_ffegain untouched."""
+    param = _make_param(cmx=1, cpx=1, spui=4)
+    param.current_ffegain = 7.0
+    force(_byval_V(), param, _make_OP(), ix=24)
+    assert param.current_ffegain == 7.0, (
+        "force zeroed the caller's param.current_ffegain (now %r). COM Octave "
+        'keeps 7: MATLAB passes param by value, so ML 6568 is a local write.'
+        % param.current_ffegain)
+
+
+def test_force_taps_match_com_octave_on_that_same_call():
+    """Same call, same taps. Pins the numbers the by-value check runs on, so a
+    silent change to the solve cannot leave that check passing over different
+    arithmetic."""
+    param = _make_param(cmx=1, cpx=1, spui=4)
+    param.current_ffegain = 7.0
+    _, Cmod, _ = force(_byval_V(), param, _make_OP(), ix=24)
+    np.testing.assert_allclose(np.asarray(Cmod).ravel(), _OCT_BYVAL_CMOD,
+                               rtol=0, atol=1e-15)

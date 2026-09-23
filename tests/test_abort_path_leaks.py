@@ -68,7 +68,6 @@ REVIEWED = {
     # --- already covered by test_reference_leaks.py (param never returned)
     'optimize_fom:optimize_fom': 'see test_reference_leaks KNOWN set',
     'get_TDR:get_TDR': 'see test_reference_leaks KNOWN set',
-    'force:force': 'see test_reference_leaks KNOWN set',
     'SNDR_ref:SNDR_ref': 'see test_reference_leaks KNOWN set',
     'OptFom_Compute_RxFFE:OptFom_Compute_RxFFE': 'see test_reference_leaks KNOWN set',
 
