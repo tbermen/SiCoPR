@@ -25,6 +25,48 @@
 import numpy as np
 from com_functions.fn.get_center_of_UI.py_impl import get_center_of_UI as _get_center_of_UI
 
+def _histogram_window(T_O, QL, hw_type):
+    """ML 1502-1524: the VEC histogram window, one vector of 2*T_O+1 weights.
+
+    Lifted out of COM_eye_width so it can be driven on its own. The whole
+    behaviour of OP.Histogram_Window_Weight lives here, and inline it was
+    unreachable by any test: COM_eye_width needs the full get_pdf_full chain to
+    run at all, so the three non-default window types sat in
+    test_option_coverage.py's KNOWN_UNCOVERED with nothing exercising them.
+
+    Verified against the reference by lifting ML 1502-1524 verbatim into an
+    Octave function and running both on the same (T_O, QL). All four window
+    types agree at T_O = 3, 5, 7, 8 and QL = 1.5, 2.5, 4.0: exact for
+    gaussian, dual_rayleigh and rectangle, and within 3.4e-16 for triangle,
+    whose MATLAB colon expression accumulates differently from arange.
+    """
+    T_O = int(T_O)
+    if hw_type in ('gaussian', 'norm', 'normal', 'guassian'):
+        QL_sigma = T_O / (QL + 1e-300)
+        idx_arr = np.arange(-T_O, T_O + 1)
+        return np.exp(-0.5 * (idx_arr / (QL_sigma + 1e-300)) ** 2)
+    if hw_type == 'triangle':
+        t_slope = 1.0 / T_O
+        weights = np.concatenate([
+            np.arange(0, 1 + t_slope, t_slope),
+            np.arange(1 - t_slope, -t_slope, -t_slope)])
+        return weights[:2 * T_O + 1]
+    if hw_type == 'dual_rayleigh':
+        QL_sigma = T_O / (QL + 1e-300)
+        X = np.arange(-T_O, T_O + 1, dtype=float)
+        weights = ((X + T_O) / QL_sigma ** 2 *
+                   np.exp(-0.5 * ((X + T_O) / QL_sigma) ** 2) -
+                   (X - T_O) / QL_sigma ** 2 *
+                   np.exp(-0.5 * ((X - T_O) / QL_sigma) ** 2))
+        return weights / (_mmax(weights) + 1e-300)
+    if hw_type == 'rectangle':
+        return np.ones(2 * T_O + 1)
+    # ML 1523: otherwise -> error('%s not recognized for
+    # Histogram_Window_Weight'). The port used to fall through to rectangle,
+    # answering where the reference stops on a misspelled option.
+    raise ValueError('%s not recognized for Histogram_Window_Weight' % hw_type)
+
+
 def _mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
     them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
@@ -407,28 +449,7 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
     if int(param.T_O) != 0:
         T_O_nonzero = T_O if T_O > 0 else 1
         hw_type = str(getattr(OP, 'Histogram_Window_Weight', 'rectangle')).lower()
-        if hw_type in ('gaussian', 'norm', 'normal', 'guassian'):
-            QL_sigma = T_O_nonzero / (float(param.QL) + 1e-300)
-            idx_arr = np.arange(-T_O_nonzero, T_O_nonzero + 1)
-            weights = np.exp(-0.5 * (idx_arr / (QL_sigma + 1e-300))**2)
-        elif hw_type == 'triangle':
-            t_slope = 1.0 / T_O_nonzero
-            weights = np.concatenate([
-                np.arange(0, 1 + t_slope, t_slope),
-                np.arange(1 - t_slope, -t_slope, -t_slope)
-            ])
-            weights = weights[:2 * T_O_nonzero + 1]
-        elif hw_type == 'dual_rayleigh':
-            QL_sigma = T_O_nonzero / (float(param.QL) + 1e-300)
-            X = np.arange(-T_O_nonzero, T_O_nonzero + 1, dtype=float)
-            weights = ((X + T_O_nonzero) / QL_sigma**2 *
-                       np.exp(-0.5 * ((X + T_O_nonzero) / QL_sigma)**2) -
-                       (X - T_O_nonzero) / QL_sigma**2 *
-                       np.exp(-0.5 * ((X - T_O_nonzero) / QL_sigma)**2))
-            mx = weights.max()
-            weights = weights / (mx + 1e-300)
-        else:  # rectangle (default)
-            weights = np.ones(2 * T_O_nonzero + 1)
+        weights = _histogram_window(T_O_nonzero, float(param.QL), hw_type)
 
         # Build weighted combined PDF for each level
         out_pdf_levels = [None] * levels

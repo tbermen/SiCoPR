@@ -172,17 +172,22 @@ def _oracle_structs():
     param = SimpleNamespace(
         samples_per_ui=8.0, fb=106.25e9, specBER=1e-5, levels=4.0,
         Pkg_len_TX=12.0, Pkg_len_NEXT=12.0, Pkg_len_FEXT=12.0, Pkg_len_RX=12.0,
-        R_diepad=np.array([50.0, 50.0]), pkg_Z_c=np.array([87.5, 87.5]),
-        C_v=np.array([0.1, 0.1]), C_diepad=np.array([0.15, 0.15]),
-        L_comp=np.array([0.13, 0.13]), C_bump=np.array([0.3, 0.3]),
+        # Every echoed parameter differs entry to entry, and the CTLE lists
+        # differ index to index, so a wrong element or a wrong index cannot
+        # agree by luck.
+        R_diepad=np.array([50.0, 55.0]), pkg_Z_c=np.array([87.5, 92.5]),
+        C_v=np.array([0.1, 0.2]), C_diepad=np.array([0.15, 0.25]),
+        L_comp=np.array([0.13, 0.23]), C_bump=np.array([0.3, 0.4]),
         num_next=0.0, num_fext=0.0, CTLE_type='CL120d',
         CTLE_fz=np.array([2e9, 3e9, 4e9]),
         CTLE_fp1=np.array([1e10, 1.1e10, 1.2e10]),
         CTLE_fp2=np.array([3e10, 3.1e10, 3.2e10]),
         ctle_gdc_values=np.array([-6.0, -9.0, -12.0]),
         g_DC_HP_values=np.array([0.0, -1.0]),
-        f_HP=np.array([6.6e8, 6.6e8]), f_HP_Z=np.array([6.6e8] * 3),
-        f_HP_P=np.array([6.6e8] * 3), Floating_DFE=0.0, Floating_RXFFE=0.0,
+        f_HP=np.array([6.6e8, 6.6e8]),
+        f_HP_Z=np.array([5.5e8, 6.5e8, 7.5e8]),
+        f_HP_P=np.array([1.5e9, 2.5e9, 3.5e9]),
+        Floating_DFE=0.0, Floating_RXFFE=0.0,
         N_v=3.0, N_qb=0.0, T_O=0.02, AC_CM_RMS=np.array([0.0, 0.0]),
         current_ffegain=1.0, pass_threshold=3.0, ndfe=4.0, delta_y=1e-4)
     chdata = [SimpleNamespace(
@@ -308,6 +313,62 @@ def test_burst_probability_path_runs_with_float_levels():
         np.ravel(out.burst_probabilities),
         [0.016129577635929825, 0.0064277643243150157,
          0.0024591802674384941, 0.00093959370667983549], rtol=1e-12)
+
+
+def test_octave_cl120e_reports_five_zeros_and_poles():
+    """COM Octave, the fixture above with param.CTLE_type = 'CL120e'.
+
+    CL120e reports a five-entry list, in the MATLAB order
+      [CTLE_fz(ctle) f_HP_Z(ctle) CTLE_fp2(ctle) CTLE_fp1(ctle) f_HP_P(ctle)]
+    and leaves the two CL120d high-pass fields empty:
+        CTLE_zero_poles = [3e9 6.5e8 3.1e10 1.1e10 2.5e9]
+        CTLE_DC_gain_dB = -9
+        g_DC_HP         = []
+        HP_poles_zero   = []
+    fom_result.ctle is 2 and best_G_high_pass is 1, and all five frequencies
+    differ, so neither a permuted list nor a lookup by best_G_high_pass can
+    agree by accident.  All 75 output fields were compared against Octave on
+    this fixture; these are the four the branch decides.
+    """
+    COM, Noise, param, OP, fom, chdata = _oracle_structs()
+    param.CTLE_type = 'CL120e'
+    out = _fill(COM, Noise, param, OP, fom, chdata)
+    np.testing.assert_allclose(out.CTLE_zero_poles,
+                               [3e9, 6.5e8, 3.1e10, 1.1e10, 2.5e9], rtol=1e-15)
+    assert out.CTLE_DC_gain_dB == pytest.approx(-9.0, rel=1e-15)
+    assert len(np.atleast_1d(out.g_DC_HP)) == 0
+    assert len(np.atleast_1d(out.HP_poles_zero)) == 0
+
+
+def test_octave_termination_and_package_params_are_echoed():
+    """The two field-name loops copy param straight into output_args.
+
+    COM Octave on the fixture above returns these unchanged, as arrays, in
+    the order given -- a scalarised or truncated copy is a divergence:
+        R_diepad     [50 55]        C_diepad  [0.15 0.25]
+        L_comp       [0.13 0.23]    C_bump    [0.3 0.4]
+        levels       4              pkg_Z_c   [87.5 92.5]
+        C_v          [0.1 0.2]      Pkg_len_TX/NEXT/FEXT/RX  12
+    R_diepad is named in both loops; the second write must still land.
+    """
+    out = _fill(*_oracle_structs())
+    expected = {
+        'R_diepad': [50.0, 55.0],
+        'C_diepad': [0.15, 0.25],
+        'L_comp': [0.13, 0.23],
+        'C_bump': [0.3, 0.4],
+        'levels': [4.0],
+        'Pkg_len_TX': [12.0],
+        'Pkg_len_NEXT': [12.0],
+        'Pkg_len_FEXT': [12.0],
+        'Pkg_len_RX': [12.0],
+        'pkg_Z_c': [87.5, 92.5],
+        'C_v': [0.1, 0.2],
+    }
+    for name, want in expected.items():
+        got = np.atleast_1d(np.asarray(getattr(out, name), dtype=float))
+        assert got.shape == (len(want),), '%s: %r' % (name, got)
+        np.testing.assert_allclose(got, want, rtol=1e-15)
 
 
 def test_burst_probability_simple_ep_model():

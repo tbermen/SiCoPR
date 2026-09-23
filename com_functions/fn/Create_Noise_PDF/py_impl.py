@@ -4,6 +4,8 @@
 # ============================================================
 # Inputs: A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results.
 # RX_CALIBRATION==1: compute sigma_ne via get_sigma_noise (inlined).
+# CTLE_type 'CL120e' under RX_CALIBRATION raises: MATLAB L1592 reads bare
+#   f_HP_P/f_HP_Z, undefined in this scope, so the reference errors there too.
 # NS.sigma_N = fom_result.sigma_N.
 # Non-MMSE path: sigma_TX uses SNR_TX param; sigma_G = norm([sigma_RJ*sigma_X*norm(h_J), sigma_N, sigma_TX]).
 # MMSE path: sigma_TX/sigma_G/sigma_rjit/sigma_N from PSD_results.
@@ -147,8 +149,26 @@ def Create_Noise_PDF(A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results=N
                        + 1j * faxis2 / float(param.f_HP[ghp_i]))
                       / (1 + 1j * faxis2 / float(param.f_HP[ghp_i])))
         elif ctype == 'CL120e':
-            H_low2 = ((1 + 1j * faxis2 / float(param.f_HP_P[ctle_i]))
-                      / (1 + 1j * faxis2 / float(param.f_HP_Z[ctle_i])))
+            # UPSTREAM DEFECT (MATLAB L1592): this one line reads bare
+            # f_HP_P(...) and f_HP_Z(...) where the six other sites in the
+            # reference write param.f_HP_P(...) / param.f_HP_Z(...). Neither
+            # bare name exists in Create_Noise_PDF's scope, so the reference
+            # cannot execute this branch at all.
+            #   COM Octave, CTLE_type='CL120e', OP.RX_CALIBRATION=1:
+            #     error: 'f_HP_P' undefined near line 16, column 45
+            #         Create_Noise_PDF at line 16 column 13
+            # MATLAB raises the same "Undefined function or variable".
+            # The port read param.f_HP_P/param.f_HP_Z, i.e. it answered where
+            # the reference stops. Copying the reference's bug is the ruling;
+            # knowing it occurred is the point, so it raises with the reason
+            # named. Also recorded in com_functions/verification/builtins.md.
+            raise ValueError(
+                "Create_Noise_PDF: CTLE_type='CL120e' with OP.RX_CALIBRATION "
+                'cannot run. MATLAB line 1592 reads bare f_HP_P/f_HP_Z '
+                'instead of param.f_HP_P/param.f_HP_Z, which are undefined in '
+                'this function. COM Octave: "error: \'f_HP_P\' undefined near '
+                'line 16, column 45, Create_Noise_PDF at line 16 column 13". '
+                'Upstream defect, for the COM ad hoc -- not a port failure.')
         else:
             H_low2 = 1.0
         H_ctf2 = H_low2 * ctle_gain2

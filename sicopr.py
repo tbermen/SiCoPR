@@ -521,6 +521,19 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 PSD_results = _get_PSDs_fn(
                     PSD_results, chdata[0].eq_pulse_response, fom_result.t_s,
                     fom_result.txffe, g_dc, g_hp, param, chdata, OP)
+                # r4p16p0 L554-559.  The port dropped these six assignments, so
+                # output_args.noiseRMS_mV never existed on the MMSE+RxFFE path.
+                # MATLAB writes .tn twice (L555 and L557) with the same value;
+                # the field order it leaves behind is rn, tn, xn, jn, in.
+                # 'in' is a Python keyword, so it is set by name rather than as
+                # a keyword argument -- getattr(..., 'in') reads it back.
+                output_args.noiseRMS_mV = SimpleNamespace(
+                    rn=PSD_results.S_rn_rms * 1000,
+                    tn=PSD_results.S_tn_rms * 1000,
+                    xn=PSD_results.S_xn_rms * 1000,
+                    jn=PSD_results.S_jn_rms * 1000,
+                )
+                setattr(output_args.noiseRMS_mV, 'in', PSD_results.S_in_rms * 1000)
 
             # ── Per-channel PDF ───────────────────────────────────────────
             for i, ch in enumerate(chdata[:param.number_of_s4p_files]):
@@ -1667,6 +1680,48 @@ def COM_FD_to_TD(chdata, param, OP,
 # ============================================================
 
 
+def _COM_eye_width__histogram_window(T_O, QL, hw_type):
+    """ML 1502-1524: the VEC histogram window, one vector of 2*T_O+1 weights.
+
+    Lifted out of COM_eye_width so it can be driven on its own. The whole
+    behaviour of OP.Histogram_Window_Weight lives here, and inline it was
+    unreachable by any test: COM_eye_width needs the full get_pdf_full chain to
+    run at all, so the three non-default window types sat in
+    test_option_coverage.py's KNOWN_UNCOVERED with nothing exercising them.
+
+    Verified against the reference by lifting ML 1502-1524 verbatim into an
+    Octave function and running both on the same (T_O, QL). All four window
+    types agree at T_O = 3, 5, 7, 8 and QL = 1.5, 2.5, 4.0: exact for
+    gaussian, dual_rayleigh and rectangle, and within 3.4e-16 for triangle,
+    whose MATLAB colon expression accumulates differently from arange.
+    """
+    T_O = int(T_O)
+    if hw_type in ('gaussian', 'norm', 'normal', 'guassian'):
+        QL_sigma = T_O / (QL + 1e-300)
+        idx_arr = np.arange(-T_O, T_O + 1)
+        return np.exp(-0.5 * (idx_arr / (QL_sigma + 1e-300)) ** 2)
+    if hw_type == 'triangle':
+        t_slope = 1.0 / T_O
+        weights = np.concatenate([
+            np.arange(0, 1 + t_slope, t_slope),
+            np.arange(1 - t_slope, -t_slope, -t_slope)])
+        return weights[:2 * T_O + 1]
+    if hw_type == 'dual_rayleigh':
+        QL_sigma = T_O / (QL + 1e-300)
+        X = np.arange(-T_O, T_O + 1, dtype=float)
+        weights = ((X + T_O) / QL_sigma ** 2 *
+                   np.exp(-0.5 * ((X + T_O) / QL_sigma) ** 2) -
+                   (X - T_O) / QL_sigma ** 2 *
+                   np.exp(-0.5 * ((X - T_O) / QL_sigma) ** 2))
+        return weights / (_COM_eye_width__mmax(weights) + 1e-300)
+    if hw_type == 'rectangle':
+        return np.ones(2 * T_O + 1)
+    # ML 1523: otherwise -> error('%s not recognized for
+    # Histogram_Window_Weight'). The port used to fall through to rectangle,
+    # answering where the reference stops on a misspelled option.
+    raise ValueError('%s not recognized for Histogram_Window_Weight' % hw_type)
+
+
 def _COM_eye_width__mextreme_complex(a, take):
     """MATLAB orders complex values by magnitude, then by angle; numpy orders
     them lexicographically by real part, so max([3+4i, 5]) is 3+4i in MATLAB
@@ -2046,28 +2101,7 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
     if int(param.T_O) != 0:
         T_O_nonzero = T_O if T_O > 0 else 1
         hw_type = str(getattr(OP, 'Histogram_Window_Weight', 'rectangle')).lower()
-        if hw_type in ('gaussian', 'norm', 'normal', 'guassian'):
-            QL_sigma = T_O_nonzero / (float(param.QL) + 1e-300)
-            idx_arr = np.arange(-T_O_nonzero, T_O_nonzero + 1)
-            weights = np.exp(-0.5 * (idx_arr / (QL_sigma + 1e-300))**2)
-        elif hw_type == 'triangle':
-            t_slope = 1.0 / T_O_nonzero
-            weights = np.concatenate([
-                np.arange(0, 1 + t_slope, t_slope),
-                np.arange(1 - t_slope, -t_slope, -t_slope)
-            ])
-            weights = weights[:2 * T_O_nonzero + 1]
-        elif hw_type == 'dual_rayleigh':
-            QL_sigma = T_O_nonzero / (float(param.QL) + 1e-300)
-            X = np.arange(-T_O_nonzero, T_O_nonzero + 1, dtype=float)
-            weights = ((X + T_O_nonzero) / QL_sigma**2 *
-                       np.exp(-0.5 * ((X + T_O_nonzero) / QL_sigma)**2) -
-                       (X - T_O_nonzero) / QL_sigma**2 *
-                       np.exp(-0.5 * ((X - T_O_nonzero) / QL_sigma)**2))
-            mx = weights.max()
-            weights = weights / (mx + 1e-300)
-        else:  # rectangle (default)
-            weights = np.ones(2 * T_O_nonzero + 1)
+        weights = _COM_eye_width__histogram_window(T_O_nonzero, float(param.QL), hw_type)
 
         # Build weighted combined PDF for each level
         out_pdf_levels = [None] * levels
@@ -2124,6 +2158,8 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
 # ============================================================
 # Inputs: A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results.
 # RX_CALIBRATION==1: compute sigma_ne via get_sigma_noise (inlined).
+# CTLE_type 'CL120e' under RX_CALIBRATION raises: MATLAB L1592 reads bare
+#   f_HP_P/f_HP_Z, undefined in this scope, so the reference errors there too.
 # NS.sigma_N = fom_result.sigma_N.
 # Non-MMSE path: sigma_TX uses SNR_TX param; sigma_G = norm([sigma_RJ*sigma_X*norm(h_J), sigma_N, sigma_TX]).
 # MMSE path: sigma_TX/sigma_G/sigma_rjit/sigma_N from PSD_results.
@@ -2259,8 +2295,26 @@ def Create_Noise_PDF(A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results=N
                        + 1j * faxis2 / float(param.f_HP[ghp_i]))
                       / (1 + 1j * faxis2 / float(param.f_HP[ghp_i])))
         elif ctype == 'CL120e':
-            H_low2 = ((1 + 1j * faxis2 / float(param.f_HP_P[ctle_i]))
-                      / (1 + 1j * faxis2 / float(param.f_HP_Z[ctle_i])))
+            # UPSTREAM DEFECT (MATLAB L1592): this one line reads bare
+            # f_HP_P(...) and f_HP_Z(...) where the six other sites in the
+            # reference write param.f_HP_P(...) / param.f_HP_Z(...). Neither
+            # bare name exists in Create_Noise_PDF's scope, so the reference
+            # cannot execute this branch at all.
+            #   COM Octave, CTLE_type='CL120e', OP.RX_CALIBRATION=1:
+            #     error: 'f_HP_P' undefined near line 16, column 45
+            #         Create_Noise_PDF at line 16 column 13
+            # MATLAB raises the same "Undefined function or variable".
+            # The port read param.f_HP_P/param.f_HP_Z, i.e. it answered where
+            # the reference stops. Copying the reference's bug is the ruling;
+            # knowing it occurred is the point, so it raises with the reason
+            # named. Also recorded in com_functions/verification/builtins.md.
+            raise ValueError(
+                "Create_Noise_PDF: CTLE_type='CL120e' with OP.RX_CALIBRATION "
+                'cannot run. MATLAB line 1592 reads bare f_HP_P/f_HP_Z '
+                'instead of param.f_HP_P/param.f_HP_Z, which are undefined in '
+                'this function. COM Octave: "error: \'f_HP_P\' undefined near '
+                'line 16, column 45, Create_Noise_PDF at line 16 column 13". '
+                'Upstream defect, for the COM ad hoc -- not a port failure.')
         else:
             H_low2 = 1.0
         H_ctf2 = H_low2 * ctle_gain2
@@ -15546,7 +15600,18 @@ def _plot_modal__RLdc_mask(f_ghz):
 
 
 def _plot_modal__dB(x):
-    return 20.0 * np.log10(np.squeeze(np.abs(np.asarray(x, dtype=complex))) + np.finfo(float).eps)
+    """MATLAB: dB=@(x) 20*log10(squeeze(abs(x))).  There is no epsilon floor.
+
+    The port added np.finfo(float).eps inside the log, which shifted every
+    margin by 20/ln(10)*eps/|S| dB and replaced MATLAB's -Inf at |S|=0 with
+    -313 dB.  Found by running the reference process_sxp (which calls
+    plot_modal) under Octave: see test_verify.py in process_sxp, where the
+    epsilon put Rlcc_179mm(1) at 24.020599913279586 against the reference's
+    24.020599913279625.  errstate only silences numpy's divide warning at
+    |S|=0; MATLAB returns -Inf there without complaint.
+    """
+    with np.errstate(divide='ignore'):
+        return 20.0 * np.log10(np.squeeze(np.abs(np.asarray(x, dtype=complex))))
 
 
 def plot_modal(param, OP, chdata):

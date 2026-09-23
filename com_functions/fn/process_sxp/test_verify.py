@@ -313,6 +313,137 @@ def test_octave_auto_tfx_peak_skips_nan(fir, expected_pix):
     assert param_out.tfx[1] == 2 * tu[expected_pix]
 
 
+# ============================================================
+# COM Octave oracle values -- the reference process_sxp itself (extracted
+# verbatim from octave/com_ieee8023_4p16p0_octave_compat.m, with the real
+# plot_modal alongside it and only get_TDR shimmed) run on the fixture below.
+# Pinned 2026-09-23.  This closes the 'Rlcc_179mm' CM-mask copy block
+# (MATLAB L9626-9636).
+#
+# The block itself only copies, so the numbers come from plot_modal; the test
+# therefore injects the REAL plot_modal rather than a stub, which is what
+# makes the pinned values the reference's and not the fixture's.
+#
+# One divergence this pins.  plot_modal's dB helper was
+#     20*log10(abs(x) + np.finfo(float).eps)
+# where the reference is
+#     dB=@(x) 20*log10(squeeze(abs(x)))          (MATLAB L9407)
+# with no epsilon.  The floor shifted every margin by 20/ln(10)*eps/|S| dB --
+# 3.9e-14 dB at |S|=0.05, 9.6e-13 dB at |S|=0.002 -- and turned MATLAB's -Inf
+# at |S|=0 into -313 dB.  Fixed in plot_modal/py_impl.py; with the epsilon
+# back in, Rlcc_179mm(1) reads 24.020599913279586 against the reference's
+# 24.020599913279625.
+#
+# The S-parameters are real-valued on purpose: Octave's abs() of a COMPLEX
+# number and numpy's differ by an ULP (different hypot), which is a library
+# difference and not the port's, and it would otherwise stop these arrays
+# being pinned exactly.
+#
+# Fixture: f = [0.05 2 4 30 44 53.125 60 67 70] GHz -- one point in every
+#   segment of the three masks, including both sides of 4, 44, 53.125, 60
+#   and 67 GHz -- with
+#   scc11 = [0.05 0.1 0.15 0.9 0.25 0.3 0.35 0.4 0.45]
+#   scd22 = [0.002 0.005 0.008 0.011 0.014 0.017 0.02 0.023 0.026]
+#   sdc22 = [0.004 0.007 0.01 0.013 0.016 0.019 0.022 0.025 0.028]
+#   param.Z0=50, param.Z_t=100, OP.TDR=1, OP.CM_MASK_REPORT as listed.
+#
+# COM Octave, chdata(1) after process_sxp, CM_MASK_REPORT=1:
+#   (values below, at %.17g)
+#   Rlcc_179mm_fail 1   Rlcc_178mm_fail 1
+#   Rlcd_179mm_fail 0   Rldc_179mm_fail 0
+# COM Octave, CM_MASK_REPORT=0: plot_modal returns [] and NONE of the eight
+#   fields exists on chdata(1).
+# ============================================================
+
+_OCT_F_GHZ = np.array([0.05, 2.0, 4.0, 30.0, 44.0, 53.125, 60.0, 67.0, 70.0])
+
+_OCT_SCC11 = np.array([0.05, 0.1, 0.15, 0.9, 0.25, 0.3, 0.35, 0.4, 0.45],
+                      dtype=complex)
+_OCT_SCD22 = np.array([0.002, 0.005, 0.008, 0.011, 0.014, 0.017, 0.02,
+                       0.023, 0.026], dtype=complex)
+_OCT_SDC22 = np.array([0.004, 0.007, 0.01, 0.013, 0.016, 0.019, 0.022,
+                       0.025, 0.028], dtype=complex)
+
+_OCT_MASKS = {
+    'Rlcc_179mm': [24.020599913279625, 18, 14.478174818886377,
+                   -2.3848501887864977, 8.0411998265592484,
+                   7.5981999056067515, 7.1186391129944884,
+                   5.9588001734407516, 4.9357497244931263],
+    'Rlcc_178mm': [22.770599913279625, 16.75, 13.228174818886377,
+                   -2.3348501887864979, 8.7911998265592484,
+                   7.2075749056067515, 5.8686391129944884,
+                   4.7088001734407516, 3.6857497244931263],
+    'Rlcd_179mm': [30.989753027896846, 23.434717560338449,
+                   19.766435554278772, 22.383911002717852,
+                   23.18802752172936, 23.391021572434525,
+                   21.979400086720375, 20.765443279648146,
+                   19.70053304058364],
+    'Rldc_179mm': [24.969153114617221, 20.512156846773685,
+                   17.828235294117647, 20.93289765974562,
+                   22.028188582175623, 22.424927980943423,
+                   21.151546383555875, 20.041199826559243,
+                   19.056839373155615],
+}
+_OCT_FAIL = {'Rlcc_179mm_fail': True, 'Rlcc_178mm_fail': True,
+             'Rlcd_179mm_fail': False, 'Rldc_179mm_fail': False}
+
+
+def _make_ch_cm_mask():
+    N = len(_OCT_F_GHZ)
+    z = np.zeros(N, dtype=complex)
+    s = 0.01 * np.ones(N, dtype=complex)
+    return SimpleNamespace(
+        faxis=_OCT_F_GHZ * 1e9,
+        sdd11_orig=s.copy(), sdd12_orig=s.copy(),
+        sdd21_orig=s.copy(), sdd22_orig=s.copy(),
+        scd11_orig=z.copy(), scd12_orig=z.copy(),
+        scd21_orig=z.copy(), scd22_orig=_OCT_SCD22.copy(),
+        sdc11_orig=z.copy(), sdc12_orig=z.copy(),
+        sdc21_orig=z.copy(), sdc22_orig=_OCT_SDC22.copy(),
+        scc11_orig=_OCT_SCC11.copy(), scc12_orig=z.copy(),
+        scc21_orig=z.copy(), scc22_orig=z.copy(),
+        base='test_ch')
+
+
+def _run_cm_mask(cm_mask_report):
+    from com_functions.fn.plot_modal.py_impl import plot_modal
+    ch = _make_ch_cm_mask()
+    param = _make_param(Z0=50.0, Z_t=np.array([100.0]))
+    OP = _make_op()
+    OP.CM_MASK_REPORT = cm_mask_report
+    OP.PLOT_CM = False
+    out, _ = process_sxp(param, OP, [ch], None,
+                         _plot_modal_fn=plot_modal, _get_TDR_fn=_stub_tdr)
+    return out
+
+
+@pytest.mark.parametrize('field', sorted(_OCT_MASKS))
+def test_octave_cm_mask_margins_copied_to_chdata(field):
+    """plot_modal's margin arrays land on chdata[0] bit for bit.
+
+    Exercises the `if ~isempty(return_struct)` copy block, and pins the
+    numbers it carries to the reference run under Octave.
+    """
+    out = _run_cm_mask(True)
+    got = np.asarray(getattr(out[0], field), dtype=float).ravel()
+    np.testing.assert_array_equal(got, np.asarray(_OCT_MASKS[field]))
+
+
+def test_octave_cm_mask_fail_flags_copied_to_chdata():
+    """The four pass/fail booleans are copied with the arrays."""
+    out = _run_cm_mask(True)
+    for field, expected in _OCT_FAIL.items():
+        assert bool(getattr(out[0], field)) is expected, field
+
+
+def test_octave_cm_mask_fields_absent_when_report_off():
+    """CM_MASK_REPORT=0: plot_modal returns [], so the copy block is skipped
+    and chdata(1) gains none of the eight fields."""
+    out = _run_cm_mask(False)
+    for field in list(_OCT_MASKS) + list(_OCT_FAIL):
+        assert not hasattr(out[0], field), field
+
+
 def test_octave_auto_tfx_all_nan_raises():
     """COM Octave: find(x==max(x),1) on an all-NaN vector is EMPTY, so
     param.tfx(2)=2*tu([]) is not a value assignment at all."""

@@ -59,22 +59,6 @@ DEFAULTS = {
 # when its option gains a test; never add one to make a red run go green.
 # Pinning the set rather than a count lets the failure name the new branch.
 KNOWN_UNCOVERED = frozenset([
-    'Apply_EQ:CL120d',
-    'Apply_EQ:CL120e',
-    'COM_eye_width:dual_rayleigh',
-    'COM_eye_width:gaussian',
-    'COM_eye_width:triangle',
-    'Create_Noise_PDF:CL120d',
-    'Create_Noise_PDF:CL120e',
-    'OptFom_Update_BEST_Post_Optimize:CL120e',
-    'Output_Arg_Fill:CL120e',
-    'Output_Arg_Fill:R_diepad',
-    'Output_Arg_Fill:levels',
-    'TDR_ERL_Processing:enable',
-    'com_ieee8023_:S_xn',
-    'end_display_control:C2Mcom',
-    'end_display_control:enable',
-    'process_sxp:Rlcc_179mm',
     'read_ParamConfigFile:CL120d',
     'read_ParamConfigFile:CL120e',
 ])

@@ -257,6 +257,15 @@
    ]
   },
   {
+   "copy": "_COM_eye_width__histogram_window",
+   "helper": "histogram_window",
+   "inlined_into": "COM_eye_width",
+   "inlined_into_matlab_lines": [
+    1362,
+    1551
+   ]
+  },
+  {
    "copy": "_COM_eye_width__mextreme_complex",
    "helper": "mextreme_complex",
    "inlined_into": "COM_eye_width",

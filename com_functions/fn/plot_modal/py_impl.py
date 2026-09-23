@@ -86,7 +86,18 @@ def _RLdc_mask(f_ghz):
 
 
 def _dB(x):
-    return 20.0 * np.log10(np.squeeze(np.abs(np.asarray(x, dtype=complex))) + np.finfo(float).eps)
+    """MATLAB: dB=@(x) 20*log10(squeeze(abs(x))).  There is no epsilon floor.
+
+    The port added np.finfo(float).eps inside the log, which shifted every
+    margin by 20/ln(10)*eps/|S| dB and replaced MATLAB's -Inf at |S|=0 with
+    -313 dB.  Found by running the reference process_sxp (which calls
+    plot_modal) under Octave: see test_verify.py in process_sxp, where the
+    epsilon put Rlcc_179mm(1) at 24.020599913279586 against the reference's
+    24.020599913279625.  errstate only silences numpy's divide warning at
+    |S|=0; MATLAB returns -Inf there without complaint.
+    """
+    with np.errstate(divide='ignore'):
+        return 20.0 * np.log10(np.squeeze(np.abs(np.asarray(x, dtype=complex))))
 
 
 def plot_modal(param, OP, chdata):

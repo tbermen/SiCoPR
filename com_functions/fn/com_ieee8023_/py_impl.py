@@ -285,6 +285,19 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 PSD_results = _get_PSDs_fn(
                     PSD_results, chdata[0].eq_pulse_response, fom_result.t_s,
                     fom_result.txffe, g_dc, g_hp, param, chdata, OP)
+                # r4p16p0 L554-559.  The port dropped these six assignments, so
+                # output_args.noiseRMS_mV never existed on the MMSE+RxFFE path.
+                # MATLAB writes .tn twice (L555 and L557) with the same value;
+                # the field order it leaves behind is rn, tn, xn, jn, in.
+                # 'in' is a Python keyword, so it is set by name rather than as
+                # a keyword argument -- getattr(..., 'in') reads it back.
+                output_args.noiseRMS_mV = SimpleNamespace(
+                    rn=PSD_results.S_rn_rms * 1000,
+                    tn=PSD_results.S_tn_rms * 1000,
+                    xn=PSD_results.S_xn_rms * 1000,
+                    jn=PSD_results.S_jn_rms * 1000,
+                )
+                setattr(output_args.noiseRMS_mV, 'in', PSD_results.S_in_rms * 1000)
 
             # ── Per-channel PDF ───────────────────────────────────────────
             for i, ch in enumerate(chdata[:param.number_of_s4p_files]):

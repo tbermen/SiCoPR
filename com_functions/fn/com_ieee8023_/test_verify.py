@@ -272,3 +272,162 @@ def test_eq_failure_returns_early():
     result = com_ieee8023_(param, OP, _make_chdata(), **stubs)
 
     assert not fill_called[0], "Output_Arg_Fill should not be called after EQ failure"
+
+
+# ============================================================
+# Test 7 - the MMSE + RxFFE PSD block (MATLAB L537-560), the branch the
+# 'S_xn' option string sits in.
+#
+# Behaviour-only, and honestly so: com_ieee8023_ is the top-level driver, and
+# this block's numbers come entirely from get_PSDs, which cannot be run here
+# without the whole engine.  What the reference fixes, and what is therefore
+# asserted, is the CHOREOGRAPHY around the two get_PSDs calls:
+#
+#   OP.WO_TXFFE=1;                          <- first call sees 1
+#   PSD_results.w    = fom_result.RxFFE;
+#   PSD_results.S_rn = fom_result.PSD_results.S_rn;
+#   PSD_results.S_in = fom_result.PSD_results.S_in;
+#   PSD_results = get_PSDs(..., param.ctle_gdc_values(fom_result.ctle),
+#                               param.g_DC_HP_values(fom_result.best_G_high_pass), ...);
+#   OP.WO_TXFFE=0;                          <- second call sees 0
+#   PSD_results.S_xn    = fom_result.PSD_results.S_xn;
+#   PSD_results.S_tn    = fom_result.PSD_results.S_tn;
+#   PSD_results.S_jn    = fom_result.PSD_results.S_jn;
+#   PSD_results.S_rj_jn = fom_result.PSD_results.S_rj_jn;
+#   PSD_results = get_PSDs(...same arguments...);
+#   output_args.noiseRMS_mV.{rn,tn,xn,jn,in} = S_*_rms*1000;
+#
+# The order is the whole content of the branch: the four crosstalk/jitter
+# PSDs must be seeded BETWEEN the two calls, because the first call runs
+# without the Tx FFE and the second one adjusts them for the Rx FFE.  Seeding
+# them before the first call, or leaving WO_TXFFE at 1 for the second, would
+# still produce a PSD_results with every field present.
+#
+# One divergence this closes: the six output_args.noiseRMS_mV assignments
+# (MATLAB L554-559) were missing from the port entirely, so the field did not
+# exist on any MMSE+RxFFE run.  MATLAB writes .tn twice, at L555 and L557,
+# with the same value -- harmless upstream redundancy, noted so the single
+# assignment here is not mistaken for a dropped line.
+# ============================================================
+
+def _mmse_param():
+    param = _make_param()
+    param.ctle_gdc_values = np.array([-5.0, -8.0, -11.0, -14.0])
+    param.g_DC_HP_values = np.array([0.0, -1.0, -2.0, -3.0])
+    return param
+
+
+def _mmse_fom_result(A_s=0.5):
+    fom = _make_fom_result(A_s=A_s)
+    fom.ctle = 2                 # MATLAB 1-based -> ctle_gdc_values(2) = -8
+    fom.best_G_high_pass = 3     # MATLAB 1-based -> g_DC_HP_values(3) = -2
+    fom.RxFFE = np.array([0.25, 1.0, -0.125])
+    fom.PSD_results = SimpleNamespace(
+        S_rn=np.array([1.0, 2.0]), S_in=np.array([3.0, 4.0]),
+        S_xn=np.array([5.0, 6.0]), S_tn=np.array([7.0, 8.0]),
+        S_jn=np.array([9.0, 10.0]), S_rj_jn=np.array([11.0, 12.0]),
+        iphase=np.array([1]))
+    return fom
+
+
+_RMS = dict(S_rn_rms=0.0011, S_tn_rms=0.0022, S_xn_rms=0.0033,
+            S_jn_rms=0.0044, S_in_rms=0.0055)
+
+
+def _mmse_stubs(calls):
+    fom = _mmse_fom_result()
+    stubs = _make_stubs(A_s=0.5, A_ni=0.1)
+    stubs['_optimize_fom_fn'] = lambda OP_, p, ch, sig, do_C2M: fom
+
+    def get_PSDs(PSD_results, pulse, t_s, txffe, g_dc, g_hp, p, ch, OP_):
+        calls.append(SimpleNamespace(
+            seen=dict(vars(PSD_results)),
+            WO_TXFFE=getattr(OP_, 'WO_TXFFE', None),
+            g_dc=g_dc, g_hp=g_hp, t_s=t_s))
+        out = SimpleNamespace(**vars(PSD_results))
+        for k, v in _RMS.items():
+            setattr(out, k, v)
+        return out
+
+    stubs['_get_PSDs_fn'] = get_PSDs
+    return stubs, fom
+
+
+def _run_mmse():
+    calls = []
+    param = _mmse_param()
+    OP = _make_op()
+    OP.FFE_OPT_METHOD = 'MMSE'
+    OP.RxFFE = True
+    stubs, fom = _mmse_stubs(calls)
+    result = com_ieee8023_(param, OP, _make_chdata(), **stubs)
+    return result, calls, fom, OP
+
+
+def test_mmse_rxffe_psd_block_calls_get_PSDs_twice():
+    """Two get_PSDs calls, the first with OP.WO_TXFFE=1 and the second with 0."""
+    _, calls, _, OP = _run_mmse()
+    assert len(calls) == 2
+    assert calls[0].WO_TXFFE == 1
+    assert calls[1].WO_TXFFE == 0
+    assert OP.WO_TXFFE == 0, 'WO_TXFFE must be left at 0 after the block'
+
+
+def test_mmse_rxffe_psd_first_call_seeded_with_w_srn_sin_only():
+    """Before the first call PSD_results holds only w, S_rn and S_in."""
+    _, calls, fom, _ = _run_mmse()
+    assert set(calls[0].seen) == {'w', 'S_rn', 'S_in'}
+    np.testing.assert_array_equal(calls[0].seen['w'], fom.RxFFE)
+    np.testing.assert_array_equal(calls[0].seen['S_rn'], fom.PSD_results.S_rn)
+    np.testing.assert_array_equal(calls[0].seen['S_in'], fom.PSD_results.S_in)
+
+
+def test_mmse_rxffe_S_xn_seeded_between_the_two_calls():
+    """S_xn, S_tn, S_jn and S_rj_jn arrive from fom_result between the calls.
+
+    This is the 'S_xn' branch: absent from the first call, present and equal
+    to fom_result.PSD_results on the second.
+    """
+    _, calls, fom, _ = _run_mmse()
+    for fld in ('S_xn', 'S_tn', 'S_jn', 'S_rj_jn'):
+        assert fld not in calls[0].seen, '%s must NOT be seeded before call 1' % fld
+        assert fld in calls[1].seen, '%s must be seeded before call 2' % fld
+        np.testing.assert_array_equal(calls[1].seen[fld],
+                                      getattr(fom.PSD_results, fld))
+
+
+def test_mmse_rxffe_ctle_gains_are_one_based_lookups():
+    """ctle_gdc_values(fom_result.ctle) and g_DC_HP_values(best_G_high_pass)
+    are MATLAB 1-based; ctle=2 -> -8 dB, best_G_high_pass=3 -> -2 dB."""
+    _, calls, _, _ = _run_mmse()
+    for c in calls:
+        assert c.g_dc == -8.0
+        assert c.g_hp == -2.0
+
+
+def test_mmse_rxffe_noiseRMS_mV_filled():
+    """output_args.noiseRMS_mV = S_*_rms*1000, in the reference's five fields.
+
+    MATLAB L554-559.  These assignments were missing from the port, so the
+    field did not exist on any MMSE+RxFFE run.
+    """
+    result, _, _, _ = _run_mmse()
+    n = result.noiseRMS_mV
+    assert n.rn == _RMS['S_rn_rms'] * 1000
+    assert n.tn == _RMS['S_tn_rms'] * 1000
+    assert n.xn == _RMS['S_xn_rms'] * 1000
+    assert n.jn == _RMS['S_jn_rms'] * 1000
+    # 'in' is a Python keyword, so the reference's field name is read by name.
+    assert getattr(n, 'in') == _RMS['S_in_rms'] * 1000
+
+
+def test_mmse_rxffe_block_skipped_without_RxFFE():
+    """The other side of the branch: FFE_OPT_METHOD='sweep' runs no get_PSDs
+    call and leaves output_args without noiseRMS_mV."""
+    calls = []
+    param = _mmse_param()
+    OP = _make_op()                      # FFE_OPT_METHOD='sweep', RxFFE=False
+    stubs, _ = _mmse_stubs(calls)
+    result = com_ieee8023_(param, OP, _make_chdata(), **stubs)
+    assert calls == []
+    assert not hasattr(result, 'noiseRMS_mV')

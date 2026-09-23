@@ -275,3 +275,73 @@ def test_pdf_to_cdf_tail_semantics():
     assert abs(c.y.max() - 0.5) < 0.02, (
         'min(yB, yT) should peak near 0.5 -- this is exactly why it cannot be '
         'used as a BER')
+
+
+# --------------------------------------------------------------------------
+# OP.Histogram_Window_Weight, against COM Octave.
+#
+# 'gaussian', 'triangle' and 'dual_rayleigh' sat in test_option_coverage.py's
+# KNOWN_UNCOVERED. They were unreachable in practice: the window was built
+# inline in COM_eye_width, which needs the whole get_pdf_full chain to run, so
+# no test could select a window type and observe it. The block is now the
+# module-level helper _histogram_window, which is the entire behaviour of the
+# option and can be driven directly.
+#
+# Expected values are COM Octave's, produced by lifting ML 1502-1524 VERBATIM
+# out of matlab/com_ieee8023_4p16p0.m into an Octave function and running it on
+# the same (T_O, QL) -- lifted rather than retyped, so a transcription slip
+# cannot masquerade as agreement. All four types agree at T_O = 3, 5, 7, 8 and
+# QL = 1.5, 2.5, 4.0.
+# --------------------------------------------------------------------------
+
+from com_functions.fn.COM_eye_width.py_impl import _histogram_window  # noqa: E402
+
+_OCT_WINDOW = {
+    'gaussian': [
+        0.04393693362340742, 0.1353352832366127, 0.32465246735834974,
+        0.60653065971263342, 0.88249690258459546, 1.0, 0.88249690258459546,
+        0.60653065971263342, 0.32465246735834974, 0.1353352832366127,
+        0.04393693362340742],
+    'triangle': [
+        0.0, 0.20000000000000001, 0.40000000000000002, 0.60000000000000009,
+        0.80000000000000004, 1.0, 0.80000000000000004, 0.60000000000000009,
+        0.40000000000000002, 0.19999999999999996, 0.0],
+    'dual_rayleigh': [
+        3.065324644063862e-05, 0.72618639222182202, 1.0, 0.81371490177881944,
+        0.50010084511932928, 0.36139924806929608, 0.50010084511932928,
+        0.81371490177881944, 1.0, 0.72618639222182202, 3.065324644063862e-05],
+    'rectangle': [1.0] * 11,
+}
+
+
+@pytest.mark.parametrize('hw_type', sorted(_OCT_WINDOW))
+def test_histogram_window_matches_com_octave(hw_type):
+    """T_O=5, QL=2.5. The triangle window comes from a MATLAB colon expression,
+    which accumulates differently from arange, so it is held to 1e-15 rather
+    than exactly; the other three are bit-exact."""
+    got = np.asarray(_histogram_window(5, 2.5, hw_type), dtype=float)
+    want = np.asarray(_OCT_WINDOW[hw_type], dtype=float)
+    assert got.size == want.size, (
+        '%s gives %d weights, COM Octave gives %d'
+        % (hw_type, got.size, want.size))
+    np.testing.assert_allclose(got, want, rtol=0, atol=1e-15)
+
+
+def test_unrecognised_window_type_is_refused():
+    """ML 1523: otherwise -> error('%s not recognized for
+    Histogram_Window_Weight'). The port used to fall through to the rectangle
+    window, silently answering on a misspelled option where the reference
+    stops."""
+    with pytest.raises(ValueError, match='not recognized'):
+        _histogram_window(5, 2.5, 'gausian')
+
+
+def test_window_weights_are_symmetric_and_peak_at_one():
+    """Guard the guard: a window that had collapsed to all-ones would still
+    match 'rectangle' above, so check the three shaped windows really are
+    shaped."""
+    for hw_type in ('gaussian', 'triangle', 'dual_rayleigh'):
+        w = np.asarray(_histogram_window(5, 2.5, hw_type), dtype=float)
+        np.testing.assert_allclose(w, w[::-1], rtol=0, atol=1e-15)
+        assert abs(float(np.max(w)) - 1.0) < 1e-12, hw_type
+        assert float(np.min(w)) < 0.99, '%s is flat, not shaped' % hw_type

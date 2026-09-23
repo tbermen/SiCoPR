@@ -181,3 +181,122 @@ def test_octave_file_names_is_first_base_only():
     assert out.file_names == '"victim.s4p"'
     assert 'next1.s4p' not in out.file_names
     assert 'fext1.s4p' not in out.file_names
+
+
+# ============================================================
+# COM Octave oracle values -- the reference TDR_ERL_Processing (extracted
+# verbatim from octave/com_ieee8023_4p16p0_octave_compat.m) executed on the
+# fixture below, once per OP.Report_Modal_ERL / OP.ERL / param.FLAG.S2P
+# combination.  Pinned 2026-09-23.  This closes OP.Report_Modal_ERL='enable'
+# (MATLAB L4801, L4807, L4823).
+#
+# What the oracle returns is the SET of fields on output_args as well as their
+# values, and the set is the interesting part: 'enable' does not merely fill
+# ERL11_CD / ERL11_DC / ERL11_CC, it also SUPPRESSES the six empty
+# initialisers that the OP.ERL=0 path would otherwise write -- that guard is
+# `~(strcmpi(...,'enable') || strcmpi(...,'provisional'))`, a negation, so the
+# option flips the meaning of a branch it does not appear in.
+#
+# Fixture: chdata(1).TDR11 = avgZport 95, ERL 8, ERL_CD 7, ERL_DC 6, ERL_CC 5
+#          chdata(1).TDR22 = avgZport 93, ERL 5.5, ERL_CD 4.5, ERL_DC 3.5,
+#                            ERL_CC 2.5
+#          param.FLAG.S2P as listed, param.tfx=[0 5e-12], OP.TDR=1,
+#          OP.AUTO_TFX=0, OP.TDR_W_TXPKG=0, package_testcase_i=1
+#
+# COM Octave, fieldnames(output_args) in order, with values:
+#  ERL=1 modal=enable      S2P=0 -> Z11est 95, Z22est 93, tfx_estimate [],
+#        ERL11 8, ERL11_CD 7, ERL11_DC 6, ERL11_CC 5,
+#        ERL22 5.5, ERL22_CD 4.5, ERL22_DC 3.5, ERL22_CC 2.5, ERL 5.5
+#        ERL=[8 5.5]  min_ERL=5.5
+#  ERL=1 modal=provisional S2P=0 -> identical to 'enable'
+#  ERL=1 modal=ENABLE      S2P=0 -> identical to 'enable'   (strcmpi)
+#  ERL=1 modal=disable     S2P=0 -> Z11est 95, Z22est 93, tfx_estimate [],
+#        ERL11 8, ERL22 5.5, ERL 5.5        (NO modal fields at all)
+#  ERL=1 modal=enable      S2P=1 -> Z11est 95, Z22est [], tfx_estimate [],
+#        ERL11 8, ERL11_CD 7, ERL11_DC 6, ERL11_CC 5,
+#        ERL22 [], ERL22_CD [], ERL22_DC [], ERL22_CC [], ERL 8
+#        ERL=[8 NaN]  min_ERL=8
+#  ERL=0 modal=enable      S2P=0 -> Z11est 95, Z22est 93, tfx_estimate [],
+#        ERL11 [], ERL22 [], ERL []          (modal fields NOT created)
+#  ERL=0 modal=disable     S2P=0 -> Z11est 95, Z22est 93, tfx_estimate [],
+#        ERL11 [], ERL22 [], ERL11_CD [], ERL22_CD [], ERL11_DC [],
+#        ERL22_DC [], ERL11_CC [], ERL22_CC [], ERL []
+# ============================================================
+
+_MODAL_FIELDS = ('ERL11_CD', 'ERL11_DC', 'ERL11_CC',
+                 'ERL22_CD', 'ERL22_DC', 'ERL22_CC')
+
+
+def _chdata_modal():
+    ch = SimpleNamespace(
+        TDR11=SimpleNamespace(avgZport=95.0, ERL=8.0,
+                              ERL_CD=7.0, ERL_DC=6.0, ERL_CC=5.0),
+        TDR22=SimpleNamespace(avgZport=93.0, ERL=5.5,
+                              ERL_CD=4.5, ERL_DC=3.5, ERL_CC=2.5),
+        base='test.s4p')
+    return [ch]
+
+
+def _run_modal(report_modal, erl=True, s2p=False):
+    OP = _OP(erl=erl)
+    OP.Report_Modal_ERL = report_modal
+    param = _param(s2p=s2p)
+    param.tfx = np.array([0.0, 5e-12])
+    return TDR_ERL_Processing(SimpleNamespace(), OP, 1, _chdata_modal(), param)
+
+
+def _empty(v):
+    return v is None or np.asarray(v, dtype=float).size == 0
+
+
+@pytest.mark.parametrize('report_modal', ['enable', 'provisional', 'ENABLE'])
+def test_octave_modal_erl_fields_filled(report_modal):
+    """'enable' (and 'provisional', and any case of either) copies the six
+    modal ERL values through to output_args."""
+    out, ERL, min_ERL = _run_modal(report_modal)
+    assert out.ERL11_CD == 7.0
+    assert out.ERL11_DC == 6.0
+    assert out.ERL11_CC == 5.0
+    assert out.ERL22_CD == 4.5
+    assert out.ERL22_DC == 3.5
+    assert out.ERL22_CC == 2.5
+    assert out.ERL11 == 8.0 and out.ERL22 == 5.5 and out.ERL == 5.5
+    np.testing.assert_array_equal(np.asarray(ERL, dtype=float).ravel(),
+                                  np.array([8.0, 5.5]))
+    assert min_ERL == 5.5
+
+
+def test_octave_modal_erl_fields_absent_when_disabled():
+    """'disable' leaves output_args with no modal field at all -- the
+    reference creates none, it does not create them empty."""
+    out, _, _ = _run_modal('disable')
+    for f in _MODAL_FIELDS:
+        assert not hasattr(out, f), f
+    assert out.ERL11 == 8.0 and out.ERL22 == 5.5
+
+
+def test_octave_modal_erl_s2p_port2_fields_empty():
+    """S2P has no port 2, so with 'enable' the ERL22 modal fields are set
+    EMPTY while the ERL11 ones still carry values."""
+    out, ERL, min_ERL = _run_modal('enable', s2p=True)
+    assert out.ERL11_CD == 7.0 and out.ERL11_DC == 6.0 and out.ERL11_CC == 5.0
+    for f in ('ERL22', 'ERL22_CD', 'ERL22_DC', 'ERL22_CC', 'Z22est'):
+        assert _empty(getattr(out, f)), f
+    arr = np.asarray(ERL, dtype=float).ravel()
+    assert arr[0] == 8.0 and np.isnan(arr[1])
+    assert min_ERL == 8.0
+
+
+def test_octave_modal_erl_suppresses_empty_initialisers():
+    """OP.ERL=0: the six empty initialisers are guarded by NOT(enable), so
+    'enable' leaves the fields uncreated where 'disable' creates them empty.
+    This is the branch the option flips without appearing in it."""
+    out_en, _, _ = _run_modal('enable', erl=False)
+    for f in _MODAL_FIELDS:
+        assert not hasattr(out_en, f), f
+    assert _empty(out_en.ERL11) and _empty(out_en.ERL22) and _empty(out_en.ERL)
+
+    out_dis, _, _ = _run_modal('disable', erl=False)
+    for f in _MODAL_FIELDS:
+        assert hasattr(out_dis, f), f
+        assert _empty(getattr(out_dis, f)), f

@@ -227,6 +227,50 @@ def test_octave_ctle_index_zero_is_out_of_bounds():
             B, np.linspace(0.0, 40e9, 17), _oracle_param(), _oracle_op())
 
 
+def test_octave_cl120e_h_low_is_indexed_by_ctle():
+    """COM Octave, the fixture above with param.CTLE_type = 'CL120e'.
+
+    CL120e is `FD_CTLE(f, param.f_HP_Z(BEST.ctle), param.f_HP_P(BEST.ctle),
+    100e100, 0)`: the high-pass zero and pole come from the CTLE index, not
+    from G_high_pass as CL120d's do, and the DC term is a literal 0 dB, not
+    BEST.gdc.  BEST.ctle is 2 and BEST.G_high_pass is 4 here, and f_HP_Z and
+    f_HP_P hold distinct values, so a lookup by the wrong index, a swapped
+    zero and pole, or gdc in place of 0 all give a different H_low.
+    (100e100 is 1e102; the port writes 1e200. At these frequencies both make
+    the second pole term exactly 1.0 in double, so the results are bit-equal
+    and Octave confirms it -- every field of BEST agreed.)
+    """
+    B = _oracle_best()
+    B.G_high_pass = 4
+    p = _oracle_param()
+    p.CTLE_type = 'CL120e'
+    B = OptFom_Update_BEST_Post_Optimize(B, np.linspace(0.0, 40e9, 17), p,
+                                         _oracle_op())
+    np.testing.assert_allclose(B.H_low, [
+        1 + 0j,
+        1.6981680071492407 + 0.30719392314566574j,
+        1.7948620119547249 + 0.1748696426300394j,
+        1.8157848938391925 + 0.11964845109641489j,
+        1.823370549682179 + 0.090570760465039674j,
+        1.8269295905838521 + 0.072769803971378999j,
+        1.8288758233499844 + 0.060784227045665523j,
+        1.8300537739326528 + 0.052174808647195314j,
+        1.8308201025232007 + 0.045695105638776032j,
+        1.8313463130098926 + 0.040643597524928084j,
+        1.831723117378089 + 0.03659581716463594j,
+        1.8320021299254527 + 0.033280085197018111j,
+        1.8322144672162983 + 0.030514530464597595j,
+        1.8323797905673342 + 0.028172854449971314j,
+        1.8325110163294489 + 0.02616463194178268j,
+        1.8326169127364187 + 0.02442342944026828j,
+        1.8327036012348994 + 0.022899349033959727j], rtol=1e-12)
+    # and it reaches ctle_gain = H_low .* ctle_gain1 .* H_r
+    np.testing.assert_allclose(
+        [B.ctle_gain[1], B.ctle_gain[8]],
+        [1.0630012605068855 + 0.38421718687499395j,
+         -1.4241087791559466 - 1.8052913027879163j], rtol=1e-12)
+
+
 def test_octave_h_r_on_a_non_ascending_faxis():
     """Tukey_Window concatenates three counted pieces, so H_r is grouped by
     category and only lines up with f when f ascends.
