@@ -26,7 +26,13 @@ Same tree, same output. Nothing here prints a wall-clock time or a duration,
 because `--approve` stores the report next to the git sha it was computed from,
 and the promise is that anyone can check out that sha, run this, and get the
 same text back. A report that cannot reproduce at its own sha is itself a
-finding.
+finding, and this checks for it whenever HEAD is that sha.
+
+The honest limit of that self-check: committing the anchor file moves HEAD past
+the sha the anchor names, so from the next commit onward the comparison goes
+dormant. It catches an anchor that was wrong when written, or a tree restored
+to that sha, and nothing else. Proving determinism later means checking that
+sha out and re-running, which no tool here does for you.
 
 ## What this does NOT measure
 
