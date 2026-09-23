@@ -272,6 +272,24 @@ def main():
     text = '\n'.join(L)
     print(text)
 
+    # The contract: "a report that no longer reproduces at its own sha means
+    # the report is not deterministic, which is itself a finding." When HEAD is
+    # the anchor's own sha that costs nothing to check, so it is checked rather
+    # than left as something someone once ran by hand.
+    #
+    # It sits OUTSIDE the compared text on purpose. Folding the finding into
+    # the report would change the very text being compared, so a tool that had
+    # just gone non-deterministic could never say so consistently.
+    nondeterministic = False
+    if anchor_sha and not dirty and sha == anchor_sha:
+        stored = io.open(os.path.join(APPROVED, anchor_file),
+                         encoding='utf-8').read().rstrip('\n').replace('\r', '')
+        if stored != text.replace('\r', ''):
+            nondeterministic = True
+            print('\nFINDING: this report does NOT reproduce the approved copy '
+                  'at its own sha (%s).\nThe anchor promises it would, so the '
+                  'report itself is the defect, not the tree.' % anchor_file)
+
     if args.json:
         io.open(args.json, 'w', encoding='utf-8').write(json.dumps(
             {'sha': sha, 'dirty': dirty,
@@ -306,7 +324,7 @@ def main():
         io.open(path, 'w', encoding='utf-8', newline='\n').write(stored + '\n')
         print('\napproved: %s' % os.path.relpath(path, _ROOT))
 
-    return 1 if opens else 0
+    return 1 if (opens or nondeterministic) else 0
 
 
 if __name__ == '__main__':
