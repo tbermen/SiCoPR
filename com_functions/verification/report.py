@@ -119,13 +119,34 @@ def git(*args):
 
 
 def anchor():
-    """(sha, filename) of the newest approved report, or (None, None)."""
+    """(sha, filename) of the newest approved report, or (None, None).
+
+    Newest by the COMMITTER TIMESTAMP of the sha in the filename, not by the
+    filename. Sorting the names works only while no two approvals share a
+    date: 2026-09-23 has four, and `e82669f2d` sorts after `8a69c29c4`, so the
+    anchor walked backwards to the first of them. untrailered_commits() reads
+    "since the anchor" off this, so a stale anchor re-opens approved work.
+
+    A sha git cannot resolve falls back to the name order, so this never
+    returns nothing where the old form returned something.
+    """
     if not os.path.isdir(APPROVED):
         return None, None
     files = sorted(glob.glob(os.path.join(APPROVED, '*.txt')))
     if not files:
         return None, None
-    newest = files[-1]
+
+    def when(path):
+        m = re.search(r'-([0-9a-f]{7,40})\.txt$', os.path.basename(path))
+        if not m:
+            return (0, os.path.basename(path))
+        ts = git('show', '-s', '--format=%ct', m.group(1))
+        try:
+            return (int(ts), os.path.basename(path))
+        except ValueError:
+            return (0, os.path.basename(path))
+
+    newest = max(files, key=when)
     m = re.search(r'-([0-9a-f]{7,40})\.txt$', os.path.basename(newest))
     return (m.group(1) if m else None), os.path.basename(newest)
 
