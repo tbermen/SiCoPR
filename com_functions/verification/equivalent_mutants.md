@@ -48,3 +48,32 @@ tests happen to cover. `get_pdf:142` looks identical to `get_pdf_full:128` and
 is NOT equivalent, because there `SBR` is `np.asarray(chdata.eq_pulse_response)
 .ravel()`, which returns a VIEW onto the caller's data. That pair is the reason
 this file demands the argument in writing.
+
+## The `H_ph_corr = H_ph.copy()` family
+
+| operator | site | why the mutant cannot change the result |
+|---|---|---|
+| `drop_dot_copy` | `interp_Sparam:209` | `H_ph_corr = H_ph.copy()` in the `trend_and_shift_to_DC` branch. `H_ph` is last read on line 201, which computes the group delay, and the branch never reads it again: everything after uses `H_ph_corr`. The in-place loop corrupts a local nobody looks at |
+| `drop_dot_copy` | `interp_Sparam:239` | Same shape in the `extrap_cubic_to_dc_linear_to_inf` branch, whose last read of `H_ph` is line 231 |
+| `drop_dot_copy` | `interp_Sparam:273` | `H_ph_i = H_ph_cubic.copy()`; `H_ph_cubic` is not read after the copy |
+| `drop_dot_copy` | `s21_to_impulse_DC:185` | Same family; its branch's last read of `H_ph` is line 180 |
+| `drop_dot_copy` | `s21_to_impulse_DC:218` | Same family; its branch's last read of `H_ph` is line 209 |
+
+These five were each read and checked by hand, and they are the reason
+`triage_copies.py` is a triage AID rather than an authority. It is
+flow-insensitive: it sees the read of `H_ph` in a sibling `elif` and reports
+the site as load-bearing, when the two branches are mutually exclusive and the
+read can never follow the write.
+
+Making that analysis flow-sensitive is not worth it. The tool's job is to turn
+104 sites into a handful worth reading, and it does: 104 down to 4. A human
+settles those 4. A tool that tried to settle them itself would be a tool whose
+verdicts nobody checks, which is the 2026-07 ledger with better tooling.
+
+**These entries are all equivalence of the same kind, and it is worth naming:**
+the copy protects a value whose only remaining consumer is the copy itself. If
+a later change starts reading the source after the write, the mutant stops
+being equivalent, a test starts catching it, and
+`known_survivor_list_is_current` contradicts the entry. The claim is checked on
+every run, which is the whole point of writing it here rather than in a
+comment.

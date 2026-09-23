@@ -155,6 +155,17 @@ _OCT = {
     1: 0.94673980940840263 - 0.30724845157815045j,
     3: 0.58332679250451458 - 0.80222427311898858j,
     100: 0.94951056414620771 - 0.00090894483179480043j,
+    # fin ends at 40 GHz and fout runs to 60 GHz, so these three are the only
+    # samples that can see the HF extrapolation. Without them the second
+    # std(ddof=1), at py_impl line 249, is unverified: every index above is
+    # between 10 MHz and 1 GHz, and sum|Sout| is a MAGNITUDE, so it cannot see
+    # a phase method at all. COM Octave returns the identical sum|Sout| for
+    # 'trend_and_shift_to_DC' and for this branch, which is the proof of that.
+    # Added 2026-09-22 after tests/test_mutation_score.py reported line 249's
+    # mutant surviving.
+    4500: 0.55274836307238031 - 0.089594916655080884j,   # 45 GHz, extrapolated
+    5000: 0.49943855721016217 - 0.16600467084272463j,    # 50 GHz, extrapolated
+    6000: 0.36779627827274347 - 0.27458392270543880j,    # 60 GHz, extrapolated
 }
 _OCT_SUM_ABS = 4016.1085110174708
 
@@ -196,3 +207,79 @@ def test_default_path_is_sensitive_to_std_normalisation():
     kept = [np.abs(lf - m) < np.std(lf, ddof=d) for d in (0, 1)]
     assert not np.array_equal(kept[0], kept[1]), (
         'fixture no longer distinguishes N from N-1 normalisation; re-craft it')
+
+
+# --------------------------------------------------------------------------
+# phase='trend_and_shift_to_DC', against COM Octave.
+#
+# This option had NO test at all: it was pinned in
+# tests/test_option_coverage.py's KNOWN_UNCOVERED, so the whole branch was dead
+# to the suite. It carries its own std(ddof=1) at py_impl line 205 and a
+# load-bearing H_ph.copy() at line 209, and tests/test_mutation_score.py
+# reported both mutants surviving.
+#
+# Same fixture as the default path, so the two differ only in the phase method.
+# Note sum|Sout| is IDENTICAL to the default branch's, because it is a
+# magnitude: the HF samples are what separate them.
+# --------------------------------------------------------------------------
+
+_OCT_TS = {
+    0: 0.99551472791570110 + 0.0j,                       # DC: no shift residue
+    1: 0.94663833857097720 - 0.30756094300708814j,
+    3: 0.58306195551151700 - 0.80241677903068590j,
+    100: 0.94951021238507070 - 0.0012223675448812150j,
+    4500: 0.55995000853068750 - 0.0037403096275264464j,  # 45 GHz, extrapolated
+    5000: 0.52626312163823300 - 0.0065992403617536576j,  # 50 GHz, extrapolated
+    6000: 0.45885344702624004 - 0.011133151922310274j,   # 60 GHz, extrapolated
+}
+
+
+def test_trend_and_shift_to_DC_matches_com_octave():
+    """mag='linear_trend_to_DC', phase='trend_and_shift_to_DC'."""
+    Sin, fin, fout = _default_path_fixture()
+    Sout = np.asarray(interp_Sparam(Sin, fin, fout, 'linear_trend_to_DC',
+                                    'trend_and_shift_to_DC',
+                                    _op(debug=False), _param())).ravel()
+    assert Sout.size == _OCT_N, 'length %d, COM Octave gives %d' % (
+        Sout.size, _OCT_N)
+    for idx, want in _OCT_TS.items():
+        rel = abs(Sout[idx] - want) / abs(want)
+        assert rel < 1e-13, (
+            'Sout[%d] is %r, COM Octave gives %r (rel %.2e)'
+            % (idx, Sout[idx], want, rel))
+
+
+def test_trend_and_shift_differs_from_the_default_phase_method():
+    """Guard the guard: the two phase methods must actually disagree here.
+
+    If this fixture ever stopped separating them, the oracle comparison above
+    would pass while running the wrong branch, and sum|Sout| would not notice
+    because it is a magnitude.
+    """
+    Sin, fin, fout = _default_path_fixture()
+    a = np.asarray(interp_Sparam(Sin, fin, fout, 'linear_trend_to_DC',
+                                 'trend_and_shift_to_DC',
+                                 _op(debug=False), _param())).ravel()
+    b = np.asarray(interp_Sparam(Sin, fin, fout, 'linear_trend_to_DC',
+                                 'extrap_cubic_to_dc_linear_to_inf',
+                                 _op(debug=False), _param())).ravel()
+    assert abs(a[6000] - b[6000]) > 1e-3, (
+        'the two phase methods now agree at 60 GHz, so this fixture no longer '
+        'exercises the branch it claims to; re-craft it')
+    assert abs(float(np.sum(np.abs(a))) - float(np.sum(np.abs(b)))) < 1e-9, (
+        'sum|Sout| now differs between phase methods; the comment above, and '
+        'the reason the HF samples exist, need revisiting')
+
+
+def test_hf_extrapolation_is_sensitive_to_std_normalisation():
+    """Guard the guard, for the SECOND std: the HF outlier mask at py_impl
+    line 249 must straddle N versus N-1 on this fixture, or the HF samples
+    pinned above would pass under either convention."""
+    Sin, fin, _ = _default_path_fixture()
+    gd = -np.diff(np.unwrap(np.angle(Sin))) / np.diff(fin)
+    hf = gd[-51:]                      # MATLAB group_delay(end-50:end) is 51
+    m = np.median(hf)
+    kept = [np.abs(hf - m) < np.std(hf, ddof=d) for d in (0, 1)]
+    assert not np.array_equal(kept[0], kept[1]), (
+        'fixture no longer distinguishes N from N-1 in the HF trend; '
+        're-craft it')

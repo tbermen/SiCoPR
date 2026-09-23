@@ -77,7 +77,6 @@ KNOWN_UNCOVERED = frozenset([
     'interp_Sparam:extrap_to_DC_or_zero',
     'interp_Sparam:interp_and_shift_to_DC',
     'interp_Sparam:linear_trend_to_DC_log_trend_to_inf',
-    'interp_Sparam:trend_and_shift_to_DC',
     'interp_Sparam:zero_DC',
     'process_sxp:Rlcc_179mm',
     'read_ParamConfigFile:CL120d',

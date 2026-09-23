@@ -9,17 +9,17 @@ be closed by a test that catches nothing.
 happened in this port, runs that function's own test, and records whether the
 test failed. A test that still passes did not discriminate.
 
-3 of the 6 `np.std(..., ddof=1)` sites SURVIVE -- the very defect that prompted
-the verification contract. It was fixed in d5bff6c, and the suite would still
-not notice it coming back at interp_Sparam lines 205 and 249 or
-s21_to_impulse_DC line 182. That is the value of asking this question by
+When this gate was first run, 3 of the 6 `np.std(..., ddof=1)` sites survived --
+the very defect that prompted the verification contract, fixed in d5bff6c, and
+the suite would not have noticed it coming back. Two of those three are now
+closed by oracle-backed tests in interp_Sparam (lines 205 and 249); the one at
+s21_to_impulse_DC line 182 remains. That is the value of asking this question by
 computation instead of from memory.
 
-(The first run of this gate reported 4 of 6, and was wrong. It was measuring
-stale bytecode: see the note in `mutations.run_test`. The number above is from
-the corrected engine. A tool that measures whether tests lie has no business
-lying itself, so both the bug and the wrong number are recorded rather than
-quietly replaced.)
+(The first run reported 4 of 6, and was wrong: it was measuring stale bytecode,
+see the note in `mutations.run_test`. A tool that measures whether tests lie has
+no business lying itself, so the bug and the wrong number are recorded rather
+than quietly replaced.)
 
 ## Why this is a pinned set and not a score
 
@@ -158,7 +158,6 @@ KNOWN_SURVIVORS = frozenset([
     'solve_to_lstsq:read_Nport_touchstone',
     'solve_to_lstsq:read_p4_s4params',
     'solve_to_lstsq:read_s4p_files',
-    'std_ddof:interp_Sparam',
     'std_ddof:s21_to_impulse_DC',
 ])
 
@@ -180,6 +179,16 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:MMSE:371',
     'drop_dot_copy:get_PSDs:436',
     'drop_dot_copy:get_pdf_full:128',
+    # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local
+    # that its own branch has already finished reading, so the in-place write
+    # corrupts something nobody looks at again. Verified by reading each
+    # branch; triage_copies.py reports some of them as load-bearing because it
+    # is flow-insensitive and sees the read in a sibling elif.
+    'drop_dot_copy:interp_Sparam:209',
+    'drop_dot_copy:interp_Sparam:239',
+    'drop_dot_copy:interp_Sparam:273',
+    'drop_dot_copy:s21_to_impulse_DC:185',
+    'drop_dot_copy:s21_to_impulse_DC:218',
 ])
 
 

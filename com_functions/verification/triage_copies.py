@@ -1,12 +1,13 @@
 """Triage aid: which surviving `.copy()` mutants are real gaps?
 
-109 of the 116 `drop_dot_copy` mutants survived. That number is an UPPER BOUND
+104 of the 116 `drop_dot_copy` mutants survive. That number is an UPPER BOUND
 on the real gap, because some of those copies are defensive on a value nothing
 ever writes, and removing them genuinely changes nothing. Those are equivalent
 mutants, not sleeping tests.
 
-Arguing 109 sites by hand is how a list becomes a chore and then a lie, so the
-split is computed. For each surviving site this asks what the copy is FOR:
+Arguing 104 sites by hand is how a list becomes a chore and then a lie, so the
+split is computed. It cuts 104 down to about 4 worth reading. For each
+surviving site this asks what the copy is FOR:
 
   load-bearing   the copied-to name is written in place afterwards (subscript
                  assignment, augmented assignment, an in-place method, `out=`).
@@ -24,6 +25,20 @@ split is computed. For each surviving site this asks what the copy is FOR:
   defensive      the name is neither written in place nor escapes. Dropping the
                  copy cannot change an observable result, so the mutant is
                  equivalent and the test was right not to fail.
+
+  write-only-local  the target IS written in place, but the source is a local
+                 that nothing reads again, so the corruption is unobservable.
+                 Equivalent, and the commonest shape here: the whole
+                 `H_ph_corr = H_ph.copy()` family in interp_Sparam and
+                 s21_to_impulse_DC is this.
+
+KNOWN LIMITATION, and the reason this closes nothing on its own: the analysis
+is FLOW-INSENSITIVE. `interp_Sparam:209` is reported load-bearing because
+`H_ph` is read at line 231 -- in a sibling `elif` that cannot run when 209 ran.
+A human has to settle those. Making it flow-sensitive is not worth it: the job
+is to turn 104 sites into a handful worth reading, and a tool that tried to
+settle them itself would be a tool whose verdicts nobody checks, which is the
+2026-07 ledger with better tooling.
 
 This is a TRIAGE AID and not a verification method: it cannot be given a
 negative control, so it closes no rows. It says where to look. What closes a
@@ -119,6 +134,57 @@ def written_in_place(fnode, name, after):
     return False
 
 
+def read_after(fnode, name, after):
+    """Is `name` READ anywhere after line `after`?
+
+    The condition the first version of this tool was missing, and it matters a
+    lot. `H_ph_corr = H_ph.copy()` followed by `H_ph_corr[k] = ...` looks
+    load-bearing: the target is written in place. But in interp_Sparam `H_ph`
+    is last read on the line that computes the group delay, BEFORE the copy,
+    and never again. Dropping the copy corrupts a local nobody looks at, so the
+    mutant is equivalent and the test was right not to fail.
+
+    A copy is only load-bearing if the write can actually be OBSERVED: either
+    the source is read again, or the source is the caller's data.
+    """
+    for node in ast.walk(fnode):
+        if getattr(node, 'lineno', 0) <= after:
+            continue
+        if isinstance(node, ast.Name) and node.id == name \
+                and isinstance(node.ctx, ast.Load):
+            return True
+    return False
+
+
+def source_name(fnode, lineno):
+    """The name a `.copy()` on this line was taken FROM, if it is a plain one."""
+    for node in ast.walk(fnode):
+        if not isinstance(node, ast.Assign) or node.lineno != lineno:
+            continue
+        for sub in ast.walk(node.value):
+            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) \
+                    and sub.func.attr == 'copy':
+                base = sub.func.value
+                # unwrap .ravel() / .reshape() / np.asarray(...) chains, which
+                # are view-preserving and so do NOT break the alias
+                while True:
+                    if isinstance(base, ast.Call):
+                        if isinstance(base.func, ast.Attribute) and \
+                                base.func.attr in ('ravel', 'reshape', 'flatten',
+                                                   'astype', 'squeeze', 'T'):
+                            base = base.func.value
+                            continue
+                        if base.args:
+                            base = base.args[0]
+                            continue
+                    if isinstance(base, ast.Attribute):
+                        return base.attr, True      # x.field: caller's data
+                    break
+                if isinstance(base, ast.Name):
+                    return base.id, False
+    return None, False
+
+
 def escapes(fnode, name, after):
     """Is `name` returned or stored into a struct attribute?"""
     for node in ast.walk(fnode):
@@ -167,7 +233,15 @@ def main():
             buckets['passed-to-a-call'].append((r['fn'], r['line'], '-'))
             continue
         if written_in_place(fnode, name, r['line']):
-            buckets['load-bearing'].append((r['fn'], r['line'], name))
+            src, from_attr = source_name(fnode, r['line'])
+            observable = from_attr or (src is not None
+                                       and read_after(fnode, src, r['line']))
+            if observable:
+                buckets['load-bearing'].append(
+                    (r['fn'], r['line'], '%s <- %s' % (name, src)))
+            else:
+                buckets['write-only-local'].append(
+                    (r['fn'], r['line'], '%s <- %s' % (name, src)))
         elif escapes(fnode, name, r['line']):
             buckets['escaping'].append((r['fn'], r['line'], name))
         else:
@@ -175,7 +249,7 @@ def main():
 
     print('%d surviving drop_dot_copy mutants\n' % len(sites))
     order = ['load-bearing', 'escaping', 'passed-to-a-call', 'defensive',
-             'module-level', 'unparsed']
+             'write-only-local', 'module-level', 'unparsed']
     for k in order:
         if buckets[k]:
             print('  %-18s %3d' % (k, len(buckets[k])))
