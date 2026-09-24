@@ -53,6 +53,28 @@ scalar config flag the new pattern does not match, with its old line number.
 
     python com_functions/verification/mutations.py --list
     python com_functions/verification/mutations.py --run [--only ID] [--no-cache]
+    python com_functions/verification/mutations.py --run --checkpoint [--ckpt-cases ...]
+
+## The checkpoint binding
+
+`--checkpoint` takes every mutant its own function test MISSED and puts it in
+front of tests/test_octave_checkpoints.py, which compares the whole pipeline
+against COM Octave on real cases. Running the engine per mutant per case is
+hours, so each mutant first earns its run:
+
+  * the mutant is assembled and diffed against the clean engine, which names
+    the engine lines it changes (none: `not_in_engine`);
+  * each checkpoint case was run once under reach.py, which records the lines
+    it executes; a mutant whose lines no case executes is `unreached`, a gap in
+    the CASE SET, and needs no run;
+  * a reached mutant runs the harness on the cases that execute it, from its
+    own copy of sicopr.py, several at once. A FAIL row the clean engine does
+    not have is `caught`. Otherwise its saved checkpoints are compared with the
+    clean engine's: identical is `survived_no_change` (the state it corrupts is
+    not saved, or it is equivalent on these cases), different is
+    `survived_within_tolerance` (the harness saw it and let it through).
+
+The three survivor classes are the harness's own gap list.
 
 `tests/test_mutation_score.py` is the gate that gets run by `tests\run_all.ps1`.
 """
@@ -62,6 +84,9 @@ scalar config flag the new pattern does not match, with its old line number.
 
 import argparse
 import ast
+import concurrent.futures as _cf
+import difflib
+import importlib.util
 import hashlib
 import io
 import json
@@ -238,6 +263,21 @@ CATALOGUE = [
        r'np\.roll\((\w+)\.T,', r'np.roll(\1,',
        'FFE on a 2-D input rolled the wrong axis.',
        'docs/AUDIT_FINDINGS.md'),
+
+    # The one exception to the rule above, added 2026-09-23 because the
+    # verification prompt asked for it: the documented MATLAB-vs-numpy
+    # difference the catalogue had no operator for. No occurrence is recorded
+    # in this port's history, and the Phase 0 census of complex comparisons
+    # found none, so the evidence is the builtins row and the two sites.
+    Op('ctranspose_to_transpose',
+       r'\.conj\(\)\.T\b|\.T\.conj\(\)', '.T',
+       "MATLAB ' is the CONJUGATE transpose and .' the plain one; numpy .T is "
+       "the plain one. Interchangeable only on real data. The ILN fits apply "
+       "it to fmbg, which is built from the complex sdd21, in the normal "
+       "equations alpha = inv(fmbg'*fmbg)*fmbg'*LGw (ML 6740, 6755).",
+       "com_functions/verification/builtins.md, row `transpose`; "
+       "get_ILN_cmp_td and get_RILN_cmp_td (commit 5276a8e); Phase 0 complex "
+       "census 2026-09-23: no hit"),
 ]
 
 
@@ -507,6 +547,279 @@ def evaluate(only=None, use_cache=True, progress=True):
     return rows
 
 
+# ------------------------------------------------ the checkpoint binding
+CKPT_TEST = os.path.join(_ROOT, 'tests', 'test_octave_checkpoints.py')
+REACH = os.path.join(_HERE, 'reach.py')
+
+
+def _ckpt_module():
+    spec = importlib.util.spec_from_file_location('_ckpt', CKPT_TEST)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _engine_lines_changed(clean, mutant):
+    """1-based lines of the CLEAN engine that the mutant alters."""
+    a, b = clean.splitlines(), mutant.splitlines()
+    if len(a) == len(b):
+        return {i + 1 for i, (x, y) in enumerate(zip(a, b)) if x != y}
+    out = set()
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    for tag, i1, i2, _j1, _j2 in sm.get_opcodes():
+        if tag != 'equal':
+            out.update(range(i1 + 1, max(i2, i1 + 1) + 1))
+    return out
+
+
+def _sicopr_args(meta):
+    cmd = [meta['config'], meta['thru']]
+    if meta.get('fext'):
+        cmd += ['--fext'] + list(meta['fext'])
+    if meta.get('next'):
+        cmd += ['--next'] + list(meta['next'])
+    return cmd + ['--matlab-version', os.environ.get('COM_CHECKPOINT_VERSION',
+                                                     '4p15p0')]
+
+
+def _harness(case, report, pythonpath, reuse=False):
+    env = dict(os.environ, COM_CHECKPOINT_REPORT=report,
+               COM_CHECKPOINT_CASES=case, COM_CHECKPOINT_JOBS='1',
+               PYTHONDONTWRITEBYTECODE='1',
+               PYTHONPATH=os.pathsep.join([pythonpath, _ROOT]))
+    env.pop('COM_CHECKPOINT_REUSE', None)
+    if reuse:
+        env['COM_CHECKPOINT_REUSE'] = '1'
+    r = subprocess.run([sys.executable, '-B', CKPT_TEST], cwd=_ROOT, env=env,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    rows = []
+    fp = os.path.join(report, case, 'fields.csv')
+    if os.path.isfile(fp):
+        import csv
+        with open(fp, encoding='utf-8') as fh:
+            rows = list(csv.DictReader(fh))
+    return rows, r.stdout.decode('utf-8', 'replace')
+
+
+def _fails(rows):
+    return {(r['checkpoint'], r['field']) for r in rows if r['status'] == 'FAIL'}
+
+
+def _tree_diff(ck, a, b, path=''):
+    """-> list of (path, max_rel) where two from_python trees differ."""
+    out = []
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in set(a) | set(b):
+            if k not in a or k not in b:
+                out.append((path + '.' + k, float('inf')))
+            else:
+                out += _tree_diff(ck, a[k], b[k], path + '.' + k)
+        return out
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            return [(path, float('inf'))]
+        for i, (x, y) in enumerate(zip(a, b)):
+            out += _tree_diff(ck, x, y, '%s[%d]' % (path, i))
+        return out
+    import numpy as np
+    if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        try:
+            x, y = np.asarray(a), np.asarray(b)
+            if x.shape != y.shape:
+                return [(path, float('inf'))]
+            if x.dtype.kind in 'biufc' and y.dtype.kind in 'biufc':
+                if np.array_equal(x, y, equal_nan=True):
+                    return []
+                d = np.abs(x.astype(complex) - y.astype(complex))
+                d = d[np.isfinite(d)]
+                pk = float(np.max(np.abs(x[np.isfinite(x)]))) if np.isfinite(x).any() else 1.0
+                return [(path, float(np.max(d)) / (pk or 1.0) if d.size else float('inf'))]
+            return [] if np.array_equal(x, y) else [(path, float('inf'))]
+        except (TypeError, ValueError):
+            return [] if repr(a) == repr(b) else [(path, float('inf'))]
+    return [] if (a == b or (a != a and b != b)) else [(path, float('inf'))]
+
+
+def _saved_state_diff(ck_mod, clean_ck, mut_ck):
+    out = []
+    for f in sorted(os.listdir(clean_ck)):
+        if not f.endswith('.pkl'):
+            continue
+        m = os.path.join(mut_ck, f)
+        if not os.path.isfile(m):
+            out.append((f[:-4], float('inf')))
+            continue
+        a, _ = ck_mod._load_python(os.path.join(clean_ck, f))
+        b, _ = ck_mod._load_python(m)
+        for p, r in _tree_diff(ck_mod, a, b):
+            p = p.lstrip('.')
+            # where and when the run happened, not what it computed: the
+            # harness's own ENVIRONMENT set, and the export timestamps
+            if ck_mod._canon(p) in ck_mod.ENVIRONMENT or p.startswith('OP.export_'):
+                continue
+            out.append((f[:-4] + ':' + p, r))
+    return out
+
+
+def default_ckpt_cases(manifest):
+    """The harness's own quick subset -- the first woXtalk case per package
+    configuration -- plus the first wXtalk case, the only way into the
+    crosstalk branches."""
+    ids = sorted(manifest['cases'])
+    seen, out = set(), []
+    for cid in ids:
+        m = re.match(r'woXtalk_T(\d)_', cid)
+        if m and m.group(1) not in seen:
+            seen.add(m.group(1))
+            out.append(cid)
+    out += [c for c in ids if c.startswith('wXtalk_')][:1]
+    return out
+
+
+def evaluate_checkpoint(work, rows, cases, workdir, jobs=4, progress=True):
+    """Put every function-test survivor in front of the checkpoint harness."""
+    ck = _ckpt_module()
+    if not ck.GOLD or not os.path.isfile(os.path.join(ck.GOLD, 'manifest.json')):
+        raise SystemExit('--checkpoint needs COM_OCTAVE_CHECKPOINTS (the goldens)')
+    manifest = json.load(open(os.path.join(ck.GOLD, 'manifest.json'),
+                              encoding='utf-8'))
+    cases = cases or default_ckpt_cases(manifest)
+    engine = os.path.join(_ROOT, 'sicopr.py')
+    with open(engine, 'rb') as fh:
+        clean_raw = fh.read()
+    clean = clean_raw.decode('utf-8')
+    base = os.path.join(workdir, 'clean')
+
+    # 1. the clean engine, once per case: executed lines, checkpoints, fields
+    reach, clean_rows = {}, {}
+    for cid in cases:
+        out = os.path.join(base, cid)
+        ckd = os.path.join(out, 'checkpoints')
+        rj = os.path.join(out, 'reach.json')
+        if not os.path.isfile(rj):
+            os.makedirs(ckd, exist_ok=True)
+            if progress:
+                print('clean engine, %s: tracing executed lines' % cid)
+            env = dict(os.environ, COM_CHECKPOINT_DIR=os.path.abspath(ckd),
+                       PYTHONPATH=_ROOT, PYTHONDONTWRITEBYTECODE='1')
+            subprocess.run([sys.executable, '-B', REACH, rj, '--'] +
+                           _sicopr_args(manifest['cases'][cid]), cwd=out,
+                           env=env, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+        reach[cid] = set(json.load(open(rj, encoding='utf-8'))['lines'])
+        clean_rows[cid] = _harness(cid, base, _ROOT, reuse=True)[0]
+
+    # 2. every survivor, assembled into its own engine; the tree restored
+    todo, results = [], []
+    try:
+        for (op, fn_dir, idx, off, mutated, orig_raw), row in zip(work, rows):
+            if row['outcome'] != 'survived':
+                continue
+            impl = os.path.join(FN, fn_dir, 'py_impl.py')
+            try:
+                write_bytes(impl, mutated.encode('utf-8'))
+                ok = _assemble()
+                with open(engine, 'rb') as fh:
+                    mut_engine = fh.read().decode('utf-8')
+            finally:
+                write_bytes(impl, orig_raw)
+                with open(impl, 'rb') as fh:
+                    if fh.read() != orig_raw:
+                        raise SystemExit('mutations.py: FAILED TO RESTORE %s'
+                                         % impl)
+            res = dict(row, checkpoint=None, cases=[], detail='')
+            results.append(res)
+            if not ok:
+                res['checkpoint'] = 'catalogue_bug_does_not_assemble'
+                continue
+            lines = _engine_lines_changed(clean, mut_engine)
+            if not lines:
+                res['checkpoint'] = 'not_in_engine'
+                continue
+            hit = [c for c in cases if lines & reach[c]]
+            res['engine_lines'] = sorted(lines)[:5]
+            if not hit:
+                res['checkpoint'] = 'unreached'
+                continue
+            d = os.path.join(workdir, 'm%03d' % len(results))
+            os.makedirs(d, exist_ok=True)
+            with io.open(os.path.join(d, 'sicopr.py'), 'w', encoding='utf-8',
+                         newline='') as fh:
+                fh.write(mut_engine)
+            todo.append((res, d, hit))
+    finally:
+        _assemble()
+        with open(engine, 'rb') as fh:
+            if fh.read() != clean_raw:
+                raise SystemExit('mutations.py: the re-assembled engine is not '
+                                 'byte-identical to the clean one. Check git.')
+
+    if progress:
+        n = {}
+        for r in results:
+            n[r['checkpoint']] = n.get(r['checkpoint'], 0) + 1
+        print('%d function-test survivors: %d to run against the harness, %s'
+              % (len(results), len(todo),
+                 ', '.join('%s %d' % kv for kv in sorted(n.items(), key=str)
+                           if kv[0])))
+
+    # 3. the reached ones against the harness, several at once
+    def one(item):
+        res, d, hit = item
+        for cid in hit:
+            fields, _log = _harness(cid, os.path.join(d, 'report'), d)
+            clean_fields = clean_rows[cid]
+            new = sorted(_fails(fields) - _fails(clean_fields))
+            res['cases'].append(cid)
+            if not fields or new:
+                res['checkpoint'] = 'caught'
+                res['detail'] = ('%s %s' % new[0]) if new else 'no fields.csv'
+                return res
+        diffs = []
+        for cid in hit:
+            diffs += _saved_state_diff(
+                ck, os.path.join(base, cid, 'checkpoints'),
+                os.path.join(d, 'report', cid, 'checkpoints'))
+        if not diffs:
+            res['checkpoint'] = 'survived_no_change'
+        else:
+            res['checkpoint'] = 'survived_within_tolerance'
+            p, r = max(diffs, key=lambda t: t[1])
+            res['detail'] = '%d saved field(s) moved; largest %s rel %.1e' % (
+                len(diffs), p, r)
+        return res
+
+    with _cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+        for k, res in enumerate(ex.map(one, todo), 1):
+            if progress:
+                print('  %3d/%d  %-22s %-30s line %-5d %s'
+                      % (k, len(todo), res['op'], res['fn'], res['line'],
+                         res['checkpoint']))
+    return results
+
+
+def report_checkpoint(results):
+    by = {}
+    for r in results:
+        by.setdefault(r['checkpoint'], []).append(r)
+    print('\nfunction-test survivors put in front of the checkpoint harness: %d'
+          % len(results))
+    for k in ('caught', 'survived_within_tolerance', 'survived_no_change',
+              'unreached', 'not_in_engine', 'catalogue_bug_does_not_assemble'):
+        if by.get(k):
+            print('  %-34s %d' % (k, len(by[k])))
+    for k, head in (('survived_within_tolerance',
+                     'the harness saw a change and let it through'),
+                    ('survived_no_change',
+                     'nothing the harness saves changed on the cases run'),
+                    ('unreached', 'no checkpoint case executes the line')):
+        if by.get(k):
+            print('\n%s -- %s:' % (k.upper(), head))
+            for r in sorted(by[k], key=lambda r: (r['op'], r['fn'], r['line'])):
+                print('   %-24s %-34s line %-5d %s'
+                      % (r['op'], r['fn'], r['line'], r.get('detail', '')))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--list', action='store_true',
@@ -515,6 +828,15 @@ def main():
     ap.add_argument('--only', help='a single operator id')
     ap.add_argument('--no-cache', action='store_true')
     ap.add_argument('--json', help='write the result rows here')
+    ap.add_argument('--checkpoint', action='store_true',
+                    help='also run every function-test survivor against the '
+                         'Octave checkpoint harness (needs the goldens)')
+    ap.add_argument('--ckpt-cases', nargs='*',
+                    help='checkpoint case ids (default: the harness quick '
+                         'subset plus the first wXtalk case)')
+    ap.add_argument('--ckpt-jobs', type=int, default=4)
+    ap.add_argument('--ckpt-dir', help='working directory for the mutant '
+                    'engines and their reports (outside the repository)')
     args = ap.parse_args()
 
     if args.list or not args.run:
@@ -531,10 +853,16 @@ def main():
         return 0
 
     rows = evaluate(args.only, use_cache=not args.no_cache)
+    report(rows)
+    if args.checkpoint:
+        if not args.ckpt_dir:
+            raise SystemExit('--checkpoint needs --ckpt-dir')
+        rows = evaluate_checkpoint(collect(args.only), rows, args.ckpt_cases,
+                                   args.ckpt_dir, jobs=args.ckpt_jobs)
+        report_checkpoint(rows)
     if args.json:
         with io.open(args.json, 'w', encoding='utf-8') as f:
             f.write(unicode_json(rows))
-    report(rows)
     return 0
 
 
