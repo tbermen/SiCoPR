@@ -415,6 +415,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         else
             %fill in chada with s-parameters
             [chdata, SDDch, SDDp2p, param] = read_s4p_files(param, OP, chdata);
+            com_checkpoint(sprintf('01_read_s4p_files_pc%d', package_testcase_i), 'param', param, 'OP', OP, 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
             % write port order to output_args in case auto port order handled it
             output_args.port_order = param.snpPortsOrder;
             output_args.fstop_GHz=min(param.flim,chdata(1).faxis(end))/1e9;
@@ -441,6 +442,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         
         %% Process TDR & ERL
         [output_args,ERL,min_ERL]=TDR_ERL_Processing(output_args,OP,package_testcase_i,chdata,param);
+        com_checkpoint(sprintf('02_TDR_ERL_Processing_pc%d', package_testcase_i), 'output_args', output_args, 'ERL', ERL, 'min_ERL', min_ERL, 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
         if OP.ERL_ONLY
             results = cell(1);
             results{1} = output_args;
@@ -479,6 +481,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         
         %TD Mode now also calls FD_Processing but skips the main parts
         [chdata,output_args]=FD_Processing(chdata,output_args,param,OP,SDDp2p,DO_ONCE);
+        com_checkpoint(sprintf('03_FD_Processing_pc%d', package_testcase_i), 'chdata', chdata, 'output_args', output_args); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
         
         %% Convert from Frequency Domain to Time Domain
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -488,6 +491,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         if DO_ONCE
             if ~OP.TDMODE
                 chdata=COM_FD_to_TD(chdata,param,OP);
+                com_checkpoint(sprintf('04_COM_FD_to_TD_pc%d', package_testcase_i), 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
                 output_args.VCM_CD_HF_mV=chdata(1).VCM_CD_HF_struct.CMn*1000;
                 output_args.VCM_DC_HF_mV=chdata(1).VCM_DC_HF_struct.CMn*1000;
                 % output_args.SCMR_dB=chdata(1).SCMR; % legacy SCMR output          
@@ -532,6 +536,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         end
         param.sigma_ns=sigma_bn; % eventhough pass to optimize_fom use the syntax thats in 178A
         fom_result = optimize_fom(OP,param, chdata, sigma_bn,do_C2M);
+        com_checkpoint(sprintf('05_optimize_fom_pc%d', package_testcase_i), 'fom_result', fom_result); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
         if fom_result.eq_failed ; return; end % RIM 12-20-2023
         OP.COMPUTE_COM=true;
         %% Apply Equalization (returns pulse response with CTLE, TXLE, RXFFE)
@@ -560,6 +565,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         end
         
         chdata=Apply_EQ(param,fom_result,chdata,OP);
+        com_checkpoint(sprintf('06_Apply_EQ_pc%d', package_testcase_i), 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
         PSD_results=[]; % need to define because passed to Create_Noise_PDF for backward compatability
         if (strcmp(OP.FFE_OPT_METHOD,'MMSE') && OP.RxFFE)
             OP.WO_TXFFE=1;
@@ -571,12 +577,14 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
             PSD_results.S_in=fom_result.PSD_results.S_in;
             % at this point chdata(1).eq_pulse_response has the tx and rx FFE and CTF applied
             PSD_results = get_PSDs(PSD_results,chdata(1).eq_pulse_response,fom_result.t_s, fom_result.txffe,param.ctle_gdc_values(fom_result.ctle),param.g_DC_HP_values(fom_result.best_G_high_pass),param,chdata,OP);
+            com_checkpoint(sprintf('07_get_PSDs_pc%d', package_testcase_i), 'PSD_results', PSD_results); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
             OP.WO_TXFFE=0;
             PSD_results.S_xn=fom_result.PSD_results.S_xn;        % get_PSDs will adjust S_xn for Rxffe
             PSD_results.S_tn=fom_result.PSD_results.S_tn;        % get_PSDs will adjust S_tn for Rxffe
             PSD_results.S_jn =fom_result.PSD_results.S_jn;       % get_PSDs will adjust S_jn for Rxffe
             PSD_results.S_rj_jn = fom_result.PSD_results.S_rj_jn;% get_PSDs will adjust S_rj_jn for Rxffe
             PSD_results = get_PSDs(PSD_results,chdata(1).eq_pulse_response,fom_result.t_s, fom_result.txffe,param.ctle_gdc_values(fom_result.ctle),param.g_DC_HP_values(fom_result.best_G_high_pass),param,chdata,OP);
+            com_checkpoint(sprintf('07_get_PSDs_pc%d', package_testcase_i), 'PSD_results', PSD_results); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
             output_args.noiseRMS_mV.rn=PSD_results.S_rn_rms*1000;
             output_args.noiseRMS_mV.tn=PSD_results.S_tn_rms*1000;
             output_args.noiseRMS_mV.xn=PSD_results.S_xn_rms*1000;
@@ -622,6 +630,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         [PDF,CDF,Noise_Struct]=Create_Noise_PDF(A_s,param,fom_result,chdata,OP,sigma_bn,PSD_results);
+        com_checkpoint(sprintf('08_Create_Noise_PDF_pc%d', package_testcase_i), 'PDF', PDF, 'CDF', CDF, 'Noise_Struct', Noise_Struct); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
         combined_interference_and_noise_pdf=PDF;
         combined_interference_and_noise_cdf=CDF;
 
@@ -645,6 +654,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         
         if OP.RX_CALIBRATION ==0 && OP.EW == 1 && OP.MLSE == 0
             [Left_EW,Right_EW,eye_contour,EH_T_C2M,EH_B_C2M]=COM_eye_width(chdata,param.delta_y,fom_result,param,OP,Noise_Struct,0);
+            com_checkpoint(sprintf('09_COM_eye_width_pc%d', package_testcase_i), 'Left_EW', Left_EW, 'Right_EW', Right_EW, 'eye_contour', eye_contour); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
             EW_UI=floor((Left_EW+Right_EW))/param.samples_for_C2M;
             if OP.DISPLAY_WINDOW && OP.DEBUG
                 figure_name =  'Eye at DER0 estimate';
@@ -825,6 +835,7 @@ while (OP.RX_CALIBRATION==1 || DO_ONCE==true || OP.PSDRXCAL)
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         output_args=Output_Arg_Fill(output_args,sigma_bn,Noise_Struct,COM_SNR_Struct,param,chdata,fom_result,OP);
+        com_checkpoint(sprintf('10_Output_Arg_Fill_pc%d', package_testcase_i), 'output_args', output_args, 'COM_SNR_Struct', COM_SNR_Struct); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set
         rt=toc(t0);
         output_args.rtmin=rt/60;
         
@@ -12969,4 +12980,80 @@ if size(A,1) == size(A,2) && rcond(A) == 0
     warning(w_);
 else
     x = A \ b;
+end
+
+
+function com_checkpoint(stage, varargin)
+%% License Notice
+%
+% Copyright 2026 Todd Bermensolo
+%
+% Redistribution and use in source and binary forms, with or without
+% modification, are permitted provided that the following conditions are
+% met:
+%
+% - Redistributions of source code must retain the above copyright
+%   notice, this list of conditions and the following disclaimer.
+%
+% - Redistributions in binary form must reproduce the above copyright
+%   notice, this list of conditions and the following disclaimer in the
+%   documentation and/or other materials provided with the distribution.
+%
+% - Neither the name of the copyright holder nor the names of its
+%   contributors may be used to endorse or promote products derived from
+%   this software without specific prior written permission.
+%
+% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+% "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+% LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+% A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+% HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+% SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+% LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+% DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+% THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+% (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+%
+% SPDX-License-Identifier: BSD-3-Clause
+%
+% ADDED (2026-09-23): the checkpoint harness. Saves whole structs at the
+% pipeline boundaries of the main function so SiCoPR can be checked against
+% everything the reference holds at each stage, not only the numbers it
+% reports.
+%
+% A no-op unless the environment variable COM_CHECKPOINT_DIR names a
+% directory, which the release never sets: the first statement returns. That
+% is what keeps this inside the generator's rule that no edit may change a
+% number under MATLAB. An environment variable rather than an OP field
+% because OP is built inside main from the configuration workbook, so a new
+% OP field cannot be set from outside without also patching the config
+% reader.
+%
+%   com_checkpoint('05_optimize_fom_pc1', 'fom_result', fom_result)
+%
+% writes <COM_CHECKPOINT_DIR>/05_optimize_fom_pc1.mat holding one variable per
+% name/value pair. A stage reached twice in one run (the Rx calibration loop
+% repeats main's body) gets _2, _3 appended rather than overwriting. A save
+% that fails is reported on stderr and does not stop the run: the reference
+% result must not depend on whether it was being observed.
+d = getenv('COM_CHECKPOINT_DIR');
+if isempty(d)
+    return
+end
+S = struct();
+for k = 1:2:numel(varargin)
+    S.(varargin{k}) = varargin{k+1};
+end
+base = fullfile(d, stage);
+f = [base '.mat'];
+n = 1;
+while exist(f, 'file')
+    n = n + 1;
+    f = sprintf('%s_%d.mat', base, n);
+end
+try
+    save('-v7', f, '-struct', 'S');
+catch err
+    fprintf(2, 'com_checkpoint: %s not saved: %s\n', f, err.message);
 end

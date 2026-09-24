@@ -1175,6 +1175,15 @@
    ]
   },
   {
+   "copy": "_com_ieee8023___checkpoint",
+   "helper": "checkpoint",
+   "inlined_into": "com_ieee8023_",
+   "inlined_into_matlab_lines": [
+    1,
+    904
+   ]
+  },
+  {
    "copy": "_com_ieee8023___save_case_outputs",
    "helper": "save_case_outputs",
    "inlined_into": "com_ieee8023_",

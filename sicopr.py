@@ -288,6 +288,50 @@ def _com_ieee8023___save_case_outputs(OP, param, chdata, fom_result, Noise_Struc
             print('    [save] figures skipped: %s' % _e)
 
 
+def _com_ieee8023___checkpoint(stage, package_testcase_i, **values):
+    """Save every struct the pipeline holds at one stage boundary.
+
+    The Python twin of octave/patches/com_checkpoint.m, for the checkpoint
+    harness (tests/test_octave_checkpoints.py). A no-op unless the environment
+    variable COM_CHECKPOINT_DIR names a directory, which nothing in a normal run
+    sets, so it never changes a result.
+
+    Each value is pickled on its own, at the moment of the call: the pipeline
+    mutates chdata and its kin in place, and a snapshot taken later would
+    record the later state -- the aliasing class that produced the
+    BEST.PSD_results defect. A value that cannot be pickled is reported and
+    skipped rather than stopping the run, because the result must not depend
+    on whether it was being observed. File names follow com_checkpoint.m:
+    <stage>_pc<k>.pkl, with _2, _3 for a stage reached twice.
+    """
+    import os as _os
+    d = _os.environ.get('COM_CHECKPOINT_DIR')
+    if not d:
+        return
+    import pickle as _pickle
+    import sys as _sys
+    base = _os.path.join(d, '%s_pc%d' % (stage, int(package_testcase_i)))
+    f, n = base + '.pkl', 1
+    while _os.path.exists(f):
+        n += 1
+        f = '%s_%d.pkl' % (base, n)
+    saved, failed = {}, {}
+    for k, v in values.items():
+        try:
+            saved[k] = _pickle.dumps(v, protocol=_pickle.HIGHEST_PROTOCOL)
+        except Exception as e:                              # noqa: BLE001
+            failed[k] = repr(e)[:200]
+    try:
+        with open(f, 'wb') as fh:
+            _pickle.dump({'values': saved, 'failed': failed}, fh,
+                         protocol=_pickle.HIGHEST_PROTOCOL)
+    except Exception as e:                                  # noqa: BLE001
+        print('com_checkpoint: %s not saved: %r' % (f, e), file=_sys.stderr)
+    for k, why in failed.items():
+        print('com_checkpoint: %s.%s not saved: %s' % (f, k, why),
+              file=_sys.stderr)
+
+
 def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                   _parameter_size_adjustment_fn=None,
                   _process_sxp_fn=None,
@@ -412,6 +456,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             if not getattr(OP, 'TDMODE', False):
                 if _read_s4p_files_fn is not None:
                     chdata, SDDch_local, SDDp2p_local, param = _read_s4p_files_fn(param, OP, chdata)
+                    _com_ieee8023___checkpoint('01_read_s4p_files', package_testcase_i, param=param, OP=OP, chdata=chdata)
                     # r4p15p0: surface the (possibly auto-detected) port order
                     output_args.port_order = param.snpPortsOrder
                 else:
@@ -433,6 +478,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             if _TDR_ERL_Processing_fn is not None:
                 output_args, ERL, min_ERL = _TDR_ERL_Processing_fn(
                     output_args, OP, package_testcase_i, chdata, param)
+                _com_ieee8023___checkpoint('02_TDR_ERL_Processing', package_testcase_i, output_args=output_args, ERL=ERL, min_ERL=min_ERL, chdata=chdata)
 
             if getattr(OP, 'ERL_ONLY', False):
                 results = [None]
@@ -450,10 +496,12 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 param.SNR_TX = float(np.asarray(param.SNDR).ravel()[package_testcase - 1])
 
             chdata, output_args = _FD_Processing_fn(chdata, output_args, param, OP, SDDp2p, DO_ONCE)
+            _com_ieee8023___checkpoint('03_FD_Processing', package_testcase_i, chdata=chdata, output_args=output_args)
 
             # ── FD to TD ──────────────────────────────────────────────────
             if DO_ONCE and not getattr(OP, 'TDMODE', False):
                 chdata = _COM_FD_to_TD_fn(chdata, param, OP)
+                _com_ieee8023___checkpoint('04_COM_FD_to_TD', package_testcase_i, chdata=chdata)
                 output_args.VCM_CD_HF_mV = chdata[0].VCM_CD_HF_struct.CMn * 1000.0
                 output_args.VCM_DC_HF_mV = chdata[0].VCM_DC_HF_struct.CMn * 1000.0
                 output_args.SCMR_TD_CD_ch_dB = chdata[0].SCMR_CD_ch
@@ -482,6 +530,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             # becomes N_bmax -> findbankloc negative-dims crash) and into Apply_EQ.
             _ndfe_save = int(param.ndfe)
             fom_result = _optimize_fom_fn(OP, param, chdata, sigma_bn, do_C2M)
+            _com_ieee8023___checkpoint('05_optimize_fom', package_testcase_i, fom_result=fom_result)
             param.ndfe = _ndfe_save
             if fom_result.eq_failed:
                 return results
@@ -502,6 +551,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 param.number_of_s4p_files = param.number_of_s4p_files - 1
 
             chdata = _Apply_EQ_fn(param, fom_result, chdata, OP)
+            _com_ieee8023___checkpoint('06_Apply_EQ', package_testcase_i, chdata=chdata)
 
             # ── PSD (MMSE RxFFE path) ─────────────────────────────────────
             PSD_results = SimpleNamespace()
@@ -515,12 +565,14 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 PSD_results = _get_PSDs_fn(
                     PSD_results, chdata[0].eq_pulse_response, fom_result.t_s,
                     fom_result.txffe, g_dc, g_hp, param, chdata, OP)
+                _com_ieee8023___checkpoint('07_get_PSDs', package_testcase_i, PSD_results=PSD_results)
                 OP.WO_TXFFE = 0
                 for fld in ('S_xn', 'S_tn', 'S_jn', 'S_rj_jn'):
                     setattr(PSD_results, fld, getattr(fom_result.PSD_results, fld))
                 PSD_results = _get_PSDs_fn(
                     PSD_results, chdata[0].eq_pulse_response, fom_result.t_s,
                     fom_result.txffe, g_dc, g_hp, param, chdata, OP)
+                _com_ieee8023___checkpoint('07_get_PSDs', package_testcase_i, PSD_results=PSD_results)
                 # r4p16p0 L554-559.  The port dropped these six assignments, so
                 # output_args.noiseRMS_mV never existed on the MMSE+RxFFE path.
                 # MATLAB writes .tn twice (L555 and L557) with the same value;
@@ -552,6 +604,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             # ── Combined noise PDF ────────────────────────────────────────
             PDF, CDF, Noise_Struct = _Create_Noise_PDF_fn(
                 A_s, param, fom_result, chdata, OP, sigma_bn, PSD_results)
+            _com_ieee8023___checkpoint('08_Create_Noise_PDF', package_testcase_i, PDF=PDF, CDF=CDF, Noise_Struct=Noise_Struct)
 
             # ── COM, VEC, VEO ─────────────────────────────────────────────
             A_ni_ix_arr = np.where(CDF > float(param.specBER))[0]
@@ -575,6 +628,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             if not getattr(OP, 'RX_CALIBRATION', False) and getattr(OP, 'EW', 0) == 1 and getattr(OP, 'MLSE', 0) == 0:
                 Left_EW, Right_EW, eye_contour, EH_T_C2M, EH_B_C2M = _COM_eye_width_fn(
                     chdata, param.delta_y, fom_result, param, OP, Noise_Struct, 0)
+                _com_ieee8023___checkpoint('09_COM_eye_width', package_testcase_i, Left_EW=Left_EW, Right_EW=Right_EW, eye_contour=eye_contour)
                 EW_UI = float(np.floor(np.sum(Left_EW) + np.sum(Right_EW))) / float(param.samples_for_C2M)
             elif (EYE_PLOT_UNDER_MLSE
                   and not getattr(OP, 'RX_CALIBRATION', False)
@@ -667,6 +721,7 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             # ── Output filling ─────────────────────────────────────────────
             output_args = _Output_Arg_Fill_fn(
                 output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param, chdata, fom_result, OP)
+            _com_ieee8023___checkpoint('10_Output_Arg_Fill', package_testcase_i, output_args=output_args, COM_SNR_Struct=COM_SNR_Struct)
 
             if getattr(OP, 'BREAD_CRUMBS', False):
                 output_args.OP = OP

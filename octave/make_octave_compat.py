@@ -62,6 +62,12 @@ as a small, named set of changes applied to `matlab/com_ieee8023_<ver>.m`:
   replaced for speed
     FOM_rxffe_floating_taps MMSE_FOM's search-mode work inlined, invariants
                             hoisted; every candidate FOM bit-identical
+  checkpoint harness (added 2026-09-23)
+    com_checkpoint          saves whole structs after each of ten pipeline
+                            boundaries in main, to COM_CHECKPOINT_DIR; returns
+                            on its first statement when that is unset, so it
+                            never changes a result. tools/regen_checkpoints.py
+                            drives it; tests/test_octave_checkpoints.py reads it
   optional compiled kernels (octave/accel/, built with build_accel.py)
     the search's candidate loop, the ISI distribution loop and FFE's tap loop
     run compiled when com_octave_accel.oct is present; each returns exactly
@@ -136,7 +142,7 @@ REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
             'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp',
             'OptFom_Calc_Noise_XC']
 ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv',
-         'mldivide_matlab']
+         'mldivide_matlab', 'com_checkpoint']
 
 # (label, old, new, expected count). Exact text; a miss is an error, never a
 # silent skip, because a substitution that no longer matches means the release
@@ -257,6 +263,54 @@ SUBSTITUTIONS = [
      "    pMax = pdf.Min+length(pdf.y)-1;\n"
      "    pdf.x = (pdf.Min*pdf.BinSize:pdf.BinSize:pMax*pdf.BinSize);\n"
      "end\n",
+     1),
+
+    # The checkpoint harness, 2026-09-23 (dev/prompts/PROMPT_SiCoPR_oracle_testing_2026_09_23.md,
+    # Phase 1). After each pipeline boundary of main, save everything the stage
+    # produced. com_checkpoint returns on its first statement unless
+    # COM_CHECKPOINT_DIR is set, which the release never does, so each of these is a
+    # no-op under MATLAB and under Octave alike. Stage numbers follow the order the
+    # pipeline runs them; file names carry the package case, since the ten sit
+    # inside main's package_testcase_i loop.
+    ('checkpoint 01_read_s4p_files',
+     '            [chdata, SDDch, SDDp2p, param] = read_s4p_files(param, OP, chdata);\n',
+     "            [chdata, SDDch, SDDp2p, param] = read_s4p_files(param, OP, chdata);\n            com_checkpoint(sprintf('01_read_s4p_files_pc%d', package_testcase_i), 'param', param, 'OP', OP, 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 02_TDR_ERL_Processing',
+     '        [output_args,ERL,min_ERL]=TDR_ERL_Processing(output_args,OP,package_testcase_i,chdata,param);\n',
+     "        [output_args,ERL,min_ERL]=TDR_ERL_Processing(output_args,OP,package_testcase_i,chdata,param);\n        com_checkpoint(sprintf('02_TDR_ERL_Processing_pc%d', package_testcase_i), 'output_args', output_args, 'ERL', ERL, 'min_ERL', min_ERL, 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 03_FD_Processing',
+     '        [chdata,output_args]=FD_Processing(chdata,output_args,param,OP,SDDp2p,DO_ONCE);\n',
+     "        [chdata,output_args]=FD_Processing(chdata,output_args,param,OP,SDDp2p,DO_ONCE);\n        com_checkpoint(sprintf('03_FD_Processing_pc%d', package_testcase_i), 'chdata', chdata, 'output_args', output_args); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 04_COM_FD_to_TD',
+     '                chdata=COM_FD_to_TD(chdata,param,OP);\n',
+     "                chdata=COM_FD_to_TD(chdata,param,OP);\n                com_checkpoint(sprintf('04_COM_FD_to_TD_pc%d', package_testcase_i), 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 05_optimize_fom',
+     '        fom_result = optimize_fom(OP,param, chdata, sigma_bn,do_C2M);\n',
+     "        fom_result = optimize_fom(OP,param, chdata, sigma_bn,do_C2M);\n        com_checkpoint(sprintf('05_optimize_fom_pc%d', package_testcase_i), 'fom_result', fom_result); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 06_Apply_EQ',
+     '        chdata=Apply_EQ(param,fom_result,chdata,OP);\n',
+     "        chdata=Apply_EQ(param,fom_result,chdata,OP);\n        com_checkpoint(sprintf('06_Apply_EQ_pc%d', package_testcase_i), 'chdata', chdata); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 07_get_PSDs',
+     '            PSD_results = get_PSDs(PSD_results,chdata(1).eq_pulse_response,fom_result.t_s, fom_result.txffe,param.ctle_gdc_values(fom_result.ctle),param.g_DC_HP_values(fom_result.best_G_high_pass),param,chdata,OP);\n',
+     "            PSD_results = get_PSDs(PSD_results,chdata(1).eq_pulse_response,fom_result.t_s, fom_result.txffe,param.ctle_gdc_values(fom_result.ctle),param.g_DC_HP_values(fom_result.best_G_high_pass),param,chdata,OP);\n            com_checkpoint(sprintf('07_get_PSDs_pc%d', package_testcase_i), 'PSD_results', PSD_results); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     2),
+    ('checkpoint 08_Create_Noise_PDF',
+     '        [PDF,CDF,Noise_Struct]=Create_Noise_PDF(A_s,param,fom_result,chdata,OP,sigma_bn,PSD_results);\n',
+     "        [PDF,CDF,Noise_Struct]=Create_Noise_PDF(A_s,param,fom_result,chdata,OP,sigma_bn,PSD_results);\n        com_checkpoint(sprintf('08_Create_Noise_PDF_pc%d', package_testcase_i), 'PDF', PDF, 'CDF', CDF, 'Noise_Struct', Noise_Struct); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 09_COM_eye_width',
+     '            [Left_EW,Right_EW,eye_contour,EH_T_C2M,EH_B_C2M]=COM_eye_width(chdata,param.delta_y,fom_result,param,OP,Noise_Struct,0);\n',
+     "            [Left_EW,Right_EW,eye_contour,EH_T_C2M,EH_B_C2M]=COM_eye_width(chdata,param.delta_y,fom_result,param,OP,Noise_Struct,0);\n            com_checkpoint(sprintf('09_COM_eye_width_pc%d', package_testcase_i), 'Left_EW', Left_EW, 'Right_EW', Right_EW, 'eye_contour', eye_contour); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
+     1),
+    ('checkpoint 10_Output_Arg_Fill',
+     '        output_args=Output_Arg_Fill(output_args,sigma_bn,Noise_Struct,COM_SNR_Struct,param,chdata,fom_result,OP);\n',
+     "        output_args=Output_Arg_Fill(output_args,sigma_bn,Noise_Struct,COM_SNR_Struct,param,chdata,fom_result,OP);\n        com_checkpoint(sprintf('10_Output_Arg_Fill_pc%d', package_testcase_i), 'output_args', output_args, 'COM_SNR_Struct', COM_SNR_Struct); % CHECKPOINT: no-op unless COM_CHECKPOINT_DIR is set\n",
      1),
 ]
 

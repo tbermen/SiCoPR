@@ -431,3 +431,54 @@ def test_mmse_rxffe_block_skipped_without_RxFFE():
     result = com_ieee8023_(param, OP, _make_chdata(), **stubs)
     assert calls == []
     assert not hasattr(result, 'noiseRMS_mV')
+
+
+# ---------------------------------------------------------------------------
+# The checkpoint harness hook (tests/test_octave_checkpoints.py reads what it
+# writes). Three properties, each of which the harness depends on:
+#   * unset, it does nothing at all -- a normal run must not write files;
+#   * set, each call is a SNAPSHOT: the pipeline mutates chdata and its kin in
+#     place, and a checkpoint that recorded the later state would compare the
+#     wrong stage against Octave;
+#   * a stage reached twice is numbered, as com_checkpoint.m numbers it, so the
+#     two get_PSDs calls do not overwrite one another.
+# ---------------------------------------------------------------------------
+import pickle as _pickle                                     # noqa: E402
+
+from com_functions.fn.com_ieee8023_.py_impl import _checkpoint   # noqa: E402
+
+
+def _read_ck(path):
+    with open(path, 'rb') as fh:
+        blob = _pickle.load(fh)
+    return {k: _pickle.loads(v) for k, v in blob['values'].items()}, blob['failed']
+
+
+def test_checkpoint_does_nothing_when_unset(tmp_path, monkeypatch):
+    monkeypatch.delenv('COM_CHECKPOINT_DIR', raising=False)
+    monkeypatch.chdir(tmp_path)
+    _checkpoint('05_optimize_fom', 1, fom_result=SimpleNamespace(FOM=1.0))
+    assert list(tmp_path.iterdir()) == [], 'wrote files with the hook unset'
+
+
+def test_checkpoint_is_a_snapshot_and_numbers_repeats(tmp_path, monkeypatch):
+    monkeypatch.setenv('COM_CHECKPOINT_DIR', str(tmp_path))
+    ch = [SimpleNamespace(v=np.array([1.0, 2.0]))]
+    _checkpoint('07_get_PSDs', 2, chdata=ch)
+    ch[0].v[0] = 99.0                        # the pipeline mutates in place
+    _checkpoint('07_get_PSDs', 2, chdata=ch)
+    first, _ = _read_ck(tmp_path / '07_get_PSDs_pc2.pkl')
+    second, _ = _read_ck(tmp_path / '07_get_PSDs_pc2_2.pkl')
+    assert first['chdata'][0].v.tolist() == [1.0, 2.0], (
+        'the first checkpoint recorded a later state')
+    assert second['chdata'][0].v.tolist() == [99.0, 2.0]
+
+
+def test_checkpoint_skips_what_cannot_be_pickled(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv('COM_CHECKPOINT_DIR', str(tmp_path))
+    _checkpoint('01_read_s4p_files', 1, param=SimpleNamespace(fb=53.125e9),
+                OP=SimpleNamespace(cb=lambda x: x))
+    values, failed = _read_ck(tmp_path / '01_read_s4p_files_pc1.pkl')
+    assert values['param'].fb == 53.125e9
+    assert 'OP' in failed and 'OP' not in values
+    assert 'not saved' in capsys.readouterr().err
