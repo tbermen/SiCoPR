@@ -142,6 +142,31 @@ ENVIRONMENT = {'OP.RESULT_DIR', 'OP.SAVE_FIGURES', 'OP.DISPLAY_WINDOW',
 # and SiCoPR the release it emulates, '4p15p0'. Checked for presence only.
 PRESENCE_ONLY = {'output_args.code_revision'}
 
+# Compared twice: against the array's peak like every array, AND element by
+# element relative to each element. Peak scaling cannot see the far tail, and
+# the far tail is where DER_DFE and DER_MLSE are read: an FFT convolution in
+# conv_fct left the noise CDF 1.3e-4 wrong at 1e-12 and 2.1e-16 where Octave
+# had 5.2e-221, and every one of these rows passed at 1e-9 of the peak.
+TAIL_RELATIVE = {'PDF.y', 'CDF'}
+TAIL_FLOOR = np.finfo(float).tiny          # below this, subnormal: not compared
+
+# DER is read off the noise CDF at -A_s (CDF_ev: find(PDF.x >= -A_s, 1)), and
+# the reference sets the bin size to A_s/1000 (ML 526, param.delta_y), which
+# puts -A_s ON a bin edge by construction. Which side of it the first bin falls
+# is decided by the rounding of Min*BinSize + k*BinSize against A_s, so an A_s
+# that differs in the last few bits -- the FFT residual in the pulse -- can
+# move DER_DFE a whole bin (2-5 percent), and DER_MLSE with it through the
+# bin size. A defect in the reference (upstream), not the port. A failing DER
+# row becomes EDGE only when all of this is shown on the case itself:
+#   the two A_s agree to RTOL, and -A_s falls in different first bins;
+#   the port's MLSE_U1_c_178A, fed the REFERENCE's own inputs, reproduces the
+#     reference's DER_DFE and DER_MLSE to RTOL (so the function is faithful
+#     and the whole difference is the edge);
+#   for DER_DFE, the port's value is the reference CDF at the port's bin.
+# Anything short of that stays FAIL.
+DER_EDGE = {'COM_SNR_Struct.DER_DFE', 'COM_SNR_Struct.DER_MLSE',
+            'output_args.DER_DFE', 'output_args.DER_MLSE'}
+
 
 def _canon(path):
     """'chdata[3].TDR11' -> 'chdata.TDR11', for matching the sets above."""
@@ -163,8 +188,11 @@ def _numeric(a):
     return isinstance(a, np.ndarray) and a.dtype.kind in 'biufc'
 
 
-def _compare_arrays(o, p):
-    """-> (status, detail, max_abs, max_rel, argmax) for two numeric arrays."""
+def _compare_arrays(o, p, tail=False):
+    """-> (status, detail, max_abs, max_rel, argmax) for two numeric arrays.
+
+    tail: also compare element by element, relative to each element.
+    """
     o_n, p_n = o.size, p.size
     if o_n == 0 and p_n == 0:
         return 'pass', 'both empty', 0.0, 0.0, ''
@@ -210,6 +238,17 @@ def _compare_arrays(o, p):
     idx = int(np.flatnonzero(fo)[i])
     if mrel > RTOL:
         return 'FAIL', 'value', mabs, mrel, idx
+    if tail:
+        big = fo & (np.abs(ov) >= TAIL_FLOOR)
+        if big.any():
+            r = np.abs(ov[big] - pv[big]) / np.abs(ov[big])
+            j = int(np.argmax(r))
+            if r[j] > RTOL:
+                k = int(np.flatnonzero(big)[j])
+                return ('FAIL', 'tail: element rel %.2e at %d (octave %.6g, '
+                        'python %.6g)' % (r[j], k, abs(ov[k]), abs(pv[k])),
+                        float(abs(ov[k] - pv[k])), float(r[j]), k)
+            mrel = max(mrel, float(r[j]))
     return ('ORIENT' if orient else 'pass'), orient, mabs, mrel, idx
 
 
@@ -291,7 +330,8 @@ def compare(o, p, path, rows):
             rows.append((path, 'FAIL', 'numeric in Octave, %s in Python'
                          % type(p).__name__, '', '', '', str(o.shape)))
             return
-        st, det, mabs, mrel, idx = _compare_arrays(o, pa)
+        st, det, mabs, mrel, idx = _compare_arrays(
+            o, pa, tail=canon in TAIL_RELATIVE)
         rows.append((path, st, det, mabs, mrel, idx,
                      '%s|%s' % (o.shape, pa.shape)))
         return
@@ -387,6 +427,112 @@ def _mark_late(per_stage, stages, ck):
                     break
 
 
+def _ns_octave(path):
+    """A golden .mat as the port's own types: structs as namespaces."""
+    import scipy.io
+    m = scipy.io.loadmat(path, squeeze_me=True, struct_as_record=False)
+
+    def ns(x):
+        if hasattr(x, '_fieldnames'):
+            return SimpleNamespace(**{k: ns(getattr(x, k)) for k in x._fieldnames})
+        return x
+    return {k: ns(v) for k, v in m.items() if not k.startswith('__')}
+
+
+def _raw_python(path):
+    with open(path, 'rb') as fh:
+        blob = pickle.load(fh)
+    return {k: pickle.loads(v) for k, v in blob['values'].items()}
+
+
+_ENGINE = {}
+
+
+def _engine_module():
+    """The sicopr.py the engine run used, not whichever this process imports.
+
+    run_sicopr runs `python -m sicopr` from the report directory, which finds
+    sicopr.py on PYTHONPATH first and the installed repository after. This
+    process put _ROOT at the head of sys.path, so a bare `import sicopr` here
+    would prove the DER edge with a DIFFERENT engine from the one under test --
+    and a mutated MLSE would then hide behind the clean one.
+    """
+    if 'mod' not in _ENGINE:
+        import importlib.util
+        path = os.path.join(_ROOT, 'sicopr.py')
+        for p in os.environ.get('PYTHONPATH', '').split(os.pathsep):
+            if p and os.path.isfile(os.path.join(p, 'sicopr.py')):
+                path = os.path.join(p, 'sicopr.py')
+                break
+        spec = importlib.util.spec_from_file_location('_engine_under_test', path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _ENGINE['mod'] = mod
+    return _ENGINE['mod']
+
+
+def _der_edge_proof(st10, stages, gold, ck):
+    """-> (dfe_ok, mlse_ok, detail) for the DER rows of checkpoint st10."""
+    tag = re.search(r'_pc\d+', st10).group(0)
+    mine = [s for s in stages if tag + '_' in s + '_']
+
+    def one(prefix):
+        got = [s for s in mine if s.startswith(prefix)]
+        return got[-1] if got else None     # 07: the second get_PSDs call
+    s01, s05, s07, s08 = one('01_'), one('05_'), one('07_'), one('08_')
+    if None in (s01, s05, s07, s08):
+        return False, False, 'DER edge: a checkpoint MLSE needs is missing'
+    g = lambda s: _ns_octave(os.path.join(gold, s + '.mat'))
+    y = lambda s: _raw_python(os.path.join(ck, s + '.pkl'))
+    o10, p10 = g(st10)['COM_SNR_Struct'], y(st10)['COM_SNR_Struct']
+    o8, p8 = g(s08), y(s08)
+    As_o, As_p = float(o10.A_s), float(p10.A_s)
+    x_o = np.asarray(o8['PDF'].x, dtype=float).ravel()
+    x_p = np.asarray(p8['PDF'].x, dtype=float).ravel()
+    i_o, i_p = int(np.argmax(x_o >= -As_o)), int(np.argmax(x_p >= -As_p))
+    rel_As = abs(As_o - As_p) / abs(As_o)
+    if rel_As > RTOL or i_o == i_p:
+        return False, False, ('DER edge not shown: A_s rel %.1e, first bin '
+                              '%d (octave) %d (python)' % (rel_As, i_o, i_p))
+    sicopr = _engine_module()
+    blim = np.atleast_1d(np.asarray(
+        g(s05)['fom_result'].MMSE_results.blim, dtype=float))
+    M = sicopr.MLSE_U1_c_178A(g(s01)['param'], blim, As_o, float(o10.A_ni),
+                              o8['PDF'],
+                              np.atleast_1d(np.asarray(o8['CDF'], dtype=float)),
+                              g(s07)['PSD_results'])
+    rel = lambda a, b: abs(float(a) - float(b)) / max(abs(float(b)), 1e-300)
+    r_dfe, r_mlse = rel(M.DER_DFE, o10.DER_DFE), rel(M.DER_MLSE, o10.DER_MLSE)
+    cdf_o = np.asarray(o8['CDF'], dtype=float).ravel()
+    r_bin = rel(p10.DER_DFE, cdf_o[i_p])
+    detail = ('A_s bin edge (upstream): -A_s in first bin %d (python) vs %d '
+              '(octave), A_s rel %.1e; python MLSE on the octave inputs '
+              'reproduces DER_DFE to %.1e, DER_MLSE to %.1e'
+              % (i_p, i_o, rel_As, r_dfe, r_mlse))
+    ok = r_dfe <= RTOL and r_mlse <= RTOL
+    return (ok and r_bin <= RTOL, ok,
+            detail + '; DER_DFE is octave CDF(bin %d) to %.1e' % (i_p, r_bin))
+
+
+def _mark_der_edge(per_stage, stages, gold, ck):
+    for st in stages:
+        rows = per_stage[st]
+        hits = [j for j, r in enumerate(rows) if r[0] in DER_EDGE
+                and r[1] == 'FAIL' and r[2] == 'value']
+        if not hits:
+            continue
+        try:
+            dfe_ok, mlse_ok, why = _der_edge_proof(st, stages, gold, ck)
+        except Exception as e:                  # the proof failing is a FAIL
+            dfe_ok = mlse_ok = False
+            why = 'DER edge proof raised %s: %s' % (type(e).__name__, e)
+        for j in hits:
+            r = rows[j]
+            ok = dfe_ok if r[0].endswith('DER_DFE') else mlse_ok
+            rows[j] = (r[0], 'EDGE' if ok else 'FAIL',
+                       why if ok else 'value; ' + why) + tuple(r[3:])
+
+
 def compare_case(cid, meta):
     gold = os.path.join(GOLD, cid)
     out = os.path.join(REPORT, cid)
@@ -413,12 +559,13 @@ def compare_case(cid, meta):
                     compare(o[k], p[k], k, rows)
         per_stage[st] = rows
     _mark_late(per_stage, stages, ck)
+    _mark_der_edge(per_stage, stages, gold, ck)
     for st in stages:
         table += [(st,) + r for r in per_stage[st]]
     extra = sorted(f[:-4] for f in os.listdir(ck) if f.endswith('.pkl')
                    and f[:-4] not in stages)
-    order = {'FAIL': 0, 'LATE': 1, 'ORIENT': 2, 'PYONLY': 3, 'ENV': 4,
-             'SKIP': 5, 'pass': 6}
+    order = {'FAIL': 0, 'EDGE': 1, 'LATE': 2, 'ORIENT': 3, 'PYONLY': 4,
+             'ENV': 5, 'SKIP': 6, 'pass': 7}
     table.sort(key=lambda r: (order.get(r[2], 5), r[0], r[1]))
     with open(os.path.join(out, 'fields.csv'), 'w', newline='',
               encoding='utf-8') as fh:
@@ -537,14 +684,16 @@ def main():
             n = len(rows)
             nf = sum(1 for r in rows if r[1] == 'FAIL')
             nl = sum(1 for r in rows if r[1] == 'LATE')
+            ne = sum(1 for r in rows if r[1] == 'EDGE')
             no = sum(1 for r in rows if r[1] == 'ORIENT')
             npy = sum(1 for r in rows if r[1] == 'PYONLY')
             first = next((r for r in rows if r[1] == 'FAIL'), None)
             worst = max((r[4] for r in rows if isinstance(r[4], float)
-                         and r[1] != 'FAIL'), default=0.0)
+                         and r[1] not in ('FAIL', 'EDGE')), default=0.0)
             print('   %-28s fields %5d  fail %4d  late %3d  orient %4d  '
-                  'py-only %4d  worst passing rel %.1e%s'
-                  % (st, n, nf, nl, no, npy, worst,
+                  'py-only %4d%s  worst passing rel %.1e%s'
+                  % (st, n, nf, nl, no, npy,
+                     ('  EDGE %d' % ne) if ne else '', worst,
                      ('  first: %s (%s)' % (first[0], first[2][:50]))
                      if first else ''))
             check('%s__%s_matches_octave' % (cid, st), nf == 0,
