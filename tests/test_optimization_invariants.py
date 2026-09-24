@@ -142,22 +142,26 @@ check("gram_hoist_argument_is_actually_used",
       "a deliberately wrong HH_full produced the same FOM, so the parameter is "
       "dead and the measured speed-up is not coming from where it is claimed")
 
-# =========================================================== 3. conv gating
-# _conv1d and its size gate live with the canonical conv_fct. get_PSDs used
-# to carry its own copy; that duplicate was collapsed onto an import on
-# 2026-09-22, so the invariant is checked where the code now is.
+# =========================================================== 3. conv is direct
+# _conv1d lives with the canonical conv_fct. It used to dispatch to an FFT
+# above 128 bins; that put round-off of ~eps*peak into every tail bin of the
+# noise CDF and was removed on 2026-09-23 (8ec85b0), so there is no gate left
+# to check. What remains is stronger: _conv1d IS np.convolve, bit for bit, at
+# every size, including those the old gate sent to the FFT.
 cf = _load('conv_fct')
+check("conv1d_has_no_fft_gate", not hasattr(cf, '_CONV_FFT_MIN'),
+      "conv_fct grew a size gate again; an FFT path loses the far tail of "
+      "every PDF it touches (see conv_fct/test_verify.py tail test)")
 for n in (8, 64, 127, 128, 129, 512):
     a = rng.standard_normal(n)
     b = rng.standard_normal(max(4, n // 2))
     ref = np.convolve(a, b)
     got = cf._conv1d(a.copy(), b.copy())
-    check("conv1d_matches_direct_convolution__n%d" % n,
-          got.shape == ref.shape and np.allclose(got, ref, rtol=0, atol=1e-9),
-          "FFT/direct convolution disagree at n=%d (gate is %d): max|delta| "
-          "= %.3g" % (n, cf._CONV_FFT_MIN,
-                      np.max(np.abs(got - ref)) if got.shape == ref.shape
-                      else float('nan')))
+    check("conv1d_is_direct_convolution__n%d" % n,
+          got.shape == ref.shape and np.array_equal(got, ref),
+          "_conv1d differs from np.convolve at n=%d: max|delta| = %.3g"
+          % (n, np.max(np.abs(got - ref)) if got.shape == ref.shape
+             else float('nan')))
 
 # =========================================================== 4. shared buffers
 mm._EYE_CACHE.clear()
