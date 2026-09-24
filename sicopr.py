@@ -112,6 +112,9 @@ def _run_com(config_file, num_fext, num_next, s4p_files, export_mat=False):
     OP.WC_PORTZ = False
     OP.SNDR_REF = False
     OP.RESULT_DIR = ""
+    OP.CONFIG2MAT_ONLY = False  # ML 1159, COM_CommandLine_Parse default (no
+                                # 'Config2Mat' mode in this driver)
+    OP.TESTING = 0              # ML 76
 
     # ── 2. Load config and S-parameters ───────────────────────────────────
     param, OP = read_ParamConfigFile(config_file, OP)
@@ -121,7 +124,12 @@ def _run_com(config_file, num_fext, num_next, s4p_files, export_mat=False):
         _cfg_base = os.path.splitext(os.path.basename(config_file))[0]
         OP.RESULT_DIR = 'results_%s_%s' % (
             _cfg_base, datetime.datetime.now().strftime('%Y_%m_%d_%H_%M'))
+    OP.FIXTURE_CALIBRATION = 0  # ML 308, set just before get_s4p_files
     chdata, param = get_s4p_files(param, OP, num_fext, num_next, s4p_files)
+    # ML 315-319: OP.SAVE_CMD_STR=1, then save_cmd_line's string goes to
+    # setappdata(0,'cmd_str') for the "redo string" ML 894 prints -- MATLAB
+    # session state with no counterpart here. The flag is carried.
+    OP.SAVE_CMD_STR = 1
     param.num_fext = num_fext
     param.num_next = num_next
     param.num_s4p_files = len(s4p_files)
