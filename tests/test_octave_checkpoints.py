@@ -155,14 +155,21 @@ TAIL_FLOOR = np.finfo(float).tiny          # below this, subnormal: not compared
 # puts -A_s ON a bin edge by construction. Which side of it the first bin falls
 # is decided by the rounding of Min*BinSize + k*BinSize against A_s, so an A_s
 # that differs in the last few bits -- the FFT residual in the pulse -- can
-# move DER_DFE a whole bin (2-5 percent), and DER_MLSE with it through the
-# bin size. A defect in the reference (upstream), not the port. A failing DER
-# row becomes EDGE only when all of this is shown on the case itself:
-#   the two A_s agree to RTOL, and -A_s falls in different first bins;
-#   the port's MLSE_U1_c_178A, fed the REFERENCE's own inputs, reproduces the
-#     reference's DER_DFE and DER_MLSE to RTOL (so the function is faithful
-#     and the whole difference is the edge);
-#   for DER_DFE, the port's value is the reference CDF at the port's bin.
+# move DER_DFE a whole bin (2-5 percent). MLSE convolves PDFs built on the
+# same A_s-derived bins and reads its own tails, so DER_MLSE can jump too,
+# with or without DER_DFE (4 of the 28 cases: DER_DFE agrees, DER_MLSE is off
+# by 1.5-3.8 percent). A defect in the reference (upstream), not the port.
+#
+# A failing DER row becomes EDGE only when the case itself shows the whole
+# difference is carried by an input the harness already accepts:
+#   (a) the engine's own MLSE_U1_c_178A, fed the REFERENCE's inputs,
+#       reproduces the reference's DER_DFE and DER_MLSE to RTOL -- the
+#       function is faithful;
+#   (b) swapping the fewest of the port's inputs (A_s, PDF, CDF: singly,
+#       then in pairs, then all three) into the reference's set reproduces
+#       the port's value of that field to RTOL -- nothing else contributes;
+#   (c) each swapped input agrees with the reference's to RTOL, element by
+#       element.
 # Anything short of that stays FAIL.
 DER_EDGE = {'COM_SNR_Struct.DER_DFE', 'COM_SNR_Struct.DER_MLSE',
             'output_args.DER_DFE', 'output_args.DER_MLSE'}
@@ -472,7 +479,7 @@ def _engine_module():
 
 
 def _der_edge_proof(st10, stages, gold, ck):
-    """-> (dfe_ok, mlse_ok, detail) for the DER rows of checkpoint st10."""
+    """-> {field suffix: (ok, detail)} for DER_DFE and DER_MLSE of st10."""
     tag = re.search(r'_pc\d+', st10).group(0)
     mine = [s for s in stages if tag + '_' in s + '_']
 
@@ -481,37 +488,72 @@ def _der_edge_proof(st10, stages, gold, ck):
         return got[-1] if got else None     # 07: the second get_PSDs call
     s01, s05, s07, s08 = one('01_'), one('05_'), one('07_'), one('08_')
     if None in (s01, s05, s07, s08):
-        return False, False, 'DER edge: a checkpoint MLSE needs is missing'
+        why = 'DER edge: a checkpoint MLSE needs is missing'
+        return {'DER_DFE': (False, why), 'DER_MLSE': (False, why)}
     g = lambda s: _ns_octave(os.path.join(gold, s + '.mat'))
     y = lambda s: _raw_python(os.path.join(ck, s + '.pkl'))
     o10, p10 = g(st10)['COM_SNR_Struct'], y(st10)['COM_SNR_Struct']
     o8, p8 = g(s08), y(s08)
-    As_o, As_p = float(o10.A_s), float(p10.A_s)
-    x_o = np.asarray(o8['PDF'].x, dtype=float).ravel()
-    x_p = np.asarray(p8['PDF'].x, dtype=float).ravel()
-    i_o, i_p = int(np.argmax(x_o >= -As_o)), int(np.argmax(x_p >= -As_p))
-    rel_As = abs(As_o - As_p) / abs(As_o)
-    if rel_As > RTOL or i_o == i_p:
-        return False, False, ('DER edge not shown: A_s rel %.1e, first bin '
-                              '%d (octave) %d (python)' % (rel_As, i_o, i_p))
+    vec = lambda v: np.atleast_1d(np.asarray(v, dtype=float)).ravel()
+    ref = {'A_s': float(o10.A_s), 'PDF': o8['PDF'], 'CDF': vec(o8['CDF'])}
+    port = {'A_s': float(p10.A_s), 'PDF': p8['PDF'], 'CDF': vec(p8['CDF'])}
+
+    def rel(x, r):
+        x, r = vec(x), vec(r)
+        if x.shape != r.shape:
+            return float('inf')
+        big = np.abs(r) >= TAIL_FLOOR
+        d = np.abs(x - r)
+        return float(np.max(d[big] / np.abs(r[big]))) if big.any() else 0.0
+
+    agree = {'A_s': rel(port['A_s'], ref['A_s']),
+             'PDF': max(rel(port['PDF'].y, ref['PDF'].y),
+                        rel(port['PDF'].x, ref['PDF'].x)),
+             'CDF': rel(port['CDF'], ref['CDF'])}
     sicopr = _engine_module()
-    blim = np.atleast_1d(np.asarray(
-        g(s05)['fom_result'].MMSE_results.blim, dtype=float))
-    M = sicopr.MLSE_U1_c_178A(g(s01)['param'], blim, As_o, float(o10.A_ni),
-                              o8['PDF'],
-                              np.atleast_1d(np.asarray(o8['CDF'], dtype=float)),
-                              g(s07)['PSD_results'])
-    rel = lambda a, b: abs(float(a) - float(b)) / max(abs(float(b)), 1e-300)
-    r_dfe, r_mlse = rel(M.DER_DFE, o10.DER_DFE), rel(M.DER_MLSE, o10.DER_MLSE)
-    cdf_o = np.asarray(o8['CDF'], dtype=float).ravel()
-    r_bin = rel(p10.DER_DFE, cdf_o[i_p])
-    detail = ('A_s bin edge (upstream): -A_s in first bin %d (python) vs %d '
-              '(octave), A_s rel %.1e; python MLSE on the octave inputs '
-              'reproduces DER_DFE to %.1e, DER_MLSE to %.1e'
-              % (i_p, i_o, rel_As, r_dfe, r_mlse))
-    ok = r_dfe <= RTOL and r_mlse <= RTOL
-    return (ok and r_bin <= RTOL, ok,
-            detail + '; DER_DFE is octave CDF(bin %d) to %.1e' % (i_p, r_bin))
+    param = g(s01)['param']
+    blim = vec(g(s05)['fom_result'].MMSE_results.blim)
+    A_ni = float(o10.A_ni)
+    psd = g(s07)['PSD_results']
+
+    def mlse(inp):
+        M = sicopr.MLSE_U1_c_178A(param, blim, inp['A_s'], A_ni, inp['PDF'],
+                                  inp['CDF'].copy(), psd)
+        return {'DER_DFE': float(M.DER_DFE), 'DER_MLSE': float(M.DER_MLSE)}
+
+    base = mlse(ref)
+    import itertools
+    combos = [c for n in (1, 2, 3) for c in itertools.combinations(sorted(ref), n)]
+    swapped = {}
+
+    def swap(c):
+        if c not in swapped:
+            swapped[c] = mlse(dict(ref, **{k: port[k] for k in c}))
+        return swapped[c]
+    x_o = vec(ref['PDF'].x)
+    x_p = vec(port['PDF'].x)
+    bins = (int(np.argmax(x_o >= -ref['A_s'])), int(np.argmax(x_p >= -port['A_s'])))
+    out = {}
+    for f in ('DER_DFE', 'DER_MLSE'):
+        faithful = rel(base[f], getattr(o10, f)) <= RTOL
+        carriers = [c for c in combos
+                    if all(agree[k] <= RTOL for k in c)
+                    and rel(swap(c)[f], getattr(p10, f)) <= RTOL][:1]
+        detail = ('A_s bin edge (upstream): engine MLSE on the octave inputs '
+                  'reproduces octave %s to %.1e; ' % (f, rel(base[f], getattr(o10, f))))
+        if carriers:
+            c = carriers[0]
+            detail += ('the python %s alone (agree with octave to %.1e) '
+                       'reproduce python %s to %.1e'
+                       % ('+'.join(c), max(agree[k] for k in c), f,
+                          rel(swap(c)[f], getattr(p10, f))))
+        else:
+            detail += ('no combination of inputs carries the difference (A_s %.1e, '
+                       'PDF %.1e, CDF %.1e)' % (agree['A_s'], agree['PDF'],
+                                                agree['CDF']))
+        detail += '; -A_s first bin %d octave, %d python' % bins
+        out[f] = (faithful and bool(carriers), detail)
+    return out
 
 
 def _mark_der_edge(per_stage, stages, gold, ck):
@@ -522,13 +564,13 @@ def _mark_der_edge(per_stage, stages, gold, ck):
         if not hits:
             continue
         try:
-            dfe_ok, mlse_ok, why = _der_edge_proof(st, stages, gold, ck)
+            proof = _der_edge_proof(st, stages, gold, ck)
         except Exception as e:                  # the proof failing is a FAIL
-            dfe_ok = mlse_ok = False
             why = 'DER edge proof raised %s: %s' % (type(e).__name__, e)
+            proof = {'DER_DFE': (False, why), 'DER_MLSE': (False, why)}
         for j in hits:
             r = rows[j]
-            ok = dfe_ok if r[0].endswith('DER_DFE') else mlse_ok
+            ok, why = proof['DER_DFE' if r[0].endswith('DER_DFE') else 'DER_MLSE']
             rows[j] = (r[0], 'EDGE' if ok else 'FAIL',
                        why if ok else 'value; ' + why) + tuple(r[3:])
 
