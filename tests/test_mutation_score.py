@@ -155,7 +155,7 @@ KNOWN_SURVIVORS = frozenset([
 # happens to cover this input" is a reason to write a test, and belongs in
 # KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
-    'drop_dot_copy:MMSE:399',       # :392, then :390 (a007fc8); moved by a47c8f2
+    'drop_dot_copy:MMSE:406',       # :392, :390 (a007fc8), :399 (a47c8f2); moved by the G gather
     'drop_dot_copy:get_PSDs:479',   # :436, then :472; moved by the iphase and hk fixes
     'drop_dot_copy:get_pdf_full:165',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local

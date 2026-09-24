@@ -33,6 +33,11 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
     # bit-identical to gathering from H.
     _H = np.asarray(H, dtype=float) if H is not None else None
     Ht = np.ascontiguousarray(_H.T) if _H is not None and _H.ndim == 2 else None
+    # and its Gram matrix, once: each candidate gathers its block from it. The
+    # block is bit-identical to forming H(:,sel)'*H(:,sel) per candidate (the
+    # August hoist was removed unverified on 2026-09-24; this is the verified
+    # form, accepted under the owner's equivalence rule the same day).
+    G = Ht @ Ht.T if Ht is not None else None
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -59,7 +64,8 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
                                wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
             else:
                 res = mmse_fom(param, H, Nb, Rnn, dw, d,
-                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx, Ht=Ht)
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx,
+                               Ht=Ht, G=G)
             best_FOM[k] = res[1]             # FOM is the 2nd return value
         best_pos = int(np.argmax(best_FOM))  # 0-based position in valid
         start_tap = valid[best_pos]

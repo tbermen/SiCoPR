@@ -190,7 +190,9 @@ def test_each_candidate_is_scored_from_h_itself():
     H(:,sel)'*H(:,sel) itself. The port once passed a precomputed Gram matrix
     of the full H (HH_full) for speed; removed 2026-09-24 as never verified
     against the reference. The kernel may receive H.T laid out contiguously
-    (Ht, layout only) and nothing else."""
+    (Ht, layout only) and G = Ht @ Ht.T -- the verified form of that hoist,
+    whose gathered block is bit-identical to forming it per candidate (pinned
+    in MMSE_FOM/test_verify.py) -- and nothing else."""
     seen = []
     isi = np.array([0.02, 0.40, 0.35, 0.03, 0.05, 0.30])
 
@@ -206,7 +208,9 @@ def test_each_candidate_is_scored_from_h_itself():
                             1.0, 0, 1 + len(isi), _MMSE_FOM_fn=spy)
     assert seen
     for kw in seen:
-        assert set(kw) <= {'Ht'}, kw
+        assert set(kw) <= {'Ht', 'G'}, kw
         if 'Ht' in kw:
             np.testing.assert_array_equal(kw['Ht'], H.T)
             assert kw['Ht'].flags['C_CONTIGUOUS']
+        if 'G' in kw:
+            np.testing.assert_array_equal(kw['G'], kw['Ht'] @ kw['Ht'].T)

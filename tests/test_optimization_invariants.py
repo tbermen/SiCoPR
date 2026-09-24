@@ -8,8 +8,10 @@ NO error when broken -- just quietly wrong numbers:
   1. Memoised ADC-clip PDF (get_PSDs). Correct only while the cache key covers
      everything the result depends on, and while callers cannot mutate a cached
      object through the reference they are handed.
-  2. Hoisted Gram matrix (MMSE / MMSE_FOM) -- REMOVED 2026-09-24. It summed
-     in a different order from the reference's H(:,sel)'*H(:,sel).
+  2. Hoisted Gram matrix (MMSE / MMSE_FOM) -- removed 2026-09-24 as never
+     verified, then restored the same day in a verified form (G = Ht @ Ht.T,
+     gathered per candidate, bit-identical to forming the block per
+     candidate), under the owner's equivalence rule.
   3. Size-gated FFT convolution -- REMOVED 2026-09-23 (8ec85b0). It buried the
      far tail of every PDF in round-off.
   4. Shared np.eye / np.zeros caches in the MMSE block assembly. Correct only
@@ -111,10 +113,11 @@ check("pdf_cache_survives_caller_mutating_in_place",
       "(pdf.y *= k). Either copy the arrays on the way out or keep every "
       "caller to rebinding.")
 
-# =========================================================== 2. Gram hoist, removed
-# 2026-09-24: HH is H(:,sel)'*H(:,sel) per call again, as ML 2612 forms it; the
-# hoisted full Gram matrix summed in a different order and was never verified
-# against the reference. The fixture below still drives sections 4-5.
+# =========================================================== 2. Gram hoist
+# The August HH_full hoist (never verified) is gone. What replaced it, the same
+# day, is gathering each candidate's block from G = Ht @ Ht.T, verified
+# bit-identical to forming H(:,sel)'*H(:,sel) per candidate as ML 2612 does.
+# The fixture below also drives sections 4-5.
 mm = _load('MMSE_FOM')
 rng = np.random.default_rng(11)
 Nw, Nb, num = 12, 3, 200
@@ -129,9 +132,13 @@ kw = dict(param=param, H=H, Nb=Nb, Rnn=Rnn, dw=4, d=40,
           bmin=np.full(Nb, -0.85), bmax=np.full(Nb, 0.85), sigma_X2=1.0)
 
 r_self = mm.MMSE_FOM(**kw, idx=None)
-check('gram_hoist_is_gone',
+check('unverified_gram_hoist_is_gone',
       'HH_full' not in __import__('inspect').signature(mm.MMSE_FOM).parameters,
-      'MMSE_FOM takes a precomputed Gram matrix again')
+      'MMSE_FOM takes the August HH_full hoist again')
+# The verified form (2026-09-24), G = Ht @ Ht.T gathered per candidate, must
+# give exactly what forming the block per candidate gives: pinned over 40
+# random shapes and selections, with and without G, in MMSE_FOM/test_verify.py
+# and MMSE/test_verify.py (test_ht_layout_gives_bit_identical_results).
 
 # =========================================================== 3. conv is direct
 # _conv1d lives with the canonical conv_fct. It used to dispatch to an FFT

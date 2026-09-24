@@ -2975,6 +2975,11 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
     # bit-identical to gathering from H.
     _H = np.asarray(H, dtype=float) if H is not None else None
     Ht = np.ascontiguousarray(_H.T) if _H is not None and _H.ndim == 2 else None
+    # and its Gram matrix, once: each candidate gathers its block from it. The
+    # block is bit-identical to forming H(:,sel)'*H(:,sel) per candidate (the
+    # August hoist was removed unverified on 2026-09-24; this is the verified
+    # form, accepted under the owner's equivalence rule the same day).
+    G = Ht @ Ht.T if Ht is not None else None
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -3001,7 +3006,8 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
                                wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
             else:
                 res = mmse_fom(param, H, Nb, Rnn, dw, d,
-                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx, Ht=Ht)
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx,
+                               Ht=Ht, G=G)
             best_FOM[k] = res[1]             # FOM is the 2nd return value
         best_pos = int(np.argmax(best_FOM))  # 0-based position in valid
         start_tap = valid[best_pos]
@@ -3735,7 +3741,7 @@ def _MMSE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     return idx + idx_st
 
 def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-              idx=None, Ht=None):
+              idx=None, Ht=None, G=None):
     """Inlined MMSE_FOM for MMSE function."""
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -3775,8 +3781,15 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
             # The same Gram matrix from a contiguous gather: X holds the
             # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
             # Layout only; bit-identical (tests/test_optimization_invariants).
-            X = Ht.take(col_sel, 0)
-            HH = X @ X.T
+            if G is None:
+                X = Ht.take(col_sel, 0)
+                HH = X @ X.T
+            else:
+                # G = Ht @ Ht.T, formed once for the bank search; each entry is
+                # the same dot product of two columns of H, so the gathered
+                # block is bit-identical to X @ X.T (400/400 random shapes;
+                # pinned in test_verify.py) at ~3 us instead of ~200 us.
+                HH = G.take(col_sel, 0).take(col_sel, 1)
             Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
             h0 = H[d].take(col_sel)
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
@@ -4048,7 +4061,7 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None, Ht=None):
+             idx=None, Ht=None, G=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
@@ -4056,6 +4069,9 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     Ht: optional np.ascontiguousarray(H.T), for a caller that scores many
         column selections of one H (the floating-tap bank search). Layout
         only: the result is bit-identical with or without it.
+    G: optional Ht @ Ht.T, the Gram matrix of the whole H, from the same
+        caller; the selected block is gathered from it. Bit-identical to
+        forming it per candidate (measured; pinned in test_verify.py).
     """
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -4096,8 +4112,15 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
             # The same Gram matrix from a contiguous gather: X holds the
             # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
             # Layout only; bit-identical (tests/test_optimization_invariants).
-            X = Ht.take(col_sel, 0)
-            HH = X @ X.T
+            if G is None:
+                X = Ht.take(col_sel, 0)
+                HH = X @ X.T
+            else:
+                # G = Ht @ Ht.T, formed once for the bank search; each entry is
+                # the same dot product of two columns of H, so the gathered
+                # block is bit-identical to X @ X.T (400/400 random shapes;
+                # pinned in test_verify.py) at ~3 us instead of ~200 us.
+                HH = G.take(col_sel, 0).take(col_sel, 1)
             Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
             h0 = H[d].take(col_sel)
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)

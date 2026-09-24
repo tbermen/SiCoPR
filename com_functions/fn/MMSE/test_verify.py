@@ -346,7 +346,10 @@ def test_ht_layout_gives_bit_identical_results():
         args = (param, H, Nb, Rnn, cmx, 80, np.full(Nw, 10.0), np.full(Nw, -10.0),
                 np.full(Nb, -0.85), np.full(Nb, 0.85), 1.0, idx.copy())
         a = _MMSE_FOM(*args)
-        b = _MMSE_FOM(*args[:-1], idx.copy(), Ht=np.ascontiguousarray(H.T))
-        assert a[1] == b[1], (trial, a[1], b[1])
-        np.testing.assert_array_equal(a[2], b[2])
-        np.testing.assert_array_equal(a[0], b[0])
+        Ht = np.ascontiguousarray(H.T)
+        b = _MMSE_FOM(*args[:-1], idx.copy(), Ht=Ht)
+        c = _MMSE_FOM(*args[:-1], idx.copy(), Ht=Ht, G=Ht @ Ht.T)
+        for r in (b, c):
+            assert a[1] == r[1], (trial, a[1], r[1])
+            np.testing.assert_array_equal(a[2], r[2])
+            np.testing.assert_array_equal(a[0], r[0])
