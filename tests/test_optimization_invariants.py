@@ -137,8 +137,11 @@ check('gram_hoist_is_gone',
 # _conv1d lives with the canonical conv_fct. It used to dispatch to an FFT
 # above 128 bins; that put round-off of ~eps*peak into every tail bin of the
 # noise CDF and was removed on 2026-09-23 (8ec85b0), so there is no gate left
-# to check. What remains is stronger: _conv1d IS np.convolve, bit for bit, at
-# every size, including those the old gate sent to the FFT.
+# to check. What remains: on operands with no zero margins _conv1d IS
+# np.convolve, bit for bit, at every size, including those the old gate sent
+# to the FFT. (With zero margins it convolves the nonzero spans only -- a
+# summation-order change, accepted 2026-09-24 under the owner's equivalence
+# rule and pinned in conv_fct/test_verify.py.)
 cf = _load('conv_fct')
 check("conv1d_has_no_fft_gate", not hasattr(cf, '_CONV_FFT_MIN'),
       "conv_fct grew a size gate again; an FFT path loses the far tail of "

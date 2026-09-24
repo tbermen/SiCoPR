@@ -37,7 +37,26 @@ def _conv1d(a, b):
     # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
     if a.size == 0 or b.size == 0:
         return np.zeros(0)
-    return np.convolve(a, b)
+    # Convolve only the nonzero SPAN of each operand and put the exact zeros
+    # back around it. Every product dropped has a zero factor, so what changes
+    # is only the order in which BLAS sums the rest -- ulp level, never the tail
+    # (the round-off that ruled out the FFT scales with each element, not with
+    # the peak). The big win is get_PSDs' ADC-clip PDF: a signal PDF against a
+    # Gaussian laid on the same ~12k-bin axis, ~55% of it underflowed to zero,
+    # ~1200 times per case -- 0.3-0.5 s each in full, ~8 ms on the span.
+    # Accepted 2026-09-24 under the owner's equivalence-class rule: on all 28
+    # checkpoint cases every reported output other than the DER family is
+    # bit-identical to full-array convolution, the rest moves by ulps, and
+    # agreement with COM Octave is no worse on any field.
+    ia = np.flatnonzero(a)
+    ib = np.flatnonzero(b)
+    out = np.zeros(a.size + b.size - 1)
+    if ia.size == 0 or ib.size == 0:
+        return out
+    a0, a1 = ia[0], ia[-1] + 1
+    b0, b1 = ib[0], ib[-1] + 1
+    out[a0 + b0:a1 + b1 - 1] = np.convolve(a[a0:a1], b[b0:b1])
+    return out
 
 
 def _mround(x):

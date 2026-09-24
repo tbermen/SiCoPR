@@ -128,3 +128,38 @@ def test_pdf_tail_is_exact_as_conv2_is():
     for n, v in pinned.items():
         assert out.y[n] == v, (n, out.y[n], v)
     assert np.all(out.y > 0)
+
+
+# ============================================================
+# Span convolution (2026-09-24, owner's equivalence-class rule). The result is
+# np.convolve of each operand's NONZERO SPAN, with the exact zeros restored
+# around it. The dropped products all have a zero factor, so this differs from
+# convolving the full arrays only in BLAS summation order -- on these operands
+# in 168 of 608 elements, by at most 1 ulp -- while COM Octave's conv_fct is
+# matched to 1.2e-15 either way, with its 152 exact zeros in the same places.
+# Operands: a signal-like PDF with zero margins, and a Gaussian whose tail has
+# underflowed to zero, the shape of get_PSDs' ADC-clip convolution.
+# ============================================================
+
+def _span_operands():
+    rng = np.random.default_rng(0)
+    a = np.concatenate([np.zeros(37), rng.random(260) ** 3, np.zeros(11)])
+    x = np.linspace(-4, 4, 301)
+    b = np.exp(-x ** 2 * 6)
+    b[b < 1e-18] = 0.0
+    return a, b
+
+
+def test_convolves_the_nonzero_span_and_restores_exact_zeros():
+    a, b = _span_operands()
+    out = conv_fct_MeanNotZero(make_pdf(0, a, binsize=1.0), make_pdf(0, b, binsize=1.0))
+    ia, ib = np.flatnonzero(a), np.flatnonzero(b)
+    want = np.zeros(a.size + b.size - 1)
+    want[ia[0] + ib[0]:ia[-1] + ib[-1] + 1] = np.convolve(
+        a[ia[0]:ia[-1] + 1], b[ib[0]:ib[-1] + 1])
+    np.testing.assert_array_equal(out.y, want)
+    # COM Octave 4p15p0 conv_fct on the same operands: 152 exact zeros
+    assert int(np.sum(np.asarray(out.y) == 0)) == 152
+    idx = [200, 400, 544]
+    oct_vals = [6.9534220007283762, 6.8446278412357691, 7.859092101412288e-19]
+    np.testing.assert_allclose(np.asarray(out.y)[idx], oct_vals, rtol=1e-14, atol=0)
