@@ -128,10 +128,13 @@ def from_python(x, depth=0):
 INDEX_BASE = {'fom_result.t_s', 'fom_result.DFE_taps_i',
               'fom_result.PSD_results.iphase'}
 
-# Not computed by COM: where the run happened, and a flag the Octave compat
-# patch itself adds (COM_CommandLine_Parse sets OP.OCTAVE). Listed, not
-# compared.
-ENVIRONMENT = {'OP.RESULT_DIR', 'output_args.config_file', 'OP.OCTAVE'}
+# Not computed by COM: where the run happened, the four output options
+# tools/regen_checkpoints.py sets for the Octave run (RESULT_DIR, SAVE_FIGURES,
+# DISPLAY_WINDOW, CSV_REPORT -- the first full run showed SAVE_FIGURES differing
+# on the 14 cases whose workbook sets it), and a flag the Octave compat patch
+# itself adds (COM_CommandLine_Parse sets OP.OCTAVE). Listed, not compared.
+ENVIRONMENT = {'OP.RESULT_DIR', 'OP.SAVE_FIGURES', 'OP.DISPLAY_WINDOW',
+               'OP.CSV_REPORT', 'output_args.config_file', 'OP.OCTAVE'}
 
 
 def _canon(path):
@@ -441,7 +444,11 @@ def crosscheck_matlab(cid, oracle):
             rows.append((q, 'FAIL', 'absent in Octave results', mv, ''))
             continue
         try:
-            o = np.atleast_1d(np.asarray(ov, dtype=float)).ravel()
+            # column-major: the result workbooks list a matrix field such as
+            # C_diepad (2x3) as C_diepad_1..6 in MATLAB's (:) order. Flattening
+            # Octave's copy row by row put three agreeing quantities out of
+            # step with the workbook on every case in the first full run.
+            o = np.atleast_1d(np.asarray(ov, dtype=float)).ravel(order='F')
             m = np.atleast_1d(np.asarray(mv, dtype=float)).ravel()
         except (TypeError, ValueError):
             rows.append((q, 'SKIP', 'not numeric', mv, ''))
