@@ -517,3 +517,28 @@ def test_flim_and_fstop_are_reported(flim, fstop):
 def test_code_revision_names_the_emulated_release():
     assert _run_with_reader(40e9, '4p16p0').code_revision == '4p16p0'
     assert _run_with_reader(40e9, '4p15p0').code_revision == '4p15p0'
+
+
+# ---------------------------------------------------------------------------
+# ML 377-382: param.Pkg_Zc = param.pkg_Z_c, reshaped to 2x4 only when
+# size(Pkg_len_TX,1) ~= 1 -- and Pkg_len_TX is a ROW of z_p_tx_cases, so it
+# never is. Nothing reads Pkg_Zc; the port did not set it, and the checkpoint
+# harness found it absent from param on all 28 cases.
+# ---------------------------------------------------------------------------
+
+def test_pkg_zc_is_a_copy_of_pkg_z_c():
+    param = _make_param()
+    param.pkg_Z_c = np.array([[87.5, 92.5, 90.0, 95.0], [88.0, 93.0, 91.0, 96.0]])
+    del param.Pkg_Zc
+    param.flim = 40e9
+    stubs = _make_stubs()
+    seen = {}
+
+    def reader(p, OP, ch):
+        seen['Pkg_Zc'] = getattr(p, 'Pkg_Zc', None)
+        return ch, None, None, p
+    stubs['_read_s4p_files_fn'] = reader
+    com_ieee8023_(param, _make_op(), _make_chdata(), **stubs)
+    assert seen['Pkg_Zc'] is not None, 'Pkg_Zc is set before the channels are read (ML 377)'
+    np.testing.assert_array_equal(seen['Pkg_Zc'], param.pkg_Z_c)
+    assert np.shape(seen['Pkg_Zc']) == (2, 4)

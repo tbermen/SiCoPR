@@ -464,6 +464,14 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 param.Pkg_TXFFE_preset = np.asarray(param.PKG_Tx_FFE_preset)[package_testcase - 1, :]
             else:
                 param.Pkg_TXFFE_preset = 0
+            # ML 377-382. Pkg_len_TX is a ROW of z_p_tx_cases there, so mele,
+            # size(...,1), is 1 and the reshape never runs: Pkg_Zc is a copy of
+            # pkg_Z_c that nothing reads. Carried so the state matches.
+            param.Pkg_Zc = param.pkg_Z_c
+            cmele, centries = np.atleast_2d(param.Pkg_Zc).shape
+            mele = 1
+            if cmele != 1 and centries != 2 and mele != 1:
+                param.Pkg_Zc = np.reshape(param.Pkg_Zc, (2, 4), order='F')
 
             # ── Fill chdata with S-parameters ─────────────────────────────
             if not getattr(OP, 'TDMODE', False):
