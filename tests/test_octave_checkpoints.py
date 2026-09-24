@@ -231,7 +231,13 @@ def _compare_arrays(o, p, tail=False):
     if nf.any():
         # +inf, -inf and nan must match in kind, element by element
         def kind(v):
-            return np.where(np.isnan(v.real) | np.isnan(getattr(v, 'imag', 0 * v.real)), 0,
+            # imag only where there is one: 0*inf for a real array is nan and
+            # a RuntimeWarning on stderr, which run_all.ps1 (ErrorAction Stop
+            # under PowerShell 5.1) treats as a failed step
+            nan = np.isnan(v.real)
+            if np.iscomplexobj(v):
+                nan = nan | np.isnan(v.imag)
+            return np.where(nan, 0,
                             np.sign(np.nan_to_num(v.real, nan=0, posinf=1, neginf=-1)))
         if not np.array_equal(kind(ov[nf]), kind(pv[nf])):
             return 'FAIL', 'non-finite kinds differ', '', '', ''
