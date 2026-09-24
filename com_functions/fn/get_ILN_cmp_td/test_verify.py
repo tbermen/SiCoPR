@@ -239,3 +239,28 @@ def test_octave_fixture_still_has_a_fit_residual():
     _ILN, _efit, TD = get_ILN_cmp_td(sdd21, f, _oct_op(), _oct_param(), 1.0)
     assert float(np.ravel(np.asarray(TD.FOM))[0]) > 1e-4, (
         'fixture no longer leaves a fit residual; re-craft the ripple')
+
+
+# --------------------------------------------------------------------------
+# COM Octave, 4p15p0: the same fixture carried through a 150 ps delay,
+# sdd21 * exp(-2j*pi*f*150e-12), so fmbg is COMPLEX. ML 6740 uses `'`, the
+# conjugate transpose; every fixture above is real, where `'` and `.'` agree
+# and no test could tell fmbg.conj().T from fmbg.T. On this one the plain
+# transpose moves ILN by 2.57 while the port agrees with Octave to 1.4e-12,
+# inside the 1e-11 floor argued above.
+# --------------------------------------------------------------------------
+
+_OCT_C_ILN_HEAD = [-0.15540757104715758, 0.18306834436232755,
+                   0.22424211093077839]
+_OCT_C_EFIT_HEAD = [-0.34711951585160666, -0.83444244927632294,
+                    -1.0827399119719661]
+
+
+def test_octave_fit_on_complex_channel_uses_the_conjugate_transpose():
+    sdd21, f = _oct_channel()
+    sdd21 = sdd21 * np.exp(-2j * np.pi * f * 150e-12)
+    ILN, efit, _TD = get_ILN_cmp_td(sdd21, f, _oct_op(), _oct_param(), 1.0)
+    ILN = np.ravel(np.asarray(ILN)).astype(float)
+    efit = np.ravel(np.asarray(efit)).astype(float)
+    np.testing.assert_allclose(ILN[:3], _OCT_C_ILN_HEAD, rtol=0, atol=1e-11)
+    np.testing.assert_allclose(efit[:3], _OCT_C_EFIT_HEAD, rtol=0, atol=1e-11)

@@ -388,3 +388,29 @@ def test_op_is_not_mutated_in_the_caller():
 
 if __name__ == '__main__':
     sys.exit(pytest.main([__file__, '-v']))
+
+
+# ---------------------------------------------------------------------------
+# COM Octave, 4p15p0: case_B carried through a 150 ps delay, so sdd21 and the
+# fit basis fmbg are COMPLEX. ML 6755 uses `'`, the conjugate transpose; on the
+# real fixtures above `'` and `.'` agree, so no test could tell fmbg.conj().T
+# from fmbg.T. The fit reaches only FIT (ILN here is reflection noise), and the
+# plain transpose moves FIT.FIR by 0.29 of its peak; the port is within 6e-14.
+# ---------------------------------------------------------------------------
+
+_OCT_C_FIT_FIR = [0.0045248906519417265, 0.0079034412662913143,
+                  0.048209633846131472, 0.015779699474351365,
+                  0.0059245234603991052, 0.0039214717016753864,
+                  0.0031926211347892046, 0.0028697191921302021,
+                  0.0027606950409361677, 0.0028144321369196414,
+                  0.003056856363772432, 0.0036247957068842891,
+                  0.004365845898037052]
+
+
+def test_fit_on_complex_channel_uses_the_conjugate_transpose():
+    sdd21, ril, f, op, param = case_B()
+    sdd21 = sdd21 * np.exp(-2j * np.pi * f * 150e-12)
+    R = get_RILN_cmp_td(sdd21, ril, f, op, param, 1.0)
+    assert len(R.FIT.FIR) == 94
+    np.testing.assert_allclose(np.asarray(R.FIT.FIR)[_IDX], _OCT_C_FIT_FIR,
+                               rtol=RTOL)
