@@ -408,6 +408,11 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
     DO_ONCE = True
     low_COM_found = 0
     output_args = SimpleNamespace()
+    # ML 62-63: name_split = strsplit(mfilename,'com_ieee8023_');
+    # output_args.code_revision = name_split{2}. The reference reports the
+    # release it IS, read off its own file name; the port reports the release it
+    # emulates, which is the same string for com_ieee8023_<ver>.m.
+    output_args.code_revision = str(getattr(param, 'matlab_version', '4p15p0'))
 
     while getattr(OP, 'RX_CALIBRATION', False) or DO_ONCE or getattr(OP, 'PSDRXCAL', False):
         if not DO_ONCE:
@@ -459,6 +464,14 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                     _com_ieee8023___checkpoint('01_read_s4p_files', package_testcase_i, param=param, OP=OP, chdata=chdata)
                     # r4p15p0: surface the (possibly auto-detected) port order
                     output_args.port_order = param.snpPortsOrder
+                    # ML 394-395: both reported, straight after the read. The
+                    # port had never set either, and the 208-case comparison
+                    # could not see it: matlab_compare --report skips a MATLAB
+                    # column the Python result lacks. The Octave checkpoint
+                    # harness, which fails an absent field, found it.
+                    output_args.fstop_GHz = min(
+                        float(param.flim), float(np.asarray(chdata[0].faxis).ravel()[-1])) / 1e9
+                    output_args.flim_GHz = float(param.flim) / 1e9
                 else:
                     SDDch_local = None
                     SDDp2p_local = SDDp2p

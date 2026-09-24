@@ -137,6 +137,12 @@ ENVIRONMENT = {'OP.RESULT_DIR', 'OP.SAVE_FIGURES', 'OP.DISPLAY_WINDOW',
                'OP.CSV_REPORT', 'output_args.config_file', 'OP.OCTAVE'}
 
 
+# Present on both sides, but the value names the file that ran: ML 63 reads it
+# off the reference's own file name, so Octave reports '4p15p0_octave_compat'
+# and SiCoPR the release it emulates, '4p15p0'. Checked for presence only.
+PRESENCE_ONLY = {'output_args.code_revision'}
+
+
 def _canon(path):
     """'chdata[3].TDR11' -> 'chdata.TDR11', for matching the sets above."""
     return re.sub(r'\[\d+\]', '', path)
@@ -213,6 +219,11 @@ def compare(o, p, path, rows):
     if canon in ENVIRONMENT:
         rows.append((path, 'ENV', 'run environment, not compared',
                      '', '', '', ''))
+        return
+    if canon in PRESENCE_ONLY:
+        rows.append((path, 'pass' if p is not None else 'FAIL',
+                     'present; value names the file that ran' if p is not None
+                     else 'absent in Python', '', '', '', ''))
         return
     if canon in INDEX_BASE and _numeric(np.asarray(o)) and p is not None:
         o = np.asarray(o, dtype=float) - 1.0      # to the port's 0-based form

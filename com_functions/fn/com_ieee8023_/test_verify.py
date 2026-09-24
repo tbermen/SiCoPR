@@ -482,3 +482,38 @@ def test_checkpoint_skips_what_cannot_be_pickled(tmp_path, monkeypatch, capsys):
     assert values['param'].fb == 53.125e9
     assert 'OP' in failed and 'OP' not in values
     assert 'not saved' in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# ML 394-395 and ML 62-63: three REPORTED OUTPUTS the port never set. The
+# Octave checkpoint harness found them absent on all 28 cases; the 208-case
+# comparison could not, because matlab_compare --report skips a MATLAB column
+# the Python result lacks.
+#   fstop_GHz = min(param.flim, chdata(1).faxis(end))/1e9
+#   flim_GHz  = param.flim/1e9
+#   code_revision = the release, from the reference's own file name
+# ---------------------------------------------------------------------------
+
+def _run_with_reader(flim, matlab_version='4p15p0'):
+    param = _make_param()
+    param.flim = flim
+    param.matlab_version = matlab_version
+    stubs = _make_stubs()
+    stubs['_read_s4p_files_fn'] = lambda p, OP, ch: (ch, None, None, p)
+    return com_ieee8023_(param, _make_op(), _make_chdata(), **stubs)
+
+
+@pytest.mark.parametrize('flim,fstop', [
+    (40e9, 26.5625),     # flim above the last frequency: the data stops first
+    (20e9, 20.0),        # flim inside the data: flim stops first
+])
+def test_flim_and_fstop_are_reported(flim, fstop):
+    out = _run_with_reader(flim)
+    assert out.flim_GHz == flim / 1e9
+    assert out.fstop_GHz == pytest.approx(fstop, rel=1e-15), (
+        'fstop_GHz is %r; ML 394 is min(flim, faxis(end))/1e9' % out.fstop_GHz)
+
+
+def test_code_revision_names_the_emulated_release():
+    assert _run_with_reader(40e9, '4p16p0').code_revision == '4p16p0'
+    assert _run_with_reader(40e9, '4p15p0').code_revision == '4p15p0'
