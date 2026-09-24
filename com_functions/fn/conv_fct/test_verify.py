@@ -218,3 +218,18 @@ def test_convolves_the_nonzero_span_and_restores_exact_zeros():
     idx = [200, 400, 544]
     oct_vals = [6.9534220007283762, 6.8446278412357691, 7.859092101412288e-19]
     np.testing.assert_allclose(np.asarray(out.y)[idx], oct_vals, rtol=1e-14, atol=0)
+
+
+def test_nonzero_ends_skip_the_scan_and_change_nothing():
+    """Operands already nonzero at both ends take the shortcut; it must return
+    exactly what the span path returns (the span is the whole array)."""
+    import com_functions.fn.conv_fct.py_impl as m
+    rng = np.random.default_rng(4)
+    for n1, n2 in ((7, 4), (300, 5), (2000, 900)):
+        a = rng.random(n1) + 0.1
+        b = rng.random(n2) + 0.1
+        np.testing.assert_array_equal(m._conv1d(a, b), np.convolve(a, b))
+        # and one zero margin sends it down the span path, still right
+        a2 = np.concatenate([[0.0], a])
+        want = np.concatenate([[0.0], np.convolve(a, b)])
+        np.testing.assert_array_equal(m._conv1d(a2, b), want)

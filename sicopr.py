@@ -9642,6 +9642,11 @@ def _conv_fct__conv1d(a, b):
     # checkpoint cases every reported output other than the DER family is
     # bit-identical to full-array convolution, the rest moves by ulps, and
     # agreement with COM Octave is no worse on any field.
+    if a[0] != 0 and a[-1] != 0 and b[0] != 0 and b[-1] != 0:
+        # nonzero at both ends: the span is the whole array, and this is the
+        # call the span path below would make -- without scanning ~10^4 bins
+        # on each of ~200k calls to find that out
+        return np.convolve(a, b)
     ia = np.flatnonzero(a)
     ib = np.flatnonzero(b)
     out = np.zeros(a.size + b.size - 1)
@@ -9765,6 +9770,11 @@ def _conv_fct_MeanNotZero__conv1d(a, b):
     # checkpoint cases every reported output other than the DER family is
     # bit-identical to full-array convolution, the rest moves by ulps, and
     # agreement with COM Octave is no worse on any field.
+    if a[0] != 0 and a[-1] != 0 and b[0] != 0 and b[-1] != 0:
+        # nonzero at both ends: the span is the whole array, and this is the
+        # call the span path below would make -- without scanning ~10^4 bins
+        # on each of ~200k calls to find that out
+        return np.convolve(a, b)
     ia = np.flatnonzero(a)
     ib = np.flatnonzero(b)
     out = np.zeros(a.size + b.size - 1)
