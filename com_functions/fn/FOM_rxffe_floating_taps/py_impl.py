@@ -27,6 +27,12 @@ import numpy as np
 def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
                             sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None):
     mmse_fom = _MMSE_FOM_fn if _MMSE_FOM_fn is not None else MMSE_FOM  # noqa: F821
+    # H.T laid out contiguously, once for the whole bank search: MMSE_FOM then
+    # gathers each candidate's columns as contiguous rows. Layout only -- the
+    # Gram matrix is still H(:,sel)'*H(:,sel), formed per candidate, and
+    # bit-identical to gathering from H.
+    _H = np.asarray(H, dtype=float) if H is not None else None
+    Ht = np.ascontiguousarray(_H.T) if _H is not None and _H.ndim == 2 else None
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -48,8 +54,12 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
         for k, loc in enumerate(valid):
             cand = sorted(all_idx + list(range(loc, loc + bank_size)))
             cand_idx = np.array(cand, dtype=int) + RxFFE_cpx
-            res = mmse_fom(param, H, Nb, Rnn, dw, d,
-                           wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
+            if Ht is None:
+                res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
+            else:
+                res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx, Ht=Ht)
             best_FOM[k] = res[1]             # FOM is the 2nd return value
         best_pos = int(np.argmax(best_FOM))  # 0-based position in valid
         start_tap = valid[best_pos]

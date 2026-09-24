@@ -29,11 +29,14 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None):
+             idx=None, Ht=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
     idx: None or 0-based integer array of floating tap positions.
+    Ht: optional np.ascontiguousarray(H.T), for a caller that scores many
+        column selections of one H (the floating-tap bank search). Layout
+        only: the result is bit-identical with or without it.
     """
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -65,11 +68,20 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
         # .take is a gather, bit-identical to np.ix_ indexing
-        Hs = H.take(col_sel, 1)
-        HH = Hs.T @ Hs
+        if Ht is None:
+            Hs = H.take(col_sel, 1)
+            HH = Hs.T @ Hs
+            Hb = Hs[d + 1:d + Nb + 1, :]
+            h0 = Hs[d]
+        else:
+            # The same Gram matrix from a contiguous gather: X holds the
+            # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
+            # Layout only; bit-identical (tests/test_optimization_invariants).
+            X = Ht.take(col_sel, 0)
+            HH = X @ X.T
+            Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+            h0 = H[d].take(col_sel)
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = Hs[d + 1:d + Nb + 1, :]
-        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
         HH = H.T @ H

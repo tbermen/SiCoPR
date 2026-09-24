@@ -2969,6 +2969,12 @@ def FFE_Fast(C, V_shift):
 def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
                             sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None):
     mmse_fom = _MMSE_FOM_fn if _MMSE_FOM_fn is not None else MMSE_FOM  # noqa: F821
+    # H.T laid out contiguously, once for the whole bank search: MMSE_FOM then
+    # gathers each candidate's columns as contiguous rows. Layout only -- the
+    # Gram matrix is still H(:,sel)'*H(:,sel), formed per candidate, and
+    # bit-identical to gathering from H.
+    _H = np.asarray(H, dtype=float) if H is not None else None
+    Ht = np.ascontiguousarray(_H.T) if _H is not None and _H.ndim == 2 else None
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -2990,8 +2996,12 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
         for k, loc in enumerate(valid):
             cand = sorted(all_idx + list(range(loc, loc + bank_size)))
             cand_idx = np.array(cand, dtype=int) + RxFFE_cpx
-            res = mmse_fom(param, H, Nb, Rnn, dw, d,
-                           wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
+            if Ht is None:
+                res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
+            else:
+                res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx, Ht=Ht)
             best_FOM[k] = res[1]             # FOM is the 2nd return value
         best_pos = int(np.argmax(best_FOM))  # 0-based position in valid
         start_tap = valid[best_pos]
@@ -3725,7 +3735,7 @@ def _MMSE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     return idx + idx_st
 
 def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-              idx=None):
+              idx=None, Ht=None):
     """Inlined MMSE_FOM for MMSE function."""
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -3756,11 +3766,20 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
         # .take is a gather, bit-identical to np.ix_ indexing
-        Hs = H.take(col_sel, 1)
-        HH = Hs.T @ Hs
+        if Ht is None:
+            Hs = H.take(col_sel, 1)
+            HH = Hs.T @ Hs
+            Hb = Hs[d + 1:d + Nb + 1, :]
+            h0 = Hs[d]
+        else:
+            # The same Gram matrix from a contiguous gather: X holds the
+            # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
+            # Layout only; bit-identical (tests/test_optimization_invariants).
+            X = Ht.take(col_sel, 0)
+            HH = X @ X.T
+            Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+            h0 = H[d].take(col_sel)
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = Hs[d + 1:d + Nb + 1, :]
-        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
         HH = H.T @ H
@@ -4029,11 +4048,14 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None):
+             idx=None, Ht=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
     idx: None or 0-based integer array of floating tap positions.
+    Ht: optional np.ascontiguousarray(H.T), for a caller that scores many
+        column selections of one H (the floating-tap bank search). Layout
+        only: the result is bit-identical with or without it.
     """
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -4065,11 +4087,20 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
         # .take is a gather, bit-identical to np.ix_ indexing
-        Hs = H.take(col_sel, 1)
-        HH = Hs.T @ Hs
+        if Ht is None:
+            Hs = H.take(col_sel, 1)
+            HH = Hs.T @ Hs
+            Hb = Hs[d + 1:d + Nb + 1, :]
+            h0 = Hs[d]
+        else:
+            # The same Gram matrix from a contiguous gather: X holds the
+            # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
+            # Layout only; bit-identical (tests/test_optimization_invariants).
+            X = Ht.take(col_sel, 0)
+            HH = X @ X.T
+            Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+            h0 = H[d].take(col_sel)
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = Hs[d + 1:d + Nb + 1, :]
-        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
         HH = H.T @ H

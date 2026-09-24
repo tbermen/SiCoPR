@@ -317,3 +317,36 @@ def test_gram_matrix_is_formed_from_the_selected_columns():
     assert 'HH_full' not in src, 'the hoisted Gram matrix is back'
     assert 'Hs = H.take(col_sel, 1)' in src and 'HH = Hs.T @ Hs' in src, (
         "HH must be H(:,sel)'*H(:,sel), as ML 2612 forms it")
+
+
+# ---------------------------------------------------------------------------
+# Ht (2026-09-24): the floating-tap search passes H.T laid out contiguously so
+# each candidate gathers its columns as contiguous rows. Layout only: the
+# Gram matrix is still H(:,sel)'*H(:,sel), and the result must be BIT-
+# IDENTICAL with and without Ht, on every shape and selection.
+# ---------------------------------------------------------------------------
+
+def test_ht_layout_gives_bit_identical_results():
+    rng = np.random.default_rng(21)
+    for trial in range(40):
+        Nw = int(rng.integers(18, 40))   # leaves room for cmx, cpx and a bank
+        Nb = int(rng.integers(1, 4))
+        cmx, cpx = 2, 5
+        nrow = int(rng.integers(300, 1500))
+        H = rng.standard_normal((nrow, Nw)) * 0.05
+        H[80, :] += 1.0
+        Rnn = np.eye(Nw) * 1e-3
+        Nmax = Nw - cmx - cpx - 1
+        param = SimpleNamespace(RxFFE_cmx=cmx, RxFFE_cpx=cpx, N_bmax=Nmax,
+                                N_bf=1, N_bg=1, bmax=np.full(Nb, 0.85),
+                                bmin=np.full(Nb, -0.85), R_LM=1.0, levels=4)
+        k = int(rng.integers(1, max(2, Nmax - cpx)))
+        idx = np.sort(rng.choice(np.arange(cpx + 1, Nmax + 1), size=min(k, Nmax - cpx),
+                                 replace=False))
+        args = (param, H, Nb, Rnn, cmx, 80, np.full(Nw, 10.0), np.full(Nw, -10.0),
+                np.full(Nb, -0.85), np.full(Nb, 0.85), 1.0, idx.copy())
+        a = _MMSE_FOM(*args)
+        b = _MMSE_FOM(*args[:-1], idx.copy(), Ht=np.ascontiguousarray(H.T))
+        assert a[1] == b[1], (trial, a[1], b[1])
+        np.testing.assert_array_equal(a[2], b[2])
+        np.testing.assert_array_equal(a[0], b[0])

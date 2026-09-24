@@ -189,7 +189,8 @@ def test_each_candidate_is_scored_from_h_itself():
     """ML 2083: every candidate calls MMSE_FOM(param,H,...,idx), which forms
     H(:,sel)'*H(:,sel) itself. The port once passed a precomputed Gram matrix
     of the full H (HH_full) for speed; removed 2026-09-24 as never verified
-    against the reference. The kernel must receive H and nothing extra."""
+    against the reference. The kernel may receive H.T laid out contiguously
+    (Ht, layout only) and nothing else."""
     seen = []
     isi = np.array([0.02, 0.40, 0.35, 0.03, 0.05, 0.30])
 
@@ -203,4 +204,9 @@ def test_each_candidate_is_scored_from_h_itself():
     H = np.eye(8)
     FOM_rxffe_floating_taps(param, h, H, 1, None, 0, 0, None, None, None, None,
                             1.0, 0, 1 + len(isi), _MMSE_FOM_fn=spy)
-    assert seen and all(kw == {} for kw in seen), seen[:2]
+    assert seen
+    for kw in seen:
+        assert set(kw) <= {'Ht'}, kw
+        if 'Ht' in kw:
+            np.testing.assert_array_equal(kw['Ht'], H.T)
+            assert kw['Ht'].flags['C_CONTIGUOUS']

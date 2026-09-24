@@ -211,7 +211,7 @@ def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     return idx + idx_st
 
 def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-              idx=None):
+              idx=None, Ht=None):
     """Inlined MMSE_FOM for MMSE function."""
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -242,11 +242,20 @@ def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
         float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
         # .take is a gather, bit-identical to np.ix_ indexing
-        Hs = H.take(col_sel, 1)
-        HH = Hs.T @ Hs
+        if Ht is None:
+            Hs = H.take(col_sel, 1)
+            HH = Hs.T @ Hs
+            Hb = Hs[d + 1:d + Nb + 1, :]
+            h0 = Hs[d]
+        else:
+            # The same Gram matrix from a contiguous gather: X holds the
+            # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
+            # Layout only; bit-identical (tests/test_optimization_invariants).
+            X = Ht.take(col_sel, 0)
+            HH = X @ X.T
+            Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
+            h0 = H[d].take(col_sel)
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = Hs[d + 1:d + Nb + 1, :]
-        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
         HH = H.T @ H
