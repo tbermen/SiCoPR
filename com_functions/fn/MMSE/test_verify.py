@@ -86,20 +86,34 @@ def test_cursor_alignment():
     assert np.isfinite(r.FOM)
 
 
-def test_c_normalized():
+@pytest.mark.parametrize('taps', [
+    {0: 1.0},                                    # a bare impulse
+    {-1: 0.35, 0: 1.0, 1: 0.6, 2: 0.3},          # ISI, offsets in UI
+], ids=['impulse', 'isi'])
+def test_c_normalized(taps):
     p = _param()
     M = p.samples_per_ui
     num_ui = p.num_ui_RXFF_noise
     N = num_ui * M
     sbr = np.zeros(N)
     cursor_i = (num_ui // 2) * M
-    sbr[cursor_i] = 1.0
+    for k, v in taps.items():
+        sbr[cursor_i + k * M] = v
     n_f = N // 2 + 1
     PSD = _psd(n_f)
     OP = SimpleNamespace(RXFFE_FLOAT_CTL='isi')
     r = MMSE(PSD, sbr, cursor_i, p, OP)
     dw = p.RxFFE_cmx
-    assert abs(abs(r.C[dw]) - 1.0) < 0.1 or True  # may not equal exactly 1
+    # ML 84: Craw = w/w(dw+1), and with no floating taps C = Craw (ML 91). The
+    # main tap is w(dw+1)/w(dw+1), which is exactly 1.0 in IEEE arithmetic for
+    # any finite non-zero w(dw+1) -- not "about 1". This line used to read
+    # `< 0.1 or True`, which could never fail.
+    #
+    # The impulse alone cannot tell normalising from not normalising: its raw
+    # main tap is already 1. The ISI channel's is not, so between them the
+    # test catches a dropped normalisation and the 1-based index slip
+    # (w[dw+1] for w(dw+1)).
+    assert r.C[dw] == 1.0, 'main tap is %r; ML 84 makes it exactly 1' % r.C[dw]
 
 
 def test_with_isi():

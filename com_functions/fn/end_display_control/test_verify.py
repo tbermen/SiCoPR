@@ -75,7 +75,13 @@ def test_pass_message_c2c(capsys):
         'CH1', _param(), _op(phy='C2C'), _output_args(),
         5.0, 0.0, None, 50.0, -5.0, 1e-6, False)
     captured = capsys.readouterr()
-    assert 'PASS' in captured.out or 'PASS' in captured.err or True  # may be stderr
+    # ML 120: fprintf('%s <strong> PASS ... COM = %.3f dB</strong>\n', ...)
+    # goes to stdout; only the FAIL lines use fprintf(2, ...). This used to
+    # accept PASS on either stream `or True`, which could never fail.
+    # (MATLAB renders <strong> as bold rather than printing the tags, so the
+    # port's plain line is the faithful terminal equivalent.)
+    assert 'PASS ... COM = 5.000 dB' in captured.out, captured.out
+    assert 'PASS' not in captured.err, captured.err
 
 
 def test_fail_message_c2c(capsys):
