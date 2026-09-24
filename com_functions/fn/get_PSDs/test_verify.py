@@ -697,3 +697,20 @@ def test_oracle_single_channel_no_crosstalk():
     assert r.hk == [] and r.iphase == 0
     _same(r.S_tn_rms, _H_S_TN_RMS, 'S_tn_rms')
     _same(r.S_n_rms, _H_S_N_RMS, 'S_n_rms')
+
+
+def test_crosstalk_hk_carries_k_hrn_and_s_xn():
+    """ML: hk(xchan).k, .hrn and .S_xn are built in the loop and result.hk=hk
+    after it, so the result holds all three; the port kept hrn alone. COM
+    Octave checkpoint 05 (wXtalk_T1_R03 and three more) shows k, hrn, S_xn on
+    every aggressor, and hk sized num_channel_files with the THRU's empty."""
+    r = _run()
+    assert len(r.hk) == 3 and r.hk[0] is None
+    total = 0
+    for x in (1, 2):
+        h = r.hk[x]
+        k = np.asarray(h.k)
+        ph = int(np.asarray(r.iphase).ravel()[x])
+        np.testing.assert_array_equal(np.asarray(h.hrn), k[ph::_M])
+        total = total + np.asarray(h.S_xn)
+    np.testing.assert_array_equal(total, r.S_xn)

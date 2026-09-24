@@ -308,11 +308,12 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
                     iphase[xchan] = int(np.argmax(hxn))  # 0-based phase
 
                     hrn = hk_k[iphase[xchan]::M]
-                    hk_list[xchan] = SimpleNamespace(k=hk_k, hrn=hrn)
-                    result.__dict__.setdefault('hk', [None] * n_channels)
-                    result.hk[xchan] = SimpleNamespace(hrn=hrn)
-
                     S_xn_chan = sigma_X2 * (np.abs(np.fft.fft(hrn))) ** 2 / fb
+                    # ML: hk(xchan).k, .hrn, .S_xn, then result.hk=hk after the
+                    # loop, so the result carries all three, not hrn alone.
+                    hk_list[xchan] = SimpleNamespace(k=hk_k, hrn=hrn, S_xn=S_xn_chan)
+                    result.__dict__.setdefault('hk', [None] * num_channel_files)
+                    result.hk[xchan] = hk_list[xchan]
                     result.S_xn = result.S_xn + S_xn_chan
 
                 result.iphase = iphase
