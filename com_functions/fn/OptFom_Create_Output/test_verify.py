@@ -90,12 +90,9 @@ def test_Tr_measured_non_negative():
     assert out.Tr_measured_from_step >= 0
 
 
-def test_txffe_assigned():
-    """result.txffe equals BEST.txffe."""
-    result = SimpleNamespace()
-    BEST = _BEST()
-    out = OptFom_Create_Output(result, BEST, 0.0, _chdata(), _param(), _op())
-    assert np.allclose(out.txffe, BEST.txffe)
+# test_txffe_assigned was removed on 2026-09-24 (Phase 4, owner-approved):
+# fom_result.txffe is compared at checkpoint 05_optimize_fom, rtol 1e-9, on
+# every default case, through the same lines (tests/test_octave_checkpoints.py).
 
 
 def test_cursor_assigned():

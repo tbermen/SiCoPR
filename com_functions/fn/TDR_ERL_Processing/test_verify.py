@@ -55,22 +55,16 @@ def test_returns_three_values():
     assert len(result) == 3
 
 
-def test_erl11_set_on_testcase1():
-    """ERL11 is populated when package_testcase_i==1 and ERL=True."""
-    out, ERL, min_ERL = TDR_ERL_Processing(SimpleNamespace(), _OP(), 1, _chdata(), _param())
-    assert out.ERL11 == pytest.approx(8.0)
+# test_erl11_set_on_testcase1 and test_z11est_set_when_tdr were removed on
+# 2026-09-24 (Phase 4, owner-approved): output_args.ERL11 and .Z11est are
+# compared at checkpoint 02_TDR_ERL_Processing, rtol 1e-9, on every default
+# case, through the same lines (tests/test_octave_checkpoints.py).
 
 
 def test_erl_empty_when_disabled():
     """ERL fields are [] when OP.ERL=False."""
     out, ERL, min_ERL = TDR_ERL_Processing(SimpleNamespace(), _OP(erl=False), 1, _chdata(), _param())
     assert out.ERL == [] or out.ERL is None or len(out.ERL) == 0
-
-
-def test_z11est_set_when_tdr():
-    """Z11est is set when OP.TDR=True."""
-    out, _, _ = TDR_ERL_Processing(SimpleNamespace(), _OP(), 1, _chdata(), _param())
-    assert out.Z11est == pytest.approx(95.0)
 
 
 def test_testcase2_no_override():
