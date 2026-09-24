@@ -309,3 +309,25 @@ def test_singular_case_would_otherwise_return_octaves_answer():
     x, _res, _rank, _sv = np.linalg.lstsq(R, rhs, rcond=None)
     assert np.all(np.isfinite(x)), (
         'lstsq also fails here, so this input does not separate the two')
+
+
+# ---------------------------------------------------------------------------
+# ML 2609-2612: H = H(:, sel); HH = H'*H -- the Gram matrix of the SELECTED
+# columns, formed on every call. A speed-up (3f1b7bb) hoisted H'*H of the full
+# H out of the floating-tap search and gathered (H'*H)(sel,sel) from it. The two
+# agree mathematically and sum in a different order, and no oracle can settle
+# which last bit MATLAB lands on, so the reference's FORM is what is pinned:
+# removed 2026-09-24 with the other speed-ups never verified against it.
+# ---------------------------------------------------------------------------
+
+def test_gram_matrix_is_formed_from_the_selected_columns():
+    import inspect
+    src = inspect.getsource(__import__('com_functions.fn.MMSE_FOM.py_impl', fromlist=['x']))
+    assert 'HH_full' not in src, 'the hoisted Gram matrix is back'
+    assert 'Hs = H.take(col_sel, 1)' in src and 'HH = Hs.T @ Hs' in src, (
+        "HH must be H(:,sel)'*H(:,sel), as ML 2612 forms it")
+
+
+def test_mmse_fom_takes_no_precomputed_gram_matrix():
+    import inspect
+    assert 'HH_full' not in inspect.signature(MMSE_FOM).parameters

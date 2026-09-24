@@ -300,3 +300,20 @@ def test_inlined_singular_clipped_dfe_solve_stops():
     with pytest.raises(ValueError, match=r'clipped-DFE'):
         with np.errstate(divide='ignore', invalid='ignore'):
             _MMSE_FOM(*args)
+
+
+# ---------------------------------------------------------------------------
+# ML 2609-2612: H = H(:, sel); HH = H'*H -- the Gram matrix of the SELECTED
+# columns, formed on every call. A speed-up (3f1b7bb) hoisted H'*H of the full
+# H out of the floating-tap search and gathered (H'*H)(sel,sel) from it. The two
+# agree mathematically and sum in a different order, and no oracle can settle
+# which last bit MATLAB lands on, so the reference's FORM is what is pinned:
+# removed 2026-09-24 with the other speed-ups never verified against it.
+# ---------------------------------------------------------------------------
+
+def test_gram_matrix_is_formed_from_the_selected_columns():
+    import inspect
+    src = inspect.getsource(__import__('com_functions.fn.MMSE.py_impl', fromlist=['x']))
+    assert 'HH_full' not in src, 'the hoisted Gram matrix is back'
+    assert 'Hs = H.take(col_sel, 1)' in src and 'HH = Hs.T @ Hs' in src, (
+        "HH must be H(:,sel)'*H(:,sel), as ML 2612 forms it")

@@ -1873,20 +1873,11 @@ def _COM_eye_width__mmin(a):
 # ---------------------------------------------------------------------------
 
 
-# PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
-# ~1% of the calls (both operands long), while most calls have a kernel of a few
-# bins. Direct convolution wins for tiny kernels and loses badly for long ones
-# (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
-# size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
 def _COM_eye_width__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
+    """Direct convolution, as conv2 is. (This stub's FFT dispatch went with
+    conv_fct's in 8ec85b0: an FFT loses the far tail of a PDF.)"""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
     return np.convolve(a, b)
 
 
@@ -2976,15 +2967,8 @@ def FFE_Fast(C, V_shift):
 
 
 def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                            sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None,
-                            HH_full=None):
+                            sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None):
     mmse_fom = _MMSE_FOM_fn if _MMSE_FOM_fn is not None else MMSE_FOM  # noqa: F821
-    # H is constant for the whole bank search; hoist its Gram matrix out of the
-    # inner loop so each candidate only gathers the columns it selects.
-    if HH_full is None:
-        _H = np.asarray(H, dtype=float)
-        if _H.ndim == 2:
-            HH_full = _H.T @ _H
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -3006,15 +2990,8 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
         for k, loc in enumerate(valid):
             cand = sorted(all_idx + list(range(loc, loc + bank_size)))
             cand_idx = np.array(cand, dtype=int) + RxFFE_cpx
-            # HH_full is an optional fast path; a caller-supplied MMSE_FOM that
-            # does not accept it (e.g. a test double) still works.
-            if HH_full is None:
-                res = mmse_fom(param, H, Nb, Rnn, dw, d,
-                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
-            else:
-                res = mmse_fom(param, H, Nb, Rnn, dw, d,
-                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx,
-                               HH_full=HH_full)
+            res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                           wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
             best_FOM[k] = res[1]             # FOM is the 2nd return value
         best_pos = int(np.argmax(best_FOM))  # 0-based position in valid
         start_tap = valid[best_pos]
@@ -3748,7 +3725,7 @@ def _MMSE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     return idx + idx_st
 
 def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-              idx=None, HH_full=None):
+              idx=None):
     """Inlined MMSE_FOM for MMSE function."""
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -3769,26 +3746,24 @@ def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     Rnn = np.asarray(Rnn, dtype=float)
     d = int(d)
 
-    # H is FIXED across the floating-tap bank search - only the column selection
-    # changes - yet H.T @ H was recomputed on every call. H is (num_ui+Nw-1, Nw),
-    # e.g. 4182x87, so that is ~2.2 MFLOP each time and MMSE_FOM is invoked ~130k
-    # times per case. Because (H[:, c].T @ H[:, c]) == (H.T @ H)[ix_(c, c)], the
-    # caller can compute the full Gram matrix once and this becomes a small gather.
-    # Only the rows the solve actually needs (h0 and Hb) are taken from H itself.
-    if HH_full is None:
-        HH_full = H.T @ H
+    # ML 2609-2619: H = H(:, [1:Nfix idx+cmx+1]); HH = H'*H; then Hb and h0 are
+    # rows of the SELECTED H. The Gram matrix is formed per call from the
+    # selected columns, as the reference forms it. (It was once hoisted out of
+    # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
+    # sums in a different order, so it was removed on 2026-09-24 with the other
+    # speed-ups that had never been verified against the reference.)
     if len(idx) > 0:
         float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        # .take twice beats np.ix_ by ~2.2x for these shapes and is bit-identical;
-        # this runs ~130k times per case so the difference is visible.
-        HH = HH_full.take(col_sel, 0).take(col_sel, 1)
+        # .take is a gather, bit-identical to np.ix_ indexing
+        Hs = H.take(col_sel, 1)
+        HH = Hs.T @ Hs
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
-        h0 = H[d].take(col_sel)
+        Hb = Hs[d + 1:d + Nb + 1, :]
+        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
-        HH = HH_full
+        HH = H.T @ H
         Hb = H[d + 1:d + Nb + 1, :]
         h0 = H[d, :]
         Nw_cols = H.shape[1]
@@ -3965,9 +3940,6 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
     else:
         H = toeplitz(hc1, hr1)
     Rnn = toeplitz(Rn[:Nw], Rn[:Nw])
-    # Gram matrix of the (large, fixed) H, computed once and reused by every
-    # MMSE_FOM evaluation below - see the note in _MMSE__MMSE_FOM.
-    HH_full = H.T @ H
 
     if int(param.N_bg) != 0:
         ctl = str(getattr(OP, 'RXFFE_FLOAT_CTL', 'isi')).lower()
@@ -3979,13 +3951,11 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
         else:
             idx = FOM_rxffe_floating_taps(
                 param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE__MMSE_FOM,
-                HH_full=HH_full)
+                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE__MMSE_FOM)
             idx = np.sort(idx)
 
     sigma_e, FOM, w, idx_out, Nw_out, blim = _MMSE__MMSE_FOM(
-        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
-        HH_full=HH_full)
+        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx)
 
     Craw = w / (w[dw] if abs(w[dw]) > 1e-12 else 1.0)
 
@@ -4059,7 +4029,7 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None, HH_full=None):
+             idx=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
@@ -4082,29 +4052,27 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
 
     Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
 
-    # Subset H and Rnn for floating taps.
-    # H is FIXED across the floating-tap bank search - only the column selection
-    # changes - so H.T @ H need not be recomputed per call. H is (num_ui+Nw-1, Nw),
-    # e.g. 4182x87 (~2.2 MFLOP) and this is invoked ~130k times per case. Since
-    # (H[:, c].T @ H[:, c]) == (H.T @ H)[ix_(c, c)], the caller passes the full
-    # Gram matrix once and the selection becomes a small gather.
     H = np.asarray(H, dtype=float)
     Rnn = np.asarray(Rnn, dtype=float)
     d = int(d)
-    if HH_full is None:
-        HH_full = H.T @ H
+    # ML 2609-2619: H = H(:, [1:Nfix idx+cmx+1]); HH = H'*H; then Hb and h0 are
+    # rows of the SELECTED H. The Gram matrix is formed per call from the
+    # selected columns, as the reference forms it. (It was once hoisted out of
+    # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
+    # sums in a different order, so it was removed on 2026-09-24 with the other
+    # speed-ups that had never been verified against the reference.)
     if len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        # .take twice beats np.ix_ by ~2.2x for these shapes and is bit-identical;
-        # this runs ~130k times per case so the difference is visible.
-        HH = HH_full.take(col_sel, 0).take(col_sel, 1)
+        # .take is a gather, bit-identical to np.ix_ indexing
+        Hs = H.take(col_sel, 1)
+        HH = Hs.T @ Hs
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
-        h0 = H[d].take(col_sel)
+        Hb = Hs[d + 1:d + Nb + 1, :]
+        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
-        HH = HH_full
+        HH = H.T @ H
         Hb = H[d + 1:d + Nb + 1, :]
         h0 = H[d, :]
         Nw_cols = H.shape[1]

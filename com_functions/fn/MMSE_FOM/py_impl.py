@@ -29,7 +29,7 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None, HH_full=None):
+             idx=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
@@ -52,29 +52,27 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
 
     Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
 
-    # Subset H and Rnn for floating taps.
-    # H is FIXED across the floating-tap bank search - only the column selection
-    # changes - so H.T @ H need not be recomputed per call. H is (num_ui+Nw-1, Nw),
-    # e.g. 4182x87 (~2.2 MFLOP) and this is invoked ~130k times per case. Since
-    # (H[:, c].T @ H[:, c]) == (H.T @ H)[ix_(c, c)], the caller passes the full
-    # Gram matrix once and the selection becomes a small gather.
     H = np.asarray(H, dtype=float)
     Rnn = np.asarray(Rnn, dtype=float)
     d = int(d)
-    if HH_full is None:
-        HH_full = H.T @ H
+    # ML 2609-2619: H = H(:, [1:Nfix idx+cmx+1]); HH = H'*H; then Hb and h0 are
+    # rows of the SELECTED H. The Gram matrix is formed per call from the
+    # selected columns, as the reference forms it. (It was once hoisted out of
+    # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
+    # sums in a different order, so it was removed on 2026-09-24 with the other
+    # speed-ups that had never been verified against the reference.)
     if len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        # .take twice beats np.ix_ by ~2.2x for these shapes and is bit-identical;
-        # this runs ~130k times per case so the difference is visible.
-        HH = HH_full.take(col_sel, 0).take(col_sel, 1)
+        # .take is a gather, bit-identical to np.ix_ indexing
+        Hs = H.take(col_sel, 1)
+        HH = Hs.T @ Hs
         Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
-        h0 = H[d].take(col_sel)
+        Hb = Hs[d + 1:d + Nb + 1, :]
+        h0 = Hs[d]
         Nw_cols = len(col_sel)
     else:
-        HH = HH_full
+        HH = H.T @ H
         Hb = H[d + 1:d + Nb + 1, :]
         h0 = H[d, :]
         Nw_cols = H.shape[1]

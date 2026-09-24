@@ -8,11 +8,10 @@ NO error when broken -- just quietly wrong numbers:
   1. Memoised ADC-clip PDF (get_PSDs). Correct only while the cache key covers
      everything the result depends on, and while callers cannot mutate a cached
      object through the reference they are handed.
-  2. Hoisted Gram matrix (MMSE / MMSE_FOM). `H.T @ H` is computed once by the
-     caller and passed in. Correct only while HH_full still equals what the
-     callee would have computed for itself.
-  3. Size-gated FFT convolution. `_conv1d` dispatches to FFT at >= 128 samples.
-     Correct only while both branches agree to floating-point noise.
+  2. Hoisted Gram matrix (MMSE / MMSE_FOM) -- REMOVED 2026-09-24. It summed
+     in a different order from the reference's H(:,sel)'*H(:,sel).
+  3. Size-gated FFT convolution -- REMOVED 2026-09-23 (8ec85b0). It buried the
+     far tail of every PDF in round-off.
   4. Shared np.eye / np.zeros caches in the MMSE block assembly. Correct only
      while nobody writes into the shared arrays.
 
@@ -112,7 +111,10 @@ check("pdf_cache_survives_caller_mutating_in_place",
       "(pdf.y *= k). Either copy the arrays on the way out or keep every "
       "caller to rebinding.")
 
-# =========================================================== 2. Gram hoist
+# =========================================================== 2. Gram hoist, removed
+# 2026-09-24: HH is H(:,sel)'*H(:,sel) per call again, as ML 2612 forms it; the
+# hoisted full Gram matrix summed in a different order and was never verified
+# against the reference. The fixture below still drives sections 4-5.
 mm = _load('MMSE_FOM')
 rng = np.random.default_rng(11)
 Nw, Nb, num = 12, 3, 200
@@ -126,21 +128,10 @@ kw = dict(param=param, H=H, Nb=Nb, Rnn=Rnn, dw=4, d=40,
           wmax=np.full(Nw, 10.0), wmin=np.full(Nw, -10.0),
           bmin=np.full(Nb, -0.85), bmax=np.full(Nb, 0.85), sigma_X2=1.0)
 
-r_self = mm.MMSE_FOM(**kw, idx=None, HH_full=None)
-r_hoist = mm.MMSE_FOM(**kw, idx=None, HH_full=H.T @ H)
-check("gram_hoist_matches_self_computed",
-      np.isclose(r_self[1], r_hoist[1], rtol=0, atol=0)
-      and np.allclose(r_self[2], r_hoist[2], rtol=0, atol=0),
-      "passing HH_full changed the answer: FOM %r vs %r. The hoist is only "
-      "valid while HH_full == H.T @ H for the same H."
-      % (r_self[1], r_hoist[1]))
-
-# A wrong HH_full must not be silently absorbed -- proves the argument is used.
-r_bad = mm.MMSE_FOM(**kw, idx=None, HH_full=(H.T @ H) * 1.5)
-check("gram_hoist_argument_is_actually_used",
-      not np.isclose(r_bad[1], r_self[1]),
-      "a deliberately wrong HH_full produced the same FOM, so the parameter is "
-      "dead and the measured speed-up is not coming from where it is claimed")
+r_self = mm.MMSE_FOM(**kw, idx=None)
+check('gram_hoist_is_gone',
+      'HH_full' not in __import__('inspect').signature(mm.MMSE_FOM).parameters,
+      'MMSE_FOM takes a precomputed Gram matrix again')
 
 # =========================================================== 3. conv is direct
 # _conv1d lives with the canonical conv_fct. It used to dispatch to an FFT
@@ -166,11 +157,11 @@ for n in (8, 64, 127, 128, 129, 512):
 # =========================================================== 4. shared buffers
 mm._EYE_CACHE.clear()
 mm._ZERO_CACHE.clear()
-mm.MMSE_FOM(**kw, idx=None, HH_full=None)
+mm.MMSE_FOM(**kw, idx=None)
 eye_before = {k: v.copy() for k, v in mm._EYE_CACHE.items()}
 zero_before = {k: v.copy() for k, v in mm._ZERO_CACHE.items()}
 for _ in range(3):
-    mm.MMSE_FOM(**kw, idx=None, HH_full=None)
+    mm.MMSE_FOM(**kw, idx=None)
 check("shared_eye_zero_buffers_are_not_written_through",
       all(np.array_equal(mm._EYE_CACHE[k], v) for k, v in eye_before.items())
       and all(np.array_equal(mm._ZERO_CACHE[k], v)
@@ -179,7 +170,7 @@ check("shared_eye_zero_buffers_are_not_written_through",
       "across every call, so the next solve starts from corrupted data")
 
 check("repeated_calls_are_deterministic",
-      np.isclose(mm.MMSE_FOM(**kw, idx=None, HH_full=None)[1], r_self[1],
+      np.isclose(mm.MMSE_FOM(**kw, idx=None)[1], r_self[1],
                  rtol=0, atol=0),
       "MMSE_FOM is not repeatable across calls with identical inputs -- some "
       "state is leaking between invocations")

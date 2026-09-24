@@ -345,3 +345,12 @@ def test_window_weights_are_symmetric_and_peak_at_one():
         np.testing.assert_allclose(w, w[::-1], rtol=0, atol=1e-15)
         assert abs(float(np.max(w)) - 1.0) < 1e-12, hw_type
         assert float(np.min(w)) < 0.99, '%s is flat, not shaped' % hw_type
+
+
+def test_stub_convolution_is_direct():
+    """The stub _conv1d convolves directly, as conv2 does; its FFT dispatch at
+    128 bins was the shortcut removed from conv_fct in 8ec85b0."""
+    import com_functions.fn.COM_eye_width.py_impl as m
+    assert not hasattr(m, '_CONV_FFT_MIN')
+    a = np.exp(-np.arange(300.0) / 3)
+    np.testing.assert_array_equal(m._conv1d(a, a), np.convolve(a, a))

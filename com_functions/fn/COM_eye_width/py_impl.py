@@ -111,7 +111,6 @@ def _mmin(a):
         return np.min(a)
     return np.nanmin(a)
 
-from scipy.signal import fftconvolve
 import copy
 from types import SimpleNamespace
 
@@ -121,20 +120,11 @@ from types import SimpleNamespace
 # ---------------------------------------------------------------------------
 
 
-# PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
-# ~1% of the calls (both operands long), while most calls have a kernel of a few
-# bins. Direct convolution wins for tiny kernels and loses badly for long ones
-# (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
-# size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
-
-
 def _conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
+    """Direct convolution, as conv2 is. (This stub's FFT dispatch went with
+    conv_fct's in 8ec85b0: an FFT loses the far tail of a PDF.)"""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
     return np.convolve(a, b)
 
 

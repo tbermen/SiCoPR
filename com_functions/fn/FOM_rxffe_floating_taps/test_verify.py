@@ -23,7 +23,7 @@ def test_greedy_picks_highest_isi_banks():
     isi = np.array([0.02, 0.40, 0.35, 0.03, 0.05, 0.30, 0.28, 0.02])
 
     def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
-                 **_kw):   # **_kw: tolerate the optional HH_full fast path
+                 **_kw):
         covered = set(int(i) - RxFFE_cpx - 1 for i in np.atleast_1d(idx))
         resid = sum(isi[j] ** 2 for j in range(len(isi)) if j not in covered)
         return (0.0, -resid, None, idx, 0, None)
@@ -42,7 +42,7 @@ def test_idx_convention_and_no_overlap():
     isi = np.array([0.5, 0.1, 0.05, 0.4, 0.05, 0.05, 0.3, 0.02])
 
     def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
-                 **_kw):   # **_kw: tolerate the optional HH_full fast path
+                 **_kw):
         covered = set(int(i) - RxFFE_cpx - 1 for i in np.atleast_1d(idx))
         return (0.0, -sum(isi[j] ** 2 for j in range(len(isi)) if j not in covered), None, idx, 0, None)
 
@@ -183,3 +183,24 @@ def test_returns_two_banks_of_the_configured_size():
     assert got.size == _F_NBG * _F_NBF, (
         '%d taps for %d groups of %d' % (got.size, _F_NBG, _F_NBF))
     assert list(got) == sorted(got), 'locations must come back sorted: %r' % list(got)
+
+
+def test_each_candidate_is_scored_from_h_itself():
+    """ML 2083: every candidate calls MMSE_FOM(param,H,...,idx), which forms
+    H(:,sel)'*H(:,sel) itself. The port once passed a precomputed Gram matrix
+    of the full H (HH_full) for speed; removed 2026-09-24 as never verified
+    against the reference. The kernel must receive H and nothing extra."""
+    seen = []
+    isi = np.array([0.02, 0.40, 0.35, 0.03, 0.05, 0.30])
+
+    def spy(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
+            **kw):
+        seen.append(kw)
+        return (0.0, float(np.sum(np.atleast_1d(idx))), None, idx, 0, None)
+
+    param = SimpleNamespace(RxFFE_cpx=1, N_bmax=len(isi) + 1, N_bf=2, N_bg=2)
+    h = np.concatenate([np.zeros(1), isi])
+    H = np.eye(8)
+    FOM_rxffe_floating_taps(param, h, H, 1, None, 0, 0, None, None, None, None,
+                            1.0, 0, 1 + len(isi), _MMSE_FOM_fn=spy)
+    assert seen and all(kw == {} for kw in seen), seen[:2]
