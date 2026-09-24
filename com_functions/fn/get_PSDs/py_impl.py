@@ -286,7 +286,13 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
 
             if num_channel_files != 1:
                 hk_list = [None] * n_channels  # 0-indexed placeholder
-                iphase = np.ones(n_channels, dtype=int)
+                # ML: [~, iphase(xchan)] = max(hxn) for xchan=2:num_channel_files
+                # on a variable never initialised, so MATLAB grows it to
+                # num_channel_files and leaves iphase(1), the THRU, at 0. In
+                # the port's 0-based form that is -1. get_pdf never reads the
+                # THRU's entry (it samples the thru at the cursor phase).
+                # COM Octave, checkpoint 05 of wXtalk_T4_R24: iphase [0 8 8 6].
+                iphase = np.full(num_channel_files, -1, dtype=int)
                 for xchan in range(1, num_channel_files):  # 0-based: channels 1..num_channel_files-1
                     ch = chdata[xchan]
                     # r4p15p0: dropped the unused pulse_ctle length calc; pad/truncate
@@ -314,7 +320,7 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
             else:
                 result.S_xn = 0.0
                 result.hk = []
-                result.iphase = 1
+                result.iphase = 0      # ML: result.iphase=1, 1-based
                 result.S_xn_rms = 0.0
         else:
             result.S_xn = result.S_xn * H_rxffe_2

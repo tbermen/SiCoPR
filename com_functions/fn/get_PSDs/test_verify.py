@@ -485,8 +485,12 @@ def test_oracle_crosstalk_phase_and_hrn():
     r = _run()
     _same(r.hk[1].hrn, _A_HRN2, 'hk[1].hrn')
     _same(r.hk[2].hrn, _A_HRN3, 'hk[2].hrn')
-    assert list(np.asarray(r.iphase).ravel()[1:]) == [1, 1], \
-        'iphase (0-based) should be MATLAB [2 2] minus one'
+    # The THRU's entry is never assigned: MATLAB auto-grows iphase from
+    # iphase(2) and leaves iphase(1) at 0 (COM Octave checkpoints: wXtalk_T4_R24
+    # [0 8 8 6], wXtalk_T1_R03 [0 24 1 27 5 12]), which is -1 here. The port
+    # filled it with ones.
+    assert list(np.asarray(r.iphase).ravel()) == [-1, 1, 1], \
+        'iphase (0-based) should be MATLAB [0 2 2] minus one'
 
 
 # ---------------------------------------------------------------------------
@@ -688,6 +692,8 @@ def test_oracle_tdmode_uses_ctle_pulse_response():
 def test_oracle_single_channel_no_crosstalk():
     r = _run(chdata=_oracle_chdata(1))
     assert r.S_xn == 0 and r.S_xn_rms == 0
-    assert r.hk == [] and r.iphase == 1
+    # MATLAB's literal iphase=1 is 1-based; this field is 0-based (the port
+    # held MATLAB's 1 here while holding every crosstalk entry minus one).
+    assert r.hk == [] and r.iphase == 0
     _same(r.S_tn_rms, _H_S_TN_RMS, 'S_tn_rms')
     _same(r.S_n_rms, _H_S_N_RMS, 'S_n_rms')
