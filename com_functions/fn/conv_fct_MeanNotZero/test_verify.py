@@ -106,3 +106,25 @@ def test_empty_operand_returns_empty():
     assert out.Min == -1
     assert len(out.y) == 0
     assert len(out.x) == 0
+
+
+# ============================================================
+# COM Octave, 4p15p0 and 4p16p0 alike: p1 = p2 = BinSize 1e-5, Min 0,
+# y = 2.^-(0:199). conv2 is a direct convolution, so every output bin is
+# exact: y(n+1) = (min(n, 398-n)+1) * 2^-n, down to 1.5e-120 at the far end.
+# An FFT convolution buries everything below ~eps of the peak in round-off
+# (fftconvolve: y[150] = 4.0e-18 for 1.06e-43, y[300] = -2.5e-17, NEGATIVE),
+# and the far tail of the noise CDF is where DER_DFE and DER_MLSE are read.
+# ============================================================
+
+def test_pdf_tail_is_exact_as_conv2_is():
+    a = make_pdf(0, 2.0 ** -np.arange(200), binsize=1e-5)
+    out = conv_fct_MeanNotZero(a, a)
+    assert out.Min == 0 and len(out.y) == 399
+    pinned = {0: 1.0, 1: 1.0, 50: 4.5297099404706387e-14,
+              150: 1.0579803405652369e-43, 199: 2.4892061111444567e-58,
+              250: 8.2354503341380624e-74, 300: 4.8600025306447493e-89,
+              398: 1.5490367659397273e-120}
+    for n, v in pinned.items():
+        assert out.y[n] == v, (n, out.y[n], v)
+    assert np.all(out.y > 0)

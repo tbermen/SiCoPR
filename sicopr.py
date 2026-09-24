@@ -9626,24 +9626,27 @@ def combines4p(s11in1, s12in1, s21in1, s22in1, s11in2, s12in2, s21in2, s22in2):
 
 
 
-# PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
-# ~1% of the calls (both operands long), while most calls have a kernel of a few
-# bins. Direct convolution wins for tiny kernels and loses badly for long ones
-# (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
-# size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
+# ML: p.y = conv2(p1.y, p2.y) -- a DIRECT convolution, and the port must be one.
+#
+# This dispatched to scipy's fftconvolve once both operands reached 128 bins,
+# for speed, on the claim that the two agree "to ~1e-15 relative". Relative to
+# the PEAK they do. Per element they do not: an FFT buries every value below
+# about eps times the peak in round-off, negative "probabilities" included,
+# and the far tail of the noise CDF is exactly where DER_DFE and DER_MLSE are
+# read. COM Octave on woXtalk_T1_R19: CDF agreement fell from 4e-13 relative
+# at 1e-3 to 1.3e-4 at 1e-12, then Octave 5.2e-221 against SiCoPR 2.1e-16,
+# and DER_DFE came out 4.5 percent wrong while every other stage matched.
+# A speed-up that changes a result is not one this port may keep.
 
 
 def _conv_fct__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
+    """Convolve two 1-D PDFs directly, as MATLAB conv2 does."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     # conv2 with an empty operand returns empty; np.convolve raises instead.
     # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
     if a.size == 0 or b.size == 0:
         return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
     return np.convolve(a, b)
 
 
@@ -9727,24 +9730,27 @@ def conv_fct(p1, p2):
 
 
 
-# PDF convolutions are extremely skewed in size: ~79% of the arithmetic sits in
-# ~1% of the calls (both operands long), while most calls have a kernel of a few
-# bins. Direct convolution wins for tiny kernels and loses badly for long ones
-# (measured 2.7x slower at 600, 19x at 9000, >1000x at 20000+), so dispatch on
-# size. The FFT path agrees with the direct path to ~1e-15 relative.
-_CONV_FFT_MIN = 128
+# ML: p.y = conv2(p1.y, p2.y) -- a DIRECT convolution, and the port must be one.
+#
+# This dispatched to scipy's fftconvolve once both operands reached 128 bins,
+# for speed, on the claim that the two agree "to ~1e-15 relative". Relative to
+# the PEAK they do. Per element they do not: an FFT buries every value below
+# about eps times the peak in round-off, negative "probabilities" included,
+# and the far tail of the noise CDF is exactly where DER_DFE and DER_MLSE are
+# read. COM Octave on woXtalk_T1_R19: CDF agreement fell from 4e-13 relative
+# at 1e-3 to 1.3e-4 at 1e-12, then Octave 5.2e-221 against SiCoPR 2.1e-16,
+# and DER_DFE came out 4.5 percent wrong while every other stage matched.
+# A speed-up that changes a result is not one this port may keep.
 
 
 def _conv_fct_MeanNotZero__conv1d(a, b):
-    """Convolve two 1-D PDFs, choosing direct or FFT by operand size."""
+    """Convolve two 1-D PDFs directly, as MATLAB conv2 does."""
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     # conv2 with an empty operand returns empty; np.convolve raises instead.
     # COM Octave: p1.y=[1 2 3], p2.y=[] -> p.y is 0x0, p.x is 1x0, p.Min=-1.
     if a.size == 0 or b.size == 0:
         return np.zeros(0)
-    if min(a.size, b.size) >= _CONV_FFT_MIN:
-        return fftconvolve(a, b)
     return np.convolve(a, b)
 
 
