@@ -178,3 +178,30 @@ def test_nonzero_ends_skip_the_scan_and_change_nothing():
         a2 = np.concatenate([[0.0], a])
         want = np.concatenate([[0.0], np.convolve(a, b)])
         np.testing.assert_array_equal(m._conv1d(a2, b), want)
+
+
+# ============================================================
+# COM Octave 4p15p0: a 4-level delta kernel (Init_PDF_Fast, as
+# get_pdf_from_sampled_signal builds them), 2471 bins with 4 nonzero, against
+# a smooth running-PDF-shaped vector built without conv_fct. conv2 sums
+# c += b(k)*a over the kernel in ascending k; doing that over the nonzero bins
+# only reproduces Octave on all 6049 elements, where np.convolve (BLAS ddot)
+# differs on 528. Pinned at six of those.
+# ============================================================
+
+def test_sparse_kernel_is_convolved_in_octaves_order():
+    from com_functions.fn.Init_PDF_Fast.py_impl import Init_PDF_Fast
+    from com_functions.fn.d_cpdf.py_impl import d_cpdf
+    BIN = 1e-5
+    x = np.linspace(-1, 1, 3579)
+    a = np.exp(-x ** 2 * 9) * (1.0 + 0.3 * np.cos(x * 23)) + 1e-9
+    a = a / a.sum()
+    kern = Init_PDF_Fast(d_cpdf(BIN, 0, 1),
+                         0.0123456 * np.array([-1, -1 / 3, 1 / 3, 1.0]), np.full(4, 0.25))
+    assert len(kern.y) == 2471 and np.count_nonzero(kern.y) == 4
+    out = conv_fct_MeanNotZero(make_pdf(-1789, a, binsize=BIN), kern)
+    idx = [1658, 2008, 2237, 2567, 2947, 3220]
+    oct_vals = [0.0002413025641990958, 0.00023596121412016252,
+                0.00033688570012496585, 0.00035637759883736843,
+                0.00031504255134685069, 0.00024859191289679434]
+    assert list(np.asarray(out.y)[idx]) == oct_vals

@@ -27,6 +27,12 @@ from types import SimpleNamespace
 # A speed-up that changes a result is not one this port may keep.
 
 
+# a kernel of at least _SPARSE_MIN bins with at most one nonzero bin in
+# _SPARSE_RATIO is convolved in Octave's order over its nonzero bins
+_SPARSE_MIN = 64
+_SPARSE_RATIO = 8
+
+
 def _conv1d(a, b):
     """Convolve two 1-D PDFs directly, as MATLAB conv2 does."""
     a = np.asarray(a, dtype=float)
@@ -46,6 +52,21 @@ def _conv1d(a, b):
     # checkpoint cases every reported output other than the DER family is
     # bit-identical to full-array convolution, the rest moves by ulps, and
     # agreement with COM Octave is no worse on any field.
+    if b.size >= _SPARSE_MIN:
+        nzb = np.flatnonzero(b)
+        if nzb.size * _SPARSE_RATIO <= b.size:
+            # A sparse KERNEL -- the 4-level delta sets get_pdf_from_sampled_
+            # signal convolves in ~10^5-10^6 times per case, four nonzero bins
+            # across hundreds or thousands. conv2 (liboctave oct-convn) builds
+            # the result one kernel element at a time, c += b(k)*a in
+            # ascending k, so summing over the nonzero bins only is Octave's
+            # own order: on a realistic ISI build this matched COM Octave's
+            # conv_fct on 6049 of 6049 elements, np.convolve on 5602.
+            out = np.zeros(a.size + b.size - 1)
+            n = a.size
+            for k in nzb:
+                out[k:k + n] += b[k] * a
+            return out
     if a[0] != 0 and a[-1] != 0 and b[0] != 0 and b[-1] != 0:
         # nonzero at both ends: the span is the whole array, and this is the
         # call the span path below would make -- without scanning ~10^4 bins
