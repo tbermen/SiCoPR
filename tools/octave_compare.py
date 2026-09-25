@@ -129,14 +129,24 @@ def _vector(text):
 
 
 def run_sicopr(version, config, thru, fext, nxt, workdir, timeout=7200):
-    """One case through `python -m sicopr`. -> dict like run_octave's."""
+    """One case through the engine, as `python -m sicopr` runs it. -> dict like
+    run_octave's.
+
+    The values come from the full-precision JSON tools/_sicopr_case.py writes
+    beside the run, not from the CSV report: since 0ce577c the report is written
+    in MATLAB's num2str format, five significant digits, and read back from it a
+    COM agreement of 1e-14 looks like 5e-5 (seen 2026-09-24 on the 1368-case
+    re-run). run_octave likewise reads Octave's result struct, not its CSV.
+    """
     os.makedirs(workdir, exist_ok=True)
-    cmd = [sys.executable, '-m', 'sicopr', os.path.abspath(config), os.path.abspath(thru)]
+    out_json = os.path.join(workdir, 'sicopr_result.json')
+    cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        '_sicopr_case.py'),
+           out_json, version, os.path.abspath(config), os.path.abspath(thru)]
     if fext:
         cmd += ['--fext'] + [os.path.abspath(f) for f in fext]
     if nxt:
         cmd += ['--next'] + [os.path.abspath(f) for f in nxt]
-    cmd += ['--matlab-version', version]
     t0 = time.time()
     p = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir,
                        timeout=timeout, errors='replace')
@@ -147,20 +157,33 @@ def run_sicopr(version, config, thru, fext, nxt, workdir, timeout=7200):
                  % (' '.join(cmd), p.returncode, wall, p.stdout, p.stderr))
     hits = sorted(glob.glob(os.path.join(workdir, '**', 'results.csv'), recursive=True),
                   key=os.path.getmtime)
-    if p.returncode != 0 or not hits:
+    if p.returncode != 0 or not hits or not os.path.isfile(out_json):
         raise RuntimeError('sicopr failed (exit %s); see %s' % (p.returncode, log))
     with open(hits[-1], newline='', encoding='utf-8-sig') as fh:
         rows = list(csv.reader(fh))
     row = dict(zip(rows[0], rows[1]))
-    out = {'wall_s': wall, 'log': log, 'results_csv': hits[-1]}
+    with open(out_json, encoding='utf-8') as fh:
+        full = json.load(fh)[0]                  # the CSV's first row is the first case
+    out = {'wall_s': wall, 'log': log, 'results_csv': hits[-1], 'results_json': out_json,
+           'full': full}
     for k in SCALARS:
-        if k in row and str(row[k]).strip() != '':
+        v = full.get(k)
+        if isinstance(v, list) and len(v) == 1:
+            v = v[0]
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            out[k] = float(v)
+        elif k in row and str(row[k]).strip() != '':
             try:
                 out[k] = float(row[k])
             except ValueError:
                 pass
     for k in VECTORS:
-        if k in row:
+        v = full.get(k)
+        if isinstance(v, list) and v and all(isinstance(x, (int, float)) for x in v):
+            out[k] = [float(x) for x in v]
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            out[k] = [float(v)]
+        elif k in row:
             v = _vector(row[k])
             if v is not None:
                 out[k] = v
