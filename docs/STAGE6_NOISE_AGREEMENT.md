@@ -198,8 +198,8 @@ the one crosstalk-only *decision* — `get_PSDs` choosing each aggressor's phase
 Crosstalk is the **enabling condition**: `S_xn` enters `S_n`, which changes the
 RxFFE solve and the shape of FOM versus sampling phase, making the tick contested
 enough for a small underlying difference to change the winner. Without crosstalk,
-FOM and `itick` are exact on 104/104. Full working in
-`docs/ITICK_SUBSET_FOR_REVIEW.md` §3b.
+FOM and `itick` are exact on 104/104. The cause of the eight `itick` cases turned
+out to be the Tx FFE search space: `docs/TXFFE_SWEEP_ROOT_CAUSE.md`.
 
 
 ## 8. Root cause (2026-08-19)
@@ -279,8 +279,8 @@ On tick-matching cases, `max|ΔCOM|` 0.034719 → 0.028201 and rms 0.017846 →
 FOM and `itick` are unchanged. The search was never affected — `get_PSDs`
 recomputes `S_tn`/`S_jn`/`S_xn`/`S_qn` fresh at every tick, so the FOM surface the
 optimiser sees was always correct. Only what `BEST` carried forward was stale.
-The eight `itick` divergences stand on the separate anchor/basin analysis in
-`docs/ITICK_SUBSET_FOR_REVIEW.md`.
+The eight `itick` divergences had a separate cause, the Tx FFE search space
+(`docs/TXFFE_SWEEP_ROOT_CAUSE.md`).
 
 ### Why the lint missed it
 

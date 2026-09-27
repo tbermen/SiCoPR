@@ -52,8 +52,7 @@ py_arg = (1 - 2 * alpha) * main / ((L - 1) * sigma)         # sicopr.py form
 #
 # What IS measurable: this expression feeds SNR_DFE_eqivalent -> delta_com ->
 # the reported delta_COM column, and delta_COM agrees with the MATLAB reference
-# to 15 significant digits on all 208 correlation cases (e.g. 1.371137901447263
-# vs 1.37113790144726). So whatever the precedence reading, the divergence is
+# to 15 significant digits on all 208 correlation cases. So whatever the precedence reading, the divergence is
 # not observable in any reported output on that corpus. It is NOT therefore
 # proven absent -- the corpus is one channel family and the agreement may not
 # generalise -- so the form the engine uses is pinned here instead of the

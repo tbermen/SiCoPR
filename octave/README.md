@@ -204,11 +204,11 @@ it.
 ## Measured
 
 **Agreement.** One 208-corpus case (the sender's acceptance channel, KR package
-A case 1, without crosstalk), on this machine, 2026-09-10:
+A case 1, without crosstalk), on this machine, 2026-09-10. Both agree with the
+MATLAB reference result for this case to within 1e-14 dB:
 
 | | COM_dB |
 |---|---|
-| MATLAB reference (4p15p0, sender's machine) | 3.96618396709908 |
 | SiCoPR, `python -m sicopr` | 3.9661839670990786 |
 | Octave 11.3, `..._4p16p0_octave_compat.m` | 3.96618396709909 |
 

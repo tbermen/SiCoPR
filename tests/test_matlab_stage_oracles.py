@@ -7,26 +7,27 @@ engine defects survived 876 unit tests: the suite could not tell "correct" from
 
 The ideal fix -- a per-function dump from the MATLAB side -- is a large favour
 to ask of someone who gets nothing back from it. This gets most of the way
-there from data already committed: the two reference workbooks under
-tests/2_Results_COM_Matlab/ carry ~260 columns of genuine MATLAB output per
-case, and many are the output of one identifiable stage.
+there from the two MATLAB reference workbooks, which carry ~260 columns of
+genuine MATLAB output per case, many of them the output of one identifiable
+stage. Neither they nor anything derived from them is distributed here.
 
-A local extractor -- not part of the published repository -- distils those into tests/oracles/matlab_stage_oracles.json -- all 208 reference cases, 35 scalar
-quantities plus 14 VECTOR families, ~800 KB, committed. This file checks it.
+A local extractor -- not part of the published repository -- distils those into
+an oracle file of all 208 reference cases, 35 scalar quantities plus 14 VECTOR
+families. It is not tracked: point COM_STAGE_ORACLES at a local copy, or this
+test skips. This file checks it.
 
 The vectors matter more than the scalars: a tap set is wrong in ways a gain is
 not. RxFFE is 87 taps, TXLE_taps up to 4, floating_tap_locations 8, and the
 package families (Pkg_len_*, pkg_Z_c, C_diepad, L_comp) are MATLAB's record of
 the package it actually built -- Pkg_len_RX alone would have caught engine
 defect #1, where only the TX z_p was transposed so the RX package came from a
-matrix row (111 mm instead of 13.8 mm).
+matrix row.
 
 Two workbook quirks worth knowing, both handled:
   - C_diepad, L_comp and C_bump are stored as TEXT ('4e-14'), so a plain
     isinstance(v, (int, float)) test drops those families silently.
-  - The wXtalk workbook writes TXLE_taps_1..4 (the full vector, e.g.
-    [0, -0.02, 0.98, 0]); the woXtalk one writes a single TXLE_taps column,
-    which is 1 in all 104 cases. Same answer at different granularity, not a
+  - The wXtalk workbook writes TXLE_taps_1..4 (the full vector); the
+    woXtalk one writes a single TXLE_taps column. Same answer at different granularity, not a
     disagreement about which taps were used.
 
 Two scalars are legitimately sparse: sgm_rjit 160/208 and sgm_xt 203/208, blank

@@ -14,7 +14,8 @@ evidence for the correctness claim belongs with the code that makes it.*
 > produced; that tooling is not in the repository. Checking this result independently
 > means supplying your own channels and configs, running your own MATLAB, and
 > writing your own comparison against SiCoPR's output — which is why the figures
-> below are given at full precision and per case rather than as summaries.
+> below are given at full precision. They are agreement statistics: the MATLAB
+> results themselves are not published here.
 
 Reference data: `Results_Matlab_COM_v4p15_*_ClipMethodSlow_AdaptiveLS.xlsx` (supplied
 12 Aug 2026), 26 IEEE 802.3dj CR/KR channels × 4 package configs × with/without
@@ -294,7 +295,7 @@ FFE grid the adaptive search finds the full-grid optimum on 15 of 16 cases, with
 observed loss of 0.0093 dB — see `docs/TXFFE_SWEEP_ROOT_CAUSE.md` §9.
 
 **This also exonerates adaptive pruning for the §4.1 divergences.** On R16 the exhaustive
-full grid independently arrives at Python's `itick = 5` where MATLAB reported 0. The
+full grid independently arrives at Python's `itick`, not the one MATLAB reported. The
 divergence is between the two *engines*, not the two *search strategies*.
 
 Full grid costs **7–9 hours per case** versus minutes for adaptive, so a complete
@@ -456,7 +457,7 @@ was wrong.*
 **One finding here is worth keeping, because it is about the method rather than
 about the port.** MATLAB's own reported answer is not its grid's optimum on 2 of
 those 10 cases. On `wXtalk_T3_R17` seven candidates beat it at its own CTLE,
-including unity itself (13.8662 vs the reported 13.8016). So adaptive local
+including unity itself, 0.0796 dB above the reported choice. So adaptive local
 search can stop short on a real Tx FFE grid. The "adaptive == full grid" result
 in §5 is measured on a single-point grid, where the search has nothing to prune
 in that dimension; on a real grid it finds the optimum on 15 of 16, worst loss

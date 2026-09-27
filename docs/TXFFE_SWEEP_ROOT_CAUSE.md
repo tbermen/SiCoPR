@@ -72,18 +72,18 @@ Pinning the CTLE to MATLAB's reported value, enabling the `c(-1)`/`c(1)` sweep
 and evaluating **every** Tx FFE candidate on a full grid, then looking up
 MATLAB's own tap vector in the result (`scratchpad/txffe_scan.py`):
 
-| case | MATLAB Tx FFE | itick ML | itick PY | rank in Python | FOM ML | ΔFOM |
-|---|---|---|---|---|---|---|
-| wXtalk_T1_R07 | `[0, −0.04, 0.96, 0]` | −8 | **−8** | #2 | 12.443168 | −1.2e−11 |
-| wXtalk_T1_R08 | `[0, −0.04, 0.96, 0]` | −6 | **−6** | #1 | 11.875333 | −1.5e−11 |
-| wXtalk_T1_R15 | `[0, −0.02, 0.98, 0]` | −3 | **−3** | #1 | 12.528249 | −3.2e−12 |
-| wXtalk_T1_R16 | `[0, −0.1, 0.9, 0]` | 0 | **0** | #1 | 11.691042 | −2.3e−11 |
-| wXtalk_T2_R15 | `[0, −0.02, 0.98, 0]` | −4 | **−4** | #1 | 11.128613 | −4.7e−12 |
-| wXtalk_T2_R16 | `[0, −0.06, 0.94, 0]` | 1 | **1** | #1 | 9.955886 | −1.6e−11 |
-| wXtalk_T3_R07 | `[0, −0.02, 0.98, 0]` | −8 | **−8** | #1 | 10.759523 | −9.7e−12 |
-| wXtalk_T3_R15 | `[0, −0.02, 0.98, 0]` | −3 | **−3** | #1 | 10.589143 | −5.0e−12 |
-| wXtalk_T3_R16 | `[0, −0.04, 0.96, 0]` | 2 | **2** | #1 | 9.361404 | −1.5e−11 |
-| wXtalk_T3_R17 | `[0, −0.1, 0.9, 0]` | 6 | **6** | #9 | 13.801599 | −1.7e−12 |
+| case | `itick` matches MATLAB | rank in Python | ΔFOM |
+|---|---|---|---|
+| wXtalk_T1_R07 | yes | #2 | −1.2e−11 |
+| wXtalk_T1_R08 | yes | #1 | −1.5e−11 |
+| wXtalk_T1_R15 | yes | #1 | −3.2e−12 |
+| wXtalk_T1_R16 | yes | #1 | −2.3e−11 |
+| wXtalk_T2_R15 | yes | #1 | −4.7e−12 |
+| wXtalk_T2_R16 | yes | #1 | −1.6e−11 |
+| wXtalk_T3_R07 | yes | #1 | −9.7e−12 |
+| wXtalk_T3_R15 | yes | #1 | −5.0e−12 |
+| wXtalk_T3_R16 | yes | #1 | −1.5e−11 |
+| wXtalk_T3_R17 | yes | #9 | −1.7e−12 |
 
 **Given the same Tx FFE, Python reproduces MATLAB's sampling phase exactly and
 its FOM to 1e-11 on all ten.** The COM engine is correct; the residual was
@@ -91,7 +91,7 @@ entirely the search space.
 
 The most striking is `wXtalk_T1_R16`. It was the case where "Python cannot reach
 MATLAB's FOM at MATLAB's tick under any equalizer setting — short by 5.43 dB".
-With `[0, −0.1, 0.9, 0]` in the grid, Python produces 11.691042 at `itick = 0`,
+With MATLAB's Tx FFE in the grid, Python reaches MATLAB's FOM at MATLAB's tick,
 matching MATLAB to 2.3e−11. The equalizer was never in the grid to be found.
 
 ### A second finding: MATLAB's own answer is not always its grid's optimum
@@ -99,9 +99,9 @@ matching MATLAB to 2.3e−11. The equalizer was never in the grid to be found.
 The "rank" column is Python's full-grid ranking at MATLAB's CTLE. On 8 of 10
 MATLAB's choice is rank #1. On two it is not:
 
-- `wXtalk_T1_R07` — rank #2; `[−0.06, 0.94, 0]` scores 12.4454, +0.0023 dB better.
+- `wXtalk_T1_R07` — rank #2; one other candidate scores +0.0023 dB better.
 - `wXtalk_T3_R17` — rank #9; seven candidates beat it, including **unity itself**
-  at 13.8662 versus MATLAB's 13.8016 (+0.0796 dB).
+  at +0.0796 dB above MATLAB's choice.
 
 Unity is certainly in MATLAB's grid (its `c(-1)` range spans 0), so on R17
 MATLAB's adaptive local search terminated before evaluating a point 0.08 dB
@@ -122,8 +122,8 @@ the UI to sample — is wrong. They are cases where the two engines were given
 selected, so it settled elsewhere; and a different Tx FFE changes the equalized
 pulse, which moves the peak that anchors `itick`.
 
-This supersedes the anchor/basin analysis in `docs/ITICK_SUBSET_FOR_REVIEW.md`
-§5–§6 *as the explanation*. The measurements there stand — the anchor really is
+This supersedes the earlier anchor/basin analysis of these cases (a review
+write-up since removed from the repository) *as the explanation*. Its measurements stand — the anchor really is
 re-derived per EQ candidate and really does move 2–4 samples — but the reason the
 two engines' anchors differ is the Tx FFE, not an ambiguity in the anchor rule.
 
@@ -225,8 +225,8 @@ run are still unknown, and both change which candidates a local search visits:
    version of this document listed this as a second mismatch. It is not one.
 
 So there is **one** unknown, not two: the grid shape. A spot check on
-`wXtalk_T1_R07` with the legacy method reaches FOM 12.4454 — *above* MATLAB's
-12.4432 — confirming Python is not under-searching either way. The two engines
+`wXtalk_T1_R07` with the legacy method reaches a FOM 0.0022 dB *above* MATLAB's
+— confirming Python is not under-searching either way. The two engines
 are walking differently-shaped grids.
 
 ### Consequence
@@ -397,7 +397,7 @@ forced `1`.
 With the grid alone the result was **5 of 10**. Adding the radius floor took it
 to **10 of 10**:
 
-| case | MATLAB Tx FFE | Python | itick ML/PY | ΔFOM |
+| case | `itick` matches MATLAB | rank in Python | ΔFOM |
 |---|---|---|---|---|
 | wXtalk_T1_R07 | `[0, −0.04, 0.96, 0]` | same | −8 / −8 | −1.2e−11 |
 | wXtalk_T1_R08 | `[0, −0.04, 0.96, 0]` | same | −6 / −6 | −1.5e−11 |

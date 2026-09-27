@@ -23,8 +23,9 @@ later deleted.
 2. **The ledger** — one numbered row per fix that changed a number, oldest first,
    with what it *bought*. This is the index; everything after it is detail.
 3. **Dated sections** — one per ledger date, expanding the rows into root cause,
-   evidence and what was rejected. Two entries here changed no number but were
-   still engine changes, and say so.
+   evidence and what was rejected. Several entries here changed no number but
+   were still engine changes (the 2026-08-29 file lock, the 2026-09-24
+   speed-ups), and say so.
 4. **Test ROI**, then an **appendix** pointing at the archived earlier fix pass.
 
 Not everything here is a success. Two sections record investigations whose fix
@@ -35,6 +36,25 @@ knowing what landed.
 ---
 
 ## Current correlation status
+
+**As of 2026-09-26.** Aggregate statistics only; per-case reference values are
+not carried in this repository.
+
+| corpus | engine | result |
+|---|---|---|
+| 208 MATLAB reference cases (4p15p0), last full re-run **2026-09-23** | `8e0479c` | `itick` and every EQ selection identical to MATLAB on **208 / 208**; COM within **4.6e-14 dB**; FOM within **3.4e-11 dB** |
+| 1368-case 4p16p0 corpus, against COM Octave, run **2026-09-26** | `df78b9c` | COM within **5.3e-14 dB** on all **1368**; `itick`, Tx FFE and CTLE gain identical; FOM within **6e-12 dB** |
+
+`DER_DFE` and `DER_MLSE` can differ by up to **~4.5%** between *any* two engines
+— Octave against MATLAB included — because the reference reads the CDF exactly
+on a bin edge (upstream observation A16; mechanism in the 2026-08-22 section
+below). COM is unaffected.
+
+FOM has not moved between the two runs: "bit-exact" in the 2026-08-31 table
+below means agreement to the precision the reference workbook stores, and that
+run's max |ΔFOM| was the same 3.4e-11 dB.
+
+### History — the 2026-08-31 re-verification
 
 208 MATLAB reference cases (`com_ieee8023_4p15p0`, 26 channels × 4 packages ×
 with/without crosstalk), each condition run on the configuration its own
@@ -95,6 +115,37 @@ fix was deliberately rejected.
 | 16 | 2026-08-22 | `nui = round(len/M)` used Python's banker's rounding where MATLAB rounds half away from zero | **rounding** | Noise-stage chart | **closed the last COM miss** — COM 207 → **208 / 208**, max \|ΔCOM\| 0.0076 → **3.3e-14** | (this commit) |
 | 17 | 2026-08-27 | adaptive-search radius floor forced to `1` on the 4p15p0 path, where the reference behaves as the 4p16p0 rule | **inferred setting** | the last open question | the `--min-radius 2` switch is **no longer needed** to reproduce the corpus | (this commit) |
 | 18 | 2026-08-28 | `findbankloc` indexed `ndiff` with bank-member positions; MATLAB grows an array on out-of-range assignment, NumPy raises | **index space** | a flaky gate run | **IndexError on 4.4% of inputs** wherever floating DFE taps are used; inert on this corpus, real under other settings | (this commit) |
+| 19 | 2026-09-21 | `interp_Sparam` DC extrapolation used `np.std` (N) where MATLAB's `std` is N−1; the sigma sets an outlier mask | **builtin semantics** | 1368-case SiCoPR-vs-Octave FOM gap | FOM had differed on **66** cases of 1368, worst **3.3e-4 dB**, all on channels starting at 10 MHz; gap closed. Invisible to the 208: all its channels start at DC | `d5bff6c` |
+| 20 | 2026-09-22 | MATLAB half-away-from-zero rounding at all 41 `round()` sites; the 10 `_mround` helpers were also wrong just below a half | **rounding** | Octave oracle (`d_cpdf`) | **no corpus number moved**: the tie-heaviest case (476 ties) gave COM and FOM identical to the last bit; closes B10-D14 | `1ca0fbf` |
+| 21 | 2026-09-22 | `max`/`min` skip NaN and order complex by magnitude then angle, at all 48 sites | **builtin semantics** | owner correction | latent: no NaN reached any of 401,299 calls on the case instrumented; ~1 µs per call | `a81fab5` |
+| 22 | 2026-09-22 | `make_full_pkg` dropped die LC sections after the first in the `mele == 1` branch (#6's twin, left unfixed there) | translation | Octave oracle | unreachable by the shipped workbooks (`mele = 4`); now matches COM Octave to 1e-16 | `0292ad2` |
+| 23 | 2026-09-22 | `OptFom_Calc_FOM` wrote each EQ candidate's pulse into the caller's `chdata` | **by-reference** | argument-mutation lint | numeric path already overwritten by `Apply_EQ`; plots/`.mat` export could show a losing candidate | `6f773c1` |
+| 24 | 2026-09-22 | `get_pdf_full` `start_cancel` took one 0-based correction too many | **1- vs 0-based** | Octave oracle | DFE cancellation window and `A_s_vec` one sample early; no engine call site today; all 8 phase PDFs now match Octave | `a6b8200` |
+| 25 | 2026-09-22 | `r_parrelell2` used an algebraic simplification of ML 9391/9393 | translation | Octave oracle | last-bit differences on every package cascade; `rpad = Inf` gave S21 NaN where MATLAB gives 1 | `658bc38` |
+| 26 | 2026-09-22 | First oracle pass: **30+ divergences in 26 functions** plus `pam`/`hrem`/`dfe_clipper`, and 62 stale inlined copies re-synced | mixed: answering calls the reference refuses, NaN handling, colon grids | Octave oracle | `conv_fct` `p.x` colon wrong by 1 ulp on 24.6% of elements; `compute_hard_cap` aborted runs on NaN/Inf | `a028abb`, `5d5b45f`, `9cde467` |
+| 27 | 2026-09-22 | Oracle round 1 (partial), 17 functions | mixed | Octave oracle | `OptFom_Calc_Noise` shortened `h_J` instead of erroring; `strcmp` case sensitivity | `aa00f6c` |
+| 28 | 2026-09-22 | Oracle round 2: **75 divergences in 40 functions** | mixed | Octave oracle | `make_pkg` eps 1e292 too small at DC (every package cascade); top bin dropped from every ICN sum; `force` pre-cursor phase wrong 1 itick in 32; `nburst > 0` crash; MLSE multiply form restored | `0ce577c` |
+| 29 | 2026-09-22 | WIENER-HOPF `ifft(X,n,'symmetric')` translated as the ifft of the Hermitian part | translation | Octave oracle (via patch) | outputs off by a non-constant 1.28–1.45×; now 4.8e-16 relative | `7deab66` |
+| 30 | 2026-09-22 | Final oracle round: **59 divergences in 18 functions**, chiefly MATLAB column-major linear indexing | **index space** | Octave oracle | `pkg_Z_c(2)` picked 92.5 for 88 (3.5e-3 on RX s21); skew matrix transposed (0.1255); `s_for_c4` Sdd21 identically zero; 32 precursors for 4 | `04c6371` |
+| 31 | 2026-09-23 | `force`: refuse a singular `VV` instead of `lstsq`; drop the 1e-12 cursor-tap floor (owner ruling) | **owner ruling** | oracle repair `4c73cba` | stops where MATLAB returns Inf; floor removal ships untested — no input distinguishes it | `fc60371` |
+| 32 | 2026-09-23 | `force` zeroed the caller's `param.current_ffegain` | **by-reference** | Octave oracle | caller now keeps its value (7 in, 7 out); Cmod was already identical | `f944b69` |
+| 33 | 2026-09-23 | `interp_Sparam` used clamping `np.interp` where every `interp1` is `'linear','extrap'` | **builtin semantics** | option-branch sweep | extrapolated band worst relative error 1.98; now 1e-15 against Octave; upstream `hf_logtrend_val` now refused as the reference does | `51f30f2` |
+| 34 | 2026-09-23 | Four option-branch defects: `plot_modal` eps floor, six `noiseRMS_mV` assignments missing, eye-width window unreachable, `Create_Noise_PDF` answering where the reference errors | mixed | option-branch sweep | `plot_modal` returned 313.44 dB where the reference gives +Inf; a reported CSV column restored | `391edd0` |
+| 35 | 2026-09-23 | `get_ILN_cmp_td` fit used `lstsq` where ML 6740 inverts the normal equations | **builtin semantics** | Octave oracle | ILN was off by **0.9 dB** across the band on a smooth channel; now matches Octave | `5276a8e` |
+| 36 | 2026-09-23 | Six composites oracle-backed: **21 divergences** | mixed | Octave oracle | `get_TDR` window off-by-one (ERLRMS **0.091 dB**); `get_RILN_cmp_td` `lstsq` (SNR_ISI_FOM **0.966 dB**) and six stubs; 11 eps floors (`SCMR_FD_CD_ch_dB` 2993.36 dB on a zero input where the reference gives Inf); `OP.WO_TXFFE` leak | `e82669f` |
+| 37 | 2026-09-23 | CTLE pole/zero **defaults** now reproduce the reference's 1e9 units defect (owner ruling) | **owner ruling** | Octave oracle | omitted keys give 1.328e19 Hz as Octave does; every shipped workbook sets them, so no normal run moves; upstream A12 | `4a1aceb` |
+| 38 | 2026-09-23 | `get_pdf_full` `new_time` built with `arange(... + 2)`, one point past the MATLAB colon | translation | accepted-divergence ledger (D12) | 1 of 32 phase columns disagreed; last numeric accepted divergence closed | `f94e786` |
+| 39 | 2026-09-23 | `read_s4p_files`' inlined copy: skew names bound in call order, `T @ S @ inv(T)` for `T*(S/T)`; renormalisation guard and inverse | **copy drift** | call-trace coverage | **0.190** out in SDC when p and n skews differ | `8a69c29` |
+| 40 | 2026-09-23 | `flim_GHz`, `fstop_GHz`, `code_revision` never reported | reporting | Octave checkpoint harness | three reference outputs restored; the 208 comparison skipped absent columns | `e09ca45` |
+| 41 | 2026-09-23 | `conv_fct` FFT above 128 bins buried the CDF tail in round-off | **numerics** | Octave checkpoint harness | CDF tail 2.1e-16 where Octave gives 5.2e-221, which is where DER is read; direct convolution within 6.3e-12 per element; cost woXtalk_T1_R19 41.6 → 303.9 s | `8ec85b0` |
+| 42 | 2026-09-23 | `get_PSDs` `iphase`: THRU slot 1 for −1, one entry too many under PSDRXCAL, non-crosstalk 1 for 0 | **1- vs 0-based** | Octave checkpoint harness | state only: no reported output moves | `6cb7c16` |
+| 43 | 2026-09-23 | four `OP` flags `main` sets were absent | state | Octave checkpoint harness | none changes a result on the port's paths | `20280cf` |
+| 44 | 2026-09-23 | `param.Pkg_Zc` never set (ML 377-382) | state | Octave checkpoint harness | nothing reads it; state now matches | `2e3346d` |
+| 45 | 2026-09-23 | `result.hk` held `hrn` only; the reference holds `k`, `hrn`, `S_xn` | state | Octave checkpoint harness | no reported output moves | `9ca66cd` |
+| 46 | 2026-09-24 | MMSE Gram-matrix hoist undone: `H(:,sel)'*H(:,sel)` per candidate, as ML 2609-2612 | **summation order** | owner direction | every checkpoint field on woXtalk T1–T4_R01 bit-identical; baseline is now the reference's form | `a007fc8` |
+
+Rows 47–51, the 2026-09-24 speed-ups, changed no reference behaviour and are
+tabled in their dated section rather than here.
 
 #17 is a settings deduction rather than a translation defect, and is written up in
 [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) — including what it does
@@ -103,10 +154,20 @@ configuration snapshots post-dating the run that produced the reference results;
 the Tx FFE grid was the first. When a config and its own results disagree, suspect
 the config.
 
-**Five of the eighteen are the same root class**: MATLAB assigns structs **by
+**Five of the first eighteen are the same root class**: MATLAB assigns structs **by
 value**, Python binds a **reference**. #8, #9 and part of #10 are direct
 instances; #3 and #6 are the same failure to carry a whole structure across a
 boundary. This is the single most productive thing to check first in this port.
+Rows 19–46 added three more direct instances — #23, #32 and part of #36
+(`OP.WO_TXFFE`) — and #22 is #6's truncation again in a branch the first fix
+missed.
+
+**Rows 19–46 have a second dominant class**: a numpy call standing in for a
+MATLAB builtin whose default differs — `std` (#19), `round` (#20), `max`/`min`
+(#21), `interp1` extrapolation (#33), `lstsq` for an explicit inverse (#35,
+#36), FFT for `conv2` (#41). Every one read correctly and was found only by
+**executing the reference** under Octave; the method is
+[`VERIFICATION.md`](VERIFICATION.md).
 
 ---
 
@@ -539,12 +600,104 @@ end state rather than an open question.
 
 ---
 
+## 2026-09-21 — `np.std` in the DC extrapolation (`d5bff6c`, row 19)
+
+`interp_Sparam` uses `std` three times, each to set an outlier threshold
+(`abs(gd - median) < sigma`), so the 1% gap between N and N−1 decides which
+group-delay samples count, not a rounding digit. The branch runs only when a
+channel does not start at DC. **All 164 channels in the 208 corpus start at DC**,
+so the correlation that validated the engine never executed it. The 1368-case
+corpus has 648 channels starting at 10 MHz: in the first run (2026-09-19) FOM
+differed from COM Octave on 66 cases, worst 3.3e-4 dB (the commit counts 84
+cases above 1e-10 dB, all on those channels; the DC-starting ones topped out at
+4.4e-12 dB). Six sites fixed, because the assembler inlines `interp_Sparam`
+into `s21_to_impulse_DC`. The FOM gap is closed. This defect is what prompted the
+verification contract, [`VERIFICATION.md`](VERIFICATION.md).
+
+## 2026-09-22 — executing the reference (rows 20–30)
+
+The day the port started being checked against the **executed** reference
+(`tools/octave_oracle.py`) rather than a reading of it. The oracle rounds —
+rows 26, 27, 28 and 30 — fixed more than 165 divergences between them (30+,
+5, 75 and 59 as their commits count them; round 1 gives no count). Each is one
+row here because each commit message itemises its own; the recurring shapes
+were numpy defaults standing in for MATLAB builtins, MATLAB's column-major
+linear indexing, answering calls the reference refuses, and inlined copies that
+a canonical fix never reached (62 stale copies in row 26 alone).
+
+What was measured, rather than claimed: #20 moved **no number** on the
+tie-heaviest case; #21 found no NaN in 401,299 calls on the case instrumented,
+and was fixed anyway because a corpus that does not reach a divergence is not
+evidence the code is right. #22, #23 and #24 are unreachable or overwritten on
+today's paths and matter for configurations the corpus does not run. #26 and
+#28 flagged themselves **not a no-op for results** (the PDF voltage axis, the
+package eps) and asked for both baselines to be re-run; the 2026-09-23 and 2026-09-26 runs in
+*Current correlation status* answer that.
+
+Row 28 also reversed a deliberate deviation: the MLSE Gaussian (see the
+2026-08-29 section below) now multiplies by `sigma_noise` as the reference's
+left-associative expression does, and the oddity goes upstream.
+
+## 2026-09-23 — owner rulings, composites and the checkpoint harness (rows 31–45)
+
+**Two owner rulings** settled the only places the port had knowingly improved
+on the reference. #31: a singular `VV` in `force` now stops the run, where
+MATLAB returns Inf and the old fallback returned a plausible `lstsq` answer
+neither reference gives. #37: CTLE defaults reproduce the reference's 1e9 units
+defect (1.328e19 Hz, a CTLE of identically 1); the port's "fix" had shipped in
+the initial commit with a test pinning it as fact.
+
+**The largest effects** came from composites that had been pinned to the
+port's own output: `get_ILN_cmp_td` 0.9 dB (#35), `get_RILN_cmp_td` 0.966 dB on
+SNR_ISI_FOM and `get_TDR` 0.091 dB on ERLRMS (#36), and `read_s4p_files`'
+drifted copy 0.190 in SDC (#39).
+
+**Rows 40–45 were found by the Octave checkpoint harness**, which compares every
+struct at ten stage boundaries rather than the 35 numbers MATLAB reports. #41 is
+the one that mattered: an FFT is accurate to eps *of the peak*, not per
+element, and DER is read in the CDF's far tail. Kept at a 7× cost on
+woXtalk_T1_R19, because a fast wrong answer is not an option; rows 47–51 below
+earned much of it back (woXtalk_T1_R19 304 s → 91 s after #47 alone). #40 is the same lesson as #13: a comparison that skips an
+absent column reads a missing output as agreement. #42–#45 move no reported
+output and bring the port's state into line with the reference's.
+
+## 2026-09-24 — the Gram hoist undone, and speed re-earned (row 46, and 47–51)
+
+#46 removed the August MMSE Gram-matrix hoist (`3f1b7bb`): mathematically equal,
+a different summation order, and verified only against 208-case statistics,
+which #41 had just shown cannot see a last-bit or tail difference. Every
+checkpoint field on four cases stayed bit-identical; the point is that the
+baseline is now the reference's form.
+
+**Rows 47–51 are not correctness fixes** and changed no reference behaviour. They
+are listed, like the 2026-08-29 file lock, because they are engine changes. Each
+was accepted under the owner's equivalence rule (2026-09-24,
+[`tools/equivalence_check.py`](../tools/equivalence_check.py)): strict outputs —
+COM, FOM, sampling point, every EQ setting and tap — bit-identical, noise fields
+within 1e-12 per element, on all 28 checkpoint cases.
+
+| # | commit | change | measured |
+|---|---|---|---|
+| 47 | `b94eb9b` | `conv_fct` convolves only the nonzero span of each operand | 28 cases 53 → 21.7 min; 5–12 noise fields moved per case, worst 1.1e-15 relative |
+| 48 | `9762faa` | skip the span scan when both operands are nonzero at both ends | bit-identical by construction; zero fields moved |
+| 49 | `a47c8f2` | gather floating-tap columns from a contiguous `H.T` | zero fields moved (with #48); 28 cases 21.7 → 20.2 min |
+| 50 | `ad50389` | gather each candidate's Gram block from `G = Ht @ Ht.T`, #46's saving in verified form | every strict field bit-identical |
+| 51 | `df78b9c` | sparse kernels convolved in Octave's own order | 28 cases 1213 → 736 s (with #50); worst 4.8e-15 relative; Octave agreement no worse on any field |
+
+---
+
 ## Test ROI — what the added guards have actually caught
 
 Added because the same defect classes kept recurring. This section exists to let
 that investment be judged on evidence rather than on the assumption that more
 tests must help, so it records the **direct yield honestly, including where it is
 low**.
+
+> **Rows 19–46 are not in the tables below.** Each commit message names its own
+> guard and states that it fails on the defect; the stated exceptions are the
+> `force` cursor-tap floor (#31) and three faithfulness fixes in #36, which ship
+> untested because no reachable input distinguishes them, and #43, verified by
+> the checkpoint harness only.
 
 ### Direct yield: new defects found by the new tests
 
@@ -658,7 +811,7 @@ Recorded divergences went from 28 to 25.
 `(1-2*alpha)*main/(L-1)*sigma_noise`, which by MATLAB's left-associative
 precedence multiplies by `sigma_noise` where the port divides. But the
 expression feeds `delta_COM`, and `delta_COM` matches the MATLAB reference to 15
-significant digits on all 208 cases (1.371137901447263 vs 1.37113790144726). So
+significant digits on all 208 cases. So
 the divergence is not observable in any reported output on this corpus — which
 is evidence, not proof, since the corpus is one channel family. The form the
 engine uses is pinned instead, with a note to re-run the correlation and check

@@ -1,6 +1,6 @@
 # docs/
 
-Fifteen documents, none of them required reading to run COM. This index says
+Fourteen documents, none of them required reading to run COM. This index says
 what each one answers and whether it is current, so you can open the one you
 want and ignore the rest.
 
@@ -38,7 +38,6 @@ of defect can recur.
 | [`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md) | ten disagreeing cases: the supplied configs pinned a Tx FFE tap, so the port searched one candidate where MATLAB searched 1584. Configuration, not engine |
 | [`STAGE6_NOISE_AGREEMENT.md`](STAGE6_NOISE_AGREEMENT.md) | noise terms reported from the wrong sampling phase, through a struct aliased where MATLAB copies by value |
 | [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) | the adaptive search's radius floor: what it assumes, what the evidence supports, and what would overturn it |
-| [`ITICK_SUBSET_FOR_REVIEW.md`](ITICK_SUBSET_FOR_REVIEW.md) | the eight sampling-phase cases, written up for review before the cause was known. **Superseded as to cause** by `TXFFE_SWEEP_ROOT_CAUSE.md`; kept for the per-case detail |
 
 ## Dated snapshots
 
