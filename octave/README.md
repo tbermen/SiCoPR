@@ -214,8 +214,8 @@ A case 1, without crosstalk), on this machine, 2026-09-10:
 
 Since then, on a 1368-case 4p16p0 workload (171 channels, four configurations,
 with and without crosstalk), **Octave and SiCoPR ran every case and agree within
-3.6e-14 dB on all 1368**, with the same sampling phase on every one
-(2026-09-19). The earlier subset comparison across channel families is held
+5.3e-14 dB on all 1368**, with the same sampling phase on every one
+(re-run 2026-09-26 on SiCoPR `df78b9c`). The earlier subset comparison across channel families is held
 privately with the channels it needs and is not published.
 
 **Speed**, per case, same machine, one BLAS thread each:
@@ -225,6 +225,9 @@ privately with the channels it needs and is not published.
 | before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
 | interpreted, speed items in | about 2.5x | the row below, times the 1.67x the kernels give on that case |
 | **with the compiled kernels** | **about 1.5x** | 451 s against 299 s, 1368-case `wo_C1_R001` |
+
+SiCoPR's times here predate its September 2026 convolution changes; the ratios
+have not been re-measured since.
 
 ## What is in this directory, and what left it
 

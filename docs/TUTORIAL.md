@@ -20,7 +20,7 @@ reference code itself running under GNU Octave.
 > reviewed like the code it describes. Chapter 12 is new: the reference code
 > runs under GNU Octave from this repository, which is the only way to check
 > this port against the reference without a MATLAB licence. Chapter 11 carries
-> the 1368-case comparison finished on 2026-09-19, and chapter 2 now starts
+> the 1368-case comparison (first finished 2026-09-19, re-run 2026-09-26), and chapter 2 now starts
 > with a worked example rather than a command you cannot run yet.
 
 > **A note on trust**
@@ -149,7 +149,7 @@ The translation is close enough that the Python source can be navigated by MATLA
 
 Five things exist here that have no MATLAB counterpart:
 
-- **Per-function verification.** Each translated function has its own implementation file and its own test, run against MATLAB behaviour. 890 tests.
+- **Per-function verification.** Each translated function has its own implementation file and its own test, run against MATLAB behaviour. 2025 tests.
 
 - **Search instrumentation.** The equalizer optimiser can log every candidate it considers or prunes, opt-in and with no effect on any COM result. This makes the search itself measurable.
 
@@ -339,7 +339,7 @@ sicopr.py                                  <- generated engine (do not edit)
 | Lines in sicopr.py | 18,762 |
 | Comments carrying MATLAB line references | 311 |
 | Dependency-injection points | 161 |
-| Unit tests | 890 passing |
+| Unit tests | 2025 passing |
 
 Table 2. Scale of the port as of August 2026 (post-correlation).
 
@@ -587,6 +587,8 @@ Printed per package case, and the primary answer:
 ## 7.2 results.csv
 
 One row per case, carrying the quantities that are awkward to read from the console: the resolved port order, impedance estimates, per-port and combined ERL, crosstalk ICN components, and the fitted insertion loss at Nyquist.
+
+Values are written in MATLAB num2str format (about five significant digits), as the reference writes them. That is enough to read and too little to compare two engines with: for a comparison use full precision, which `tools/_sicopr_case.py` writes to JSON for every result field.
 
 ## 7.3 Figures
 
@@ -850,13 +852,13 @@ python -m pytest com_functions/fn -q
 
 | Suite | How to run | Notes |
 |---|---|---|
-| com_functions/fn | python -m pytest com_functions/fn -q | the main suite; 890 tests |
+| com_functions/fn | python -m pytest com_functions/fn -q | the main suite; 2025 tests across 157 functions |
 | tests/ | python tests/<name>.py | Mixed: test_smoke.py, test_checkpoints.py and test_end_to_end.py ARE pytest modules; every other file is a standalone script. Do not point pytest at the directory — the scripts call sys.exit() at import, so collection aborts, pytest reports "no tests ran" AND STILL EXITS 0. Nothing runs and nothing complains. |
-| everything | powershell -ExecutionPolicy Bypass -File tests/run_all.ps1 | The full harness, and what to run before committing: pre-flight audit, assembly, interface checks, unit tests, then every cross-check script. Dispatches both kinds of file above correctly. Current totals: 890 per-function tests, and 656 checks across 31 audit scripts with 25 accepted divergences. |
+| everything | powershell -ExecutionPolicy Bypass -File tests/run_all.ps1 | The full harness, and what to run before committing: pre-flight audit, assembly, interface checks, unit tests, then every cross-check script. Dispatches both kinds of file above correctly. Current totals (2026-09-26): 2025 per-function tests, and 44 audit scripts; the 41 that print a tally total 628 checks with 20 accepted divergences. |
 
 ## 10.3 Conventions worth knowing
 
-**Cross-cutting guards** Four audit scripts guard defect classes the per-function tests cannot see, each built from a real failure and verified by re-introducing it. test_reference_leaks.py catches writes to a parameter the function never returns — MATLAB passes structs by value, Python by reference, and five of the eight engine defects were this class; it caught a new instance during the 4p16p0 port. test_inlined_copies.py compares each of the 177 inlined copies of 70 functions against its canonical version, because a fix to py_impl.py reaches only one of them; it prints the count it found, so the number here and the code cannot drift apart silently. test_optimization_invariants.py pins what the speed work depends on and found a live cache-aliasing defect. test_matlab_stage_oracles.py holds 208 cases x 35 scalars plus 14 vector families taken from the reference workbooks — the only tests in the repo that assert against MATLAB rather than against Python.
+**Cross-cutting guards** Four audit scripts guard defect classes the per-function tests cannot see, each built from a real failure and verified by re-introducing it. test_reference_leaks.py catches writes to a parameter the function never returns — MATLAB passes structs by value, Python by reference, and five of the eight engine defects were this class; it caught a new instance during the 4p16p0 port. test_inlined_copies.py compares each of the 62 inlined copies of 45 functions against its canonical version, because a fix to py_impl.py reaches only one of them; it prints the count it found, so the number here and the code cannot drift apart silently. test_optimization_invariants.py pins what the speed work depends on and found a live cache-aliasing defect. test_matlab_stage_oracles.py holds 208 cases x 35 scalars plus 14 vector families taken from the reference workbooks; the data is not distributed, so point COM_STAGE_ORACLES at a local copy or the test skips. test_octave_checkpoints.py compares 10 pipeline stages on 28 cases against COM Octave goldens (COM_OCTAVE_CHECKPOINTS; local-only, so it skips in a clone). docs/VERIFICATION.md describes these and the rest of the verification gates.
 
 - **MATLAB line references** Most functions carry a comment naming the MATLAB source lines they translate. Keep these accurate — they are how the port is reviewed.
 
@@ -868,46 +870,48 @@ python -m pytest com_functions/fn -q
 
 ## 11.1 What has been verified
 
-Every major feature is implemented and unit-tested against the MATLAB source: TX-FFE, CTLE, DFE, RX-FFE (MMSE), floating DFE and floating RX-FFE taps, MLSE, crosstalk (FEXT/NEXT and ICN), common-mode modal masks, receiver calibration, frequency-domain processing, ERL/TDR, and TD-ILN/RILN. The unit suite is green at 890 tests, and the 802.3ck configuration runs end to end once its workbook and channel are in place.
+Every major feature is implemented and unit-tested against the MATLAB source: TX-FFE, CTLE, DFE, RX-FFE (MMSE), floating DFE and floating RX-FFE taps, MLSE, crosstalk (FEXT/NEXT and ICN), common-mode modal masks, receiver calibration, frequency-domain processing, ERL/TDR, and TD-ILN/RILN. The unit suite is green at 2025 tests, and the 802.3ck configuration runs end to end once its workbook and channel are in place.
 
-A structured conversion audit classified all 157 MATLAB functions (146 equivalent, 11 divergent; docs/AUDIT_FINDINGS.md). That audit is necessary but was not sufficient: the largest defect in the port — the process_sxp reference leak — was not in its ledger, and one EQUIVALENT verdict was later proven wrong. Treat its verdicts as evidence rather than proof.
+A structured conversion audit classified all 157 MATLAB functions (146 equivalent, 11 divergent; docs/AUDIT_FINDINGS.md). That audit was a reading, and it was not sufficient: the largest defect in the port — the process_sxp reference leak — was not in its ledger, and executing the reference on 2026-09-22 found real divergences in 27 functions its ledger had marked EQUIVALENT. It is superseded by function-level verification against the executed reference: all 146 translated functions as of 2026-09-23. The contract is docs/VERIFICATION.md, and `python com_functions/verification/report.py` answers "are there any opens?".
 
-Correlation against the MATLAB reference is the primary numeric evidence: 208 cases from com_ieee8023_4p15p0, across four channel families, with and without crosstalk. Run on the configurations exactly as supplied, FOM is bit-exact on 198 of 208, COM on 199, the sampling tick on 200, with max |ΔCOM| 0.185 dB. Run with each crosstalk condition on the settings its own reference was produced with (see §11.2), FOM, COM and the sampling tick are ALL bit-exact on 208 of 208, with max |ΔCOM| = 3.3e-14 dB — double-precision noise rather than agreement to a tolerance — and no pass/fail disagreements. Fifteen engine-level defects were found and fixed by this exercise, none of which the unit suite could see. The largest single class is MATLAB-by-value versus Python-by-reference (six of the fifteen); the last one closed was a banker's-rounding tie that dropped a single ISI sample. Detail in MATLAB_Correlation_Review.md.
+Correlation against the MATLAB reference is the primary numeric evidence: 208 cases from com_ieee8023_4p15p0, across four channel families, with and without crosstalk. Run on the configurations exactly as supplied, FOM is bit-exact on 198 of 208, COM on 199, the sampling tick on 200, with max |ΔCOM| 0.185 dB. Run with each crosstalk condition on the settings its own reference was produced with (see §11.2), FOM, COM and the sampling tick were ALL bit-exact on 208 of 208 at the 2026-08-31 re-run, with max |ΔCOM| = 3.3e-14 dB — double-precision noise rather than agreement to a tolerance — and no pass/fail disagreements. The last full re-run, 2026-09-23 on engine 8e0479c, has the sampling tick and every EQ selection identical on 208 of 208 and COM within 4.6e-14 dB. Eighteen fixes were found by this exercise (docs/FIX_SUMMARY.md), none of which the unit suite could see. The largest single class is MATLAB-by-value versus Python-by-reference (five of the eighteen); the last one closed was a banker's-rounding tie that dropped a single ISI sample. Detail in MATLAB_Correlation_Review.md.
 
-**A second implementation, and 1368 more cases (2026-09-19).** The MATLAB
+**A second implementation, and 1368 more cases (2026-09-26).** The MATLAB
 comparison above is a 4p15p0 result on 208 cases. Since then the reference code
 itself has been run under Octave from this repository (chapter 12) over a
-1368-case 4p16p0 corpus — 170 channels, four package configurations, with and
-without crosstalk — and compared with this engine case by case:
+1368-case 4p16p0 corpus — 171 distinct channels, four package configurations, with and
+without crosstalk — and compared with this engine case by case (2026-09-26, engine df78b9c):
 
 | metric | result |
 |---|---|
-| COM within 1e-6 dB | **1368 / 1368** |
-| max \|ΔCOM\| | **3.6e-14 dB** |
+| max \|ΔCOM\| | **5.3e-14 dB** |
+| max \|ΔFOM\| | **6.0e-12 dB** |
 | sampling phase (`itick`) identical | **1368 / 1368** |
 | chosen Tx FFE and CTLE gain identical | **1368 / 1368** |
-| pass/fail disagreements at 3 dB | **0** |
 
 That is not a MATLAB comparison and does not replace one: Octave is a different
-arithmetic environment, and the MATLAB results for this corpus are still
-outstanding. What it establishes is that two implementations sharing no code
-choose the same equalizer and report the same margin across a corpus thirteen
-times larger than the 208. `FOM` is the one quantity that moves at all — 66 of
-1368 cases, worst 3.3e-04 dB — and that is the MMSE solve landing up to 1.8e-06
-apart in its taps, not the two disagreeing about the channel. The full
-comparison is `runs/report_docs/SiCoPR_vs_COM_Octave_1368.md`.
+arithmetic environment. MATLAB 4p16p0 results for this corpus exist but are not
+published in this repository. What it establishes is that two implementations sharing no code
+report the same margin at the same sampling phase across a corpus six and a half
+times larger than the 208. It also found a defect here: in the first run
+(2026-09-19) `FOM` differed on 66 cases, worst 3.3e-04 dB, all on channels that
+start at 10 MHz rather than DC. The DC extrapolation discards outliers at one
+standard deviation, and this port used numpy's `std` (divide by N) where MATLAB's
+divides by N-1. Fixed in d5bff6c, with a test that uses COM Octave as the oracle;
+the 208-case corpus could not have shown it, because every one of its channels
+starts at DC.
 
 **MATLAB version support** The engine emulates com_ieee8023_4p15p0 by default, and that default is deliberate: the 208 reference workbooks are 4p15p0 output, so it is the version the parity result above is evidence for. Pass --matlab-version 4p16p0 (or set sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config) to emulate the newer release. 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
 
 **Measured 4p16p0 impact** The same 208 cases have been run in both modes. 210 of 213 output columns are identical on every case, and no COM, FOM, VEO, VEC, itick or ERL value moves. Two columns change: peak_uneq_pulse_mV and steady_state_voltage_mV are now multiplied by the channel amplitude A, which 4p15p0 applied to the impulse response but not to the pulse response built from it — the new values are the corrected ones. Two further changes the corpus could not reach were measured separately on a config with a 1584-point Tx FFE grid: the Clip Method default moving from Fast to Slow shifts COM by about +0.007 dB and FOM by +0.22 dB, but only for configs that omit the keyword; and the adaptive search minimum radius moving from 1 to 2 gives a bit-identical answer while evaluating 4.3x the candidates. Detail in docs/MATLAB_4p16p0_CHANGES.md and docs/MATLAB_4p16p0_IMPACT.md.
 
-The engine was subsequently optimised to roughly 4.5-5x its previous speed (208-case corpus: 16.1 h of CPU time down to about 3.5 h, versus 14.4 h for the MATLAB reference on its own machine). Accuracy was the gate: every reported COM, VEO and VEC value is bit-identical before and after, verified by re-running the full corpus after each change rather than sampling. Measurement noise on this machine is about 13%, so treat the multiplier as approximate.
+The engine was optimised in August 2026 to roughly 4.5-5x its previous speed, gated on the corpus statistics. That figure is withdrawn pending a like-for-like re-measurement: two of its changes, the FFT convolution and the hoisted Gram matrix, were not equivalent (the FFT lost the far tail of the noise CDF that DER is read from) and were undone on 2026-09-23/24. A speed-up is now accepted only if tools/equivalence_check.py passes on all 28 checkpoint cases: strict outputs bit-identical, noise and DER fields within 1e-12 relative per element, Octave agreement no worse. Five have been re-earned that way; on one case (R19) the run went from 304 s to 50 s against the accurate baseline. No corpus-level multiplier is current.
 
 ## 11.2 Limitations
 
 > **End-to-end MATLAB cross-check: done**
 >
-> 208 reference cases from Hansel D'silva's com_ieee8023_4p15p0 runs were compared case by case. FOM, COM and the sampling phase are all bit-exact on 208/208; max |delta COM| is 3.3e-14 dB, which is double-precision arithmetic noise, and there are no pass/fail disagreements. Eighteen engine defects were found and fixed along the way. This repository documents that verification; it does not offer to reproduce it, because neither the inputs nor the comparison harness are distributed here. The write-up is MATLAB_Correlation_Review.md.
+> 208 reference cases from Hansel D'silva's com_ieee8023_4p15p0 runs were compared case by case. At the last full re-run (2026-09-23) the sampling phase and every EQ selection are identical on 208/208 and max |delta COM| is 4.6e-14 dB, which is double-precision arithmetic noise. DER_DFE and DER_MLSE can differ by up to ~4.5% between any two engines, Octave vs MATLAB included, because the reference reads the CDF exactly on a bin edge (upstream observation A16); COM is unaffected. Eighteen engine defects were found and fixed along the way. This repository documents that verification; it does not offer to reproduce it, because neither the inputs nor the comparison harness are distributed here. The write-up is MATLAB_Correlation_Review.md.
 
 - **Coverage of end-to-end paths** Only the C2M TX-FFE/CTLE/DFE path is exercised end to end by a real configuration. The remaining features are implemented and unit-tested but not covered by an end-to-end run.
 
@@ -971,8 +975,10 @@ python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p --next b.s4p --
 ```
 
 Two practical notes. Octave's CSV report keeps about six significant digits,
-which is not enough to tell two implementations apart — read the saved result
-struct instead, as `octave_compare.py` does. And set
+and SiCoPR's, written in MATLAB num2str format as the reference does, about five:
+neither is enough to tell two implementations apart. Compare at full precision
+instead, as `octave_compare.py` does: the saved Octave result struct on one side, and
+on the other `tools/_sicopr_case.py`, which writes every SiCoPR result field to JSON. And set
 `OPENBLAS_NUM_THREADS=1` when running several cases at once: COM under Octave is
 loop-bound, and one BLAS thread per process is what lets N processes use N
 cores. Memory, not CPU, is the limit on how many fit: about 0.3 GB for a case
@@ -1028,7 +1034,7 @@ proved by planting five last-bit defects and confirming it fails on each.
 
 ## 12.5 How fast, and how close
 
-Per case, one BLAS thread each, against this port on the same machine:
+Per case, one BLAS thread each, against this port on the same machine (measured in mid-September 2026, before SiCoPR's convolution changes, so the ratios are indicative):
 
 | | Octave / SiCoPR |
 |---|---|
@@ -1036,8 +1042,8 @@ Per case, one BLAS thread each, against this port on the same machine:
 | these files, interpreted | about 2.5x |
 | these files, with the compiled build | about 1.5x |
 
-On agreement, see §11: 1368 cases, COM within 3.6e-14 dB, the same equalizer and
-the same sampling phase on every one. `octave/README.md` carries the patch set
+On agreement, see §11: 1368 cases, COM within 5.3e-14 dB and the same sampling
+phase on every one (2026-09-26). `octave/README.md` carries the patch set
 item by item with the evidence behind each.
 
 # Appendix A COM concepts
@@ -1497,7 +1503,7 @@ Rscript may not be on PATH. If it is not, invoke it by full path, for example "C
 ```
 python -m pytest com_functions/fn/<name>/test_verify.py -q   # one function
 python assemble_sicopr.py                                    # regenerate sicopr.py
-python -m pytest com_functions/fn -q                         # full suite (890)
+python -m pytest com_functions/fn -q                         # full suite (2025)
 python tests/<name>.py                                       # standalone checks
 python docs/refresh_tutorial_toc.py                          # after editing this document
 ```

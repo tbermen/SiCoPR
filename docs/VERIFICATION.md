@@ -62,20 +62,24 @@ that records what someone once concluded.
 
 ## Layout (repo-relative)
 
+What exists (2026-09-26):
+
 ```
 com_functions/verification/
-  methods.md                 shared across versions
-  mutations.py               the defect-class operator catalogue
+  builtins.md                row type (b): every MATLAB builtin/operator, classified
+  mutations.py               the defect-class operator catalogue (--checkpoint binds
+                             surviving mutants to tests/test_octave_checkpoints.py)
   equivalent_mutants.md      mutants that provably change nothing, with reasons
-  oracle.json                current Octave oracle identity
-  octave_deviations.md       verified-Octave vs MATLAB differences, each with a probe
-  escapes.md                 discrepancies found outside the inventory
-  report.py                  deterministic, command-line
+  reach.py                   which engine lines a checkpoint run executes
+  triage_copies.py           triage aid for surviving drop_dot_copy mutants
+  report.py                  deterministic, command-line (--approve, --json)
   approved/<date>-<sha>.txt  approved reports, the anchor for every "since"
-  <version>/inventory.json   generated, not authored
-  <version>/findings.md
-  <version>/audit_state.json
 ```
+
+Named by this contract but not yet created: `methods.md`, `oracle.json`,
+`octave_deviations.md`, `escapes.md`, and the per-version `<version>/inventory.json`,
+`findings.md` and `audit_state.json`. Where the text below refers to them, it
+describes the design, not a file you will find.
 
 ## The two kinds of state
 
@@ -144,8 +148,8 @@ composite, and grades it `oracle` / `values pinned` / `shape only` /
 - **d. Inlined copy.** One row per surviving copy of a translated function.
   A row that closes against the canonical proves nothing about the copies. On
   2026-09-22 a pass fixed 26 canonical functions and left 62 stale copies
-  behind with the suite green. 73 copies remain, 23 of which nothing drives
-  behaviourally. See `tests/test_inlined_copies.py` and
+  behind with the suite green. As of 2026-09-26, 62 copies of 45 functions
+  remain, 34 of which nothing drives behaviourally. See `tests/test_inlined_copies.py` and
   `com_functions/inlined_copies.json`.
 
 ### Row fields
@@ -497,8 +501,8 @@ inventory is complete. Three instruments, none of them line coverage:
 1. **Function-level translation coverage** (`tools/translation_coverage.py`):
    per function, is it translated, is a value pinned, is a shape checked, and
    is it checked against the *executed* reference rather than a reading of it.
-   The last is the one that catches a library default, and as of 2026-09-22 it
-   stands at 57 of 146.
+   The last is the one that catches a library default. It stood at 57 of 146
+   on 2026-09-22 and reached 146 of 146 on 2026-09-23.
 2. **Option-branch coverage** (`tests/test_option_coverage.py`): fails when a
    function's test never passes an option its implementation branches on.
 3. **Inlined-copy differential** (`tests/test_inlined_copies.py`): every copy
@@ -584,9 +588,39 @@ had defects a mutation would have exposed.
 results rather than re-deriving conclusions, and it pins the inputs it depends
 on by hash.
 
+## After 2026-09-23: whole-pipeline checks
+
+The function-level contract above closed at 146 of 146 on 2026-09-23. What was
+added after it checks what a function-level oracle cannot: the stages between
+functions, and whether the tests would notice a defect coming back.
+
+- **Octave checkpoints** (`tests/test_octave_checkpoints.py`). Compares 10 stage
+  structs on 28 cases against goldens saved from COM Octave. Point
+  `COM_OCTAVE_CHECKPOINTS` at the goldens; `COM_CHECKPOINT_CASES=all` runs every
+  case, otherwise a quick subset. The goldens are local-only data, so the test
+  skips in a clone. A failing `DER_DFE` or `DER_MLSE` row is marked `EDGE` only
+  when that case carries its own input-swap proof: the reference reads the CDF at
+  -A_s, exactly a bin edge, so a last-bit difference in A_s moves DER by a bin
+  (upstream observation A16; differences up to ~4.5% between any two engines,
+  Octave vs MATLAB included; COM unaffected).
+- **Semantics pins** (`tools/gen_semantics_pins.py`). Runs COM Octave's own
+  builtins on fixed inputs and writes the literals that
+  `tests/test_matlab_semantics.py` pins. Regenerate, never edit.
+- **Mutation gate** (`tests/test_mutation_score.py`, `mutations.py --checkpoint`,
+  `reach.py`). Currently 205 mutants, of which 31 survive with no other gate:
+  those are the known open gaps, pinned by name so a new survivor fails.
+- **Speed-up equivalence rule** (`tools/equivalence_check.py`, owner rule
+  2026-09-24). A speed-up is accepted only if, on all 28 checkpoint cases, strict
+  output fields are bit-identical, noise statistics and DER are within 1e-12
+  relative per element with the zero pattern unchanged, and Octave agreement is no
+  worse. The August FFT convolution and Gram hoist failed this and were withdrawn
+  (`8ec85b0`, `a007fc8`); `b94eb9b`, `9762faa`, `df78b9c`, `a47c8f2` and `ad50389`
+  were re-earned under it.
+
 ## How to answer "are there any opens?"
 
-Run `tests\run_all.ps1`, then `report.py --all`, and paste the output. Every
+Run `tests\run_all.ps1`, then `python com_functions/verification/report.py`, and
+paste the output. (Its only options are `--approve` and `--json`.) Every
 "since" in the list below resolves against the anchor sha of the newest file in
 `verification/approved/`.
 

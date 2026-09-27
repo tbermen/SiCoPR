@@ -46,6 +46,10 @@ comparison, two of them able to move a number (all 39 `argsort` calls made stabl
 a `round()` on an integer ratio); neither moved anything here. The full-grid
 comparison in §5 was **not** part of that re-run and still carries its own date.
 
+**Re-run 2026-09-23** on `8e0479c`, after the September oracle fixes had moved the
+engine: sampling phase and every EQ selection identical on 208 / 208, COM within
+4.6e-14 dB. The table above is the 2026-08-31 run and is left as written.
+
 3.3e-14 dB is double-precision arithmetic noise, not agreement to a tolerance.
 The reference COM values span −4.82 to +6.68 dB, so the agreement holds across
 passing and failing channels alike and across all four package configurations.
@@ -301,6 +305,18 @@ representative subset.
 
 ## 5b. Runtime
 
+> **Superseded 2026-09-24.** This section records the August 2026 speed work as it was
+> done. Two of its four changes were not equivalent and have been withdrawn: the
+> size-gated FFT convolution (1) left the far tail of the noise CDF, where DER is read,
+> in round-off (`8ec85b0`), and the hoisted Gram matrix (2) summed in a different order
+> from the reference (`a007fc8`). Speed-ups are now accepted only if
+> `tools/equivalence_check.py` passes on all 28 checkpoint cases: strict outputs
+> bit-identical, noise and DER fields within 1e-12 relative per element, Octave
+> agreement no worse. Re-earned that way: `b94eb9b`, `9762faa`, `df78b9c` (convolution),
+> `a47c8f2`, `ad50389` (MMSE Gram gather). On one case (R19) that took the run from 304 s
+> to 50 s against the accurate baseline. **The 4.5–5× figure below is withdrawn**
+> pending a like-for-like re-measurement; no corpus-level multiplier is current.
+
 MATLAB reports `rtmin` per case, so a direct comparison is possible. The absolute
 numbers are confounded — the MATLAB times are from Hansel's machine — so each engine is
 also compared **against itself**, which removes the hardware dependence.
@@ -342,7 +358,9 @@ Four changes, each measured before being kept:
    `.take().take()` (2.2×), and `np.eye`/`np.zeros` cached. All bit-identical.
 
 Only (1) perturbs the arithmetic, at ~1e-15 relative — it moves FOM in the 14th
-significant digit and leaves every reported COM value untouched.
+significant digit and leaves every reported COM value untouched. *(As written in
+August. ~1e-15 was relative to the peak; per element the far tail was wrong, and (2)
+changed summation order. Both withdrawn; see the note at the top of §5b.)*
 
 ### Parallelism: memory binds before CPU
 
@@ -539,7 +557,7 @@ plausibility before hypothesising an engine defect.
 
 ## Appendix D — notes on the port
 
-- `sicopr.py` is **generated** by `assemble_sicopr.py` from 159 per-function
+- `sicopr.py` is **generated** by `assemble_sicopr.py` from 157 per-function
   `com_functions/fn/<name>/py_impl.py` files. Never edit `sicopr.py` directly, and note
   that `assemble_sicopr.py` does not carry per-function imports across.
 - Several functions are **also inlined into their callers** — `MMSE`/`MMSE_FOM`,

@@ -62,13 +62,29 @@ were produced before this file existed and are not restated as changes.
   covered collectively by [`com_functions/fn/README.md`](com_functions/fn/README.md)
   rather than individually — the assembler inlines their leading comments, so a
   per-file header would appear 157 times inside the generated engine.
+- `com_functions/verification/report.py` answers "are there any opens?" from the
+  suite; all 146 translated functions are checked against the executed reference.
+  The contract is [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+- `tests/test_octave_checkpoints.py`, `tests/test_mutation_score.py`,
+  `tools/gen_semantics_pins.py` and `tools/equivalence_check.py`; see
+  `docs/VERIFICATION.md`.
 
 ### Changed
 
 - Behavioural coverage of the inlined helper copies raised from 113 to 136 of
-  177. The 41 that remain cannot be driven from synthetic inputs and are
-  disclosed as unverified in `README.md`; five further divergences were found in
-  the process and are catalogued in `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`.
+  177; five further divergences were found in the process and are catalogued in
+  `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. On 2026-09-22 most copies were
+  then replaced by imports: 62 copies of 45 functions remain, 34 of which cannot
+  be driven from synthetic inputs and are disclosed as unverified in `README.md`.
+- `results.csv` is written in MATLAB `num2str` format (about five significant
+  digits), as the reference writes it. Compare engines at full precision:
+  `tools/_sicopr_case.py` writes every result field to JSON, and
+  `tools/octave_compare.py` reads that.
+- The August speed-ups' FFT convolution and hoisted Gram matrix were withdrawn
+  (the FFT lost the far tail of the noise CDF that DER is read from). Speed-ups
+  are now accepted only under `tools/equivalence_check.py`: strict outputs
+  bit-identical, noise and DER fields within 1e-12 relative per element, on 28
+  checkpoint cases. The August 4.5–5× figure is withdrawn pending re-measurement.
 
 ### Fixed
 

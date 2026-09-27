@@ -116,10 +116,10 @@ the goal; making it better is a different project.
 | MATLAB `round()` is **half away from zero**, Python's is **banker's** | they differ on exact ties, and ties are not rare when the input is a ratio of integers |
 
 **One function can exist as many copies.** The assembler inlines helpers, so
-there are 177 inlined copies of 70 functions. A fix applied to one `py_impl.py`
+there are 62 inlined copies of 45 functions. A fix applied to one `py_impl.py`
 reaches the canonical copy only. `tests/test_inlined_copies.py` compares copies
 behaviourally and will tell you which ones you missed — but it can only drive
-136 of the 177, so check `com_functions/inlined_copies.json` for the rest rather
+28 of the 62, so check `com_functions/inlined_copies.json` for the rest rather
 than assuming the harness has you covered.
 
 ## Changing the config editor (`gui/`)
@@ -169,11 +169,18 @@ New behaviour needs a test that fails without your change. Prove it: reintroduce
 the bug, watch the test fail, then fix it again. Several guards in `tests/` were
 written this way and say so in their docstrings.
 
-Prefer an oracle that does not depend on reading the MATLAB — analytic values,
+Prefer an oracle that does not depend on reading the MATLAB — the executed
+reference first (see *Verifying a function port* below), then analytic values,
 physical invariants, or agreement between two independent code paths. Tests that
 merely re-assert the same reading of MATLAB that produced the code cannot catch a
 misreading, and at least one defect in this project's history was *encoded* into
 its own unit-test fixtures.
+
+**A change made for speed** is accepted only if `tools/equivalence_check.py`
+passes on all 28 checkpoint cases: strict outputs bit-identical, noise and DER
+fields within 1e-12 relative per element, Octave agreement no worse. Two August
+speed-ups that were verified only against corpus statistics turned out not to be
+equivalent and were withdrawn.
 
 ## Correlation data
 

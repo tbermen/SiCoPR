@@ -1,5 +1,9 @@
 # 4p16p0 vs 4p15p0 — measured impact on the 208-case corpus
 
+> **Dated (noted 2026-09-26):** last edited 2026-09-01, so measured on an engine that
+> predates the September 2026 oracle fixes and speed-up changes; not re-run since. The run times
+> below predate the equivalence rule in [`VERIFICATION.md`](VERIFICATION.md).
+
 Both sweeps run on the same 208 reference cases, same channels, same configs,
 same engine build; the only difference is `--matlab-version`. 4p16p0 completed
 208 ok / 0 failed in 0.6 h at `--jobs 5`.

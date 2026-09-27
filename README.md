@@ -49,9 +49,12 @@ redistributed unmodified under `matlab/`, notices intact.
 > clause 3 of the licence requires it. "IEEE 802.3" appears here only to identify the
 > standard the reference implements.
 
-**Correctness is a measured claim, not a promise.** Against the 208-case reference set the
-port reproduces MATLAB bit-for-bit on COM, FOM and sampling phase, with the caveats and the
+**Correctness is a measured claim, not a promise.** Against the 208-case reference set
+(last re-run 2026-09-23) the port chooses MATLAB's sampling phase and equalizer on every
+case and reproduces COM to 4.6e-14 dB, with the caveats and the
 things *not* covered stated plainly in §7. Read §7 before you rely on it for anything.
+Function by function, all 146 translated functions are checked against the *executed*
+reference; [`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract.
 
 **Contributions are welcome** — the process is short and is in
 [`CONTRIBUTING.md`](CONTRIBUTING.md). In brief: fork, branch, open a pull request; nobody
@@ -77,7 +80,7 @@ you have to fetch yourself is the channel, and you can tell whether you fetched
 the right one.
 
 **A fresh clone is fully functional without any of it.** The unit suite runs and
-passes — 890 per-function tests plus the cross-check scripts — and every test that
+passes — 2025 per-function tests plus 44 cross-check scripts — and every test that
 needs data of its own skips cleanly and says what it wanted.
 
 **This repository documents the verification; it does not offer to reproduce it.**
@@ -149,6 +152,9 @@ FEXT, `--next` for NEXT, each accepting multiple files.
 
 One result block per package test case. With `SAVE_FIGURES` / `CSV_REPORT` enabled in the
 config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
+`results.csv` is written in MATLAB `num2str` format (about five significant digits), as
+the reference writes it; to compare two engines, use full precision
+(`tools/_sicopr_case.py` writes every result field to JSON).
 
 ### Config editor (optional)
 
@@ -182,16 +188,18 @@ GNU Octave, generated from `matlab/` by `octave/make_octave_compat.py` with a
 small, named patch set, every item of which is a no-op under MATLAB. Octave
 reads its configuration from a `.mat`; `tools/xlsx_to_com_mat.py` makes one
 from a workbook, and `tools/octave_compare.py` runs the same case through Octave
-and `python -m sicopr` and compares the results field by field:
+and `python -m sicopr` and compares the results field by field, at full precision:
 
 ```powershell
 python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p --next b.s4p --version 4p15p0
 ```
 
 So a reader with a workbook, a channel and Octave can check this port against
-the reference code without a MATLAB licence. The two agree to **3.6e-14 dB on all
-1368 cases** of the 4p16p0 workload (2026-09-19), with the same sampling phase on
-every one, at about 2.5 times SiCoPR's run time.
+the reference code without a MATLAB licence. The two agree on COM to **5.3e-14 dB on
+all 1368 cases** of the 4p16p0 workload (171 distinct channels; 2026-09-26, engine
+`df78b9c`), with the same sampling phase on every one. Octave took about 2.5 times
+SiCoPR's run time when measured in mid-September, before SiCoPR's convolution changes
+(§7).
 
 Optionally, `octave/accel/` holds C++ for the three hottest loops. It is not
 required and nothing changes until it is built:
@@ -202,7 +210,7 @@ python octave/accel/build_accel.py     # once per machine
 
 After that any Octave run that has `octave/` on its path uses it automatically,
 with the same command and byte-identical results, at about 1.5 times SiCoPR's
-run time. `COM_OCTAVE_ACCEL=0` turns it off. See
+run time (same mid-September measurement). `COM_OCTAVE_ACCEL=0` turns it off. See
 [octave/README.md](octave/README.md).
 
 ## 4. Repository layout
@@ -237,7 +245,7 @@ which maps every stage to its figures and the result columns it owns. A stage wi
 figure is listed as **no figure** rather than omitted, so a gap is visible instead of
 silent. `tests/test_stage_figures.py` fails if any of the seven stages stops emitting one.
 
-**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. The input data is IEEE contributions and not ours to redistribute (§1), and the outputs are either produced by running on that data or distilled from the MATLAB reference, so they are excluded on the same grounds. Every test that needs data of its own skips and says so, and a fresh clone runs green: 890 per-function tests plus the cross-check scripts.
+**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. The input data is IEEE contributions and not ours to redistribute (§1), and the outputs are either produced by running on that data or distilled from the MATLAB reference, so they are excluded on the same grounds. Every test that needs data of its own skips and says so, and a fresh clone runs green: 2025 per-function tests plus 44 cross-check scripts.
 
 ## 5. The EQ-search study
 
@@ -346,36 +354,42 @@ Those scripts record two outcomes. `check()` is behaviour that must match MATLAB
 persists and **fails the run if it starts passing** — so a divergence that gets
 fixed cannot leave a stale entry behind in the ledger.
 
-Current state: **890** per-function tests, and **656 checks across 31 audit scripts**
-with 25 accepted divergences.
+Current state (2026-09-26): **2025** per-function tests across 157 functions, and **44
+audit scripts**; the 41 that print a tally total **628 checks** with 20 accepted
+divergences. Whether any function-level verification is open is answered by
+`python com_functions/verification/report.py`, per
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 
 ### What the coverage does *not* reach
 
-The assembler inlines each helper separately into every caller, so the engine contains
-**177 inlined copies of 70 functions**. `tests/test_inlined_copies.py` compares each copy
+The assembler inlines helpers into their callers. Most calls between translated functions
+became imports on 2026-09-22, but the engine still contains **62 inlined copies of 45
+functions**. `tests/test_inlined_copies.py` compares each copy
 against its canonical top-level version and reports plainly how far it gets:
 
 ```
-177 inlined copies of 70 functions; 136 compared behaviourally, 41 not drivable synthetically
+62 inlined copies of 45 functions; 28 comparison(s) made, 34 skipped
 ```
 
-**41 of those 177 copies — 23% — have no behavioural verification.** They are not skipped
+**34 of those 62 copies have no behavioural verification.** They are not skipped
 by choice: the harness drives both sides from synthetic inputs, and for these it cannot build
 any without a populated `param`/`OP` struct or a real Touchstone file. For them the only
 check is that the copy still accepts the same arguments as the canonical.
 
-The bit-exact result above says nothing about those 41. Those 208 cases exercise the
+The correlation result in §7 says nothing about those 34. Those 208 cases exercise the
 *canonical* implementations, which `_run_com` injects; the inlined copies are `or`-fallbacks
 that a normal run never reaches. Several are deliberately narrow — a Gaussian fitted to the
-sample RMS where the canonical builds an exact PDF, for instance — and 21 such divergences
-are catalogued with reasons in `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. Five of those
-21 were found only when coverage was raised from 113 copies to 136, which is the honest
-argument for treating the remaining 41 as unverified rather than as probably-fine: every
+sample RMS where the canonical builds an exact PDF, for instance — and 17 such divergences
+are catalogued with reasons in `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. Five
+divergences were found only when coverage was raised from 113 copies to 136 (before the
+copies were collapsed onto imports), which is the honest
+argument for treating the remaining 34 as unverified rather than as probably-fine: every
 time this harness has been pointed at more copies, it has found more divergences.
 
 `com_functions/inlined_copies.json`, written by the assembler, records where every copy came
 from — which helper, which caller, and the upstream MATLAB line range of each. It counts a
-wider population than the 177 above: 280 copies of 71 helpers, because it also lists
+wider population than the 62 above: the assembler reports 245 inlined helper copies, 62 of
+which duplicate a translated function; the rest are
 private helpers that have no canonical top-level function to compare against.
 
 The practical risk is not in what runs today. It is that a future caller which forgets to
@@ -389,10 +403,11 @@ by re-introducing it — a check that has never failed for the right reason is n
 
 | script | guards against | why |
 |---|---|---|
-| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and six of the fifteen engine fixes overall. Caught a new instance during the 4p16p0 port. |
-| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **177 copies of 70 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
-| `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the hoisted Gram matrix, FFT/direct convolution agreement, shared buffers. Found a live cache-aliasing defect. |
-| `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks — the only tests in the repo that assert against MATLAB rather than against Python. The oracle file itself is not tracked (it *is* reference data); the test skips without it. |
+| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and five of the eighteen entries in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md). Caught a new instance during the 4p16p0 port. |
+| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **62 copies of 45 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
+| `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the verified Gram gather, direct (never FFT) convolution, shared buffers. Found a live cache-aliasing defect. |
+| `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks. The oracle file itself is not tracked (it *is* reference data); point `COM_STAGE_ORACLES` at a local copy, and without it the test skips. |
+| `test_octave_checkpoints.py` | a stage drifting from the reference code | compares 10 stage structs on 28 cases against COM Octave goldens (`COM_OCTAVE_CHECKPOINTS`; `COM_CHECKPOINT_CASES=all` for every case). The goldens are local-only, so it skips in a clone. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md). |
 | `test_abort_path_leaks.py` | writing into a caller's struct before an early return | the sibling of the leak above that the leak guard cannot see: the function *does* return the struct, but commits values on a path MATLAB never commits on. Ledger #10b. |
 | `test_sort_stability.py` | `np.argsort` reordering ties | MATLAB's `sort` is stable, NumPy's default is not. Ties were measured in **81% of argsort calls** rather than assumed rare. |
 | `test_integer_ratio_rounding.py` | banker's rounding on a ratio of integers | MATLAB rounds half away from zero. The audit dismissed this as measure-zero, which is true for continuous data and false for `a/b` with both integral — ledger #16. |
@@ -419,24 +434,29 @@ Every major feature is implemented and unit-tested against `matlab/com_ieee8023_
 plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating
 RxFFE taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
 processing (ICN/ILD), ERL/TDR, and TD-ILN/RILN. The `com_functions/fn` suite is green
-(**890 passed, 0 failed**).
+(**2025 passed, 0 failed**, 2026-09-26). Function by function, all 146 translated
+functions are checked against the *executed* reference (COM Octave) as of 2026-09-23;
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract, and
+`python com_functions/verification/report.py` answers "are there any opens?".
 
 **Numeric parity with MATLAB is established end to end.** 208 reference cases from Hansel
-D'silva's `com_ieee8023_4p15p0` runs, compared case by case:
+D'silva's `com_ieee8023_4p15p0` runs, compared case by case. Last full re-run
+**2026-09-23, engine `8e0479c`**:
 
 | | |
 |---|---|
-| FOM bit-exact | **208 / 208** |
-| COM bit-exact | **208 / 208** |
-| sampling phase (`itick`) exact | **208 / 208** |
-| pass/fail disagreements at 3 dB | **0** |
-| max \|ΔCOM\| | **3.29e-14 dB** |
-| max \|ΔFOM\| | **3.38e-11 dB** |
+| sampling phase (`itick`) identical | **208 / 208** |
+| every EQ selection identical | **208 / 208** |
+| max \|ΔCOM\| | **4.6e-14 dB** |
 
 That is double-precision arithmetic noise, not agreement to a tolerance: the two
-implementations compute the same number. Of 43,509 numeric column-values compared, 67 sit
-outside 1e-6 relative and every one is `DER_DFE` or `DER_MLSE` — CDF bin lookups landing on
-an exact tie, quantisation-limited rather than wrong.
+implementations compute the same number. The previous re-run (2026-08-31, `a1c504c`) also
+had FOM bit-exact on 208 / 208 (max \|ΔFOM\| 3.38e-11 dB) and no pass/fail disagreement at
+3 dB. In that run, of 43,509 numeric column-values compared, 67 sat
+outside 1e-6 relative and every one was `DER_DFE` or `DER_MLSE`. The reference reads the
+CDF at −A_s, which is exactly a bin edge, so a last-bit difference in A_s moves DER by a
+bin: differences up to ~4.5% between any two engines, Octave vs MATLAB included, are
+expected, and COM is unaffected (upstream observation A16).
 
 Each crosstalk condition runs on the configuration its own MATLAB reference was produced
 with: the without-crosstalk cases on the base workbooks, the with-crosstalk cases on the
@@ -446,7 +466,7 @@ the local comparison harness, which is not part of this repository (§1): it res
 the case set, runs all 208 with modal ERL across five workers, then exports the
 comparison table.
 
-Getting there took **seventeen** engine-level and settings findings, each with what it
+Getting there took **eighteen** engine-level and settings findings, each with what it
 bought recorded in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md); the full write-up is
 [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md). Two are worth naming here
 because they were configuration rather than code, and both were the same failure — a
@@ -463,16 +483,21 @@ supplied config snapshot that post-dated the run it came from:
 
 The result is against **4p15p0**, which is why it stays the default emulation target — see
 §8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical on
-all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves.
+all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves (measured before the
+September 2026 oracle fixes; not re-run since).
 
 Honest caveats for anyone relying on the numbers:
 
 - **No MATLAB-vs-Python runtime comparison is offered.** The timings that exist were taken
-  on different machines and, at the time, on different search spaces. The Python-vs-Python
-  speed-up (**roughly 4.5–5× on identical work**, every output field bit-identical) is
-  unaffected by that and is the only speed claim made. It is a range, not a figure: repeat
-  runs of the same build varied by ±13%, as
-  [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md) records.
+  on different machines and, at the time, on different search spaces. The August 2026
+  Python-vs-Python figure (roughly 4.5–5×) is **withdrawn** pending a like-for-like
+  re-measurement: two of its changes, the FFT convolution and the hoisted Gram matrix,
+  were not equivalent (the FFT lost the far tail of the noise CDF that DER is read from)
+  and were undone on 2026-09-23/24. Speed-ups are now accepted only if
+  `tools/equivalence_check.py` passes on all 28 checkpoint cases: strict outputs
+  bit-identical, noise and DER fields within 1e-12 relative per element, Octave agreement
+  no worse. Five have been re-earned that way; on one case (R19) the run went from 304 s to
+  50 s against the accurate baseline. No corpus-level multiplier is current.
 - **Results produced before August 2026 are not comparable to current output.** The engine
   fixes changed COM materially — the largest removed a systematic FOM bias affecting 95.7%
   of cases. Regenerate rather than comparing against archived numbers.
@@ -485,8 +510,11 @@ Honest caveats for anyone relying on the numbers:
   for reported results.
 - GUI file pickers are not ported — file lists are always passed on the command line.
 
-The conversion audit (146 EQUIVALENT / 11 DIVERGENT functions, findings D1-D20) is written
-up in [`docs/AUDIT_FINDINGS.md`](docs/AUDIT_FINDINGS.md).
+The 2026-07 conversion audit (146 EQUIVALENT / 11 DIVERGENT functions, findings D1-D20) is
+written up in [`docs/AUDIT_FINDINGS.md`](docs/AUDIT_FINDINGS.md). It was a reading, and it is
+superseded: executing the reference on 2026-09-22 found real divergences in 27 functions
+its ledger had marked EQUIVALENT. Current status is
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md) and `com_functions/verification/report.py`.
 
 
 ## 8. MATLAB version support
