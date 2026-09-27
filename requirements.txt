@@ -27,3 +27,4 @@ matplotlib>=3.5    # figures (only needed when SAVE_FIGURES is enabled)
 # passes. Optional: the test prefers `node --check` if node is installed, and
 # warns loudly if it has neither and falls back to a delimiter check.
 esprima>=4.0       # JavaScript parser, tests only
+pytest>=7.0        # test runner (tests/run_all.ps1 and CI); tests only
