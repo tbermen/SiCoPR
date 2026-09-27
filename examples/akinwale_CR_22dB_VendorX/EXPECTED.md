@@ -19,7 +19,7 @@ The two engines share no code: SiCoPR is a Python port, COM Octave is the refere
 
 **What the numbers say about the channel.** Without crosstalk it makes 3.51 dB, 0.51 dB above the 3 dB threshold. Add the 5 aggressors and it drops to 2.90 dB, which does not meet it. Same channel, same configuration: the aggressors cost 0.61 dB, and turn a pass into a fail. That is the example working as an example — a comfortable pass would teach less.
 
-**Roughly how long.** On one modern desktop core, SiCoPR took 318 s without crosstalk and 479 s with it. COM Octave takes about 1.5 times that with its compiled kernels built, about 2.5 times without.
+**Roughly how long.** On one modern desktop core, SiCoPR took 360 s without crosstalk and 336 s with it (measured 2026-09-26). COM Octave takes longer, more so without its compiled kernels built; `octave/README.md` has its timings.
 
 Every column both engines report is in the `expected_*.csv` files beside this one.
 

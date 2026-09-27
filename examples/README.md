@@ -16,7 +16,7 @@ the values shipped beside the configuration, and prints anything that differs.
 `--engine sicopr` or `--engine octave` runs one side; `--condition no_crosstalk`
 runs the quick one. The Octave side is skipped if `octave-cli` is not on PATH.
 
-Expect roughly five minutes per SiCoPR run on one core, longer under Octave.
+Expect about six minutes per SiCoPR run on one core, longer under Octave.
 Nothing is written into the repository.
 
 ## What is here, and what is not

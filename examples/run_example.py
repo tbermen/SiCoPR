@@ -113,9 +113,18 @@ def report_row(result_dir):
     else:
         row = {r[0].strip(): (r[1].strip() if len(r) > 1 else '') for r in rows}
 
-    # Octave's CSV report keeps about six significant digits, which is not
-    # enough to tell two implementations apart. The run also saves the result
-    # struct, where every scalar is at full precision; prefer that.
+    # Both engines' CSV reports are MATLAB's format, about five significant
+    # digits, which is not enough to tell two implementations apart. Each run
+    # also saves its result at full precision; prefer that.
+    out_json = os.path.join(result_dir, 'sicopr_result.json')
+    if os.path.isfile(out_json):
+        import json
+        with io.open(out_json, encoding='utf-8') as fh:
+            for k, v in json.load(fh)[0].items():
+                if isinstance(v, list) and len(v) == 1:
+                    v = v[0]
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    row[k] = repr(float(v))
     out_mat = os.path.join(result_dir, 'octave_result.mat')
     if os.path.isfile(out_mat):
         import numpy as np
@@ -147,14 +156,16 @@ def compare(got, want):
 
 def run_sicopr(cfg, thru, fext, next_, out):
     # The engine writes under its working directory, so the run happens in `out`.
-    # --matlab-version matters: this example's workbook is a 4p16p0 one, and the
-    # engine's default is 4p15p0, which reports two columns differently.
-    cmd = [sys.executable, '-m', 'sicopr', os.path.abspath(cfg), os.path.abspath(thru)]
+    # tools/_sicopr_case.py is `python -m sicopr ... --matlab-version 4p16p0`
+    # (this example's workbook is a 4p16p0 one; the engine's default is 4p15p0)
+    # plus the result at full precision, which the CSV report does not carry.
+    cmd = [sys.executable, os.path.join(ROOT, 'tools', '_sicopr_case.py'),
+           os.path.join(out, 'sicopr_result.json'), '4p16p0',
+           os.path.abspath(cfg), os.path.abspath(thru)]
     if fext:
         cmd += ['--fext'] + [os.path.abspath(f) for f in fext]
     if next_:
         cmd += ['--next'] + [os.path.abspath(f) for f in next_]
-    cmd += ['--matlab-version', '4p16p0']
     t0 = time.time()
     q = subprocess.run(cmd, cwd=out, capture_output=True, text=True, errors='replace')
     if q.returncode != 0:
