@@ -19,6 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: com_functions/verification/report.py resolves the
+          # approval anchor's commit, and a shallow clone has only HEAD.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
