@@ -287,6 +287,7 @@ else:
             if not job or not os.path.exists(job['thru']):
                 continue
             files = [job['thru']] + list(job['fext']) + list(job['next'])
+            sicopr.COM_MATLAB_VERSION = '4p15p0'   # the reference corpus's version
             res = sicopr._run_com(job['config'], len(job['fext']),
                                len(job['next']), files, export_mat=False)
             r = res[0] if isinstance(res, (list, tuple)) else res

@@ -50,8 +50,8 @@ octave-cli --no-gui --no-window-system --eval ^
   "addpath('octave'); r = com_ieee8023_4p16p0_octave_compat('config.mat', 0, 0, '<channels>/..._thru1.s4p'); save('-v7','r.mat','r')"
 ```
 
-`--matlab-version 4p16p0` matters: this workbook is a 4p16p0 one and the engine
-defaults to 4p15p0, which reports two columns differently (README §8). Add the
+`--matlab-version 4p16p0` is the engine's default and is spelled out so the
+command still means the same thing if the default ever changes (README §8). Add the
 five aggressors with `--fext` and `--next` for the crosstalk case; the file roles
 are in `CHANNEL.md`.
 

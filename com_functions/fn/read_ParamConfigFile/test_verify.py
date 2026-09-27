@@ -521,3 +521,26 @@ def test_ctle_type_CL120e_divides_fz_by_the_dc_gain():
 # supplies f_p1, f_p2 and f_z, so a normal run never reaches the defaults.
 # Reported for the COM ad hoc as item A12.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Default emulated release (owner's call, 2026-09-27): 4p16p0, from VERSION.json.
+# VERSION.json said 4p16p0 from 2026-09-22 while this module's constant still
+# said 4p15p0, so the generated header announced one release and a plain run
+# emulated the other. These pin the two to each other and to what a config
+# without a 'COM Version' keyword actually gets.
+# ---------------------------------------------------------------------------
+def test_default_version_is_the_one_VERSION_json_names():
+    import json
+    import com_functions.fn.read_ParamConfigFile.py_impl as impl
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))))
+    with open(os.path.join(root, 'VERSION.json'), encoding='utf-8') as fh:
+        want = json.load(fh)['default_matlab_version']
+    assert want == '4p16p0'
+    assert impl.COM_MATLAB_VERSION == want
+
+
+def test_config_without_version_keyword_emulates_4p16p0(minimal_csv_file):
+    param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
+    assert param.matlab_version == '4p16p0'

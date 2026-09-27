@@ -117,6 +117,7 @@ def run_methods(config, thru, fext=(), next_=(), local_search=2,
 
             print(f'\n=== {label}: Local Search={ls}, NonZeroLSMethod={nz} ===', flush=True)
             t0 = time.time()
+            sicopr.COM_MATLAB_VERSION = '4p15p0'   # the 208-case reference is 4p15p0
             results = sicopr._run_com(config, len(fext), len(next_), files, export_mat=False)
             dt = time.time() - t0
             sicopr.SWEEP_LOG_CSV = None

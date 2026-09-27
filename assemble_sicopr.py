@@ -446,10 +446,10 @@ if __name__ == '__main__':
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
     parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0'],
-                        help='which MATLAB release to emulate. Default 4p15p0, the '
-                             'version the 208-case reference corpus and the whole '
-                             'correlation result were produced with. 4p16p0 enables '
-                             'the newer behaviour -- see docs/MATLAB_4p16p0_CHANGES.md')
+                        help='which MATLAB release to emulate. Default 4p16p0, the '
+                             'current IEEE release. 4p15p0 is the version the 208-case '
+                             'reference corpus was produced with -- see '
+                             'docs/MATLAB_4p16p0_CHANGES.md')
     parser.add_argument('--eye-under-mlse', action='store_true',
                         help='compute the eye contour and timing bathtub for PLOTTING even '
                              'when MLSE is enabled. MATLAB gates the eye on MLSE == 0 '

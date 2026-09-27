@@ -185,7 +185,10 @@ def test_oracle_drive_pulse_length_at_default_TR_TDR():
     """`0:dt:edge_time*2` is 55 points at the shipped defaults, not 56."""
     pulse = _drive_pulse_from_delta(_oct_param(), 200)
     assert int(np.nonzero(pulse)[0][-1]) + 1 == OCT_DRIVE_LEN
-    np.testing.assert_array_equal(pulse[:10], OCT_DRIVE_HEAD)
+    if os.name == 'nt':   # pinned on Windows, where it is bit-exact
+        np.testing.assert_array_equal(pulse[:10], OCT_DRIVE_HEAD)
+    else:                 # glibc's libm: 1 of 10 samples off by 1.9e-15 relative
+        np.testing.assert_allclose(pulse[:10], OCT_DRIVE_HEAD, rtol=1e-14, atol=0)
     np.testing.assert_array_equal(pulse[OCT_DRIVE_LEN - 4:OCT_DRIVE_LEN],
                                   np.ones(4))
     np.testing.assert_array_equal(pulse[OCT_DRIVE_LEN:], 0.0)

@@ -31,11 +31,12 @@ from types import SimpleNamespace
 
 _SENTINEL = object()
 
-# Which MATLAB release to emulate. '4p15p0' is the baseline and the default:
-# the 208-case reference corpus and the whole correlation result are 4p15p0.
-# Set to '4p16p0' to enable the newer behaviour (see docs/MATLAB_4p16p0_CHANGES.md).
+# Which MATLAB release to emulate. '4p16p0', the current IEEE release, is the
+# default (VERSION.json, the owner's call). The 208-case reference corpus is
+# 4p15p0 output, so anything reproducing it must ask for '4p15p0' explicitly
+# (see docs/MATLAB_4p16p0_CHANGES.md for what differs).
 # A config's 'COM Version' keyword, if present, wins over this default.
-COM_MATLAB_VERSION = '4p15p0'
+COM_MATLAB_VERSION = '4p16p0'
 
 
 # ---------------------------------------------------------------------------

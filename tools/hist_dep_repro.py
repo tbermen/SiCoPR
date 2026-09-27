@@ -109,6 +109,7 @@ def run(mode):
     if mode == 'A':
         sicopr.OptFom_Build_TXFFE = p._pinned_build(orig_build, WIN)
     try:
+        sicopr.COM_MATLAB_VERSION = '4p15p0'   # the 208-case reference is 4p15p0
         res = sicopr._run_com(CONFIG, 0, 0, [THRU], export_mat=False)
     finally:
         sicopr.read_ParamConfigFile = orig_read

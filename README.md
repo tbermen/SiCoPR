@@ -140,7 +140,7 @@ FEXT, `--next` for NEXT, each accepting multiple files.
 | flag | what it does |
 |---|---|
 | `--export-mat` | per-case engineering `.mat` snapshot for the R dashboard (§11) |
-| `--matlab-version` | which MATLAB release to emulate — **default `4p15p0`** (§8) |
+| `--matlab-version` | which MATLAB release to emulate — **default `4p16p0`** (§8) |
 | `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. MATLAB gates the eye on `MLSE == 0`, but MLSE is applied afterwards, so the pre-MLSE eye is well defined. Diagnostic only: no reported value changes. |
 
 ```
@@ -481,7 +481,7 @@ supplied config snapshot that post-dated the run it came from:
   applies that rule on both version paths, so no switch is needed.
   ([`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md))
 
-The result is against **4p15p0**, which is why it stays the default emulation target — see
+The result is against **4p15p0**, so reproducing it takes `--matlab-version 4p15p0` — see
 §8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical on
 all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves (measured before the
 September 2026 oracle fixes; not re-run since).
@@ -519,15 +519,15 @@ its ledger had marked EQUIVALENT. Current status is
 
 ## 8. MATLAB version support
 
-The port emulates **`4p15p0` by default**, and that default is deliberate: the 208-case
-reference workbooks were produced by 4p15p0, so it is the version the correlation result
-above is evidence for. `4p16p0` behaviour is opt-in.
+The port emulates **`4p16p0` by default**, the current IEEE release (since 2026-09-27).
+The 1368-case 4p16p0 corpus is the evidence for it. The 208-case reference workbooks were
+produced by 4p15p0, so reproducing that result, or any 4p15p0 run, is opt-in.
 
 ```powershell
-python sicopr.py <config.xlsx> <thru.s4p> --matlab-version 4p16p0     # per run
+python -m sicopr <config.xlsx> <thru.s4p> --matlab-version 4p15p0     # per run
 ```
 
-`sicopr.COM_MATLAB_VERSION = '4p16p0'` does the same from Python, and a `COM Version` keyword
+`sicopr.COM_MATLAB_VERSION = '4p15p0'` does the same from Python, and a `COM Version` keyword
 in the config wins over both.
 
 **4p16p0 is a small delta**: 146 of 152 function bodies are unchanged, 6 changed, 3 added,

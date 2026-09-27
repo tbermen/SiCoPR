@@ -279,7 +279,7 @@ def main(argv=None):
     ap.add_argument('--fext', nargs='*', default=[])
     ap.add_argument('--next', nargs='*', default=[], dest='nxt')
     ap.add_argument('--cases', help='JSON list of cases for batch mode')
-    ap.add_argument('--version', default='4p15p0', choices=VERSIONS)
+    ap.add_argument('--version', default='4p16p0', choices=VERSIONS)
     ap.add_argument('--out', default='octave_compare_out')
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--octave', help='path to octave-cli (default: PATH, then the stock Windows install)')

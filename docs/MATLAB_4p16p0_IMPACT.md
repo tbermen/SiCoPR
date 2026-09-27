@@ -161,11 +161,11 @@ All six changes are now measured. Summary of what adopting 4p16p0 does:
 Nothing here blocks adoption. Two reported columns become correct, and the
 `Clip Method` shift is toward the more exact computation.
 
-**Keep 4p15p0 as the default anyway**, for one reason that has not changed: the
-208-case reference workbooks are 4p15p0 output, and they are what the
-correlation result (FOM bit-exact 198/208) rests on. Switching the default
-without matching reference data would leave the port's main evidence pointing at
-a version it no longer emulates.
+**Update 2026-09-27: 4p16p0 is now the default.** The reason this section gave
+for keeping 4p15p0 -- no matching reference data -- no longer holds: the
+1368-case 4p16p0 corpus now has MATLAB 4p16p0 results, and SiCoPR agrees with
+them on COM to 5.3e-14 dB. The 208-case correlation is still 4p15p0 evidence and
+is reproduced with `--matlab-version 4p15p0`.
 
 Two things to raise with Hansel:
 

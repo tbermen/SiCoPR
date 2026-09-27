@@ -6,6 +6,7 @@ MATLAB GROUND TRUTH:
     param.base set from first file
   Empty file_list: raises NotImplementedError.
 """
+import os
 import pytest
 from com_functions.fn.get_TD_files.py_impl import get_TD_files
 from types import SimpleNamespace
@@ -116,6 +117,12 @@ _OCT_CASES = [
 ]
 
 
+# The oracle ran on Windows, where fileparts and fullfile use '\\' as filesep and
+# accept '/' too. On another platform MATLAB's own answer for a Windows path is
+# different (filesep is '/'), and so is the port's, by design: _fullfile follows
+# os.sep as fullfile follows filesep. These pins are therefore Windows facts.
+@pytest.mark.skipif(os.sep != '\\', reason='COM Octave oracle taken on Windows; '
+                    'fileparts/fullfile follow the platform filesep')
 @pytest.mark.parametrize('path,filename,ext,base', _OCT_CASES)
 def test_octave_path_parsing(path, filename, ext, base):
     """COM Octave chdata(1).filename / .ext / .base for one THRU file."""

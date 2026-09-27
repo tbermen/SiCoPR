@@ -160,6 +160,7 @@ def probe(config, thru, fext=(), next_=(), sweep_dir='sweep_results',
                   f'gffe={cand["gffe_index"]} taps={cand["tx_taps"]} ===', flush=True)
 
             t0 = time.time()
+            sicopr.COM_MATLAB_VERSION = '4p15p0'   # the 208-case reference is 4p15p0
             results = sicopr._run_com(config, len(fext), len(next_), files, export_mat=False)
             dt = time.time() - t0
 

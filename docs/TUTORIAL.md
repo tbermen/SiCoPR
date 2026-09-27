@@ -10,7 +10,7 @@ reference code itself running under GNU Octave.
 | | |
 |---|---|
 | version | 2.0, 20 September 2026 |
-| emulates | `com_ieee8023_4p15p0.m` by default, `4p16p0` behind a version switch |
+| emulates | `com_ieee8023_4p16p0.m` by default, `4p15p0` behind a version switch |
 | the engine | `python -m sicopr` |
 | to run something now | [`examples/`](../examples/) — one download, one command |
 
@@ -901,7 +901,7 @@ divides by N-1. Fixed in d5bff6c, with a test that uses COM Octave as the oracle
 the 208-case corpus could not have shown it, because every one of its channels
 starts at DC.
 
-**MATLAB version support** The engine emulates com_ieee8023_4p15p0 by default, and that default is deliberate: the 208 reference workbooks are 4p15p0 output, so it is the version the parity result above is evidence for. Pass --matlab-version 4p16p0 (or set sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config) to emulate the newer release. 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
+**MATLAB version support** The engine emulates com_ieee8023_4p16p0, the current IEEE release, by default (since 2026-09-27); the 1368-case 4p16p0 corpus is the evidence for it. The 208 reference workbooks are 4p15p0 output, so reproducing that parity result takes --matlab-version 4p15p0 (or sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config). 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
 
 **Measured 4p16p0 impact** The same 208 cases have been run in both modes. 210 of 213 output columns are identical on every case, and no COM, FOM, VEO, VEC, itick or ERL value moves. Two columns change: peak_uneq_pulse_mV and steady_state_voltage_mV are now multiplied by the channel amplitude A, which 4p15p0 applied to the impulse response but not to the pulse response built from it — the new values are the corrected ones. Two further changes the corpus could not reach were measured separately on a config with a 1584-point Tx FFE grid: the Clip Method default moving from Fast to Slow shifts COM by about +0.007 dB and FOM by +0.22 dB, but only for configs that omit the keyword; and the adaptive search minimum radius moving from 1 to 2 gives a bit-identical answer while evaluating 4.3x the candidates. Detail in docs/MATLAB_4p16p0_CHANGES.md and docs/MATLAB_4p16p0_IMPACT.md.
 
@@ -1458,8 +1458,8 @@ python sicopr.py <config.xlsx> <thru.s4p> --fext f1.s4p f2.s4p --next n1.s4p
 # with the engineering .mat snapshot for R analysis
 python sicopr.py <config.xlsx> <thru.s4p> --export-mat
 
-# emulate MATLAB 4p16p0 instead of the 4p15p0 default
-python sicopr.py <config.xlsx> <thru.s4p> --matlab-version 4p16p0
+# emulate MATLAB 4p15p0 instead of the 4p16p0 default
+python sicopr.py <config.xlsx> <thru.s4p> --matlab-version 4p15p0
 
 # eye contour + timing bathtub even with MLSE on (plotting only)
 python sicopr.py <config.xlsx> <thru.s4p> --export-mat --eye-under-mlse

@@ -13,6 +13,7 @@
 # 7. NOISE channels are skipped in the ICN accumulation
 # ============================================================
 
+import os
 import numpy as np
 import pytest
 from types import SimpleNamespace
@@ -423,6 +424,15 @@ def test_W_is_bit_identical_to_the_reference():
     ref = np.array(_O_W_REF)
     got = np.asarray(_W(np.linspace(0.0, 60e9, _ONF), _OFTR, 0.75 * _OFB, _OFB),
                      dtype=float)
+    # The pins were taken on Windows, where numpy's sin agrees with Octave's to
+    # the last bit on all 32 samples. Another platform's libm may round a
+    # sample differently (glibc does: index 7, 2 ulp), so elsewhere bound it at
+    # 1e-15 relative and at most 2 samples; the defect this guards differed in
+    # 15 of the 32.
+    if os.name != 'nt':
+        assert np.all(np.abs(got - ref) <= 1e-15 * np.abs(ref)), 'W beyond 1e-15'
+        assert np.count_nonzero(got != ref) <= 2, 'W off the reference form'
+        return
     bad = np.nonzero(got != ref)[0]
     assert bad.size == 0, (
         'W differs from the reference at %d of %d samples (first at index %d: '
