@@ -544,3 +544,28 @@ def test_default_version_is_the_one_VERSION_json_names():
 def test_config_without_version_keyword_emulates_4p16p0(minimal_csv_file):
     param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
     assert param.matlab_version == '4p16p0'
+
+
+# ---------------------------------------------------------------------------
+# Whole numbers written as '32.0' (2026-09-28). A workbook resaved by a tool
+# that writes every number with a decimal point reached the engine with
+# M = 32.0, and np.ones(M) in Apply_EQ raised; MATLAB, where every number is a
+# double, runs the same file. CSV configs had the same exposure: float('32').
+# The reader now hands the engine an int for a whole-number cell, which is
+# what openpyxl returned for the workbooks the port was verified with.
+# ---------------------------------------------------------------------------
+def test_whole_number_cell_values_reach_the_engine_as_int(minimal_csv_file):
+    param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
+    assert param.samples_per_ui == 32
+    assert isinstance(param.samples_per_ui, int), type(param.samples_per_ui)
+
+
+def test_parse_cell_keeps_fractions_and_non_finite_as_float():
+    from com_functions.fn.read_ParamConfigFile.py_impl import _parse_cell
+    assert type(_parse_cell(32.0)) is int and _parse_cell(32.0) == 32
+    assert type(_parse_cell('32')) is int
+    assert _parse_cell(0.4) == 0.4 and type(_parse_cell(0.4)) is float
+    assert type(_parse_cell(1e300)) is float        # beyond int64: left alone
+    assert np.isnan(_parse_cell(None))
+    assert np.isinf(_parse_cell(float('inf')))
+    assert _parse_cell(True) is True

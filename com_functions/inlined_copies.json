@@ -2222,6 +2222,15 @@
    ]
   },
   {
+   "copy": "_read_ParamConfigFile__whole_to_int",
+   "helper": "whole_to_int",
+   "inlined_into": "read_ParamConfigFile",
+   "inlined_into_matlab_lines": [
+    9601,
+    10258
+   ]
+  },
+  {
    "copy": "_read_ParamConfigFile__xls_param",
    "helper": "xls_param",
    "inlined_into": "read_ParamConfigFile",

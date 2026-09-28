@@ -100,6 +100,10 @@ were produced before this file existed and are not restated as changes.
 
 ### Fixed
 
+- A configuration workbook saved by a tool that writes whole numbers as `32.0`
+  crashed the engine (`np.ones(32.0)`); MATLAB, where every number is a double,
+  runs it. Whole-number cell values now reach the engine as integers, as they
+  did from Excel-saved workbooks. The same applied to CSV configurations.
 - `__load_excel` left configuration workbooks open, locking them on Windows.
 - Three tests asserted *that* something failed rather than *why*, and would have
   passed with the guard they were protecting removed.

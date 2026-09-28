@@ -16877,15 +16877,31 @@ def _read_ParamConfigFile__parse_cell(cell):
     """
     if cell is None:
         return float('nan')
-    if isinstance(cell, (int, float)):
+    if isinstance(cell, bool):
         return cell
+    if isinstance(cell, (int, float)):
+        return _read_ParamConfigFile__whole_to_int(cell)
     s = str(cell).strip()
     if not s:
         return float('nan')
     try:
-        return float(s)
+        return _read_ParamConfigFile__whole_to_int(float(s))
     except ValueError:
         return s
+
+
+def _read_ParamConfigFile__whole_to_int(v):
+    """A whole number as int, as openpyxl returns one written '32'.
+
+    MATLAB holds every number as a double and uses 32.0 as a count without
+    comment; the port counts with Python ints (np.ones(M), range(N)). A cell
+    written '32.0' (a workbook resaved by another tool, 2026-09-28) or read from
+    CSV arrived as a float and np.ones(32.0) raised. Magnitudes past 2**53 are
+    left alone: they are not counts, and an int that large would not fit int64.
+    """
+    if isinstance(v, float) and v.is_integer() and abs(v) < 2 ** 53:
+        return int(v)
+    return v
 
 
 def _read_ParamConfigFile__load_csv(path):
