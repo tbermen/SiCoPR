@@ -33,8 +33,11 @@ were produced before this file existed and are not restated as changes.
   generator produces and that Octave parses them. Before this they were
   byte-identical to the MATLAB releases.
 - The Octave release files run **2.5 to 3 times faster than the same files before
-  this work** (one 4p16p0 case: 1418 s to 561 s; one 4p15p0 case: 137 s to 46 s),
-  and every result is unchanged to the last bit. Part of it is in the patch
+  this work** (measured 2026-09-18: one 4p16p0 case 1418 s to 561 s; one 4p15p0
+  case 137 s to 46 s), and every result is unchanged to the last bit. With the
+  compiled kernels, Octave then took about 1.5 times SiCoPR's run time on that
+  4p16p0 case (451 s against 299 s); SiCoPR has changed since and the ratio has
+  not been re-measured. Part of it is in the patch
   set (the touchstone reader, the floating-tap search, the ISI distribution
   build, FFE, two `isequal` tests); the rest is `octave/accel/`, **optional
   compiled kernels** for the three hottest loops, built once per machine with
@@ -71,11 +74,20 @@ were produced before this file existed and are not restated as changes.
 
 ### Changed
 
+- Documentation restructured for users. `README.md` is now a short guide:
+  install (`pip install -e .`), the worked example, running your own case with
+  the actual output file names, the reference code under Octave, the
+  correlation headline, limitations and licence. Version detail moved to the new
+  [`docs/VERSIONS.md`](docs/VERSIONS.md); test-suite detail, inlined-copy
+  coverage and the correlation-data policy moved to `CONTRIBUTING.md`; the
+  equalizer-search study and repository layout to `docs/TUTORIAL.md`. Personal
+  names replaced by roles, stale example output and figure names corrected.
 - Behavioural coverage of the inlined helper copies raised from 113 to 136 of
   177; five further divergences were found in the process and are catalogued in
   `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. On 2026-09-22 most copies were
   then replaced by imports: 62 copies of 45 functions remain, 34 of which cannot
-  be driven from synthetic inputs and are disclosed as unverified in `README.md`.
+  be driven from synthetic inputs and are disclosed as unverified in
+  `CONTRIBUTING.md`.
 - `results.csv` is written in MATLAB `num2str` format (about five significant
   digits), as the reference writes it. Compare engines at full precision:
   `tools/_sicopr_case.py` writes every result field to JSON, and

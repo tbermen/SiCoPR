@@ -87,7 +87,7 @@ REGISTRY = os.path.join(_ROOT, 'com_functions', 'registry.json')
 if not os.path.exists(ORACLE):
     print("SKIP matlab_stage_oracles: %s not present. It is generated from the "
           "MATLAB reference workbooks, which are not redistributable, by tooling that "
-          "is likewise kept local (README section 1). This project documents its "
+          "is likewise kept local (CONTRIBUTING.md, 'Correlation data'). This project documents its "
           "verification rather than offering to reproduce it. If you hold the "
           "data, point COM_STAGE_ORACLES at it and this runs for real."
           % os.path.relpath(ORACLE, _ROOT))

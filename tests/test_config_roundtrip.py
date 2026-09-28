@@ -149,7 +149,7 @@ if not configs:
     # here would make every public clone red for want of data it cannot have.
     print("SKIP: no configuration workbooks found under %s"
           % [os.path.relpath(d, _ROOT) for d in CONFIG_DIRS])
-    print("      This test needs a COM config .xlsx; see README section 1.")
+    print("      This test needs a COM config .xlsx; see CONTRIBUTING.md, 'Correlation data'.")
     sys.exit(0)
 
 tmp = tempfile.mkdtemp(prefix='cfg_roundtrip_')

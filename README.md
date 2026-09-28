@@ -33,7 +33,7 @@ Optional extras:
 |---|---|---|
 | `pip install -e ".[plots]"` | matplotlib | figures (`SAVE_FIGURES = 1` in the config) |
 | `pip install -e ".[report]"` | python-pptx, python-docx | report tooling |
-| `pip install -e ".[dev]"` | all of the above | development |
+| `pip install -e ".[dev]"` | all of the above, plus pytest | development and tests |
 
 `requirements.txt` carries the same minimums plus the test-only packages (`pytest`,
 `esprima`). The R reports under `R/` need, inside R:
@@ -57,7 +57,7 @@ python examples/run_example.py --channels <where you unpacked the zip> --engine 
 The script checks each channel file against the SHA-256 listed in
 [`CHANNEL.md`](examples/akinwale_CR_22dB_VendorX/CHANNEL.md), runs the case without and
 with crosstalk, and compares COM, FOM, itick, ERL, VEC, VEO and ICN against the shipped
-values. Each SiCoPR run takes about six minutes on one core. Success ends with
+values. Each SiCoPR run takes about six minutes on one core. Success prints
 `all pinned values reproduced`; without crosstalk the case gives COM = 3.5070 dB, with
 its five aggressors 2.8959 dB. Leave out `--engine sicopr` to also run the reference code
 under GNU Octave, if `octave-cli` is on PATH.

@@ -19,7 +19,7 @@ an incremental update rather than a re-port.
 ## 0. The headline: adaptive local search is now in the mainline
 
 `OptFom_Adaptive_Local_Search`, `compute_hard_cap` and `append_csv_row` do not
-exist in 4p15p0's mainline — they were only in Hansel's
+exist in 4p15p0's mainline — they were only in the
 `com_ieee8023_4p15p0_adaptive_local_search.m` branch. In 4p16p0 all three are
 first-class functions in the released file. The method this project set out to
 support has been adopted upstream.
@@ -93,7 +93,7 @@ anything reading those fields — grep before renaming.
 
 ### 1.3 `OptFom_Adaptive_Local_Search` — mainline version differs from the branch we ported
 
-Our port follows Hansel's branch. The mainline version is not identical:
+Our port follows the adaptive-local-search branch. The mainline version is not identical:
 
 | | branch (what Python has) | 4p16p0 mainline |
 |---|---|---|
@@ -102,8 +102,9 @@ Our port follows Hansel's branch. The mainline version is not identical:
 | init guard | `persistent … initialized`; `isempty(initialized) \|\| iter_count == 1` | `initialized` dropped; plain `iter_count == 1` |
 | `vga_index` | `isfield` fallbacks | `THIS.vga_index = 1; BEST.vga_index = 1` outright |
 
-Python hardcodes `min_radius = 1` with the comment *"Hansel forces min_radius = 1"*
-(`OptFom_Adaptive_Local_Search/py_impl.py:85`). Under 4p16p0 the default is **2**
+Python hardcoded `min_radius = 1` at the time, following the branch
+(`OptFom_Adaptive_Local_Search/py_impl.py`; it now applies the mainline rule on
+both version paths, see [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md)). Under 4p16p0 the default is **2**
 whenever more than one TXFFE candidate is swept — which is the normal case. This
 changes the pruning radius and therefore which candidates are evaluated.
 
@@ -149,9 +150,10 @@ Three options:
 
 1. **Keep 4p15p0 as the correlation baseline** and add 4p16p0 behaviour behind a
    version switch. Preserves the evidence; costs a branch in the code.
-2. **Ask Hansel for a 4p16p0 run of the same 208 cases.** Now a much smaller
-   favour than the per-function dump discussed earlier — he re-runs an existing
-   script — and adaptive search being mainline gives him a reason to want it.
+2. **Ask the reference-results provider for a 4p16p0 run of the same 208 cases.**
+   Now a much smaller favour than the per-function dump discussed earlier — it
+   re-runs an existing script — and adaptive search being mainline gives a
+   reason to want it.
 3. **Port and self-verify**, accepting that agreement with 4p15p0 will break on
    the pulse-amplitude change with nothing to check the new behaviour against.
 

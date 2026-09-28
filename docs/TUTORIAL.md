@@ -245,7 +245,7 @@ python -m sicopr <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...
                  [--matlab-version {4p15p0,4p16p0}] [--eye-under-mlse]
 ```
 
-The THRU (victim) channel is required. Crosstalk aggressors are optional: use --fext for FEXT and --next for NEXT, each accepting multiple files. Add --export-mat to also write an engineering snapshot for R analysis (Section 7.4).
+The THRU (victim) channel is required. Crosstalk aggressors are optional: use --fext for FEXT and --next for NEXT, each accepting multiple files. Add --export-mat to also write an engineering snapshot for R analysis (Section 7.4). --eye-under-mlse computes the eye contour and timing bathtub for plotting even when MLSE is on: MATLAB gates the eye on MLSE == 0, but MLSE is applied afterwards, so the pre-MLSE eye is well defined. It is diagnostic only; no reported value changes.
 
 ### The worked example, by hand
 
@@ -785,6 +785,8 @@ Rscript R/com_analysis.R results/<...>/<config-name>_case01.mat
 ```
 
 Consumes the `--export-mat` snapshot and produces a single HTML page covering the channel frequency response, the CTLE bank and the selected CTLE, impulse and pulse responses, the statistical eye with BER density, the equalizer contribution breakdown, and collapsible tables of the full results and configuration.
+
+The page is grouped by pipeline stage, with a heading and plots for each of the seven, including TDR impedance and ERL, FOM against sampling phase, the selected equalizer taps and the individual noise terms. A plot whose data is absent from the `.mat` renders a visible placeholder rather than disappearing.
 
 This is the tool for understanding one run in depth.
 
@@ -1444,19 +1446,19 @@ python examples/run_example.py --channels <dir> --engine octave --condition no_c
 
 ```
 # basic run
-python sicopr.py <config.xlsx> <thru.s4p>
+python -m sicopr <config.xlsx> <thru.s4p>
 
 # with crosstalk aggressors
-python sicopr.py <config.xlsx> <thru.s4p> --fext f1.s4p f2.s4p --next n1.s4p
+python -m sicopr <config.xlsx> <thru.s4p> --fext f1.s4p f2.s4p --next n1.s4p
 
 # with the engineering .mat snapshot for R analysis
-python sicopr.py <config.xlsx> <thru.s4p> --export-mat
+python -m sicopr <config.xlsx> <thru.s4p> --export-mat
 
 # emulate MATLAB 4p15p0 instead of the 4p16p0 default
-python sicopr.py <config.xlsx> <thru.s4p> --matlab-version 4p15p0
+python -m sicopr <config.xlsx> <thru.s4p> --matlab-version 4p15p0
 
 # eye contour + timing bathtub even with MLSE on (plotting only)
-python sicopr.py <config.xlsx> <thru.s4p> --export-mat --eye-under-mlse
+python -m sicopr <config.xlsx> <thru.s4p> --export-mat --eye-under-mlse
 ```
 
 ## C.2 The search study

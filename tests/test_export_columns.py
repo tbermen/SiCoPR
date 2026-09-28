@@ -48,7 +48,7 @@ except ImportError as _e:                                   # pragma: no cover
     # into the failure it was meant to avoid. A module-level marker skips the
     # tests while still collecting them, which exits 0.
     _MISSING = ('tools/export_results.py and tools/matlab_compare.py are not '
-                'part of the published repository (%s); see README section 1'
+                'part of the published repository (%s); see CONTRIBUTING.md, "Correlation data"'
                 % _e)
     _txffe_canonical = build_row = OUTDIR = None
 

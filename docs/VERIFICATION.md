@@ -411,7 +411,7 @@ The `waived` status and its recorded approval exist for rows that do not apply
 at all, not for choosing between the reference's behaviour and a nicer one.
 There is no choice to make there.
 
-The short list of things that DO go back to the owner: repository visibility,
+The short list of things that DO go back to the maintainer: repository visibility,
 publishing anything, sending mail, authorising a long corpus run, and any
 change whose blast radius cannot be bounded by running the suite. A numeric
 difference from the reference is never one of them.

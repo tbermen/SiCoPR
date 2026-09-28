@@ -6,9 +6,9 @@
 > across 31 audit scripts, and end-to-end parity is established against 208
 > MATLAB reference cases rather than the single bundled config. The "886 unit
 > tests" figure below is left as written — this document is a dated snapshot,
-> and the current numbers live in the main [`README`](../README.md) §7.**
+> and the current numbers live in the main [`README`](../README.md), under "How do I know it's right?".**
 >
-> **Reference: `com_ieee8023_4p15p0.m` + Hansel D'silva's
+> **Reference: `com_ieee8023_4p15p0.m` + the
 > `com_ieee8023_4p15p0_adaptive_local_search.m` branch.**
 > Source-of-truth = `assemble_sicopr.py` + `com_functions/fn/*/py_impl.py` (edit py_impl,
 > run its `test_verify.py`, re-run `assemble_sicopr.py`).
@@ -30,7 +30,7 @@ TD-ILN, COM pie plot) are **now implemented and wired** — see §A/§B.
    MATLAB reference cases was established in August 2026: COM bit-exact on 198 of 208 and
    exact on all 104 without crosstalk, with the remaining ten explained by a
    configuration mismatch rather than an engine defect. See
-   [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md) and README §7.
+   [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md) and the README.
 2. **A large implemented-but-unexercised feature surface** (crosstalk, MLSE, RxFFE,
    floating DFE, ERL, FD ICN/ILD, calibration, modal masks, quantization) — code + unit
    tests exist, but no config/channel in-repo triggers them end-to-end — see §D.

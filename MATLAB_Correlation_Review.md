@@ -2,8 +2,8 @@
 
 **Correlation status review — 21 August 2026**
 
-*Written for, and reviewed with, Hansel D'Silva, who produced the MATLAB
-reference results this port is measured against. Published here because the
+*Written for, and reviewed with, the provider of the MATLAB reference results
+this port is measured against. Published here because the
 evidence for the correctness claim belongs with the code that makes it.*
 
 > **This is a record of what was done and what it found — not a procedure you can
@@ -319,7 +319,7 @@ representative subset.
 > pending a like-for-like re-measurement; no corpus-level multiplier is current.
 
 MATLAB reports `rtmin` per case, so a direct comparison is possible. The absolute
-numbers are confounded — the MATLAB times are from Hansel's machine — so each engine is
+numbers are confounded — the MATLAB times are from the reference-results provider's machine — so each engine is
 also compared **against itself**, which removes the hardware dependence.
 
 | | MATLAB | COM Python (before) | COM Python (after) |

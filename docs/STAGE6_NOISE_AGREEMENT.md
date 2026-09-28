@@ -166,7 +166,7 @@ Python cannot match MATLAB's FOM at MATLAB's reported tick under any equalizer
 setting, while the peak values agree — consistent with an anchor-origin offset.
 Two independent investigations now converge on one unknown.
 
-**The request to Hansel for `cursor_i` (or absolute `t_s`) alongside `itick` now
+**The request to the reference-results provider for `cursor_i` (or absolute `t_s`) alongside `itick` now
 resolves two open items, not one.** It is a single extra column.
 
 ### Testable prediction, for when that data arrives

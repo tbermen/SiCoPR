@@ -13,7 +13,7 @@ What it then does, per engine and condition: runs the case, reads the COM report
 it writes, and compares every scalar the example pins against the value shipped
 beside the configuration. Anything that differs by more than a whisker is
 printed. Nothing is written into the repository; results go to --out (default: a
-temporary directory).
+temporary directory, deleted after a successful run and kept if anything fails).
 
 The Octave side runs only if octave-cli is on PATH (or --octave is given). It
 needs the configuration as a .mat, which this script produces with
@@ -29,6 +29,7 @@ import hashlib
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -204,7 +205,8 @@ def main(argv=None):
     ap.add_argument('--condition', choices=('no_crosstalk', 'with_crosstalk', 'both'),
                     default='both')
     ap.add_argument('--octave', help='path to octave-cli (default: PATH)')
-    ap.add_argument('--out', help='where results go (default: a temporary directory)')
+    ap.add_argument('--out', help='where results go (default: a temporary directory, '
+                                   'removed after a successful run)')
     a = ap.parse_args(argv)
 
     example_dir = os.path.join(HERE, a.example)
@@ -262,6 +264,12 @@ def main(argv=None):
 
     print('all pinned values reproduced' if not bad
           else '%d value(s) differ; see above' % bad)
+    if not a.out:
+        if bad:
+            print('results kept in %s' % out_root)
+        else:
+            shutil.rmtree(out_root, ignore_errors=True)
+            print('removed the temporary results directory %s' % out_root)
     return 1 if bad else 0
 
 

@@ -17,7 +17,8 @@ the values shipped beside the configuration, and prints anything that differs.
 runs the quick one. The Octave side is skipped if `octave-cli` is not on PATH.
 
 Expect about six minutes per SiCoPR run on one core, longer under Octave.
-Nothing is written into the repository.
+Nothing is written into the repository: results go to a temporary directory,
+which is deleted after a successful run (give `--out DIR` to keep them).
 
 ## What is here, and what is not
 
@@ -51,7 +52,8 @@ octave-cli --no-gui --no-window-system --eval ^
 ```
 
 `--matlab-version 4p16p0` is the engine's default and is spelled out so the
-command still means the same thing if the default ever changes (README §8). Add the
+command still means the same thing if the default ever changes
+([`docs/VERSIONS.md`](../docs/VERSIONS.md)). Add the
 five aggressors with `--fext` and `--next` for the crosstalk case; the file roles
 are in `CHANNEL.md`.
 

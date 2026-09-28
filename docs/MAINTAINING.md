@@ -108,7 +108,8 @@ purge data.
   declining — and worth reconsidering only as an opt-in switch, never as a
   default.
 - **A vendor asks for the channel files.** They are not yours to give. Point at
-  README §1, which names the IEEE contributions each one comes from.
+  CONTRIBUTING.md, "Correlation data", which links the IEEE 802.3dj page that
+  lists the contributions by name.
 - **Someone reports a security problem.** There is no attack surface to speak of
   — this reads local files and does arithmetic — but if one is reported, ask them
   to email rather than open a public issue, and add a `SECURITY.md` saying so if

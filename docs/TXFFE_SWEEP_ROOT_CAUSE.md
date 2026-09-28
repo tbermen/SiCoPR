@@ -5,6 +5,8 @@
 > previously divergent cases reproduce MATLAB exactly. Matched-configuration
 > correlation over the full corpus: **FOM 208/208 bit-exact, itick 208/208 exact,
 > COM 208/208, max |ΔCOM| 3.3e-14, zero pass/fail disagreements.** See §10–§12.
+> (August 2026 runs; the current headline, last re-run 2026-09-23, is in the
+> [README](../README.md).)
 
 **Found 2026-08-20, from data already on disk.** The `itick` divergences — and
 the two non-exact-FOM cases alongside them — trace to the Tx FFE search space,
@@ -127,7 +129,7 @@ write-up since removed from the repository) *as the explanation*. Its measuremen
 re-derived per EQ candidate and really does move 2–4 samples — but the reason the
 two engines' anchors differ is the Tx FFE, not an ambiguity in the anchor rule.
 
-## 5. The question for Hansel, restated
+## 5. The question for the reference-results provider, restated
 
 Not `cursor_i` any more:
 
@@ -231,7 +233,7 @@ are walking differently-shaped grids.
 
 ### Consequence
 
-*Written before the maintainer confirmed the sweep.* At the time, the run on
+*Written before the reference-results provider confirmed the sweep.* At the time, the run on
 the configs as received was kept as the headline, because the sweep grid was a
 reconstruction. That is no longer the position: the sweep workbooks were
 supplied on 2026-08-24, so the with-crosstalk cases run on them and there is a
@@ -461,7 +463,7 @@ the package content agrees and the filename difference is cosmetic.)*
 ## 12. Final result — matched configuration
 
 Running each condition on the config its reference actually used
-(produced with the local comparison harness, which is not in the repository — README §1; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
+(produced with the local comparison harness, which is not in the repository — see CONTRIBUTING.md, "Correlation data"; the standalone comparison script this section originally used has been removed, since there is no longer a second reading to compare against):
 
 | | result |
 |---|---|
@@ -537,8 +539,8 @@ pins to a single zero. `c(-2)` and `c(1)` matter only in that they enlarge the
 candidate count, which is what brings `min_radius` into play — a search-reach
 effect, not a search-space one.
 
-This narrows the request to Hansel from "send the Tx FFE settings" to "confirm
-the `c(-1)` range", which is a question he can answer from one cell.
+This narrows the request to the reference-results provider from "send the Tx FFE
+settings" to "confirm the `c(-1)` range", a question answerable from one cell.
 
 ### What this does *not* establish
 

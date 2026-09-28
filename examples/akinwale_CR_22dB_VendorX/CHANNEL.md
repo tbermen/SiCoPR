@@ -4,13 +4,15 @@ The S-parameter files are an IEEE 802.3 contribution. They are public, and they 
 
 ## Where to get them
 
-1. Download **https://www.ieee802.org/3/dj/public/tools/CR/akinwale_3dj_02_2311.zip**
+1. Download **https://www.ieee802.org/3/dj/public/tools/CR/akinwale_3dj_02_2311.zip** (about 29 MB)
 
    (listed as *212 Gb/s Per Lane PAM4 CR Channels with Flexible Host Architectures and Longer Reach Cables - NIC Perspective*, 27 Nov 2023, on the IEEE P802.3dj channel and tool page: https://www.ieee802.org/3/dj/public/tools/index.html).
 
-2. Unpack it. The six files this example uses are in
+2. Unpack it. It unpacks to a single flat folder,
 
-   `akinwale_3dj_02_2311/akinwale_3dj_01_2311/0_22dB_VendorX/`.
+   `akinwale_3dj_01_2311/`,
+
+   which holds channels for more than one vendor and loss. The six whose names contain `22dB_OSFP_4dB_PCB_Rx_TP0_TP5_VendorX` are the ones this example uses.
 
 3. Check you have the same files. SHA-256:
 

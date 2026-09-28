@@ -113,7 +113,7 @@ Every reported value is bit-identical; the larger radius floor simply stops the
 search pruning. On this channel the mainline default costs 4.3x the candidate
 evaluations and 2.5x the runtime and buys nothing.
 
-That is worth passing back to Hansel: his branch forced `min_radius = 1`, and
+That is worth passing back to the reference-results provider: the branch forced `min_radius = 1`, and
 this is evidence for that choice over the mainline's 2 — at least on a channel
 of this class. It does not prove 2 is never useful, only that it is pure
 overhead here.
@@ -167,9 +167,9 @@ for keeping 4p15p0 -- no matching reference data -- no longer holds: the
 them on COM to 5.3e-14 dB. The 208-case correlation is still 4p15p0 evidence and
 is reproduced with `--matlab-version 4p15p0`.
 
-Two things to raise with Hansel:
+Two things to raise with the reference-results provider:
 
-1. **`min_radius = 2` looks like a regression in the mainline.** His branch
+1. **`min_radius = 2` looks like a regression in the mainline.** The branch
    forced 1. On CAKR the mainline default evaluates 4.3x the candidates for a
    bit-identical answer. Worth asking what motivated 2, since it may help on
    channel classes not represented here.

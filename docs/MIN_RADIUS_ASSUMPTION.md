@@ -74,8 +74,8 @@ supplied copies are snapshots of a later state, not of the state that produced
 the results. **This is already established for the same run**: the supplied
 configuration workbooks pin Tx FFE `c(-1)` to a single zero, while the MATLAB
 that produced the workbooks swept 1584 candidates
-([`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md)), confirmed by the COM
-maintainer. The radius floor is the second instance of the same drift, in the
+([`TXFFE_SWEEP_ROOT_CAUSE.md`](TXFFE_SWEEP_ROOT_CAUSE.md)), confirmed by the
+reference-results provider. The radius floor is the second instance of the same drift, in the
 same run.
 
 Either of two ordinary situations produces it — a working copy carrying the
@@ -83,7 +83,7 @@ mainline rule (the adaptive search was being adopted upstream into 4p16p0 at the
 time), or a configuration setting `Overwrite Minimum Radius` that was edited out
 before the workbook was shared. **Both are indistinguishable from the outputs,
 and both give the same observable behaviour**, which is why the assumption is
-stated as the behaviour rather than as a claim about Hansel's tree.
+stated as the behaviour rather than as a claim about the reference-results provider's tree.
 
 ## 4. Why the rule, and not a constant
 
@@ -108,7 +108,7 @@ The full 208-case correlation was re-run with **no `--min-radius` flag** — the
 rule alone — on the confirmed per-condition configurations, 2026-08-27:
 
 Run over the full case set with modal ERL enabled, then exported for comparison.
-That tooling is not in the repository (README section 1).
+That tooling is not in the repository (CONTRIBUTING.md, "Correlation data").
 
 | | rule alone | previous run, `--min-radius 2` |
 |---|---|---|
@@ -131,8 +131,9 @@ and `itick` are unchanged.
 
 ## 6. What this does not establish
 
-- It does not establish that Hansel's tree contained the mainline rule. It
-  establishes that his results behave as though it did. If he reports otherwise,
+- It does not establish that the reference-results provider's tree contained the
+  mainline rule. It establishes that those results behave as though it did. If
+  the provider reports otherwise,
   the explanation moves to `Overwrite Minimum Radius` in the config, and the
   port's behaviour does not change either way.
 - It does not establish that a floor of 2 is *better*. The CAKR study is evidence

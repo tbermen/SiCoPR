@@ -74,7 +74,7 @@ Starting point before any of the fixes below: **max \|ΔCOM\| = 6.256 dB**.
 **Last re-verified 2026-08-31** against the engine at commit `a1c504c`
 ("Re-verify the 208-case correlation, and date the claim"): all 208
 cases re-run from scratch (3.2 h on five workers with the local comparison
-harness — README §1), 208 ok / 0 errored. Every figure above reproduced, and
+harness, which is not in the repository; see CONTRIBUTING.md, "Correlation data"), 208 ok / 0 errored. Every figure above reproduced, and
 **every per-case COM, FOM and `itick` was bit-identical to the previous run** — not
 merely within tolerance of MATLAB, but the same float.
 
@@ -671,7 +671,7 @@ baseline is now the reference's form.
 
 **Rows 47–51 are not correctness fixes** and changed no reference behaviour. They
 are listed, like the 2026-08-29 file lock, because they are engine changes. Each
-was accepted under the owner's equivalence rule (2026-09-24,
+was accepted under the project's equivalence rule (2026-09-24,
 [`tools/equivalence_check.py`](../tools/equivalence_check.py)): strict outputs —
 COM, FOM, sampling point, every EQ setting and tap — bit-identical, noise fields
 within 1e-12 per element, on all 28 checkpoint cases.

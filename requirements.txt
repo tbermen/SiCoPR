@@ -1,11 +1,13 @@
 # COM (Channel Operating Margin) Python tool — runtime dependencies.
 # Tested with Python 3.14.5 / numpy 2.4.6 / scipy 1.17.1 / openpyxl 3.1.5 / matplotlib 3.10.9.
-# Minimums are conservative; newer versions are fine.
+# Minimums match pyproject.toml, which is authoritative; newer versions are fine.
+# Prefer `pip install -e .` (add ".[plots]" for matplotlib): the example and
+# `python -m sicopr` need the package installed.
 
-numpy>=1.23        # core numerics
-scipy>=1.9         # signal, interpolate, special, linalg, io
-openpyxl>=3.0      # read the .xlsx configuration spreadsheet
-matplotlib>=3.5    # figures (only needed when SAVE_FIGURES is enabled)
+numpy>=1.24        # core numerics
+scipy>=1.10        # signal, interpolate, special, linalg, io
+openpyxl>=3.1      # read the .xlsx configuration spreadsheet
+matplotlib>=3.7    # figures (only needed when SAVE_FIGURES is enabled)
 
 # NOT required by anything in this repository.
 #

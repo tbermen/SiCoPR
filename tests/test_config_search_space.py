@@ -236,7 +236,7 @@ def main():
         # cleanly rather than failing the suite.
         print('SKIP config_search_space: no config workbooks in %s' % CONFIG_DIR)
         print('     These are correlation inputs, not shipped with the port.')
-        print('     See README.md for which IEEE 802.3dj contributions to download.')
+        print('     See CONTRIBUTING.md, "Correlation data".')
         return 0
 
     # ---- 1. search dimensions -------------------------------------------
