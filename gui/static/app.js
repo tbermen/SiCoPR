@@ -1468,7 +1468,7 @@ function dynOpen(c) {
   //
   // Normalise the separators FIRST, or that mirroring is lost. A run inside the
   // repo arrives as 'results/x/y_report.html' and splits into segments; a run
-  // under G:\si\runs arrives as an absolute Windows path, and splitting THAT on
+  // outside it (say D:\runs) arrives as an absolute Windows path, and splitting THAT on
   // '/' yields a single segment. The dashboard itself still loads, because the
   // server decodes the whole thing back to a path, so the failure is silent:
   // every relative lib/... link resolves against '/rpt/' instead of the run
