@@ -107,13 +107,14 @@ ulp *more accurately* than MATLAB's colon operator, and that extra accuracy
 changed which side of a bin boundary a lookup fell on. Matching the reference is
 the goal; making it better is a different project.
 
-**Watch three specific traps.** They account for most defects found so far:
+**Watch four specific traps.** They account for most defects found so far:
 
 | trap | why it bites |
 |---|---|
 | MATLAB assigns structs **by value**, Python binds a **reference** | a function that writes to a parameter it never returns changes nothing in MATLAB and everything in Python |
 | MATLAB is **1-based**, Python **0-based** | several structs deliberately store 1-based indices; `tests/test_index_base.py` holds the declared base for each and will fail if you index with one raw |
 | MATLAB `round()` is **half away from zero**, Python's is **banker's** | they differ on exact ties, and ties are not rare when the input is a ratio of integers |
+| MATLAB holds **every number as a double**; Python needs an **int** for a count | a workbook that stores `32` as `32.0` (any tool that re-saves it) runs in MATLAB and crashed `np.ones(M)` here. Config counts are conditioned in `read_ParamConfigFile._xls_param`: a new keyword used as a count, size or index belongs in `_COUNT_KEYWORDS` |
 
 **One function can exist as many copies.** The assembler inlines helpers, so
 there are 62 inlined copies of 45 functions. A fix applied to one `py_impl.py`

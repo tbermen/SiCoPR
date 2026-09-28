@@ -569,3 +569,25 @@ def test_parse_cell_keeps_fractions_and_non_finite_as_float():
     assert np.isnan(_parse_cell(None))
     assert np.isinf(_parse_cell(float('inf')))
     assert _parse_cell(True) is True
+
+
+# ---------------------------------------------------------------------------
+# Count keywords are conditioned in _xls_param, whatever the source: with every
+# numeric cell forced to float (the Drive artefact, and worse), the counts still
+# reach the engine as int; a fractional count is an error naming the keyword.
+# ---------------------------------------------------------------------------
+def test_count_keywords_are_int_even_when_every_cell_is_float(minimal_csv_file, monkeypatch):
+    import com_functions.fn.read_ParamConfigFile.py_impl as impl
+    monkeypatch.setattr(impl, '_whole_to_int',
+                        lambda v: float(v) if isinstance(v, int) and not isinstance(v, bool) else v)
+    param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
+    for name in ('samples_per_ui', 'ndfe', 'levels', 'N_bmax', 'N_v'):
+        v = getattr(param, name)
+        assert isinstance(v, int), (name, type(v))
+
+
+def test_fractional_count_keyword_is_a_named_error(tmp_path):
+    p = tmp_path / 'frac.csv'
+    p.write_text(MINIMAL_CSV.replace('M,32', 'M,32.5'))
+    with pytest.raises(ValueError, match='"M" must be a whole number'):
+        read_ParamConfigFile(str(p), make_op())

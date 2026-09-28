@@ -11,7 +11,7 @@ authors:
     given-names: Todd
 repository-code: "https://github.com/tbermen/SiCoPR"
 version: "1.0.0"
-date-released: "2026-09-27"
+date-released: "2026-09-28"
 abstract: >-
   A function-for-function Python translation of the IEEE 802.3ck/dj Channel
   Operating Margin (COM) MATLAB reference tool, with R extensions for reports

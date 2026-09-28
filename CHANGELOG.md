@@ -18,7 +18,7 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-09-27
+## [1.0.0] - 2026-09-28
 
 First public release. The engine, the test suite and the documentation are the
 state described in [`README.md`](README.md); the correlation results it reports
@@ -103,7 +103,11 @@ were produced before this file existed and are not restated as changes.
 - A configuration workbook saved by a tool that writes whole numbers as `32.0`
   crashed the engine (`np.ones(32.0)`); MATLAB, where every number is a double,
   runs it. Whole-number cell values now reach the engine as integers, as they
-  did from Excel-saved workbooks. The same applied to CSV configurations.
+  did from Excel-saved workbooks, and so do CSV values. Keywords the engine uses
+  as counts (`M`, `L`, `N_b`, tap lengths and others) are conditioned where every
+  source is read, whatever its type; a fractional count is an error naming the
+  keyword instead of a crash. Checked by running the shipped example with every
+  number in its workbook forced to float: every pinned value reproduced.
 - `__load_excel` left configuration workbooks open, locking them on Windows.
 - Three tests asserted *that* something failed rather than *why*, and would have
   passed with the guard they were protecting removed.

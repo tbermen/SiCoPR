@@ -254,7 +254,36 @@ def _xls_param(parameter, param_name, eval_if_string=False, default_value=_SENTI
     # but '' guaranteed a TypeError on the first arithmetic, which is neither
     # reference's answer.
     p = parameter[r][c + 1] if c + 1 < len(parameter[r]) else float('nan')
-    return _eval_matlab_value(p, eval_if_string)
+    v = _eval_matlab_value(p, eval_if_string)
+    if name_lower in _COUNT_KEYWORDS:
+        v = _as_count(v, param_name)
+    return v
+
+
+# Keywords the engine uses as counts or sizes (np.ones(M), range(N_b), slice
+# ends). MATLAB holds them as doubles and accepts 32.0 anywhere; Python needs an
+# int. Conditioned here, where every source (xlsx, csv, .mat, a string cell)
+# passes, so a type artefact in the file cannot reach the engine.
+_COUNT_KEYWORDS = {'m', 'l', 'n_b', 'n_v', 'n_bx', 'n_bg', 'n_bf', 'n_bmax', 'n_f',
+                   'ffe_pre_tap_len', 'ffe_post_tap_len', 'samples_for_c2m',
+                   'num_ui_rxff_noise', 'n_qb', 'n', 'n_tail_start', 'ts_anchor',
+                   'local search'}
+
+
+def _as_count(v, name):
+    """A count keyword's value as int: whole numbers of any numeric type pass,
+    a blank (NaN) or a string is left for the caller, anything else is an
+    error naming the keyword -- as MATLAB's ones(1, 32.5) refuses a fraction."""
+    a = np.asarray(v) if not isinstance(v, str) else None
+    if a is None or a.dtype.kind not in 'biuf' or a.size != 1:
+        return v
+    x = a.ravel()[0]
+    if a.dtype.kind == 'b' or not np.isfinite(x):
+        return v
+    if float(x) != int(x):
+        raise ValueError('config keyword "%s" must be a whole number, got %r'
+                         % (name, float(x)))
+    return int(x)
 
 
 def _xls_param_txffe(parameter, param_name):
