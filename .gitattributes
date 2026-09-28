@@ -14,6 +14,13 @@
 # of the filename and then fails to open every entry.
 *.sha256 text eol=lf
 
+# Generated files are written LF by their generators and checked byte for byte
+# against a fresh generation (CI, tests/test_octave_compat.py). A native CRLF
+# checkout on Windows made that check fail on a correct tree.
+sicopr.py                         text eol=lf
+com_functions/inlined_copies.json text eol=lf
+octave/*_octave_compat.m          text eol=lf
+
 # Binary deliverables: never diff or convert these.
 *.pptx binary
 *.docx binary

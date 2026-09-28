@@ -15,8 +15,18 @@ on:
 
 jobs:
   suite:
-    name: Suite on a clean checkout
-    runs-on: ubuntu-latest
+    name: Suite on a clean checkout (${{ matrix.os }})
+    # Windows is the platform the maintainer and most users run; Linux is
+    # the fresh-clone check. A Windows-only line-ending failure went unseen
+    # while this ran on Linux alone.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
