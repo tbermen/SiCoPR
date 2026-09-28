@@ -2,10 +2,8 @@
 
 Notable changes to SiCoPR. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-**This project has not been released yet, and has never carried a version number
-or a git tag.** There is therefore no version history to reproduce here, and
-inventing one would misrepresent what happened. This file starts at the first
-public release and is kept from there.
+Versions follow [Semantic Versioning](https://semver.org/). **1.0.0 is the first
+release**; there is no earlier version history, and this file starts there.
 
 Two things this file is *not*:
 
@@ -19,6 +17,8 @@ Two things this file is *not*:
   change to what the engine *is*, not a routine entry here.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-27
 
 First public release. The engine, the test suite and the documentation are the
 state described in [`README.md`](README.md); the correlation results it reports
