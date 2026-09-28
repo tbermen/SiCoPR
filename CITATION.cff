@@ -15,10 +15,10 @@ abstract: >-
   Operating Margin (COM) MATLAB reference tool, with R extensions for reports
   and visualisations. It computes COM, VEO and VEC and the supporting
   equalisation and noise analysis for a serial channel described by Touchstone
-  S-parameter files and an Excel configuration spreadsheet. Against a 208-case
-  reference set it reproduces the MATLAB results bit-for-bit on COM, figure of
-  merit and sampling phase; the scope and limits of that measurement are stated
-  in the project README.
+  S-parameter files and an Excel configuration spreadsheet. Against 208 MATLAB
+  reference cases it chooses the same sampling phase and equalizer on every case
+  and agrees on COM to 4.6e-14 dB; the scope and limits of that measurement are
+  stated in the project README.
 keywords:
   - channel operating margin
   - COM
