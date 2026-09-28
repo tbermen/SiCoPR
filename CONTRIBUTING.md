@@ -182,13 +182,146 @@ fields within 1e-12 relative per element, Octave agreement no worse. Two August
 speed-ups that were verified only against corpus statistics turned out not to be
 equivalent and were withdrawn.
 
+No runtime comparison with MATLAB is offered: the timings that exist were taken
+on different machines and, at the time, on different search spaces. The August
+2026 Python-vs-Python figure (roughly 4.5–5×) is withdrawn pending a
+like-for-like re-measurement; its FFT convolution and hoisted Gram matrix were
+not equivalent (the FFT lost the far tail of the noise CDF that DER is read from)
+and were undone on 2026-09-23/24. Five speed-ups have been re-earned under the
+rule above; on one case the run went from 304 s to 50 s against the accurate
+baseline. No corpus-level multiplier is current.
+
+## The test suite in detail
+
+`tests/` holds **two kinds of file**, and the difference matters:
+
+| | how to run |
+|---|---|
+| `test_smoke.py`, `test_checkpoints.py`, `test_end_to_end.py`, `test_export_columns.py` | pytest modules |
+| every other `test_*.py` | standalone scripts: `python tests/test_x.py` |
+
+Do **not** run `pytest tests` over the whole directory. The audit scripts call
+`sys.exit()` at import, which aborts collection: pytest reports `no tests ran`
+**and still exits 0**, so nothing runs and nothing complains. `run_all.ps1` runs
+the pre-flight audit, assembly, interface checks, the unit tests and every
+cross-check script, dispatching each kind correctly.
+
+The scripts record two outcomes. `check()` is behaviour that must match MATLAB;
+`xcheck()` is a reviewed, accepted divergence, which reports `XFAIL` while it
+persists and **fails the run if it starts passing**, so a divergence that gets
+fixed cannot leave a stale entry behind in the ledger.
+
+State on 2026-09-26: **2025** per-function tests across 157 functions, and **44
+audit scripts**; the 41 that print a tally total **628 checks** with 20 accepted
+divergences. Whether any function-level verification is open is answered by
+`python com_functions/verification/report.py`, per
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
+
+**Skips on a fresh clone are normal.** Tests that need the correlation data (see
+*Correlation data* below) skip and say what they wanted. Some skip messages name
+a local directory such as `tests\1_IEEE_802p3dj_COM_Spreadsheets`, or point at a
+README section that has since moved here; that data is deliberately absent from
+the repository, and the skip is expected.
+
+### What the coverage does *not* reach
+
+The assembler inlines helpers into their callers. Most calls between translated
+functions became imports on 2026-09-22, but the engine still contains **62
+inlined copies of 45 functions**. `tests/test_inlined_copies.py` compares each
+copy against its canonical top-level version and reports plainly how far it gets:
+
+```
+62 inlined copies of 45 functions; 28 comparison(s) made, 34 skipped
+```
+
+**34 of those 62 copies have no behavioural verification.** They are not skipped
+by choice: the harness drives both sides from synthetic inputs, and for these it
+cannot build any without a populated `param`/`OP` struct or a real Touchstone
+file. For them the only check is that the copy still accepts the same arguments
+as the canonical.
+
+The correlation result says nothing about those 34. The reference cases exercise
+the *canonical* implementations, which `_run_com` injects; the inlined copies are
+`or`-fallbacks that a normal run never reaches. Several are deliberately narrow
+(a Gaussian fitted to the sample RMS where the canonical builds an exact PDF, for
+instance), and 17 such divergences are catalogued with reasons in
+`test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. Five divergences were found only
+when coverage was raised from 113 copies to 136 (before the copies were collapsed
+onto imports), which is the argument for treating the remaining 34 as unverified
+rather than as probably fine: every time this harness has been pointed at more
+copies, it has found more divergences.
+
+`com_functions/inlined_copies.json`, written by the assembler, records where every
+copy came from: which helper, which caller, and the upstream MATLAB line range of
+each. It counts a wider population than the 62 above: the assembler reports 245
+inlined helper copies, 62 of which duplicate a translated function; the rest are
+private helpers with no canonical top-level function to compare against.
+
+The practical risk is not in what runs today. It is that a future caller which
+forgets to inject would silently get the approximation, with no error and a
+plausible number.
+
+### Cross-cutting guards
+
+Most of the scripts exist because the per-function tests structurally cannot
+catch the defect classes that actually got through. Each was built from a real
+failure and verified by re-introducing it:
+
+| script | guards against | why |
+|---|---|---|
+| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and five of the eighteen correlation-era entries in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md). Caught a new instance during the 4p16p0 port. |
+| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **62 copies of 45 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
+| `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the verified Gram gather, direct (never FFT) convolution, shared buffers. Found a live cache-aliasing defect. |
+| `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks. The oracle file itself is not tracked (it *is* reference data); point `COM_STAGE_ORACLES` at a local copy, and without it the test skips. |
+| `test_octave_checkpoints.py` | a stage drifting from the reference code | compares 10 stage structs on 28 cases against COM Octave goldens (`COM_OCTAVE_CHECKPOINTS`; `COM_CHECKPOINT_CASES=all` for every case). The goldens are local-only, so it skips in a clone. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md). |
+| `test_abort_path_leaks.py` | writing into a caller's struct before an early return | the sibling of the leak above that the leak guard cannot see: the function *does* return the struct, but commits values on a path MATLAB never commits on. Ledger #10b. |
+| `test_sort_stability.py` | `np.argsort` reordering ties | MATLAB's `sort` is stable, NumPy's default is not. Ties were measured in **81% of argsort calls** rather than assumed rare. |
+| `test_integer_ratio_rounding.py` | banker's rounding on a ratio of integers | MATLAB rounds half away from zero. The audit dismissed this as measure-zero, which is true for continuous data and false for `a/b` with both integral (ledger #16). |
+| `test_structural_invariants.py` | properties no single function owns | shapes, index bases and struct field sets that only go wrong between functions. |
+| `test_stage_figures.py` | a pipeline stage losing its figures | fails if any of the seven stages stops emitting a figure; `STAGE_INDEX.md` in each case directory lists a stage with no figure as such rather than omitting it. |
+
+The configuration editor under `gui/` has its own three, described in
+*Changing the config editor* above: `test_config_roundtrip.py` (the config writer
+damaging a workbook), `test_gui_server.py` (the HTTP layer: payload shape, path
+containment, process control, and the results and dashboard views) and
+`test_gui_static.py` (`app.js` failing to parse).
+
+### Tooling for a new MATLAB release
+
+```powershell
+python tools/matlab_version_diff.py OLD.m NEW.m   # -> which py_impl files to re-check
+python tools/matlab_version_diff.py --self-check  # validates the differ itself
+```
+
+[`docs/VERSIONS.md`](docs/VERSIONS.md) records what the last release changed.
+
 ## Correlation data
 
-The 208-case correlation runs against IEEE 802.3dj channel S-parameters and
-configuration workbooks that are **not** in this repository — they are not ours
-to redistribute. `README.md` names the contributions to download and where the
-harness expects them. Tests that need that data skip cleanly when it is absent,
-so a fresh clone still runs the full suite.
+**The port ships; the data it was verified against does not.** The engine, its
+tests, the tooling, the MATLAB reference sources and the documentation are all
+here. The channel S-parameters the port was correlated against are IEEE 802.3
+contributions and are not ours to redistribute, and neither are the outputs:
+reference values, comparison tables, generated figures and result files are
+either derived from that data or produced by running on it, and are excluded on
+the same grounds. CI enforces the exclusion. The COM configuration workbooks are
+a different case: each carries a `License Notice` sheet placing it under the
+same BSD-3-Clause licence as the reference code, which is why one ships in
+[`examples/`](examples/) together with the results both engines produced on it.
+
+The channels themselves are public: the sets used come from the IEEE 802.3dj
+public area, whose [channel and tool page](https://www.ieee802.org/3/dj/public/tools/index.html)
+lists the CR and KR contributions by name, and the configuration workbooks from
+the COM ad hoc.
+
+**This repository documents the verification; it does not offer to reproduce
+it.** The harness that ran the 208-case and 1368-case comparisons is not in this
+repository; it is kept with the data it needs. Anyone wanting to check the result
+independently would supply their own channels and configs, run their own MATLAB
+or COM Octave (`tools/octave_compare.py` does the Octave side for one case), and
+compare against this engine's output. The agreement statistics in
+[`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md) are stated
+precisely enough to support that. Tests that need correlation data skip cleanly
+when it is absent, so a fresh clone still runs the full suite.
 
 ## Licensing
 

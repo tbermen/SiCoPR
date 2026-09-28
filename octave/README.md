@@ -8,8 +8,8 @@ to a `.mat`, then call the release file. Nothing here needs building.
 
 **To make it faster**, build the optional compiled kernels once
 (`python octave/accel/build_accel.py`). Every later run finds them and is about
-1.4 to 1.9 times faster, with the same command and the same results, bit for
-bit. See [Optional compiled kernels](#optional-compiled-kernels).
+1.4 to 1.9 times faster than the same files run interpreted (measured
+2026-09-18), with the same command and the same results, bit for bit. See [Optional compiled kernels](#optional-compiled-kernels).
 
 **To understand what was changed and why**, read on: the patch set is the point
 of this directory, and every item in it is a no-op under MATLAB.
@@ -21,9 +21,7 @@ of this directory, and every item in it is a no-op under MATLAB.
 | `com_ieee8023_4p15p0_octave_compat.m` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m` | `make_octave_compat.py` |
 | `com_ieee8023_4p16p0_octave_compat.m` | `matlab/com_ieee8023_4p16p0.m` | `make_octave_compat.py` |
 
-Until 2026-09-10 these were byte-identical to the MATLAB releases: files whose
-name promised Octave compatibility and whose content had none. They are now
-**generated** from `matlab/` by a small, named patch set, and committed so a
+They are **generated** from `matlab/` by a small, named patch set, and committed so a
 reader needs no build step, the same arrangement as `sicopr.py`. (The optional
 compiled kernels below are the one thing that is built, and the files run
 without them.) Each carries a
@@ -47,8 +45,7 @@ python octave/make_octave_compat.py --check    # what the test runs
 
 ## What the patch set is, and why each item is there
 
-Every item was found by running the official release under Octave 11.3 in the
-2026-09 three-way study, each costing a full run to discover.
+Every item was found by running the official release under Octave 11.3.
 
 | change | kind | why |
 |---|---|---|
@@ -62,10 +59,10 @@ Every item was found by running the official release under Octave 11.3 in the
 | `writecsv_transposed` replaced | `patches/` | Octave has no `writecell` |
 
 The `CDF_ev`, `COM_CommandLine_Parse` and `writecsv_transposed` bodies are the
-versions the three-way study ran on 208 cases against the MATLAB reference to
-5e-14 dB, taken from Rich Mellitz's `Octave_compat` branch `src/` tree. The
-reader is ours (2026-09-16); the branch's version, with the NaN filter we
-reported upstream, still uses `textscan`. **Nothing in this table changes a
+versions that were run on 208 cases against the MATLAB reference to 5e-14 dB,
+taken from the `src/` tree of an `Octave_compat` branch of the COM reference
+code. The touchstone reader is this project's own; the branch's version, with a
+NaN filter reported upstream, still uses `textscan`. **Nothing in this table changes a
 number under MATLAB**: each edit is a no-op there, which is what makes the
 result a reference and not a fork.
 
@@ -94,9 +91,9 @@ sets.
 | `get_pdf_from_sampled_signal`: `Init_PDF_Fast` and `conv_fct` inlined, bins filled in one assignment when distinct | line edit | two calls and a struct per ISI sample |
 | `FOM_rxffe_floating_taps` replaced | `patches/` | `MMSE_FOM`'s search-mode work inlined, everything that does not change per candidate computed once |
 
-These are checked under Octave, where the files run. They are not checked
-under MATLAB, which is not on this machine; the correctness items above are
-the ones that must be no-ops there.
+These are checked under Octave, where the files run. They have not been checked
+under MATLAB; the correctness items above are the ones that must be no-ops
+there.
 
 ## Optional compiled kernels
 
@@ -203,8 +200,8 @@ it.
 
 ## Measured
 
-**Agreement.** One 208-corpus case (the sender's acceptance channel, KR package
-A case 1, without crosstalk), on this machine, 2026-09-10. Both agree with the
+**Agreement.** One 208-corpus case (KR package A case 1, without crosstalk),
+2026-09-10. Both agree with the
 MATLAB reference result for this case to within 1e-14 dB:
 
 | | COM_dB |
@@ -224,10 +221,10 @@ privately with the channels it needs and is not published.
 |---|---|---|
 | before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
 | interpreted, speed items in | about 2.5x | the row below, times the 1.67x the kernels give on that case |
-| **with the compiled kernels** | **about 1.5x** | 451 s against 299 s, 1368-case `wo_C1_R001` |
+| **with the compiled kernels** | **about 1.5x** | 451 s against 299 s, one 1368-case 4p16p0 case (`wo_C1_R001`), 2026-09-18 |
 
-SiCoPR's times here predate its September 2026 convolution changes; the ratios
-have not been re-measured since.
+SiCoPR has changed since these measurements (its later equivalence-checked
+speed-ups), and the ratios have not been re-measured.
 
 ## What is in this directory, and what left it
 
@@ -240,19 +237,12 @@ have not been re-measured since.
 | `com_octave_accel.oct` | what that build produces, beside the `.m` files where a run finds it. Per machine, never committed, safe to delete |
 | `README.md` | this file |
 
-`shims/` and `shims_B/` **moved out on 2026-09-10**, into the private study tree
-that is their only caller. They were path overrides: files placed
-earlier on Octave's search path so they shadowed the reference code's own
-versions. That was the only way to change a monolithic release file from
-outside, and it is why the third blocker ended the attempt, since `MMSE` is a
-local subfunction that nothing on the path can shadow. Generating the file
-removed the need for the technique entirely.
+Earlier path overrides (files placed earlier on Octave's search path to shadow
+the reference code's own versions) are not part of this repository. They could
+not reach `MMSE`, a local subfunction, and generating the file removed the need
+for them.
 
-They still have one job, which is why they were moved rather than deleted: they
-define the two arms of the three-way comparison study, which is held privately
-with the channels it needs.
-
-One rule survives them, because it is about Octave rather than about shims:
+One rule about Octave is worth keeping if you ever shadow a function this way:
 `addpath` **prepends**, so a directory added last ends up searched first.
 Getting that backwards runs the copy you meant to shadow while the log says the
 override was applied.

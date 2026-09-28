@@ -2,610 +2,219 @@
 
 *(pronounced si-copper)* — **Si** (Signal Integrity), **Co** (COM), **P** (Python), and **R**
 
-A Python port of the IEEE 802.3ck/dj **COM** (Channel Operating Margin) MATLAB reference
-tool with R programming extensions for reports and visualizations. It computes COM / VEO /
-VEC and the supporting equalization and noise analysis for a serial channel described by
-Touchstone S-parameter files and an Excel configuration spreadsheet.
+SiCoPR is a Python port of the IEEE 802.3 **COM** (Channel Operating Margin) reference
+code. It reads the same Excel configuration workbook and Touchstone `.s4p` files as the
+MATLAB tool and computes COM, VEO/VEC and the supporting equalization and noise analysis,
+without MATLAB. It emulates **`com_ieee8023_4p16p0`** by default and `com_ieee8023_4p15p0`
+with `--matlab-version 4p15p0`. Licence: BSD-3-Clause, the same as the reference code
+([`LICENSE`](LICENSE), provenance in [`NOTICE`](NOTICE)).
 
-The port is function-for-function: `sicopr.py` follows the structure of the MATLAB source
-closely enough to navigate by MATLAB line number, takes the same `.xlsx` + `.s4p` inputs,
-and produces the same outputs.
+The full guide is [`docs/TUTORIAL.md`](docs/TUTORIAL.md): architecture, every feature,
+the configuration keyword index, the study layer, the R reports and a COM primer.
 
-**Two MATLAB releases are supported.** `sicopr.py` emulates **`com_ieee8023_4p15p0`** by
-default — that is the release the 208-case reference corpus was produced with, so it is the
-version the correlation result in §7 is evidence for — and **`com_ieee8023_4p16p0`** via
-`--matlab-version 4p16p0` (or `sicopr.COM_MATLAB_VERSION`, or a `COM Version` config keyword).
-4p16p0 is a small delta, and its measured effect on all 208 cases is in §8. Which release a
-given `sicopr.py` emulates is recorded in its header and in `VERSION.json`.
+## Install
 
-**The R half of the name.** `R/` turns a run into something you can read: an
-interactive HTML dashboard for a single case — channel response, CTLE, equalization
-contributions, pulse, eye — and the correlation and study reports that produce the
-figures in §5 and §7. The engine writes the data; R renders it. Neither needs the
-other to run, and the Python side has no R dependency.
-
-On top of both there is a study layer (`tools/`, `R/`) built to answer one question:
-**does pruning the equalizer search grid change COM?** Results in §5.
-
-> **New to this project?** Start with **[`docs/TUTORIAL.md`](docs/TUTORIAL.md)** — a
-> tutorial and reference covering installation, architecture, every feature, the study
-> layer, the R reports, the reference code under GNU Octave, a COM concepts primer, and
-> a complete index of the configuration keywords. This README is the quick version.
-> (It was a `.docx` until 2026-09-20; markdown so it can be diffed and reviewed like
-> the code it describes.)
-
----
-
-## Licence and status
-
-**BSD-3-Clause** — [`LICENSE`](LICENSE). The MATLAB reference this is ported from is
-BSD-3-Clause (*Copyright 2025 802-COM Authors*); this port is a derivative work released
-under the same terms, so the licence travels with it. The reference sources are
-redistributed unmodified under `matlab/`, notices intact.
-
-> **Not an IEEE product.** This project is **not** endorsed by, affiliated with, or
-> approved by IEEE, the IEEE 802.3 working group, or the 802-COM Authors. It is an
-> independent port of the published MATLAB reference. Please describe it that way —
-> clause 3 of the licence requires it. "IEEE 802.3" appears here only to identify the
-> standard the reference implements.
-
-**Correctness is a measured claim, not a promise.** Against the 208-case reference set
-(last re-run 2026-09-23) the port chooses MATLAB's sampling phase and equalizer on every
-case and reproduces COM to 4.6e-14 dB, with the caveats and the
-things *not* covered stated plainly in §7. Read §7 before you rely on it for anything.
-Function by function, all 146 translated functions are checked against the *executed*
-reference; [`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract.
-
-**Contributions are welcome** — the process is short and is in
-[`CONTRIBUTING.md`](CONTRIBUTING.md). In brief: fork, branch, open a pull request; nobody
-pushes to `master` directly, including the maintainer.
-
----
-
-## 1. What ships in this repository — and what doesn't
-
-**The port ships. The data it was verified against does not.** The engine, its
-tests, the tooling, the MATLAB reference sources and the documentation are all
-here. What is not here is the data: the channel S-parameters the port was
-correlated against are IEEE 802.3 contributions and are not ours to
-redistribute, and neither are the outputs — reference values, comparison tables,
-generated figures and result files are either derived from that data or
-produced by running on it, and are excluded on the same grounds. CI enforces the
-exclusion so none of it drifts back in. The COM configuration workbooks are a
-different case: each carries a `License Notice` sheet placing it under the same
-BSD-3-Clause licence as the reference code, so they may be redistributed. One of
-them ships, in [`examples/`](examples/), together with the results both engines
-produced on it and the SHA-256 of each channel file it needs — so the one thing
-you have to fetch yourself is the channel, and you can tell whether you fetched
-the right one.
-
-**A fresh clone is fully functional without any of it.** The unit suite runs and
-passes — 2025 per-function tests plus 44 cross-check scripts — and every test that
-needs data of its own skips cleanly and says what it wanted.
-
-**This repository documents the verification; it does not offer to reproduce it.**
-The 208-case comparison against MATLAB was run, and what it found is written up in
-§7 and in [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md). Repeating
-it is neither on offer nor promised: the inputs are not ours to redistribute, and
-the harness that drives the comparison is kept with them. Anyone wanting to check
-the result independently would supply their own channels and configs, run their own
-MATLAB, and write their own comparison against this engine's output — which is a
-reasonable thing to do, and is what the numbers in §7 are stated precisely enough
-to support.
-
-The channels themselves are public: the sets used come from the IEEE 802.3dj public
-area — [the channel and tool page](https://www.ieee802.org/3/dj/public/tools/index.html)
-lists the CR and KR contributions by name — and the configuration workbooks from the
-COM ad hoc. To run SiCoPR you need a COM configuration workbook and at least one
-Touchstone channel; §3 shows the command, and the editor for building a config.
-
-**The shortest path from a clone to a number** is [`examples/`](examples/): a
-workbook, one named channel to download, and a script that runs the case and checks
-what it got against the values both engines already produced on it.
-
-## 2. Install
+Python 3.10 or newer. From a clone:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1          # Windows PowerShell
 # source .venv/bin/activate         # macOS / Linux
 
-pip install -r requirements.txt
+pip install -e .
 ```
 
-Nothing to build — the tool runs directly from `sicopr.py`. Python 3.10+ (developed on
-3.14; `pyproject.toml` is the authority, CI runs 3.12). `pip install -e .` instead of
-`requirements.txt` also works, and is what makes `python -m sicopr` run from any
-directory.
+Install the package, not just `requirements.txt`: the example and `python -m sicopr`
+import `sicopr`, and without the install they fail with `No module named sicopr` unless
+run from the repository root. Required dependencies are numpy, scipy and openpyxl.
+Optional extras:
 
-The R reports additionally need, inside R:
+| extra | adds | for |
+|---|---|---|
+| `pip install -e ".[plots]"` | matplotlib | figures (`SAVE_FIGURES = 1` in the config) |
+| `pip install -e ".[report]"` | python-pptx, python-docx | report tooling |
+| `pip install -e ".[dev]"` | all of the above | development |
 
-```r
-install.packages(c("plotly", "htmltools", "jsonlite", "R.matlab"))
-```
+`requirements.txt` carries the same minimums plus the test-only packages (`pytest`,
+`esprima`). The R reports under `R/` need, inside R:
+`install.packages(c("R.matlab", "ggplot2", "dplyr", "tidyr", "scales", "plotly", "htmltools", "jsonlite"))`.
 
-## 3. Run
+## Run the worked example
 
-New here? [`examples/`](examples/) runs a real case end to end — one download, one
-command, and it tells you whether your result matches the one in the repository.
+[`examples/`](examples/) holds one configuration workbook and the results both engines in
+this repository produced on it. The channel is an IEEE 802.3dj contribution, public but
+not redistributed here, so you download it yourself:
+
+1. Download one zip, about 29 MB:
+   <https://www.ieee802.org/3/dj/public/tools/CR/akinwale_3dj_02_2311.zip>. It unpacks
+   to a single folder, `akinwale_3dj_01_2311/`.
+2. Run the example against the unpacked folder:
 
 ```powershell
-python sicopr.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...]
-              [--export-mat] [--matlab-version {4p15p0,4p16p0}] [--eye-under-mlse]
+python examples/run_example.py --channels <where you unpacked the zip> --engine sicopr
 ```
 
-The **THRU** (victim) channel is required. Crosstalk aggressors are optional: `--fext` for
-FEXT, `--next` for NEXT, each accepting multiple files.
+The script checks each channel file against the SHA-256 listed in
+[`CHANNEL.md`](examples/akinwale_CR_22dB_VendorX/CHANNEL.md), runs the case without and
+with crosstalk, and compares COM, FOM, itick, ERL, VEC, VEO and ICN against the shipped
+values. Each SiCoPR run takes about six minutes on one core. Success ends with
+`all pinned values reproduced`; without crosstalk the case gives COM = 3.5070 dB, with
+its five aggressors 2.8959 dB. Leave out `--engine sicopr` to also run the reference code
+under GNU Octave, if `octave-cli` is on PATH.
+[`EXPECTED.md`](examples/akinwale_CR_22dB_VendorX/EXPECTED.md) has every number.
+
+## Run your own case
+
+```powershell
+python -m sicopr <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...]
+```
+
+The THRU (victim) channel is required. Aggressors are optional; `--fext` and `--next`
+each take any number of files.
 
 | flag | what it does |
 |---|---|
-| `--export-mat` | per-case engineering `.mat` snapshot for the R dashboard (§11) |
-| `--matlab-version` | which MATLAB release to emulate — **default `4p16p0`** (§8) |
-| `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. MATLAB gates the eye on `MLSE == 0`, but MLSE is applied afterwards, so the pre-MLSE eye is well defined. Diagnostic only: no reported value changes. |
+| `--fext F ...` | far-end crosstalk aggressor files |
+| `--next N ...` | near-end crosstalk aggressor files |
+| `--matlab-version {4p15p0,4p16p0}` | which reference release to emulate; default `4p16p0` ([`docs/VERSIONS.md`](docs/VERSIONS.md)) |
+| `--export-mat` | also write a per-case engineering `.mat` snapshot for the R dashboard (TUTORIAL §7.4). Changes no result |
+| `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. Diagnostic only; no reported value changes |
+
+The configuration is an IEEE 802.3 COM workbook (sheet `COM_Settings`); start from a
+working-group reference workbook rather than building one. A local web editor that shows
+a workbook as a channel schematic is in [`gui/`](gui/README.md) (`python gui/app.py`).
+
+**What it writes.** The console prints one block per package case:
 
 ```
 --- Case 1 ---
-  COM_dB                         = 3.4694
-  VEO_mV                         = 11.5200
+  COM_dB                         = 3.5070
+  VEO_mV                         = 2.3899
+  VEC_dB                         = 9.5721
+  FOM_ILD                        = 0.2992
+  ICN_mV                         = 0.0000
   Result                         = PASS  (threshold 3.0 dB)
 ```
 
-One result block per package test case. With `SAVE_FIGURES` / `CSV_REPORT` enabled in the
-config, per-case outputs land in `results/<config-name>_<timestamp>/case_NN/`.
-`results.csv` is written in MATLAB `num2str` format (about five significant digits), as
-the reference writes it; to compare two engines, use full precision
-(`tools/_sicopr_case.py` writes every result field to JSON).
+(the shipped example, without crosstalk). Files go under the config's `RESULT_DIR`
+(`{date}` is replaced by the run date; if `RESULT_DIR` is blank,
+`results_<config-name>_<YYYY_MM_DD_HH_MM>/`), relative to the working directory, one
+`case_NN/` per package case:
 
-### Config editor (optional)
+| file | written when | content |
+|---|---|---|
+| `results.csv` | `CSV_REPORT = 1` | every reported quantity, in MATLAB `num2str` format (about five significant digits), as the reference writes it |
+| `s1_*.png` … `s7_*.png` | `SAVE_FIGURES = 1` | figures named by pipeline stage: `s1_insertion_loss`, `s1_return_loss`, `s1_filters`, `s2_tdr_impedance`, `s2_erl_summary`, `s3_sbr_full`, `s3_sbr_zoom`, `s4_fom_vs_phase`, `s5_eq_vs_uneq_sbr`, `s5_fom_convergence`, `s5_eq_taps`, `s6_pdfs`, `s6_noise_terms`, `s6_contribution_pie`, `s7_eye_contour`, `s7_voltage_bathtub`, `s7_timing_bathtub` |
+| `STAGE_INDEX.md` | `SAVE_FIGURES = 1` | which figure belongs to which stage; a stage with no figure is listed as such |
+| `<config-name>_caseNN.mat` | `--export-mat` | engineering snapshot, written in `RESULT_DIR` itself |
 
-```powershell
-python gui/app.py            # http://127.0.0.1:8765
-```
+To compare two engines, use full precision rather than `results.csv`:
+`tools/_sicopr_case.py` writes every result field to JSON.
 
-A local, stdlib-only web app that shows a configuration workbook as a channel
-schematic — Tx die → package → channel → package → Rx die, plus the aggressors
-and the Tx FFE → CTLE → Rx FFE → DFE chain — and lets you edit the settings each
-block owns and save a new config.
+### Reading the output
 
-It writes by editing the sheet XML in place, so formulas, formatting and the
-`keywords_*` sheet survive, and it keeps a swept tap (`[ -0.34:.02:0]`, a
-~198-point search) distinct from a fixed one (`0`).
+- **COM** (dB): the ratio of the available signal amplitude to the combined noise and
+  interference amplitude at the target detector error ratio. A channel passes when COM
+  meets the configured threshold, conventionally 3 dB.
+- **FOM**: the figure of merit the equalizer search maximizes, a fast SNR-style estimate.
+  The search picks the equalizer setting by FOM; COM is then computed once, for the winner.
+- **itick**: the sampling phase the search chose, as a sample offset within the unit
+  interval.
+- **Tx FFE**, **CTLE**, **DFE**: the equalizers the search sets: transmitter
+  feed-forward equalizer taps, receiver continuous-time linear equalizer gains, and
+  receiver decision-feedback equalizer taps. Configurations may add a receiver FFE.
+- **MLSE**: maximum-likelihood sequence estimation. When enabled, COM includes the
+  reference's adjustment for a sequence detector.
+- **VEO / VEC**: vertical eye opening (mV) and vertical eye closure (dB), used by
+  chip-to-module specifications.
+- **ICN** (mV): integrated crosstalk noise from the FEXT/NEXT aggressors. Zero means no
+  aggressors were supplied, not that there is no crosstalk.
+- **ERL** (dB): effective return loss, a reflection metric computed from the TDR.
 
-It also runs the whole workflow without leaving the page: pick the THRU and
-crosstalk channels, review the exact `sicopr.py` command it assembles, run it
-with the terminal output streamed live, then refresh to see the new results —
-per case, the headline numbers from `results.csv` and the figures grouped by
-pipeline stage. An S-parameter tab plots the mixed-mode response of any
-Touchstone file, using the engine's own reader. Configs, channels and results
-live outside the repository; every tab has a **Browse…** button to open the
-directory that holds them, or start with `--dir DIR --run-dir DIR`. See
-[gui/README.md](gui/README.md).
+TUTORIAL [chapter 6](docs/TUTORIAL.md#6-feature-reference) covers each feature and
+[chapter 7](docs/TUTORIAL.md#7-outputs) the outputs; [Appendix A](docs/TUTORIAL.md#appendix-a-com-concepts)
+is a COM primer.
 
-### The reference under GNU Octave (optional)
+## The reference code under GNU Octave (optional)
 
-`octave/` carries the COM 4p15p0 and 4p16p0 release files made to run under
-GNU Octave, generated from `matlab/` by `octave/make_octave_compat.py` with a
-small, named patch set, every item of which is a no-op under MATLAB. Octave
-reads its configuration from a `.mat`; `tools/xlsx_to_com_mat.py` makes one
-from a workbook, and `tools/octave_compare.py` runs the same case through Octave
-and `python -m sicopr` and compares the results field by field, at full precision:
+`octave/` carries the COM 4p15p0 and 4p16p0 release files, generated from `matlab/` by a
+small patch set that makes them run under GNU Octave and is a no-op under MATLAB. With
+Octave installed you can run the reference code itself on any case and compare it with
+SiCoPR field by field (`tools/octave_compare.py`), without a MATLAB licence. Speed,
+measured 2026-09-18 on one 4p16p0 case (Octave 11.3, Windows, one BLAS thread): with the
+optional compiled kernels built, Octave took about 1.5 times SiCoPR's run time (451 s
+against 299 s); SiCoPR has changed since and the ratio has not been re-measured. See
+[`octave/README.md`](octave/README.md).
 
-```powershell
-python tools/octave_compare.py config.xlsx thru.s4p --fext a.s4p --next b.s4p --version 4p15p0
-```
+## How do I know it's right?
 
-So a reader with a workbook, a channel and Octave can check this port against
-the reference code without a MATLAB licence. The two agree on COM to **5.3e-14 dB on
-all 1368 cases** of the 4p16p0 workload (171 distinct channels; 2026-09-26, engine
-`df78b9c`), with the same sampling phase on every one. Octave took about 2.5 times
-SiCoPR's run time when measured in mid-September, before SiCoPR's convolution changes
-(§7).
+- **Function level.** All 146 translated functions are checked against the *executed*
+  reference (COM Octave), not against a reading of it.
+  [`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract, and
+  `python com_functions/verification/report.py` answers "are there any opens?".
+- **Against MATLAB, 4p15p0.** 208 reference cases (26 IEEE 802.3dj CR/KR channels ×
+  4 package configurations × with/without crosstalk), last re-run **2026-09-23**:
+  sampling phase (itick) and every equalizer selection identical on 208 / 208, COM within
+  **4.6e-14 dB**.
+- **Against COM Octave, 4p16p0.** 1368 cases (171 distinct channels), **2026-09-26**:
+  COM within **5.3e-14 dB**, and itick, Tx FFE and CTLE gain identical on all 1368.
 
-Optionally, `octave/accel/` holds C++ for the three hottest loops. It is not
-required and nothing changes until it is built:
+Those differences are double-precision arithmetic noise, not agreement to a tolerance.
+The correlation inputs are IEEE contributions and are not redistributed here, and MATLAB
+result values are never published here; only agreement statistics are. Method, history
+and per-case detail: [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md) and
+[`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md).
 
-```powershell
-python octave/accel/build_accel.py     # once per machine
-```
+One known engine-to-engine difference: `DER_DFE` and `DER_MLSE` can differ by up to about
+4.5% between any two engines, Octave and MATLAB included, because the reference reads the
+CDF exactly on a bin edge; COM is unaffected.
 
-After that any Octave run that has `octave/` on its path uses it automatically,
-with the same command and byte-identical results, at about 1.5 times SiCoPR's
-run time (same mid-September measurement). `COM_OCTAVE_ACCEL=0` turns it off. See
-[octave/README.md](octave/README.md).
+## Known limitations
 
-## 4. Repository layout
+- **End-to-end coverage follows the corpora.** The correlation covers what the corpus
+  configurations switch on; the shipped example alone runs Tx FFE, CTLE, DFE, Rx FFE
+  (MMSE), MLSE and crosstalk. Features no corpus configuration enables are verified
+  function by function only; [`docs/FEATURE_STATUS.md`](docs/FEATURE_STATUS.md) is the
+  feature inventory (a dated snapshot; its §D lists the candidates).
+- **Time-domain input (`TDMODE`)** is not fully wired; supply S-parameters.
+- **`FFE_OPT_METHOD = 'WIENER-HOPF'`** is intentionally non-functional: its helper is
+  undefined in the MATLAB reference itself. Use `'MMSE'`.
+- **`FAST_NOISE_CONV`** is a speed approximation; the default exact path is recommended
+  for reported results.
+- **GUI file pickers** from the MATLAB tool are not ported; pass files on the command line.
+- **Results produced before August 2026 are not comparable** with current output: engine
+  fixes changed COM materially. Regenerate rather than compare with archived numbers.
+- **No runtime comparison with MATLAB is offered**: the timings that exist were taken on
+  different machines.
 
-| Path | What it is |
-|---|---|
-| `sicopr.py` | **the engine** — assembled, runnable. *Do not edit by hand* |
-| `com_functions/fn/<name>/py_impl.py` | per-function source (the editable code), 157 functions |
-| `com_functions/fn/<name>/test_verify.py` | per-function unit tests |
-| `assemble_sicopr.py` | concatenates the `py_impl.py` files into `sicopr.py` |
-| `com_plots.py`, `com_mat_export.py` | figure generation and `.mat` export — imported *by* `sicopr.py`, so they live beside it |
-| `tools/` | study layer (§5), the Octave bridge (`octave_compare.py`, `xlsx_to_com_mat.py`) and the version differ (§6). The MATLAB-comparison harness is **not** here: it is kept with the data it needs (§1) |
-| `gui/` | the config editor — a local web app for building configs from a schematic view (§3) |
-| `R/` | the R extensions — per-case interactive HTML dashboard, plus the correlation and study reports |
-| `VERSION.json` | which MATLAB release the port emulates; `assemble_sicopr.py` generates `sicopr.py`'s header from it |
-| `matlab/` | MATLAB reference sources (`4p14p0`, `4p15p0`, `4p16p0`, adaptive-local-search branch) |
-| `octave/` | the `4p15p0` and `4p16p0` releases made to run under GNU Octave, generated from `matlab/` by `make_octave_compat.py` with the patch set in `patches/`, plus optional compiled kernels in `accel/` (§3) |
-| `docs/` | the evidence and the history behind the numbers — correlation, fix ledger, closed root causes, dated snapshots. [`docs/README.md`](docs/README.md) says which is which |
-| `dev/` | audit and interface-check scripts, plus state ledgers |
-| `tests/` | standalone cross-check scripts (run directly, not via pytest — see `CONTRIBUTING.md`) |
+## Contributing and tests
 
-**Per-run stage artifacts.** The interactive R dashboard (`build_dashboard()` in `R/com_analysis.R`) is grouped by pipeline stage, with a
-heading and plots for each of the seven — including TDR impedance and ERL, FOM
-against sampling phase, the selected equalizer taps, and the individual noise
-terms. A plot whose data is absent from the `.mat` renders a visible placeholder
-rather than disappearing.
-
-With `SAVE_FIGURES` enabled in the config, each package
-test case also writes a figure set named by pipeline stage — `s1_insertion_loss.png`,
-`s2_tdr_impedance.png`, `s4_fom_vs_phase.png`, and so on — alongside `STAGE_INDEX.md`,
-which maps every stage to its figures and the result columns it owns. A stage with no
-figure is listed as **no figure** rather than omitted, so a gap is visible instead of
-silent. `tests/test_stage_figures.py` fails if any of the seven stages stops emitting one.
-
-**What is deliberately absent.** The repository carries code, tests and guides — no inputs and no outputs. The input data is IEEE contributions and not ours to redistribute (§1), and the outputs are either produced by running on that data or distilled from the MATLAB reference, so they are excluded on the same grounds. Every test that needs data of its own skips and says so, and a fresh clone runs green: 2025 per-function tests plus 44 cross-check scripts.
-
-## 5. The EQ-search study
-
-Three ways to solve the same channel, differing only in how much of the TX-FFE / CTLE grid
-they evaluate:
-
-| Method | Switches |
-|---|---|
-| **full grid** | `LOCAL_SEARCH = 0` — exhaustive, the reference answer |
-| **legacy local search** | `LOCAL_SEARCH = N`, `NonZeroLSMethod = 0` — fixed-radius prune |
-| **adaptive local search** | `LOCAL_SEARCH = N`, `NonZeroLSMethod = 1` — Hansel D'silva's branch |
-
-### Result (7 channels, 100–1400 mm, 2026-08-22)
-
-**Adaptive returns COM bit-identical to the exhaustive grid on all seven channels** — ΔCOM
-exactly 0 to 17 significant digits, same winning EQ operating point — while evaluating ~8%
-of the candidates at a median **11.91× speedup** (range 8.60–12.52×). Legacy also matched
-exactly, at 1.28×. No pass/fail flips at the 3 dB threshold, for any method.
-
-The winning EQ setting *moves* with channel length, so the agreement is not an artifact of a
-constant answer: adaptive tracks a genuinely shifting optimum while skipping ~92% of the work.
-
-Recomputing true COM for the top-20 candidates by FOM (140 probes) shows the FOM argmax
-**is** the COM argmax on 7 of 7 channels — COM regret is **zero everywhere**, with Spearman
-ρ from 0.770 to 0.952. FOM ordering is still imperfect deeper in the list (ρ never reaches
-1), but the disagreement no longer reaches the top of the ranking, which is the only part a
-FOM-driven search uses.
-
-> This corpus was **regenerated on the corrected engine**. The 2026-08-07 run predates the
-> engine defects found by the MATLAB correlation and its COM values were materially
-> wrong (100 mm moved 3.217 → 6.720 dB). Two of its conclusions changed as a result — most
-> notably "FOM is not a faithful proxy", which was substantially an artifact of those
-> defects.
-
-**The corpus is one channel family** (same topology, varying only cable length), one config,
-thru-only, and now spans 4.45–6.72 dB — so it contains no cases near the 3 dB threshold.
-Those are its main limitations and are documented alongside the results.
-
-### Running sweep commands for sicopr.py
-
-```powershell
-# one channel, three methods -> per-method logs plus a summary, in the output directory
-python tools/sweep_compare.py <config.xlsx> <thru.s4p> --local-search 2 --max-ctle 3 --max-tap-vals 3
-
-# true COM for the top-K FOM candidates (the FOM-as-proxy measurement)
-python tools/fom_com_probe.py <config.xlsx> <thru.s4p> --sweep-dir <sweep-out> --top-k 20
-
-# N channels, checkpointed and resumable -> per-run and per-probe tables plus a summary
-python tools/corpus_sweep.py <config.xlsx> --channel-dir <channel-dir> --dry-run
-python tools/corpus_sweep.py <config.xlsx> --channel-dir <channel-dir>
-
-# reports
-Rscript R/sweep_compare.R <sweep-out>            # single channel
-Rscript R/corpus_report.R <corpus-out>           # corpus-wide
-```
-
-A full 7-channel × 3-method corpus is ~7.5 h. Use `--dry-run` for the estimate,
-`--methods full_grid,adaptive` to drop ~40%, and `--probe-top-k 0` to skip the proxy
-measurement. Runs are checkpointed per channel, so an interrupted corpus resumes.
-
-**Instrumentation.** `optimize_fom` carries an opt-in per-candidate logger — off by default,
-no effect on any COM result. Set `sicopr.SWEEP_LOG_CSV` and `sicopr.SWEEP_METHOD_LABEL` for one row
-per TX-FFE candidate (method, EQ indices, tap vector, candidate/best FOM, winning sample
-phase, evaluated vs pruned). The adaptive method's per-iteration radius diagnostic is
-captured separately via `sicopr.ALS_LOG_CSV`. These logs are what the study measures.
-
-`tools/hist_dep_repro.py` is a diagnostic harness: it solves the same operating point with
-different numbers of candidates evaluated and diffs the full engine state at the moment COM
-computation begins. Reach for it if COM ever appears to depend on search history.
-
-## 6. Development workflow
-
-`sicopr.py` is generated. To change behaviour, edit the per-function source and re-assemble:
-
-```powershell
-python -m pytest com_functions/fn/<name>/test_verify.py -q   # test the change
-python assemble_sicopr.py                                        # regenerate sicopr.py
-python -m pytest com_functions/fn -q                          # full suite
-```
-
-Before committing, run the whole harness — pre-flight audit, assembly, interface
-checks, unit tests, and every cross-check script:
+Contributions are welcome through pull requests; [`CONTRIBUTING.md`](CONTRIBUTING.md) has
+the process, the verification rules and the detail of the test suite. `sicopr.py` is
+generated from `com_functions/fn/<name>/py_impl.py` by `assemble_sicopr.py`: edit the
+source and re-assemble, never the engine. The gate is
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tests/run_all.ps1
 ```
 
-`tests/` holds **two kinds of file**, and the difference matters:
+Do not run bare `pytest tests`: it collects almost nothing and still exits 0. On a fresh
+clone, tests that need the (unshipped) correlation data skip and say so.
 
-| | how to run |
-|---|---|
-| `test_smoke.py`, `test_checkpoints.py`, `test_end_to_end.py`, `test_export_columns.py` | pytest modules |
-| every other `test_*.py` | standalone scripts — `python tests/test_x.py` |
+## Licence, citation, acknowledgements
 
-The configuration editor under `gui/` is **not** generated and does not go
-through the assembler — edit it directly, and see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for what is different about it.
+BSD-3-Clause ([`LICENSE`](LICENSE)). The MATLAB reference this is ported from is
+BSD-3-Clause, *Copyright 2025 802-COM Authors*; its sources are redistributed unmodified
+under `matlab/`, notices intact, and [`NOTICE`](NOTICE) records their versions and
+checksums. The COM configuration workbooks carry the same licence in their
+`License Notice` sheet.
 
-Do **not** run `pytest tests` over the whole directory. The audit scripts call
-`sys.exit()` at import, which aborts collection: pytest reports `no tests ran`
-**and still exits 0**, so nothing runs and nothing complains. `run_all.ps1`
-dispatches each kind correctly.
+**Not an IEEE product.** This project is not endorsed by, affiliated with, or approved by
+IEEE, the IEEE 802.3 working group or the 802-COM Authors; it is an independent port of
+the published reference code. "IEEE 802.3" appears here only to identify the standard the
+reference implements.
 
-Those scripts record two outcomes. `check()` is behaviour that must match MATLAB;
-`xcheck()` is a reviewed, accepted divergence, which reports `XFAIL` while it
-persists and **fails the run if it starts passing** — so a divergence that gets
-fixed cannot leave a stale entry behind in the ledger.
-
-Current state (2026-09-26): **2025** per-function tests across 157 functions, and **44
-audit scripts**; the 41 that print a tally total **628 checks** with 20 accepted
-divergences. Whether any function-level verification is open is answered by
-`python com_functions/verification/report.py`, per
-[`docs/VERIFICATION.md`](docs/VERIFICATION.md).
-
-### What the coverage does *not* reach
-
-The assembler inlines helpers into their callers. Most calls between translated functions
-became imports on 2026-09-22, but the engine still contains **62 inlined copies of 45
-functions**. `tests/test_inlined_copies.py` compares each copy
-against its canonical top-level version and reports plainly how far it gets:
-
-```
-62 inlined copies of 45 functions; 28 comparison(s) made, 34 skipped
-```
-
-**34 of those 62 copies have no behavioural verification.** They are not skipped
-by choice: the harness drives both sides from synthetic inputs, and for these it cannot build
-any without a populated `param`/`OP` struct or a real Touchstone file. For them the only
-check is that the copy still accepts the same arguments as the canonical.
-
-The correlation result in §7 says nothing about those 34. Those 208 cases exercise the
-*canonical* implementations, which `_run_com` injects; the inlined copies are `or`-fallbacks
-that a normal run never reaches. Several are deliberately narrow — a Gaussian fitted to the
-sample RMS where the canonical builds an exact PDF, for instance — and 17 such divergences
-are catalogued with reasons in `test_inlined_copies.py`'s `KNOWN_BEHAVIOUR`. Five
-divergences were found only when coverage was raised from 113 copies to 136 (before the
-copies were collapsed onto imports), which is the honest
-argument for treating the remaining 34 as unverified rather than as probably-fine: every
-time this harness has been pointed at more copies, it has found more divergences.
-
-`com_functions/inlined_copies.json`, written by the assembler, records where every copy came
-from — which helper, which caller, and the upstream MATLAB line range of each. It counts a
-wider population than the 62 above: the assembler reports 245 inlined helper copies, 62 of
-which duplicate a translated function; the rest are
-private helpers that have no canonical top-level function to compare against.
-
-The practical risk is not in what runs today. It is that a future caller which forgets to
-inject would silently get the approximation, with no error and a plausible number.
-
-### Cross-cutting guards
-
-Most of those scripts exist because the per-function tests structurally cannot catch the
-defect classes that actually got through. Each was built from a real failure and verified
-by re-introducing it — a check that has never failed for the right reason is not evidence:
-
-| script | guards against | why |
-|---|---|---|
-| `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and five of the eighteen entries in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md). Caught a new instance during the 4p16p0 port. |
-| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **62 copies of 45 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
-| `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the verified Gram gather, direct (never FFT) convolution, shared buffers. Found a live cache-aliasing defect. |
-| `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks. The oracle file itself is not tracked (it *is* reference data); point `COM_STAGE_ORACLES` at a local copy, and without it the test skips. |
-| `test_octave_checkpoints.py` | a stage drifting from the reference code | compares 10 stage structs on 28 cases against COM Octave goldens (`COM_OCTAVE_CHECKPOINTS`; `COM_CHECKPOINT_CASES=all` for every case). The goldens are local-only, so it skips in a clone. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md). |
-| `test_abort_path_leaks.py` | writing into a caller's struct before an early return | the sibling of the leak above that the leak guard cannot see: the function *does* return the struct, but commits values on a path MATLAB never commits on. Ledger #10b. |
-| `test_sort_stability.py` | `np.argsort` reordering ties | MATLAB's `sort` is stable, NumPy's default is not. Ties were measured in **81% of argsort calls** rather than assumed rare. |
-| `test_integer_ratio_rounding.py` | banker's rounding on a ratio of integers | MATLAB rounds half away from zero. The audit dismissed this as measure-zero, which is true for continuous data and false for `a/b` with both integral — ledger #16. |
-| `test_structural_invariants.py` | properties no single function owns | shapes, index bases and struct field sets that only go wrong between functions. |
-
-The configuration editor under `gui/` has its own three:
-
-| script | guards against |
-|---|---|
-| `test_config_roundtrip.py` | the config writer damaging a workbook — reads, rewrites, and requires the **engine** to parse both to identical `param`/`OP` |
-| `test_gui_server.py` | the HTTP layer: payload shape, path containment, process control, and the results/dashboard views |
-| `test_gui_static.py` | `app.js` failing to parse at all — a syntax error there breaks the whole page while every server-side test still passes |
-
-### Tooling for a new MATLAB release
-
-```powershell
-python tools/matlab_version_diff.py OLD.m NEW.m   # -> which py_impl files to re-check
-python tools/matlab_version_diff.py --self-check  # validates the differ itself
-```
-
-## 7. Verification status & caveats
-
-Every major feature is implemented and unit-tested against `matlab/com_ieee8023_4p15p0.m`
-plus the adaptive-local-search branch: TxFFE/CTLE/DFE, RxFFE (MMSE), floating DFE / floating
-RxFFE taps, MLSE, crosstalk (FEXT/NEXT, ICN), common-mode modal masks, RX calibration, FD
-processing (ICN/ILD), ERL/TDR, and TD-ILN/RILN. The `com_functions/fn` suite is green
-(**2025 passed, 0 failed**, 2026-09-26). Function by function, all 146 translated
-functions are checked against the *executed* reference (COM Octave) as of 2026-09-23;
-[`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract, and
-`python com_functions/verification/report.py` answers "are there any opens?".
-
-**Numeric parity with MATLAB is established end to end.** 208 reference cases from Hansel
-D'silva's `com_ieee8023_4p15p0` runs, compared case by case. Last full re-run
-**2026-09-23, engine `8e0479c`**:
-
-| | |
-|---|---|
-| sampling phase (`itick`) identical | **208 / 208** |
-| every EQ selection identical | **208 / 208** |
-| max \|ΔCOM\| | **4.6e-14 dB** |
-
-That is double-precision arithmetic noise, not agreement to a tolerance: the two
-implementations compute the same number. The previous re-run (2026-08-31, `a1c504c`) also
-had FOM bit-exact on 208 / 208 (max \|ΔFOM\| 3.38e-11 dB) and no pass/fail disagreement at
-3 dB. In that run, of 43,509 numeric column-values compared, 67 sat
-outside 1e-6 relative and every one was `DER_DFE` or `DER_MLSE`. The reference reads the
-CDF at −A_s, which is exactly a bin edge, so a last-bit difference in A_s moves DER by a
-bin: differences up to ~4.5% between any two engines, Octave vs MATLAB included, are
-expected, and COM is unaffected (upstream observation A16).
-
-Each crosstalk condition runs on the configuration its own MATLAB reference was produced
-with: the without-crosstalk cases on the base workbooks, the with-crosstalk cases on the
-workbooks that sweep the Tx FFE. **That pairing was confirmed by the COM maintainer on
-2026-08-24**, so it is the configuration, not one reading among several. Produced with
-the local comparison harness, which is not part of this repository (§1): it resolves
-the case set, runs all 208 with modal ERL across five workers, then exports the
-comparison table.
-
-Getting there took **eighteen** engine-level and settings findings, each with what it
-bought recorded in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md); the full write-up is
-[`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md). Two are worth naming here
-because they were configuration rather than code, and both were the same failure — a
-supplied config snapshot that post-dated the run it came from:
-
-- **The Tx FFE grid.** The supplied workbooks pin `c(-1)`, `c(-2)` and `c(1)` to a single
-  zero; the run that produced the reference results swept 1584 candidates. Confirmed by the
-  maintainer, who supplied the sweep workbooks.
-  ([`docs/TXFFE_SWEEP_ROOT_CAUSE.md`](docs/TXFFE_SWEEP_ROOT_CAUSE.md))
-- **The adaptive-search radius floor.** The branch source forces `1`; the reference behaves
-  as the 4p16p0 mainline rule (`1` for a single Tx FFE candidate, `2` otherwise). The port
-  applies that rule on both version paths, so no switch is needed.
-  ([`docs/MIN_RADIUS_ASSUMPTION.md`](docs/MIN_RADIUS_ASSUMPTION.md))
-
-The result is against **4p15p0**, so reproducing it takes `--matlab-version 4p15p0` — see
-§8. The same corpus has been run in 4p16p0 mode: 210 of 213 output columns are identical on
-all 208 cases, and no COM/FOM/VEO/VEC/itick/ERL value moves (measured before the
-September 2026 oracle fixes; not re-run since).
-
-Honest caveats for anyone relying on the numbers:
-
-- **No MATLAB-vs-Python runtime comparison is offered.** The timings that exist were taken
-  on different machines and, at the time, on different search spaces. The August 2026
-  Python-vs-Python figure (roughly 4.5–5×) is **withdrawn** pending a like-for-like
-  re-measurement: two of its changes, the FFT convolution and the hoisted Gram matrix,
-  were not equivalent (the FFT lost the far tail of the noise CDF that DER is read from)
-  and were undone on 2026-09-23/24. Speed-ups are now accepted only if
-  `tools/equivalence_check.py` passes on all 28 checkpoint cases: strict outputs
-  bit-identical, noise and DER fields within 1e-12 relative per element, Octave agreement
-  no worse. Five have been re-earned that way; on one case (R19) the run went from 304 s to
-  50 s against the accurate baseline. No corpus-level multiplier is current.
-- **Results produced before August 2026 are not comparable to current output.** The engine
-  fixes changed COM materially — the largest removed a systematic FOM bias affecting 95.7%
-  of cases. Regenerate rather than comparing against archived numbers.
-- Only the **TxFFE/CTLE/DFE** path is exercised end to end by a real configuration; the
-  other features are implemented and unit-tested but not covered by an end-to-end run. See
-  [`docs/FEATURE_STATUS.md`](docs/FEATURE_STATUS.md) §D.
-- **`FFE_OPT_METHOD='WIENER-HOPF'`** is intentionally non-functional — its helper is
-  undefined in the MATLAB reference itself. Use `'MMSE'`.
-- **`FAST_NOISE_CONV`** is a speed *approximation*; the default exact path is recommended
-  for reported results.
-- GUI file pickers are not ported — file lists are always passed on the command line.
-
-The 2026-07 conversion audit (146 EQUIVALENT / 11 DIVERGENT functions, findings D1-D20) is
-written up in [`docs/AUDIT_FINDINGS.md`](docs/AUDIT_FINDINGS.md). It was a reading, and it is
-superseded: executing the reference on 2026-09-22 found real divergences in 27 functions
-its ledger had marked EQUIVALENT. Current status is
-[`docs/VERIFICATION.md`](docs/VERIFICATION.md) and `com_functions/verification/report.py`.
-
-
-## 8. MATLAB version support
-
-The port emulates **`4p16p0` by default**, the current IEEE release (since 2026-09-27).
-The 1368-case 4p16p0 corpus is the evidence for it. The 208-case reference workbooks were
-produced by 4p15p0, so reproducing that result, or any 4p15p0 run, is opt-in.
-
-```powershell
-python -m sicopr <config.xlsx> <thru.s4p> --matlab-version 4p15p0     # per run
-```
-
-`sicopr.COM_MATLAB_VERSION = '4p15p0'` does the same from Python, and a `COM Version` keyword
-in the config wins over both.
-
-**4p16p0 is a small delta**: 146 of 152 function bodies are unchanged, 6 changed, 3 added,
-0 removed. The three additions are `OptFom_Adaptive_Local_Search`, `compute_hard_cap` and
-`append_csv_row` — Hansel D'silva's adaptive local search, **now adopted into the released
-mainline** rather than living in a branch.
-
-Every change has been measured; full detail in
-[`docs/MATLAB_4p16p0_CHANGES.md`](docs/MATLAB_4p16p0_CHANGES.md) and
-[`docs/MATLAB_4p16p0_IMPACT.md`](docs/MATLAB_4p16p0_IMPACT.md).
-
-| change | measured effect |
-|---|---|
-| pulse/step now scaled by channel amplitude `A` | `peak_uneq_pulse_mV`, `steady_state_voltage_mV` × A on all 208 cases. **COM, FOM, VEO, VEC, itick, ERL untouched** |
-| `Clip Method` default `Fast` → `Slow` | **COM +0.007 dB, FOM +0.22 dB** — but only for configs that omit the keyword. All 208 reference configs set it. |
-| `min_radius` 1 → 2 in adaptive search | bit-identical answer, **4.3× the candidate evaluations, 2.5× the runtime** |
-| four new step responses | additive fields |
-| common-mode / TDR degenerate guards | never fired on any input tested |
-| `OptFom_Create_Output`, `get_PSDs` edits | numerically neutral |
-
-Produced with the version differ, which ships, plus a local sweep-comparison
-step that does not (§1):
-
-```powershell
-python tools/matlab_version_diff.py matlab/com_ieee8023_4p15p0.m matlab/com_ieee8023_4p16p0.m
-```
-
-## 9. r4p15p0 deltas + adaptive local search
-
-On top of the `4p14p0` base, incorporated from `4p15p0` and Hansel D'silva's
-adaptive-local-search branch:
-
-- **Automatic port-order detection** (`auto_port_order`). When the config's `Port Order` is
-  empty, `0`, contains `NaN`, or is not a single 4-element vector (e.g. a per-package
-  `[1 2 3 4; 1 3 2 4]` matrix), the differential port order is auto-detected from the
-  S-parameters. Validated on the 802.3dj KR channels (resolves the standard `[1 3 2 4]`).
-- **Adaptive local search** (`OptFom_Adaptive_Local_Search`), selected by the config keyword
-  **`Non-zero Local Search Method`** (`param.NonZeroLSMethod`). It keeps a persistent search
-  radius that grows and shrinks with recent FOM improvement, and prunes candidates by a
-  weighted L1/L2 tap-space distance from the current best. It carries ~10 hand-tuned
-  constants (shrink factors, weights, the L2/L1 ratio, the CTLE window) whose provenance is
-  not documented in the source.
-- **Minor r4p15p0 fixes**: `get_PSDs` crosstalk pad length,
-  `adjust_Rx_noise_for_quantization` cursor-tap off-by-one, port-order threading through the
-  Touchstone readers.
-- **Two pre-existing gaps** fixed while exercising the 802.3dj config: named/complex packages
-  (`param.PKG`) accessed by dict subscript instead of attribute, and a 2-row `Port Order`
-  matrix now routing to auto-detection.
-
-## 10. Input files
-
-**Configuration spreadsheet (`.xlsx`)** — IEEE 802.3 COM spreadsheet format, active sheet
-`COM_Settings` (parameter / value columns). Key parameters: signalling rate (`f_b`),
-modulation (`levels`), DFE taps (`N_b`), BER target (`specBER`), CTLE sweep, package length
-cases, output flags (`SAVE_FIGURES`, `CSV_REPORT`). Start from an IEEE 802.3 working-group
-reference spreadsheet.
-
-**S-parameter files (`.s4p`)** — 4-port Touchstone. Default differential port order
-`[1, 3, 2, 4]`; override with `snpPortsOrder` in the config. Aggressor files use the same
-format (differential `Sdd21` becomes the coupling response).
-
-## 11. Engineering `.mat` export (optional)
-
-`--export-mat` writes a per-case MATLAB v5 snapshot alongside the standard outputs. It is an
-**additive debug export** — it changes no COM result, report, or figure.
-
-It captures the frequency-domain equalizer chain (`H_channel`, `H_ctle`, `H_ch_ctle`,
-`H_ffe`, `H_tx`, `H_final`, crosstalk `H_next`/`H_fext`), per-stage impulse and pulse
-responses, the statistical eye / BER contour, combined and component noise PDF/CDF, all COM
-metrics (`results_full`), a self-describing `config` struct, and run `meta`. It also adds
-`FOM_gauss_dB` — the COM you would get if the combined interference+noise distribution were
-purely Gaussian; the gap to `COM_dB` quantifies the non-Gaussian tail penalty.
-
-`H_channel`/`H_ctle`/`H_ch_ctle` are genuine captured FD responses; `H_ffe` is evaluated from
-the selected Tx-FFE taps, and `H_tx`/`H_final` are their products (DFE is a time-domain term,
-excluded from the FD chain) — see `meta.notes` in each file.
-
-```powershell
-Rscript R/com_analysis.R results/<...>/<config-name>_case01.mat
-# -> writes <config-name>_case01_report.html
-```
+To cite the software, use [`CITATION.cff`](CITATION.cff); when the subject is the COM
+method itself, cite IEEE 802.3 and the reference code. The method, the reference code and
+the configuration workbooks are the work of the IEEE 802.3 COM authors, to whom this port
+owes everything it computes.

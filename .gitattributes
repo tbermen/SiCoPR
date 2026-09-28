@@ -21,6 +21,11 @@ sicopr.py                         text eol=lf
 com_functions/inlined_copies.json text eol=lf
 octave/*_octave_compat.m          text eol=lf
 
+# The upstream reference files: NOTICE records their SHA-256, and the Octave
+# generator stamps that hash into its output, so their bytes must not change
+# with the platform either.
+matlab/*.m                        text eol=lf
+
 # Binary deliverables: never diff or convert these.
 *.pptx binary
 *.docx binary

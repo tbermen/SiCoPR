@@ -14,14 +14,12 @@ reference code itself running under GNU Octave.
 | the engine | `python -m sicopr` |
 | to run something now | [`examples/`](../examples/) — one download, one command |
 
-> **What changed in version 2.0**
+> **What is in version 2.0**
 >
-> This document was a `.docx`; it is markdown now, so it can be diffed and
-> reviewed like the code it describes. Chapter 12 is new: the reference code
-> runs under GNU Octave from this repository, which is the only way to check
-> this port against the reference without a MATLAB licence. Chapter 11 carries
-> the 1368-case comparison (first finished 2026-09-19, re-run 2026-09-26), and chapter 2 now starts
-> with a worked example rather than a command you cannot run yet.
+> Chapter 12 covers the reference code running under GNU Octave from this
+> repository, which is the way to check this port against the reference without
+> a MATLAB licence. Chapter 11 carries the 1368-case comparison (re-run
+> 2026-09-26), and chapter 2 starts with the worked example in `examples/`.
 
 > **A note on trust**
 >
@@ -39,7 +37,7 @@ reference code itself running under GNU Octave.
   - [2.1 Requirements](#21-requirements)
   - [2.2 What ships, and what does not](#22-what-ships-and-what-does-not)
   - [2.3 Running COM](#23-running-com)
-    - [The canonical example](#the-canonical-example)
+    - [The worked example, by hand](#the-worked-example-by-hand)
     - [Reading the progress lines](#reading-the-progress-lines)
   - [2.4 Where output goes](#24-where-output-goes)
 - [3 Architecture](#3-architecture)
@@ -141,7 +139,7 @@ This document describes a Python implementation of the IEEE 802.3 COM (Channel O
 
 ## 1.1 What this is
 
-The engine is a **function-for-function translation** of `com_ieee8023_4p15p0.m` and the adaptive-local-search branch. It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
+The engine is a **function-for-function translation** of the COM reference code. It emulates `com_ieee8023_4p16p0.m` by default and `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version 4p15p0` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
 
 The translation is close enough that the Python source can be navigated by MATLAB line number: 338 lines in the engine carry an explicit MATLAB line reference back to the source function they translate.
 
@@ -201,15 +199,16 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1          # Windows PowerShell
 # source .venv/bin/activate         # macOS / Linux
 
-pip install -r requirements.txt     # or: pip install -e .
+pip install -e .
 ```
 
-`pip install -e .` is worth preferring: it installs the package, which is what lets `python -m sicopr` run from any directory rather than only from the repository root.
+Install the package rather than only `requirements.txt`: `python -m sicopr` and the worked example import `sicopr`, and without the install they fail with `No module named sicopr` outside the repository root. `pip install -e ".[plots]"` adds matplotlib for figures.
 
 The R reporting layer (Chapter 9) additionally needs, inside R:
 
 ```
-install.packages(c("plotly", "htmltools", "jsonlite", "R.matlab"))
+install.packages(c("R.matlab", "ggplot2", "dplyr", "tidyr", "scales",
+                   "plotly", "htmltools", "jsonlite"))
 ```
 
 There is nothing to build. The tool runs directly from the assembled engine.
@@ -238,57 +237,41 @@ python examples/run_example.py --channels <where you unpacked it>
 
 That runs the case with and without crosstalk, through SiCoPR and — if
 `octave-cli` is on PATH — through the reference code under Octave as well, and
-prints anything that differs from what ships. About five minutes per SiCoPR run
+prints anything that differs from what ships. About six minutes per SiCoPR run
 on one core. The rest of this chapter is the general form of the same command.
 
 ```
-python sicopr.py <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...] [--export-mat]
-              [--matlab-version {4p15p0,4p16p0}] [--eye-under-mlse]
+python -m sicopr <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...] [--export-mat]
+                 [--matlab-version {4p15p0,4p16p0}] [--eye-under-mlse]
 ```
 
 The THRU (victim) channel is required. Crosstalk aggressors are optional: use --fext for FEXT and --next for NEXT, each accepting multiple files. Add --export-mat to also write an engineering snapshot for R analysis (Section 7.4).
 
-### The canonical example
+### The worked example, by hand
 
-The 802.3ck C2M configuration run against its reference channel. Neither file is in the repository (see "What ships, and what does not" above); the command has the same shape for any configuration and channel pair:
+The example in `examples/akinwale_CR_22dB_VendorX/` is an IEEE 802.3dj CR configuration run on a channel from the IEEE 802.3dj public area. `CHANNEL.md` there names the zip to download and gives the SHA-256 of each file. Without crosstalk, from the repository root:
 
 ```
-python sicopr.py "config_com_ieee8023_93a=3ck_d3p1_120g_C2M_tp1a_9_11_30_21.xlsx" \
-        "Tx_PCB_4dB_OSFP_22dB_OSFP_4dB_PCB_Rx_TP0_TP5_VendorX_thru1.s4p"
+python -m sicopr examples/akinwale_CR_22dB_VendorX/config_com_dj_200G_CAKR_178_PKGA_06_2_2025__Case1.xlsx \
+        <channels>/Tx_PCB_4dB_OSFP_22dB_OSFP_4dB_PCB_Rx_TP0_TP5_VendorX_thru1.s4p
 ```
 
 The run reports its progress through the equalizer search, then prints one result block per package test case:
 
 ```
-Running COM: config_com_ieee8023_93a=3ck_d3p1_120g_C2M_tp1a_9_11_30_21.xlsx
+Running COM: examples/akinwale_CR_22dB_VendorX/config_com_dj_200G_CAKR_178_PKGA_06_2_2025__Case1.xlsx
 FEXT: 0, NEXT: 0
-
-C2M_eval_ --Tx_PCB_...   Causality correction = -47.3 dB (not applied)
-C2M_eval_ --Tx_PCB_...   Truncation ratio = -54.2 dB
-  optimize_fom: 1 gffe x 14 CTLE x 7 g_DC_HP x 396 TXFFE x 1 itick = 38808 evals
-  C2M pass 1/2
-    CTLE 1/14  g_dc=-13.00  best_FOM=-inf dB
-      ** new best FOM = 1.810 dB (CTLE 3, TXFFE 12, itick=0)
-      ** new best FOM = 2.325 dB (CTLE 3, TXFFE 71, itick=0)
-      ...
-    [com_plots] 12 figures written this run (12 present) -> results\...\case_02
-
+...
 --- Case 1 ---
-  COM_dB                         = 3.5664
-  VEO_mV                         = 11.5800
-  VEC_dB                         = 9.4540
-  FOM_ILD                        = 0.6588
+  COM_dB                         = 3.5070
+  VEO_mV                         = 2.3899
+  VEC_dB                         = 9.5721
+  FOM_ILD                        = 0.2992
   ICN_mV                         = 0.0000
-  Result                         = PASS  (threshold 3.0 dB)
-
---- Case 2 ---
-  COM_dB                         = 3.0184
-  VEO_mV                         = 8.4200
-  VEC_dB                         = 10.6464
   Result                         = PASS  (threshold 3.0 dB)
 ```
 
-This is real output from the current code. If your run reproduces 3.5664 dB for Case 1, the installation is working correctly.
+If your run reproduces COM = 3.5070 dB, the installation is working. With the five aggressors (`--fext` the three `_Fext` files, `--next` the two `_Next` files) the same channel gives 2.8959 dB and fails. `EXPECTED.md` beside the workbook has both engines' values at full precision.
 
 ### Reading the progress lines
 
@@ -301,21 +284,22 @@ This is real output from the current code. If your run reproduces 3.5664 dB for 
 
 ## 2.4 Where output goes
 
-With `SAVE_FIGURES` and `CSV_REPORT` enabled in the configuration, each package case writes to `results/<config-name>_<date>/case_NN/`.
+Output goes under the configuration's `RESULT_DIR`, relative to the working directory, with `{date}` replaced by the run date (the example's workbook uses `.\results\CAKR_{date}\`). If `RESULT_DIR` is blank the engine uses `results_<config-name>_<YYYY_MM_DD_HH_MM>/`. Each package case writes to `case_NN/` beneath it.
 
-| Output | Content |
-|---|---|
-| results.csv | per-case metrics: port order, impedance estimates, ERL, ICN, fitted IL |
-| 02_insertion_loss.png, 02_return_loss.png | channel frequency response |
-| 03_filters_main_vs_display.png | receiver filter chain |
-| 04_sbr_full.png, 04_sbr_zoom.png | single-bit (pulse) response |
-| 06_eq_vs_uneq_sbr.png | equalized vs unequalized pulse response |
-| 06_fom_convergence.png | FOM progress through the equalizer search |
-| 07_pdfs.png | noise and interference probability densities |
-| 08_eye_contour.png, 08_*_bathtub.png | statistical eye and bathtub curves |
-| 09_contribution_pie.png | breakdown of the noise/ISI budget |
+| Output | Written when | Content |
+|---|---|---|
+| results.csv | CSV_REPORT = 1 | every reported quantity, in MATLAB num2str format |
+| s1_insertion_loss.png, s1_return_loss.png, s1_filters.png | SAVE_FIGURES = 1 | stage 1, channel frequency response and the receiver filters |
+| s2_tdr_impedance.png, s2_erl_summary.png | SAVE_FIGURES = 1 | stage 2, TDR impedance profile and ERL |
+| s3_sbr_full.png, s3_sbr_zoom.png | SAVE_FIGURES = 1 | stage 3, single-bit (pulse) response |
+| s4_fom_vs_phase.png | SAVE_FIGURES = 1 | stage 4, FOM against sampling phase |
+| s5_eq_vs_uneq_sbr.png, s5_fom_convergence.png, s5_eq_taps.png | SAVE_FIGURES = 1 | stage 5, equalized pulse, FOM through the search, selected taps |
+| s6_pdfs.png, s6_noise_terms.png, s6_contribution_pie.png | SAVE_FIGURES = 1 | stage 6, noise and interference PDFs, individual terms, budget breakdown |
+| s7_eye_contour.png, s7_voltage_bathtub.png, s7_timing_bathtub.png | SAVE_FIGURES = 1 | stage 7, statistical eye and bathtub curves |
+| STAGE_INDEX.md | SAVE_FIGURES = 1 | maps each stage to its figures and the result columns it owns; a stage with no figure is listed as **no figure** rather than omitted |
+| <config-name>_caseNN.mat | --export-mat | engineering snapshot (Section 7.4), written in `RESULT_DIR` itself |
 
-Table 1. Per-case outputs written when figures and CSV reporting are enabled.
+Table 1. Per-case outputs. A figure whose data a run does not produce (the eye under MLSE, for example, unless `--eye-under-mlse` is given) is simply absent.
 
 # 3 Architecture
 
@@ -388,15 +372,21 @@ The first two are imported by the engine, which is why they live beside `sicopr.
 
 | Path | Contents |
 |---|---|
-| sicopr.py | the assembled engine |
-| com_functions/fn/ | per-function sources and tests (157 functions) |
-| tools/ | study layer: sweep, probe, corpus, diagnostics, deck builder |
-| R/ | interactive HTML reporting |
-| matlab/ | MATLAB reference sources |
-| docs/ | audit findings, fix summary, feature plan |
-| dev/ | audit and interface-check scripts |
+| sicopr.py | **the engine**, assembled and runnable. Do not edit by hand |
+| com_functions/fn/<name>/py_impl.py | per-function source (the editable code), 157 functions |
+| com_functions/fn/<name>/test_verify.py | per-function unit tests |
+| assemble_sicopr.py | concatenates the py_impl.py files into sicopr.py |
+| com_plots.py, com_mat_export.py | figure generation and .mat export, imported by sicopr.py |
+| VERSION.json | which MATLAB release the port emulates; the assembler writes it into sicopr.py's header |
+| examples/ | the worked example: a configuration workbook, the expected results, and the channel to download |
+| tools/ | study layer (sweep, probe, corpus, diagnostics), the Octave bridge (octave_compare.py, xlsx_to_com_mat.py) and the version differ. The MATLAB-comparison harness is not here; it is kept with the data it needs |
 | gui/ | the configuration editor: a local web app for building configs, running the engine and viewing results |
-| tests/ | standalone cross-check scripts, run directly rather than via pytest |
+| R/ | the R extensions: per-case interactive HTML dashboard, correlation and study reports |
+| matlab/ | MATLAB reference sources (4p14p0, 4p15p0, 4p16p0, adaptive-local-search branch) |
+| octave/ | the 4p15p0 and 4p16p0 releases made to run under GNU Octave, generated from matlab/ by make_octave_compat.py with the patch set in patches/, plus optional compiled kernels in accel/ |
+| docs/ | this tutorial, the verification contract, version notes, and the evidence and history behind the numbers; docs/README.md says which is which |
+| dev/ | audit and interface-check scripts |
+| tests/ | cross-check scripts, run by tests/run_all.ps1 rather than bare pytest |
 
 # 4 Inputs
 
@@ -433,7 +423,7 @@ Crosstalk aggressor files use the same format; the differential Sdd21 becomes th
 
 ## 4.3 Package cases
 
-A configuration may define several package/board cases. Each is solved independently and reported as its own result block and its own output directory. The canonical example above defines two, which is why it prints Case 1 and Case 2.
+A configuration may define several package/board cases. Each is solved independently and reported as its own result block and its own output directory. A configuration with two package cases prints Case 1 and Case 2.
 
 # 5 Configuration: the parameters that matter
 
@@ -453,7 +443,7 @@ This chapter covers the parameters you will actually set. It is not the complete
 
 ## 5.2 Equalizer sweeps
 
-These define the search space. Their product is the number of candidates the optimiser must consider, and it grows quickly — the canonical example above reports 38,808 evaluations.
+These define the search space. Their product is the number of candidates the optimiser must consider, and it grows quickly; the `optimize_fom: ... evals` progress line (Section 2.3) reports the count for each run.
 
 | Keyword group | Sets |
 |---|---|
@@ -592,7 +582,7 @@ Values are written in MATLAB num2str format (about five significant digits), as 
 
 ## 7.3 Figures
 
-The figures below are from the canonical run in Section 2.3 — real output, not illustrations. They are written per case when SAVE_FIGURES is enabled.
+The figures below are real output from an 802.3ck C2M run (not the shipped example), produced before the figure files were renamed by pipeline stage; Section 2.4 lists the current file names. They are written per case when SAVE_FIGURES is enabled.
 
 ![figure 1](tutorial/fig01.png)
 
@@ -746,7 +736,11 @@ Seven channels spanning 100–1400 mm, three methods, at a reduced but consisten
 | Grid actually evaluated | ~7% | ~81% |
 | Pass/fail flips at 3 dB | none | none |
 
-Table 3. Corpus result, August 2026. Delta COM is exactly zero — identical to all 17 significant digits, not merely small.
+Table 3. The first corpus run, 2026-08-07. Delta COM is exactly zero — identical to all 17 significant digits, not merely small.
+
+**Regenerated on the corrected engine (2026-08-22).** The 2026-08-07 run predates the engine defects found by the MATLAB correlation, and its COM values were materially wrong (100 mm moved 3.217 → 6.720 dB). Re-run on the corrected engine, adaptive search again returns COM bit-identical to the exhaustive grid on all seven channels, with the same winning EQ operating point, while evaluating about 8% of the candidates at a median **11.91x speedup** (range 8.60–12.52x). Legacy also matched exactly, at 1.28x. No pass/fail flips at 3 dB for any method. Two conclusions changed with the regeneration, most notably "FOM is not a faithful proxy", which was substantially an artifact of those defects. The corpus is one channel family (same topology, varying only cable length), one config, thru-only, and spans 4.45–6.72 dB, so it contains no cases near the 3 dB threshold.
+
+A full 7-channel x 3-method corpus takes about 7.5 h at that grid size.
 
 The winning EQ setting moves with channel length across the corpus, so the agreement is not an artifact of a constant answer: the pruned search tracks a genuinely shifting optimum while skipping most of the work.
 
@@ -853,12 +847,12 @@ python -m pytest com_functions/fn -q
 | Suite | How to run | Notes |
 |---|---|---|
 | com_functions/fn | python -m pytest com_functions/fn -q | the main suite; 2025 tests across 157 functions |
-| tests/ | python tests/<name>.py | Mixed: test_smoke.py, test_checkpoints.py and test_end_to_end.py ARE pytest modules; every other file is a standalone script. Do not point pytest at the directory — the scripts call sys.exit() at import, so collection aborts, pytest reports "no tests ran" AND STILL EXITS 0. Nothing runs and nothing complains. |
+| tests/ | python tests/<name>.py | Mixed: test_smoke.py, test_checkpoints.py, test_end_to_end.py and test_export_columns.py ARE pytest modules; every other file is a standalone script. Do not point pytest at the directory — the scripts call sys.exit() at import, so collection aborts, pytest reports "no tests ran" AND STILL EXITS 0. Nothing runs and nothing complains. |
 | everything | powershell -ExecutionPolicy Bypass -File tests/run_all.ps1 | The full harness, and what to run before committing: pre-flight audit, assembly, interface checks, unit tests, then every cross-check script. Dispatches both kinds of file above correctly. Current totals (2026-09-26): 2025 per-function tests, and 44 audit scripts; the 41 that print a tally total 628 checks with 20 accepted divergences. |
 
 ## 10.3 Conventions worth knowing
 
-**Cross-cutting guards** Four audit scripts guard defect classes the per-function tests cannot see, each built from a real failure and verified by re-introducing it. test_reference_leaks.py catches writes to a parameter the function never returns — MATLAB passes structs by value, Python by reference, and five of the eight engine defects were this class; it caught a new instance during the 4p16p0 port. test_inlined_copies.py compares each of the 62 inlined copies of 45 functions against its canonical version, because a fix to py_impl.py reaches only one of them; it prints the count it found, so the number here and the code cannot drift apart silently. test_optimization_invariants.py pins what the speed work depends on and found a live cache-aliasing defect. test_matlab_stage_oracles.py holds 208 cases x 35 scalars plus 14 vector families taken from the reference workbooks; the data is not distributed, so point COM_STAGE_ORACLES at a local copy or the test skips. test_octave_checkpoints.py compares 10 pipeline stages on 28 cases against COM Octave goldens (COM_OCTAVE_CHECKPOINTS; local-only, so it skips in a clone). docs/VERIFICATION.md describes these and the rest of the verification gates.
+**Cross-cutting guards** Four audit scripts guard defect classes the per-function tests cannot see, each built from a real failure and verified by re-introducing it. test_reference_leaks.py catches writes to a parameter the function never returns — MATLAB passes structs by value, Python by reference, and five of the eight engine defects were this class; it caught a new instance during the 4p16p0 port. test_inlined_copies.py compares each of the 62 inlined copies of 45 functions against its canonical version, because a fix to py_impl.py reaches only one of them; it prints the count it found, so the number here and the code cannot drift apart silently. test_optimization_invariants.py pins what the speed work depends on and found a live cache-aliasing defect. test_matlab_stage_oracles.py holds 208 cases x 35 scalars plus 14 vector families taken from the reference workbooks; the data is not distributed, so point COM_STAGE_ORACLES at a local copy or the test skips. test_octave_checkpoints.py compares 10 pipeline stages on 28 cases against COM Octave goldens (COM_OCTAVE_CHECKPOINTS; local-only, so it skips in a clone). CONTRIBUTING.md lists every guard, and docs/VERIFICATION.md describes the rest of the verification gates.
 
 - **MATLAB line references** Most functions carry a comment naming the MATLAB source lines they translate. Keep these accurate — they are how the port is reviewed.
 
@@ -870,7 +864,7 @@ python -m pytest com_functions/fn -q
 
 ## 11.1 What has been verified
 
-Every major feature is implemented and unit-tested against the MATLAB source: TX-FFE, CTLE, DFE, RX-FFE (MMSE), floating DFE and floating RX-FFE taps, MLSE, crosstalk (FEXT/NEXT and ICN), common-mode modal masks, receiver calibration, frequency-domain processing, ERL/TDR, and TD-ILN/RILN. The unit suite is green at 2025 tests, and the 802.3ck configuration runs end to end once its workbook and channel are in place.
+Every major feature is implemented and unit-tested against the MATLAB source: TX-FFE, CTLE, DFE, RX-FFE (MMSE), floating DFE and floating RX-FFE taps, MLSE, crosstalk (FEXT/NEXT and ICN), common-mode modal masks, receiver calibration, frequency-domain processing, ERL/TDR, and TD-ILN/RILN. The unit suite is green at 2025 tests, and the worked example in `examples/` runs end to end, including Rx FFE (MMSE), MLSE and crosstalk.
 
 A structured conversion audit classified all 157 MATLAB functions (146 equivalent, 11 divergent; docs/AUDIT_FINDINGS.md). That audit was a reading, and it was not sufficient: the largest defect in the port — the process_sxp reference leak — was not in its ledger, and executing the reference on 2026-09-22 found real divergences in 27 functions its ledger had marked EQUIVALENT. It is superseded by function-level verification against the executed reference: all 146 translated functions as of 2026-09-23. The contract is docs/VERIFICATION.md, and `python com_functions/verification/report.py` answers "are there any opens?".
 
@@ -911,13 +905,13 @@ The engine was optimised in August 2026 to roughly 4.5-5x its previous speed, ga
 
 > **End-to-end MATLAB cross-check: done**
 >
-> 208 reference cases from Hansel D'silva's com_ieee8023_4p15p0 runs were compared case by case. At the last full re-run (2026-09-23) the sampling phase and every EQ selection are identical on 208/208 and max |delta COM| is 4.6e-14 dB, which is double-precision arithmetic noise. DER_DFE and DER_MLSE can differ by up to ~4.5% between any two engines, Octave vs MATLAB included, because the reference reads the CDF exactly on a bin edge (upstream observation A16); COM is unaffected. Eighteen engine defects were found and fixed along the way. This repository documents that verification; it does not offer to reproduce it, because neither the inputs nor the comparison harness are distributed here. The write-up is MATLAB_Correlation_Review.md.
+> 208 reference cases from com_ieee8023_4p15p0 runs were compared case by case. At the last full re-run (2026-09-23) the sampling phase and every EQ selection are identical on 208/208 and max |delta COM| is 4.6e-14 dB, which is double-precision arithmetic noise. DER_DFE and DER_MLSE can differ by up to ~4.5% between any two engines, Octave vs MATLAB included, because the reference reads the CDF exactly on a bin edge (upstream observation A16); COM is unaffected. Eighteen engine defects were found and fixed along the way. This repository documents that verification; it does not offer to reproduce it, because neither the inputs nor the comparison harness are distributed here. The write-up is MATLAB_Correlation_Review.md.
 
-- **Coverage of end-to-end paths** Only the C2M TX-FFE/CTLE/DFE path is exercised end to end by a real configuration. The remaining features are implemented and unit-tested but not covered by an end-to-end run.
+- **Coverage of end-to-end paths** End-to-end correlation covers what the corpus configurations switch on; the shipped example alone runs TX-FFE, CTLE, DFE, RX-FFE (MMSE), MLSE and crosstalk. Features no corpus configuration enables (docs/FEATURE_STATUS.md §D lists the candidates) are verified function by function only. Time-domain input (TDMODE) is not fully wired.
 
-- **Results predating August 2026** The fifteen engine fixes of August 2026 changed COM materially — the largest removed a systematic FOM bias affecting 95.7% of cases. On the 802.3ck configuration the shift is about 0.1 dB (Case 1 3.5664 → 3.4694 dB), enough to move Case 2 from PASS to FAIL. Regenerate rather than comparing against archived output.
+- **Results predating August 2026** The fifteen engine fixes of August 2026 changed COM materially — the largest removed a systematic FOM bias affecting 95.7% of cases — enough to move a case across the pass/fail threshold. Regenerate rather than comparing against archived output.
 
-- **Reference configuration is partly reconstructed** The strongest parity result (§11.1) pairs the with-crosstalk condition with a swept Tx FFE grid and adaptive minimum radius 2. That is a reconstruction inferred from the reference output, not a configuration that was supplied: the two reference workbooks were evidently produced with different Tx FFE settings, and only the without-crosstalk one was sent. It is supported by reproducing MATLAB's tap vector, sampling phase and FOM on all ten cases that diverged under the supplied config, and by a 2x2 control in which each condition is near-exact on its own settings and materially worse on the other's. Open question with the MATLAB author; report both the as-supplied and the settings-aligned figures.
+- **Reference configuration pairing** The parity result pairs each crosstalk condition with the configuration its own reference was produced with: the without-crosstalk cases on the base workbooks, the with-crosstalk cases on workbooks that sweep the Tx FFE (1584 candidates, where the originally supplied workbooks pinned the taps). The pairing was first inferred from the reference output and then confirmed on 2026-08-24, when the sweep workbooks were supplied (docs/TXFFE_SWEEP_ROOT_CAUSE.md).
 
 - **Residual in the COM PDF path** Closed. The systematic bias was an off-by-one in the ADC-clip sampling phase (docs/COM_PDF_RESIDUAL.md); the last remaining case, wXtalk_T4_R10 at +0.0076 dB, was a separate defect — Python's round() is banker's rounding where MATLAB's rounds half away from zero, and nui = round(len/M) in get_pdf landed on a tie, dropping one ISI sample. With both fixed, COM is bit-exact on all 208 settings-aligned cases.
 
@@ -927,7 +921,7 @@ The engine was optimised in August 2026 to roughly 4.5-5x its previous speed, ga
 
 - **GUI file pickers** Not ported. File lists are always passed on the command line.
 
-- **Adaptive-search constants** The adaptive method carries about ten hand-tuned values — shrink factors, distance weights, the L2/L1 ratio, the CTLE window — whose provenance is not documented in the source. Expect this to be asked about.
+- **Adaptive-search constants** The adaptive method carries about ten hand-tuned values — shrink factors, distance weights, the L2/L1 ratio, the CTLE window — whose provenance is not documented in the source.
 
 # 12 The reference code under GNU Octave
 
@@ -1017,7 +1011,7 @@ python octave/accel/build_accel.py        # once per machine
 ```
 
 From then on every run that has `octave/` on its path uses them automatically:
-same command, same configuration, same results, 1.4 to 1.9 times faster. To
+same command, same configuration, same results, 1.4 to 1.9 times faster than the same files run interpreted (measured 2026-09-18). To
 check whether a run will use them, ask the kernel for its version:
 
 ```
@@ -1034,7 +1028,7 @@ proved by planting five last-bit defects and confirming it fails on each.
 
 ## 12.5 How fast, and how close
 
-Per case, one BLAS thread each, against this port on the same machine (measured in mid-September 2026, before SiCoPR's convolution changes, so the ratios are indicative):
+Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). The compiled-build row was measured 2026-09-18 on one 1368-case 4p16p0 case (451 s against 299 s); SiCoPR has changed since and the ratios have not been re-measured, so they are indicative:
 
 | | Octave / SiCoPR |
 |---|---|
@@ -1102,7 +1096,7 @@ Mandatory keywords are listed first within their group and marked in bold.
 | ● f_b | MANDATORY |  | param.fb |
 | ● L | MANDATORY |  | param.levels |
 | CDR | 'MM' |  | OP.CDR |
-| Clip Method | 'Fast' |  | param.clip_method |
+| Clip Method | 'Slow' (4p16p0); 'Fast' (4p15p0) |  | param.clip_method |
 | COM Pass threshold | 0 |  | param.pass_threshold |
 | DER_CDR | 1e-2 | * | param.DER_CDR |
 | EH_max | np.inf | * | param.Max_VEO |
