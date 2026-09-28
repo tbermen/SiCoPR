@@ -5,7 +5,6 @@ MATLAB GROUND TRUTH:
     H = [[1, 0],[0, 1]]; Rnn = I; dw=0; d=0; wmax=[1,1]; wmin=[1,1]
     Expect: sigma_e finite, FOM finite, w shape (2,), blim shape (0,)
 """
-import os
 import numpy as np
 import pytest
 from com_functions.fn.MMSE_FOM.py_impl import MMSE_FOM
@@ -365,16 +364,11 @@ def test_ht_layout_gives_bit_identical_results():
         b = MMSE_FOM(*args[:-1], idx.copy(), Ht=Ht)
         c = MMSE_FOM(*args[:-1], idx.copy(), Ht=Ht, G=Ht @ Ht.T)
         for r in (b, c):
-            if os.name == 'nt':
-                assert a[1] == r[1], (trial, a[1], r[1])
-                np.testing.assert_array_equal(a[2], r[2])
-                np.testing.assert_array_equal(a[0], r[0])
-            else:
-                # Bit-identity here is a property of the BLAS kernel, not the
-                # code: it holds on the Windows machine the equivalence rule is
-                # judged on, and OpenBLAS on some Linux CPUs picks a different
-                # kernel per layout (2e-14 relative seen on a CI runner). Off
-                # Windows, hold it to the rule's own 1e-12 relative bound.
-                np.testing.assert_allclose(a[1], r[1], rtol=1e-12, atol=0)
-                np.testing.assert_allclose(a[2], r[2], rtol=1e-12, atol=1e-15)
-                np.testing.assert_allclose(a[0], r[0], rtol=1e-12, atol=1e-15)
+            # Bit-identity between the layouts is a property of the BLAS kernel
+            # the CPU selects, not of the code: it holds on the machine the
+            # equivalence rule is judged on (tools/equivalence_check.py), and
+            # CI runners, Windows and Linux alike, have shown 2e-14 relative.
+            # Here it is held to that rule's own 1e-12 relative bound.
+            np.testing.assert_allclose(a[1], r[1], rtol=1e-12, atol=0)
+            np.testing.assert_allclose(a[2], r[2], rtol=1e-12, atol=1e-15)
+            np.testing.assert_allclose(a[0], r[0], rtol=1e-12, atol=1e-15)
