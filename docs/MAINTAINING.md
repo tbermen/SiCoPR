@@ -1,116 +1,113 @@
 # Maintaining SiCoPR
 
-The other side of [`CONTRIBUTING.md`](../CONTRIBUTING.md): what the maintainer
-does, and how the repository is configured so that the rules there are enforced
-by the platform rather than by memory.
-
-Written for someone who has not run a public repository before. None of it is
-elaborate — the whole point is that almost nothing should depend on remembering
-to do the right thing.
+The maintainer's side of [`CONTRIBUTING.md`](../CONTRIBUTING.md): what the
+commitment is, what happens when a Reference Code release is published, how
+issues are handled, and how a state of the repository is released.
 
 ---
 
-## 1. Who can change what
+## 1. The commitment
 
-Making a repository public grants the world **read** access. It does not grant
-anyone write access. Strangers cannot push to it, cannot delete it, and cannot
-change a line of it.
+Stated for users in the README, under
+[*What the maintainer commits to*](../README.md#what-the-maintainer-commits-to), and
+presented to the IEEE 802.3 COM ad hoc on 2026-09-29. In short:
 
-What they can do is **fork** it — take their own copy — and then open a **pull
-request**, which is a request that you merge their copy's changes into yours.
-You decide. Nothing lands without you.
+- The commitment is **consistency and correlation with the Reference Code**, and
+  nothing wider. IEEE maintains one COM code base. SiCoPR is an extra
+  implementation outside it, not a second standard.
+- **The engine changes only for:**
+  - a new official Reference Code release;
+  - a port defect;
+  - a speed-up that `tools/equivalence_check.py` proves changes no result.
+- **A change to COM goes to the ad hoc and the Reference Code first.** SiCoPR
+  re-correlates after the release.
+- **The supporting tools are provided as they are:** `gui/`, `R/`, the study
+  tools and the search instrumentation. They never change a COM result and are
+  not re-verified with each release.
 
-| who | can read | can push | can merge |
-|---|---|---|---|
-| anyone on the internet | yes | no | no |
-| a contributor with a fork | yes | to their own fork only | no |
-| a collaborator you invite | yes | yes, if you give write access | yes, if you allow it |
-| you | yes | yes | yes |
+## 2. When a Reference Code release is published
 
-So the answer to "will others be able to push changes?" is **no, not unless you
-invite them by name.** The default is exactly what you want.
+Only an official release on the IEEE COM Git site starts this. Drafts and
+development branches do not.
 
-## 2. Settings to apply once
+| step | how | evidence it leaves |
+|---|---|---|
+| 1. Diff the release against the one emulated now | `python tools/matlab_version_diff.py OLD.m NEW.m`; run `--self-check` first | a `MATLAB_<ver>_CHANGES.md`, as [`MATLAB_4p16p0_CHANGES.md`](MATLAB_4p16p0_CHANGES.md) |
+| 2. Map the diff onto the functions to re-check | the differ lists the `py_impl.py` files whose MATLAB changed | the list, in the changes document |
+| 3. Port the changes behind the version switch | edit `py_impl.py`, re-assemble; add the release to `VERSION.json` | per-function tests pinned from the new release run under Octave ([`VERIFICATION.md`](VERIFICATION.md)) |
+| 4. Regenerate the Octave release file | `octave/make_octave_compat.py` against the new `matlab/` file | `tests/test_octave_compat.py` green |
+| 5. Rerun the benchmark: existing cases first | the reference cases on the new release before anything else, so the delta between releases is measured, not assumed | a `MATLAB_<ver>_IMPACT.md`, as [`MATLAB_4p16p0_IMPACT.md`](MATLAB_4p16p0_IMPACT.md) |
+| 6. Publish the correlation tables | agreement statistics only; reference values are never published here | [`VERSIONS.md`](VERSIONS.md) and [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md) updated |
+| 7. Make it the default, and release | `VERSION.json` default, CHANGELOG, tag (§5) | the tag |
 
-On GitHub, *Settings → Branches → Add branch ruleset* for `master`:
+**Which builds stay selectable.** An older build stays selectable only while
+published correlation evidence depends on it. Today that is the 4p15p0 build
+with the adaptive local search, which produced the 208-case reference results.
+When no published result needs a build any more, it can be retired.
 
-| setting | why |
+## 3. Between releases
+
+- **A port defect** is fixed with a test that fails without the fix. If it can
+  move a COM, FOM or sampling-phase value, rerun the reference cases before
+  committing it and add an entry to [`FIX_SUMMARY.md`](FIX_SUMMARY.md).
+- **A speed-up** lands only if `tools/equivalence_check.py` passes on all 28
+  checkpoint cases. Run `tests/test_mutation_score.py` before any engine commit.
+- **Nothing else changes the engine.** In particular, nothing improves on the
+  Reference Code, not even behind an opt-in switch. An improvement is a proposal
+  for the ad hoc.
+
+The gate before every push is `tests/run_all.ps1`. After it, check CI with
+`gh run list --limit 3`.
+
+## 4. Issues, and pull requests
+
+Issues are how outside help arrives. Triage each against the table in
+CONTRIBUTING.md, *What happens to it*:
+
+| an issue that is | answer |
 |---|---|
-| **Require a pull request before merging** | stops anyone — you included — pushing straight to `master`. This is the one that matters most: it means every change has a diff someone looked at. |
-| **Require status checks to pass** → select the `suite`, `licence` and `hygiene` jobs | a red CI cannot be merged. The `hygiene` job is what stops correlation data and MATLAB-derived values being re-added; see [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) for the kind of mistake CI is there to catch. |
-| **Require branches to be up to date before merging** | the checks ran against what will actually be on `master`, not against a stale base. |
-| **Do not** require approvals from others | you are the only maintainer; requiring a second reviewer would block you entirely. Revisit if that changes. |
+| a port defect | reproduce, fix, and say in the thread when the reference rerun will be done, rather than leaving it silent |
+| Reference Code behaviour | explain, with the MATLAB lines. A real Reference Code defect is reported to the ad hoc and tracked there |
+| a feature or method request | point to the COM ad hoc |
+| about a supporting tool | no commitment. Fix it if it is worth it |
+| a request for channel files | they are not yours to give. Point to CONTRIBUTING.md, *Correlation data*, which links the IEEE 802.3dj page that lists the contributions by name |
+| a security report | follow [`../SECURITY.md`](../SECURITY.md) |
 
-Also under *Settings → General*:
+**Pull requests are not accepted.** Close one with a pointer to the issue
+tracker. If the idea is right, write the change yourself from the description,
+not by merging or copying the submitted code, and credit the reporter in the
+commit message. Every line in the repository then comes from the maintainer or
+the Reference Code, which is what keeps the licence record simple without a
+sign-off. A pull request can carry CI changes that run on this repository's
+runners. Do not run a fork's workflow without reading it.
 
-- **Issues: on.** This is how defects arrive from people who cannot or will not
-  write the fix. It is the cheapest signal you will get.
-- **Discussions: optional.** Useful if the ad hoc wants a place to talk that is
-  not the reflector. Leave it off until someone asks.
-- **Wiki: off.** The documentation is in the repository, where it is versioned
-  and reviewed with the code. A wiki is a second place for it to go stale.
+CI still has a `dco` job. It runs only on pull requests, so with none accepted
+it never fires. It is left in place rather than removed, in case the policy
+changes.
 
-You can approve and merge your own pull requests. That is normal for a
-single-maintainer project and is not a loophole — the value is the diff and the
-green CI, not a second signature.
+**Repository settings.** Issues on, wiki off (the documentation is versioned
+with the code), discussions off unless the ad hoc asks for a place to talk that
+is not the reflector. Nobody else has write access. Granting it is a decision
+about the commitment, not a reward for a good report.
 
-## 3. Reviewing a pull request from a stranger
+## 5. Releasing
 
-Read the diff before you run anything. A pull request can change CI
-configuration, add a dependency, or add a script — and CI on a fork's pull
-request runs code the author wrote. Specifically check:
-
-- **Does it touch `.github/workflows/`?** Treat that as a change to what runs on
-  your machine and read it line by line.
-- **Does it add a dependency?** A new import in `requirements.txt` is a new piece
-  of software you are asking every user to install. Ask what it buys.
-- **Does it edit `sicopr.py` directly?** Reject it — `sicopr.py` is generated, and CI
-  catches this, but say why so the contributor knows to redo it under
-  `com_functions/fn/`.
-- **Does it add data?** Channel files, configuration workbooks and MATLAB
-  reference values do not belong here, whoever they came from. The `hygiene` job
-  catches the known paths; a new path is your judgement.
-- **Can it move a number?** If yes, the correlation set has to be re-run before
-  merge, and only you can do that — the data is not public. Say so in the thread
-  and give a rough timescale rather than leaving it silent.
-- **Does it touch `gui/`?** Different rules apply there: it is hand-written
-  rather than generated, so editing it directly is correct. Two things are worth
-  checking by eye. Any new endpoint taking a path must be containment-checked
-  against the repo *and* type-restricted — this server reads files and spawns
-  processes. And `gui/static/app.js` must parse: `tests/test_gui_static.py`
-  does that, but only if a JS parser is installed, so confirm its output does
-  not say it fell through to the delimiter fallback.
-
-## 4. Releasing
-
-There is no release process, and none is needed yet: `master` is the release, and
-`VERSION.json` records which MATLAB release the engine emulates.
-
-If that changes — if people start depending on a specific state — tag it:
+`master` is what users get. Mark each state people may depend on with a tag,
+which is a permanent name for a commit and what a citation needs:
 
 ```bash
-git tag -a v1.0 -m "first public release, 208/208 against the 4p15p0 reference"
-git push origin v1.0
+git tag -a v1.0.0 -m "..."
+git push origin v1.0.0
 ```
 
-A tag is a permanent name for a commit, which is what a citation needs. Prefer a
-tag over a commit SHA in anything written down: SHAs change if history is ever
-rewritten, and this repository's history has been rewritten once already, to
-purge data.
+For each release, update these together:
 
-## 5. Things that would need a decision, not a commit
+- `CHANGELOG.md`;
+- the version in `pyproject.toml` and in `CITATION.cff`, with its
+  `date-released`;
+- `VERSION.json` if the emulated Reference Code release changed.
 
-- **Someone asks to be a collaborator.** Write access is not something to grant
-  because a contribution was good; grant it when you want that person to be able
-  to merge *without you*. Until then, their pull requests are the mechanism.
-- **Someone proposes a change that improves on the MATLAB.** The project's rule
-  is fidelity over improvement. That is worth explaining rather than just
-  declining — and worth reconsidering only as an opt-in switch, never as a
-  default.
-- **A vendor asks for the channel files.** They are not yours to give. Point at
-  CONTRIBUTING.md, "Correlation data", which links the IEEE 802.3dj page that
-  lists the contributions by name.
-- **Someone reports a security problem.** There is no attack surface to speak of
-  — this reads local files and does arithmetic — but if one is reported, ask them
-  to email rather than open a public issue, and add a `SECURITY.md` saying so if
-  it happens more than once.
+Prefer a tag over a commit SHA in anything written down: SHAs change if history
+is rewritten, and this repository's history has been rewritten once already, to
+purge data. While the repository is private a tag can still be re-cut; once
+public, a published tag should not move.

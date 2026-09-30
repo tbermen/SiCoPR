@@ -187,12 +187,53 @@ CDF exactly on a bin edge; COM is unaffected.
 - **No runtime comparison with MATLAB is offered**: the timings that exist were taken on
   different machines.
 
-## Contributing and tests
+## What the maintainer commits to
 
-Contributions are welcome through pull requests; [`CONTRIBUTING.md`](CONTRIBUTING.md) has
-the process, the verification rules and the detail of the test suite. `sicopr.py` is
-generated from `com_functions/fn/<name>/py_impl.py` by `assemble_sicopr.py`: edit the
-source and re-assemble, never the engine. The gate is
+SiCoPR is maintained by Todd Bermensolo, and the commitment is deliberately narrow:
+**consistency and correlation with the IEEE 802.3 COM Reference Code.** The Reference
+Code is the one COM code base: reviewed by the COM ad hoc and released on the IEEE COM
+Git site. SiCoPR is an extra implementation outside it. It is not a second standard,
+not IEEE collateral, and not a place to change COM.
+
+- **SiCoPR follows official releases.** The default is the latest official Reference
+  Code release. An older build stays selectable only while published correlation
+  evidence depends on it. Today that is the 4p15p0 build with the adaptive local
+  search, which produced the 208-case reference results. Drafts and development
+  branches are not followed.
+- **Each new release goes through the same steps:**
+  1. Diff it against the previous release.
+  2. Map the differences onto the functions that need re-checking.
+  3. Rerun the per-function tests and the benchmark cases.
+  4. Publish the correlation tables.
+
+  The 4p15p0 to 4p16p0 step was done this way ([`docs/VERSIONS.md`](docs/VERSIONS.md)).
+- **Between releases the engine changes for two reasons only:**
+  - a **port defect**, meaning SiCoPR disagrees with the release it emulates;
+  - a **speed-up proven to change no result**, judged by `tools/equivalence_check.py`
+    ([`CONTRIBUTING.md`](CONTRIBUTING.md), *A change made for speed*).
+- **A change to COM itself goes to the COM ad hoc and the Reference Code first.** That
+  covers a new feature, a different method, or a correction to the Reference Code.
+  SiCoPR re-correlates once the change is released. A defect found in the Reference
+  Code is reproduced here, not corrected, and reported to the ad hoc.
+- **Supporting tools are outside the commitment.** These are the configuration editor
+  (`gui/`), the R reports and dashboard (`R/`), the study tools and the search
+  instrumentation. None of them changes a COM result, they are provided as they are,
+  and they are not re-verified with each release. The Octave release files under
+  `octave/` are inside the commitment: they are regenerated for each release, because
+  they are the executable reference the verification runs against.
+
+## Issues and tests
+
+Defect reports are welcome as [GitHub issues](https://github.com/tbermen/SiCoPR/issues),
+especially any case where SiCoPR disagrees with the Reference Code. **Pull requests are
+not accepted**: the maintainer makes every change, so every change goes through the same
+verification. Feature requests and proposed changes to the COM method belong with the
+COM ad hoc. [`CONTRIBUTING.md`](CONTRIBUTING.md) says what makes a report actionable,
+and records how the code is worked on: the verification rules and the detail of the
+test suite.
+
+`sicopr.py` is generated from `com_functions/fn/<name>/py_impl.py` by
+`assemble_sicopr.py`: edit the source and re-assemble, never the engine. The gate is
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tests/run_all.ps1

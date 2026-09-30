@@ -8,6 +8,10 @@
 > tests" figure below is left as written — this document is a dated snapshot,
 > and the current numbers live in the main [`README`](../README.md), under "How do I know it's right?".**
 >
+> **The "Implementation Plan" at the end is historical.** What SiCoPR does now is
+> set by the maintainer's commitment to the Reference Code (README, *What the
+> maintainer commits to*), not by this plan.
+>
 > **Reference: `com_ieee8023_4p15p0.m` + the
 > `com_ieee8023_4p15p0_adaptive_local_search.m` branch.**
 > Source-of-truth = `assemble_sicopr.py` + `com_functions/fn/*/py_impl.py` (edit py_impl,

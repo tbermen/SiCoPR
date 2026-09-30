@@ -1,75 +1,53 @@
 # Contributing to SiCoPR
 
-Thanks for looking at this. One rule matters more than all the others:
+Help from outside comes through **issues, not pull requests.** The maintainer makes every
+change, so every change goes through the same verification against the Reference
+Code. What SiCoPR follows, and what it does not, is in the README under
+[*What the maintainer commits to*](README.md#what-the-maintainer-commits-to).
+
+The rest of this file records how the code is worked on: the rules the maintainer
+works to, written down so that they can be checked, and useful to anyone reading
+the code or working in a fork of their own.
+
+## Reporting a defect
+
+A defect report is the contribution this project asks for. The most valuable is a
+case where SiCoPR and the Reference Code disagree. What makes a report actionable:
+
+- the configuration and channel involved, or the smallest input that shows it;
+- which Reference Code release you compared against;
+- what you expected, what you got, and **where the MATLAB says the expected
+  thing** if you know;
+- the full traceback, if it crashed.
+
+If the input is not yours to share, say so. A description of the shape of the
+problem is still worth having.
+
+### What happens to it
+
+The maintainer reproduces it, then:
+
+| it turns out to be | what happens |
+|---|---|
+| a **port defect**: SiCoPR differs from the release it emulates | fixed, with a test that fails without the fix. If it can move a COM, FOM or sampling-phase value, the reference cases are rerun before the fix lands; that run needs data that is not in this repository |
+| **what the Reference Code does**, even if it looks wrong | explained, not changed. The answer is sometimes "the MATLAB does that too" (see *Prefer fidelity over improvement*). A real defect in the Reference Code is reported to the COM ad hoc and reproduced here until a release changes it |
+| a **request for a feature or a different method** | redirected to the COM ad hoc. SiCoPR follows the Reference Code and re-correlates once the change is released |
+| a problem in a **supporting tool** (`gui/`, `R/`, the study tools) | looked at. These are outside the Reference Code commitment and provided as they are |
+
+## Pull requests
+
+Pull requests are not accepted, and will be closed with a pointer to the issue
+tracker. That is not a judgement on the change. If you have found a fix,
+describe it in an issue, naming the MATLAB lines it matches: the maintainer
+writes and verifies the change. The licence permits forks, and nothing here is
+needed to run one.
 
 > ## `sicopr.py` is generated. Never edit it.
 >
 > It is assembled from `com_functions/fn/<name>/py_impl.py` by `assemble_sicopr.py`.
 > A change made directly to `sicopr.py` is silently discarded the next time anyone
-> runs the assembler — including CI. If your diff touches `sicopr.py` and nothing
-> under `com_functions/fn/`, it will be rejected.
-
----
-
-## How to propose a change
-
-**Nobody pushes to `master`, including the maintainer.** Every change arrives as a
-pull request and is merged after review. If you have never done this on GitHub,
-the whole sequence is:
-
-```bash
-# 1. Fork on github.com (button, top right). You now own a copy.
-# 2. Clone YOUR fork
-git clone https://github.com/<you>/SiCoPR.git
-cd SiCoPR
-
-# 3. Branch. Name it after the change, not after yourself.
-git checkout -b fix-ctle-index-base
-
-# 4. Work. Follow "The loop" below, and make sure tests/run_all.ps1 is green.
-git add -A
-git commit          # see "Commit messages"
-
-# 5. Push to your fork and open the pull request
-git push -u origin fix-ctle-index-base
-# GitHub prints a link; follow it, or use the "Compare & pull request" button.
-```
-
-You do **not** need permission to do any of this, and you cannot break anything:
-a fork is your own copy, and a pull request is a proposal, not a change.
-
-**Open an issue first if the change is large or changes a number.** A defect
-report costs you five minutes and may save you a week — the answer is sometimes
-"the MATLAB does that too, on purpose" (see *Prefer fidelity over improvement*).
-For a typo or an obvious bug, skip straight to the pull request.
-
-### What happens to your pull request
-
-1. **CI runs automatically** on a clean clone with no correlation data: the unit
-   suite, the cross-check scripts, a check that `sicopr.py` matches its sources, and
-   a check that the licence notice is intact. All of it must pass. You can run
-   the same thing locally first — that is what `tests/run_all.ps1` is.
-2. **The maintainer reviews it.** Expect questions about which MATLAB lines the
-   new behaviour matches; that is the review, not scepticism about you.
-3. **Numbers get checked against the reference set** if the change can move a
-   COM, FOM or sampling-phase value. That run needs data that is not in this
-   repository, so the maintainer does it. It takes a few hours; be patient.
-4. **Merge.** Your commits keep your name on them.
-
-A pull request that is stalled is usually waiting on a question, not rejected.
-Ask.
-
-### Reporting a defect without fixing it
-
-That is a real contribution and is welcome. What makes a report actionable:
-
-- the configuration and channel involved, or the smallest input that shows it;
-- what you expected, what you got, and **where the MATLAB says the expected
-  thing** if you know;
-- the full traceback, if it crashed.
-
-If the input is not yours to share, say so — a description of the shape of the
-problem is still worth having.
+> runs the assembler, CI included, and CI fails when `sicopr.py` does not match
+> its sources.
 
 ---
 
@@ -127,7 +105,8 @@ than assuming the harness has you covered.
 
 The GUI plays by different rules from the engine. It is **not** generated, it is
 **not** a port of anything, and `assemble_sicopr.py` does not touch it — edit
-`gui/` files directly.
+`gui/` files directly. It is a supporting tool, outside the Reference Code
+commitment: it never changes a COM result.
 
 ```powershell
 python gui/app.py --no-browser     # http://127.0.0.1:8765
@@ -327,7 +306,7 @@ when it is absent, so a fresh clone still runs the full suite.
 ## Licensing
 
 This is a derivative of the IEEE 802.3 COM MATLAB reference, which is
-BSD-3-Clause. Contributions are accepted under the same license. Keep the
+BSD-3-Clause, and is distributed under the same licence. Keep the
 copyright notice in `LICENSE` and in the generated `sicopr.py` header intact, and
 do not describe the project — in code, docs, or commit messages — as endorsed by
 or affiliated with IEEE or the 802-COM Authors. Clause 3 forbids it.
@@ -364,40 +343,6 @@ The header goes *after* the module docstring, so the docstring stays first for
 leading comments, so a header there would appear 157 times inside the generated
 engine. [`com_functions/fn/README.md`](com_functions/fn/README.md) covers that
 tree collectively.
-
-### Sign your commits off (DCO)
-
-Every commit must carry a `Signed-off-by:` line. Git adds it for you:
-
-```bash
-git commit -s -m "your message"
-```
-
-which appends
-
-```
-Signed-off-by: Your Name <your@email>
-```
-
-That line means you agree to the [Developer Certificate of Origin
-1.1](https://developercertificate.org/) — in short: that you wrote the change, or have
-the right to submit it, and that you are contributing it under this project's
-licence.
-
-**Why this is asked for.** BSD-3-Clause, unlike Apache-2.0, contains no clause
-covering *inbound* contributions. Without a sign-off there is no record that a
-contributor agreed to the licence their code is being distributed under. The DCO
-is the lightweight way to have that record: no paperwork, no CLA to sign, one
-line per commit.
-
-Use your real name and an email you control. **Please use a personal address
-rather than an employer one** — a corporate address in the commit record invites
-the question of whether the work was done within the scope of employment, and
-that is a question worth not raising.
-
-CI checks this on every pull request. If you forget, `git commit --amend -s` on
-the last commit, or `git rebase --signoff origin/master` for a series, then
-force-push your branch.
 
 ## Commit messages
 

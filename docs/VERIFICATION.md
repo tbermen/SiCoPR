@@ -33,8 +33,8 @@ Adopted into the repository on 2026-09-23, when `verification/report.py` began
 answering "are there any opens?" from the suite rather than from anyone's
 recollection. It sat in a private working directory while under review, which is
 outside every repository and therefore the wrong home for a process that
-governs code: a contract a contributor cannot read, cannot review in a pull
-request and cannot version alongside what it governs decays into exactly the
+governs code: a contract a reader cannot see, cannot review and cannot
+version alongside what it governs decays into exactly the
 2026-07 ledger, a document describing a process nobody can see running.
 
 It is referenced from `CONTRIBUTING.md`.
@@ -302,7 +302,7 @@ assert about itself, and it should not be described as more than it is.
 ### The suite must run without Octave
 
 The gate has to be runnable by someone who does not have Octave installed, or
-the project cannot take outside contributions once it is public.
+neither CI nor a reader checking the port can run it.
 
 The split is already the repository's practice and should stay that way:
 oracle values are **generated** with Octave, then **pinned as literals** in the

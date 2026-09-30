@@ -145,7 +145,7 @@ The translation is close enough that the Python source can be navigated by MATLA
 
 ## 1.2 What it adds beyond the MATLAB tool
 
-Five things exist here that have no MATLAB counterpart:
+Five things exist here that have no MATLAB counterpart. The first and fourth are part of the maintainer's commitment to the Reference Code, and are redone with every release. The search instrumentation, the study and reporting layer and the configuration editor are supporting tools outside it: none of them changes a COM result, and they are provided as they are (README, [What the maintainer commits to](../README.md#what-the-maintainer-commits-to)).
 
 - **Per-function verification.** Each translated function has its own implementation file and its own test, run against MATLAB behaviour. 2025 tests.
 

@@ -12,6 +12,10 @@ It serves on `http://127.0.0.1:8765` and opens a browser. Use
 
 Stdlib only — nothing to install beyond what the engine already needs.
 
+The editor is a supporting tool. It sits outside the maintainer's commitment to
+the Reference Code (README, *What the maintainer commits to*): it never changes
+a COM result, and it is provided as it is.
+
 ## Where it looks
 
 Configuration workbooks, channel models and run output are all kept **outside**

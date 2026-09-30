@@ -27,11 +27,11 @@ seems obvious, the documentation may be at fault.
 - Comments about someone's identity, background, employer or perceived skill
   level in place of engaging with what they said.
 - Deliberately wasting maintainer time: reports known to be false, or pressure
-  to merge work that has not been reviewed.
+  to change the port ahead of the Reference Code.
 
 ## Scope
 
-This applies in issues, pull requests, commit messages and code review on this
+This applies in issues, commit messages and any other discussion on this
 repository. It does not extend to IEEE 802.3 meetings, the reflector, or any
 other venue — those have their own rules, and this document does not attempt to
 speak for them.

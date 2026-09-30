@@ -56,5 +56,5 @@ was known when. Each says so at the top.
 
 | document | what it is |
 |---|---|
-| [`MAINTAINING.md`](MAINTAINING.md) | the maintainer's side of [`../CONTRIBUTING.md`](../CONTRIBUTING.md): branch protection, required checks, what to do with a release |
+| [`MAINTAINING.md`](MAINTAINING.md) | the maintainer's side of [`../CONTRIBUTING.md`](../CONTRIBUTING.md): the commitment to the Reference Code, the steps for a new release, issue triage, tagging |
 | [`com_enchance_r_analysis.md`](com_enchance_r_analysis.md) | the design behind the engineering `.mat` export and the R dashboard it feeds. Implemented; kept as the rationale |

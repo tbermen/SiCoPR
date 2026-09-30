@@ -18,7 +18,7 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-09-28
+## [1.0.0] - 2026-09-29
 
 First public release. The engine, the test suite and the documentation are the
 state described in [`README.md`](README.md); the correlation results it reports
@@ -73,6 +73,17 @@ were produced before this file existed and are not restated as changes.
   `docs/VERIFICATION.md`.
 
 ### Changed
+
+- The documentation now states the maintainer's commitment as presented to the
+  IEEE 802.3 COM ad hoc on 2026-09-29. The commitment is consistency and
+  correlation with the Reference Code. SiCoPR follows official releases, and
+  between releases the engine changes only for port defects and speed-ups
+  proven to change no result. The supporting tools (`gui/`, `R/`, the study
+  tools, search instrumentation) are outside it. README, `CONTRIBUTING.md`,
+  `docs/MAINTAINING.md`.
+- Outside help now comes through issues only. Pull requests are no longer
+  accepted, so the DCO sign-off section is gone from `CONTRIBUTING.md`. The CI
+  `dco` job remains, and runs only on pull requests.
 
 - Documentation restructured for users. `README.md` is now a short guide:
   install (`pip install -e .`), the worked example, running your own case with
