@@ -21238,6 +21238,10 @@ if __name__ == '__main__':
                              '(4p15p0 L620), but MLSE is applied afterwards, so the pre-MLSE '
                              '(DFE-only) eye is well defined. Diagnostic only: no reported '
                              'COM, VEC, VEO or EW value changes.')
+    parser.add_argument('--exit-on-fail', action='store_true',
+                        help='exit with status 3 if any package case fails its COM threshold '
+                             '(2 is the usage-error status). '
+                             'Without it a completed run exits 0 whether COM passes or fails.')
     args = parser.parse_args()
     if args.matlab_version:
         COM_MATLAB_VERSION = args.matlab_version
@@ -21263,6 +21267,7 @@ if __name__ == '__main__':
     # print works for both single- and multi-case configs.
     if not isinstance(_results, list):
         _results = [_results]
+    _any_fail = False
     for _i, _r in enumerate(_results):
         if _r is None:
             continue
@@ -21277,4 +21282,8 @@ if __name__ == '__main__':
         _com = getattr(_r, 'COM_dB', None)
         if _com is not None:
             print(f'  {"Result":30s} = {"PASS" if float(_com) >= _thr else "FAIL"}  (threshold {_thr:.1f} dB)')
+            if float(_com) < _thr:
+                _any_fail = True
         print()
+    if args.exit_on_fail and _any_fail:
+        _sys.exit(3)

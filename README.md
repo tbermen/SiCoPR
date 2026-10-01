@@ -83,6 +83,7 @@ each take any number of files.
 | `--matlab-version {4p15p0,4p16p0}` | which reference release to emulate; default `4p16p0` ([`docs/VERSIONS.md`](docs/VERSIONS.md)) |
 | `--export-mat` | also write a per-case engineering `.mat` snapshot for the R dashboard (TUTORIAL §7.4). Changes no result |
 | `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. Diagnostic only; no reported value changes |
+| `--exit-on-fail` | exit with status 3 if any package case fails its COM threshold (for CI); without it a completed run exits 0, pass or fail |
 
 The configuration is an IEEE 802.3 COM workbook (sheet `COM_Settings`); start from a
 working-group reference workbook rather than building one. A local web editor that shows
@@ -139,9 +140,9 @@ script of this kind.
 
 **Exit codes.** `python -m sicopr` exits **0 when the run completes, whether COM passes or
 fails**, 1 if the engine returns no result, and non-zero with a traceback on any error
-(for example an unreadable file, or a configuration count that is not a whole number). A
-CI check that should fail on a failing channel reads `COM_dB` from the result or from
-`results.csv` and compares it with the threshold itself.
+(for example an unreadable file, or a configuration count that is not a whole number).
+For a CI check that should fail on a failing channel, add `--exit-on-fail`: the run then
+exits **3** if any package case misses its COM threshold (2 stays the usage-error status).
 
 **Runtime.** One case takes from under a minute to about ten minutes on one core,
 depending mostly on crosstalk and the size of the equaliser search: the shipped example
