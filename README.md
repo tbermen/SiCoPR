@@ -21,6 +21,8 @@ the configuration keyword index, the study layer, the R reports and a COM primer
 Python 3.10 or newer. From a clone:
 
 ```powershell
+git clone https://github.com/tbermen/SiCoPR
+cd SiCoPR
 python -m venv .venv
 .venv\Scripts\Activate.ps1          # Windows PowerShell
 # source .venv/bin/activate         # macOS / Linux
