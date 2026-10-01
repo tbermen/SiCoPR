@@ -80,7 +80,8 @@ were produced before this file existed and are not restated as changes.
 - README: the Python entry point, batch use, exit codes and runtime; why a
   Python port when Octave runs the Reference Code; how the port was built (with
   AI assistance) and verified; the compliance statement; the 2026-09-29 ad hoc
-  slides and acknowledgements. A defect-report issue template.
+  slides and acknowledgements; screenshots of the GUI. A defect-report issue
+  template.
 
 ### Changed
 
@@ -129,7 +130,8 @@ were produced before this file existed and are not restated as changes.
 - GUI: static-results captions and the "not produced by this run" line used
   only `/` to find a file name, so on Windows every figure was listed as
   missing; the unsaved-changes bar did not hide at zero; the S-parameter legend
-  now names the return-loss traces; the Run tab says when figures are drawn.
+  now names the return-loss traces and its axis labels are larger; the Run tab
+  says when figures are drawn.
 - The example's COM Octave results no longer record a local path.
 - A configuration workbook saved by a tool that writes whole numbers as `32.0`
   crashed the engine (`np.ones(32.0)`); MATLAB, where every number is a double,
