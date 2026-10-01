@@ -6,11 +6,11 @@
 By Todd Bermensolo (Independent), [github.com/tbermen](https://github.com/tbermen).
 Questions and defect reports: [GitHub issues](https://github.com/tbermen/SiCoPR/issues).
 
-SiCoPR is a Python port of the IEEE 802.3 **COM** (Channel Operating Margin) reference
-code. It reads the same Excel configuration workbook and Touchstone `.s4p` files as the
+SiCoPR is a Python port of the IEEE 802.3 **COM** (Channel Operating Margin) Reference
+Code. It reads the same Excel configuration workbook and Touchstone `.s4p` files as the
 MATLAB tool and computes COM, VEO/VEC and the supporting equalization and noise analysis,
 without MATLAB. It emulates **`com_ieee8023_4p16p0`** by default and `com_ieee8023_4p15p0`
-with `--matlab-version 4p15p0`. Licence: BSD-3-Clause, the same as the reference code
+with `--matlab-version 4p15p0`. Licence: BSD-3-Clause, the same as the Reference Code
 ([`LICENSE`](LICENSE), provenance in [`NOTICE`](NOTICE)).
 
 The full guide is [`docs/TUTORIAL.md`](docs/TUTORIAL.md): architecture, every feature,
@@ -63,7 +63,7 @@ The script checks each channel file against the SHA-256 listed in
 with crosstalk, and compares COM, FOM, itick, ERL, VEC, VEO and ICN against the shipped
 values. Each SiCoPR run takes about six minutes on one core. Success prints
 `all pinned values reproduced`; without crosstalk the case gives COM = 3.5070 dB, with
-its five aggressors 2.8959 dB. Leave out `--engine sicopr` to also run the reference code
+its five aggressors 2.8959 dB. Leave out `--engine sicopr` to also run the Reference Code
 under GNU Octave, if `octave-cli` is on PATH.
 [`EXPECTED.md`](examples/akinwale_CR_22dB_VendorX/EXPECTED.md) has every number.
 
@@ -175,11 +175,11 @@ TUTORIAL [chapter 6](docs/TUTORIAL.md#6-feature-reference) covers each feature a
 [chapter 7](docs/TUTORIAL.md#7-outputs) the outputs; [Appendix A](docs/TUTORIAL.md#appendix-a-com-concepts)
 is a COM primer.
 
-## The reference code under GNU Octave (optional)
+## The Reference Code under GNU Octave (optional)
 
 `octave/` carries the COM 4p15p0 and 4p16p0 release files, generated from `matlab/` by a
 small patch set that makes them run under GNU Octave and is a no-op under MATLAB. With
-Octave installed you can run the reference code itself on any case and compare it with
+Octave installed you can run the Reference Code itself on any case and compare it with
 SiCoPR field by field (`tools/octave_compare.py`), without a MATLAB licence. Speed,
 measured 2026-09-18 on one 4p16p0 case (Octave 11.3, Windows, one BLAS thread): with the
 optional compiled kernels built, Octave took about 1.5 times SiCoPR's run time (451 s
@@ -319,11 +319,11 @@ checksums. The COM configuration workbooks carry the same licence in their
 
 **Not an IEEE product.** This project is not endorsed by, affiliated with, or approved by
 IEEE, the IEEE 802.3 working group or the 802-COM Authors; it is an independent port of
-the published reference code. "IEEE 802.3" appears here only to identify the standard the
+the published Reference Code. "IEEE 802.3" appears here only to identify the standard the
 reference implements.
 
 To cite the software, use [`CITATION.cff`](CITATION.cff); when the subject is the COM
-method itself, cite IEEE 802.3 and the reference code. The method, the reference code and
+method itself, cite IEEE 802.3 and the Reference Code. The method, the Reference Code and
 the configuration workbooks are the work of the IEEE 802.3 COM authors, to whom this port
 owes everything it computes.
 

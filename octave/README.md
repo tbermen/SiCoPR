@@ -1,6 +1,6 @@
 # octave/
 
-The IEEE 802.3 COM reference code, made to run under GNU Octave, and the
+The IEEE 802.3 COM Reference Code, made to run under GNU Octave, and the
 evidence behind it.
 
 **To run a case**, see [Running a case](#running-a-case): convert the workbook
@@ -60,8 +60,8 @@ Every item was found by running the official release under Octave 11.3.
 
 The `CDF_ev`, `COM_CommandLine_Parse` and `writecsv_transposed` bodies are the
 versions that were run on 208 cases against the MATLAB reference to 5e-14 dB,
-taken from the `src/` tree of an `Octave_compat` branch of the COM reference
-code. The touchstone reader is this project's own; the branch's version, with a
+taken from the `src/` tree of an `Octave_compat` branch of the COM Reference
+Code. The touchstone reader is this project's own; the branch's version, with a
 NaN filter reported upstream, still uses `textscan`. **Nothing in this table changes a
 number under MATLAB**: each edit is a no-op there, which is what makes the
 result a reference and not a fork.
@@ -238,7 +238,7 @@ speed-ups), and the ratios have not been re-measured.
 | `README.md` | this file |
 
 Earlier path overrides (files placed earlier on Octave's search path to shadow
-the reference code's own versions) are not part of this repository. They could
+the Reference Code's own versions) are not part of this repository. They could
 not reach `MMSE`, a local subfunction, and generating the file removed the need
 for them.
 
@@ -257,7 +257,7 @@ convenience, and the sources are the code. `tests/test_octave_compat.py` runs
 ## Licence
 
 The two generated files and everything in `patches/` derive from the COM
-reference code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`, headers
+Reference Code, `Copyright 2025 802-COM Authors`, SPDX `BSD-3-Clause`, headers
 intact. The generator and the changes it applies are
 `Copyright 2026 Todd Bermensolo` under the same licence.
 

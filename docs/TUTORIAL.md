@@ -5,7 +5,7 @@
 A complete tutorial and reference for the Python port of the IEEE 802.3 COM
 (Channel Operating Margin) MATLAB reference tool: the engine, its configuration
 surface, the equalizer-search study layer, the R reporting tools, and the
-reference code itself running under GNU Octave.
+Reference Code itself running under GNU Octave.
 
 | | |
 |---|---|
@@ -16,7 +16,7 @@ reference code itself running under GNU Octave.
 
 > **What is in version 2.0**
 >
-> Chapter 12 covers the reference code running under GNU Octave from this
+> Chapter 12 covers the Reference Code running under GNU Octave from this
 > repository, which is the way to check this port against the reference without
 > a MATLAB licence. Chapter 11 carries the 1368-case comparison (re-run
 > 2026-09-26), and chapter 2 starts with the worked example in `examples/`.
@@ -95,7 +95,7 @@ reference code itself running under GNU Octave.
 - [11 Verification status and limitations](#11-verification-status-and-limitations)
   - [11.1 What has been verified](#111-what-has-been-verified)
   - [11.2 Limitations](#112-limitations)
-- [12 The reference code under GNU Octave](#12-the-reference-code-under-gnu-octave)
+- [12 The Reference Code under GNU Octave](#12-the-reference-code-under-gnu-octave)
   - [12.1 What is in octave/](#121-what-is-in-octave)
   - [12.2 Running a case](#122-running-a-case)
   - [12.3 Two defects in Octave worth knowing about](#123-two-defects-in-octave-worth-knowing-about)
@@ -131,7 +131,7 @@ reference code itself running under GNU Octave.
   - [C.2 The search study](#c2-the-search-study)
   - [C.3 Reports](#c3-reports)
   - [C.4 Development](#c4-development)
-  - [C.5 The reference code under Octave](#c5-the-reference-code-under-octave)
+  - [C.5 The Reference Code under Octave](#c5-the-reference-code-under-octave)
 
 # 1 Introduction
 
@@ -139,7 +139,7 @@ This document describes a Python implementation of the IEEE 802.3 COM (Channel O
 
 ## 1.1 What this is
 
-The engine is a **function-for-function translation** of the COM reference code. It emulates `com_ieee8023_4p16p0.m` by default and `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version 4p15p0` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
+The engine is a **function-for-function translation** of the COM Reference Code. It emulates `com_ieee8023_4p16p0.m` by default and `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version 4p15p0` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
 
 The translation is close enough that the Python source can be navigated by MATLAB line number: 338 lines in the engine carry an explicit MATLAB line reference back to the source function they translate.
 
@@ -153,7 +153,7 @@ Five things exist here that have no MATLAB counterpart. The first and fourth are
 
 - **A study and reporting layer.** Tools that compare equalizer-search methods across channels, recompute true COM for near-optimal candidates, and render interactive HTML reports.
 
-- **The reference code itself, running.** `octave/` carries the COM 4p15p0 and 4p16p0 release files made to run under GNU Octave, generated from `matlab/` by a named patch set. Two implementations of the same reference, in one repository, means any case can be computed twice and compared — without a MATLAB licence. Chapter 12.
+- **The Reference Code itself, running.** `octave/` carries the COM 4p15p0 and 4p16p0 release files made to run under GNU Octave, generated from `matlab/` by a named patch set. Two implementations of the same reference, in one repository, means any case can be computed twice and compared — without a MATLAB licence. Chapter 12.
 
 - **A configuration editor.** A local web application (python gui/app.py) that shows a configuration as a channel schematic, edits it, picks the input channels, runs the engine with its output streamed live, and displays the results — including the interactive R dashboard. It writes workbooks without disturbing their formulas or package blocks. See gui/README.md.
 
@@ -172,7 +172,7 @@ The main body assumes you are comfortable with SerDes equalization and the COM m
 | The equalizer-search comparison work | Chapters 8–9 |
 | To change the code | Chapter 10 |
 | To know how far to trust the numbers | Chapter 11 |
-| To run the reference code itself, under GNU Octave, without a MATLAB licence | Chapter 12 |
+| To run the Reference Code itself, under GNU Octave, without a MATLAB licence | Chapter 12 |
 | Every configuration keyword the engine reads | Appendix B |
 | A one-page command cheat sheet | Appendix C |
 
@@ -219,7 +219,7 @@ There is nothing to build. The tool runs directly from the assembled engine.
 >
 > The port ships; most of the data it was verified against does not. The engine, its tests, the tooling and the BSD-3-Clause MATLAB reference sources under `matlab/` are all in the repository. What is not here is the channel data: the S-parameters the port was correlated against are IEEE 802.3 contributions and are not ours to redistribute, and neither are the MATLAB reference values distilled from someone else's runs.
 >
-> **Configuration workbooks are a different case, and one of them ships.** Each carries a `License Notice` sheet placing it under the same BSD-3-Clause licence as the reference code. [`examples/`](../examples/) carries one, together with the results both engines produced on it and the SHA-256 of every channel file it needs — so the only thing you fetch is the channel, and you can tell whether you fetched the right one.
+> **Configuration workbooks are a different case, and one of them ships.** Each carries a `License Notice` sheet placing it under the same BSD-3-Clause licence as the Reference Code. [`examples/`](../examples/) carries one, together with the results both engines produced on it and the SHA-256 of every channel file it needs — so the only thing you fetch is the channel, and you can tell whether you fetched the right one.
 >
 > A fresh clone is fully functional without any of it: the unit suite runs and passes, and the tests that need correlation data skip cleanly and say so.
 >
@@ -236,7 +236,7 @@ python examples/run_example.py --channels <where you unpacked it>
 ```
 
 That runs the case with and without crosstalk, through SiCoPR and — if
-`octave-cli` is on PATH — through the reference code under Octave as well, and
+`octave-cli` is on PATH — through the Reference Code under Octave as well, and
 prints anything that differs from what ships. About six minutes per SiCoPR run
 on one core. The rest of this chapter is the general form of the same command.
 
@@ -873,7 +873,7 @@ A structured conversion audit classified all 157 MATLAB functions (146 equivalen
 Correlation against the MATLAB reference is the primary numeric evidence: 208 cases from com_ieee8023_4p15p0, across four channel families, with and without crosstalk. Run on the configurations exactly as supplied, FOM is bit-exact on 198 of 208, COM on 199, the sampling tick on 200, with max |ΔCOM| 0.185 dB. Run with each crosstalk condition on the settings its own reference was produced with (see §11.2), FOM, COM and the sampling tick were ALL bit-exact on 208 of 208 at the 2026-08-31 re-run, with max |ΔCOM| = 3.3e-14 dB — double-precision noise rather than agreement to a tolerance — and no pass/fail disagreements. The last full re-run, 2026-09-23 on engine 8e0479c, has the sampling tick and every EQ selection identical on 208 of 208 and COM within 4.6e-14 dB. Eighteen fixes were found by this exercise (docs/FIX_SUMMARY.md), none of which the unit suite could see. The largest single class is MATLAB-by-value versus Python-by-reference (five of the eighteen); the last one closed was a banker's-rounding tie that dropped a single ISI sample. Detail in MATLAB_Correlation_Review.md.
 
 **A second implementation, and 1368 more cases (2026-09-26).** The MATLAB
-comparison above is a 4p15p0 result on 208 cases. Since then the reference code
+comparison above is a 4p15p0 result on 208 cases. Since then the Reference Code
 itself has been run under Octave from this repository (chapter 12) over a
 1368-case 4p16p0 corpus — 171 distinct channels, four package configurations, with and
 without crosstalk — and compared with this engine case by case (2026-09-26, engine df78b9c):
@@ -925,7 +925,7 @@ The engine was optimised in August 2026 to roughly 4.5-5x its previous speed, ga
 
 - **Adaptive-search constants** The adaptive method carries about ten hand-tuned values — shrink factors, distance weights, the L2/L1 ratio, the CTLE window — whose provenance is not documented in the source.
 
-# 12 The reference code under GNU Octave
+# 12 The Reference Code under GNU Octave
 
 This repository carries two implementations of COM: the Python port that the
 rest of this document describes, and the IEEE reference `.m` file itself, made
@@ -1504,7 +1504,7 @@ python tests/<name>.py                                       # standalone checks
 python docs/refresh_tutorial_toc.py                          # after editing this document
 ```
 
-## C.5 The reference code under Octave
+## C.5 The Reference Code under Octave
 
 ```
 # convert the workbook once, then run the release file (chapter 12)

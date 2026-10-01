@@ -1,6 +1,6 @@
 # MATLAB versions
 
-SiCoPR emulates two releases of the IEEE 802.3 COM reference code. This page says
+SiCoPR emulates two releases of the IEEE 802.3 COM Reference Code. This page says
 which is the default, how to choose, which evidence belongs to which, and what
 differs between them.
 
@@ -28,7 +28,7 @@ emulated.
 | corpus | version | compared against | result |
 |---|---|---|---|
 | 208 cases, 26 IEEE 802.3dj CR/KR channels × 4 package configurations × with/without crosstalk | **4p15p0** | MATLAB reference results | last re-run 2026-09-23: itick and every equalizer selection identical on 208 / 208, COM within 4.6e-14 dB |
-| 1368 cases, 171 distinct channels | **4p16p0** | COM Octave (the reference code run under Octave, [`../octave/README.md`](../octave/README.md)) | 2026-09-26: COM within 5.3e-14 dB, itick, Tx FFE and CTLE gain identical on all 1368 |
+| 1368 cases, 171 distinct channels | **4p16p0** | COM Octave (the Reference Code run under Octave, [`../octave/README.md`](../octave/README.md)) | 2026-09-26: COM within 5.3e-14 dB, itick, Tx FFE and CTLE gain identical on all 1368 |
 
 Reproducing the 208-case result therefore takes `--matlab-version 4p15p0`. Detail is in
 [`../MATLAB_Correlation_Review.md`](../MATLAB_Correlation_Review.md).
