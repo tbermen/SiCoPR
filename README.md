@@ -196,8 +196,8 @@ own. The Octave route rests on work by members of the COM community, credited in
 
 ## How do I know it's right?
 
-- **Function level.** All 146 translated functions are checked against the *executed*
-  reference (COM Octave), not against a reading of it.
+- **Function level.** All 146 value-bearing functions (of the 157 translated) are checked
+  against the *executed* Reference Code (COM Octave), not against a reading of it.
   [`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract, and
   `python com_functions/verification/report.py` answers "are there any opens?".
 - **Against MATLAB, 4p15p0.** 208 reference cases (26 IEEE 802.3dj CR/KR channels ×
