@@ -326,3 +326,11 @@ To cite the software, use [`CITATION.cff`](CITATION.cff); when the subject is th
 method itself, cite IEEE 802.3 and the reference code. The method, the reference code and
 the configuration workbooks are the work of the IEEE 802.3 COM authors, to whom this port
 owes everything it computes.
+
+**Presented** to the IEEE 802.3 COM Open Source Project Ad Hoc on 2026-09-29, with
+co-author Hansel D'Silva (Amphenol): *COM: how open-source ports match the Reference
+Code* ([slides](https://www.ieee802.org/3/ad_hoc/COM/public/telecon/260929/bermensolo_COM_01_260929.pdf)).
+The MATLAB reference results for the 208-case and 1368-case comparisons, and the
+adaptive local search in the 4p15p0 build, are Hansel D'Silva's. COM Octave support came
+from Rich Mellitz and Adam Gregory, and review and direction from Howard Heck. Their
+help is acknowledged with thanks; it implies no endorsement by them or by IEEE.
