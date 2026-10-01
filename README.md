@@ -1,6 +1,7 @@
 # SiCoPR
 
 *(pronounced si-copper)* — **Si** (Signal Integrity), **Co** (COM), **P** (Python), and **R**
+(the R language, used for the reports)
 
 SiCoPR is a Python port of the IEEE 802.3 **COM** (Channel Operating Margin) reference
 code. It reads the same Excel configuration workbook and Touchstone `.s4p` files as the
