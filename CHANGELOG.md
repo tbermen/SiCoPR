@@ -71,6 +71,16 @@ were produced before this file existed and are not restated as changes.
 - `tests/test_octave_checkpoints.py`, `tests/test_mutation_score.py`,
   `tools/gen_semantics_pins.py` and `tools/equivalence_check.py`; see
   `docs/VERIFICATION.md`.
+- `benchmark/208_case_4p15p0/`: the 208-case benchmark with its COM Octave
+  results, the channel list (IEEE URLs and SHA-256, no channel data) and the
+  eight configuration workbooks, with the results' provenance and their measured
+  agreement with the MATLAB reference results.
+- `--exit-on-fail`: exit status 3 if any package case fails its COM threshold,
+  for CI. Without it a completed run still exits 0, pass or fail.
+- README: the Python entry point, batch use, exit codes and runtime; why a
+  Python port when Octave runs the Reference Code; how the port was built (with
+  AI assistance) and verified; the compliance statement; the 2026-09-29 ad hoc
+  slides and acknowledgements. A defect-report issue template.
 
 ### Changed
 
@@ -111,6 +121,16 @@ were produced before this file existed and are not restated as changes.
 
 ### Fixed
 
+- The R dashboard could not be built from any `--export-mat` file written since
+  2026-09-05: R.matlab cannot read an empty text field, and the export's
+  `meta.git_commit` was empty whenever a run started outside the repository
+  (as the GUI's runs do). The export now never writes an empty field, and
+  `meta.com_version` names the release the run emulated.
+- GUI: static-results captions and the "not produced by this run" line used
+  only `/` to find a file name, so on Windows every figure was listed as
+  missing; the unsaved-changes bar did not hide at zero; the S-parameter legend
+  now names the return-loss traces; the Run tab says when figures are drawn.
+- The example's COM Octave results no longer record a local path.
 - A configuration workbook saved by a tool that writes whole numbers as `32.0`
   crashed the engine (`np.ones(32.0)`); MATLAB, where every number is a double,
   runs it. Whole-number cell values now reach the engine as integers, as they
