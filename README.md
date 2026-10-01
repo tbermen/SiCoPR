@@ -186,6 +186,14 @@ optional compiled kernels built, Octave took about 1.5 times SiCoPR's run time (
 against 299 s); SiCoPR has changed since and the ratio has not been re-measured. See
 [`octave/README.md`](octave/README.md).
 
+**Why a Python port, when Octave already runs the Reference Code for free?** The two do
+different jobs, and this repository ships both. Octave runs the Reference Code itself,
+which makes it the right oracle: SiCoPR is verified against it. A Python port is useful
+where COM has to live inside other software: called from Python scripts, batch sweeps
+and CI, with every function traceable to the MATLAB lines it mirrors and testable on its
+own. The Octave route rests on work by members of the COM community, credited in
+[`NOTICE`](NOTICE) and below.
+
 ## How do I know it's right?
 
 - **Function level.** All 146 translated functions are checked against the *executed*
