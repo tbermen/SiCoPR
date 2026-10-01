@@ -11,6 +11,8 @@
  */
 
 const $ = (s) => document.querySelector(s);
+// The last path component, for a Windows path (backslashes) as much as a URL or POSIX one.
+const baseName = (p) => String(p).split(/[\\/]/).pop();
 
 let CFG = null;        // current /api/config payload
 let SEL = null;        // selected block id
@@ -528,7 +530,7 @@ $('#newGo').addEventListener('click', (e) => {
     if (!Array.from(pick.options).some((o) => o.value === r.dst)) {
       const o = document.createElement('option');
       o.value = r.dst;
-      o.textContent = r.dst.split('/').pop();
+      o.textContent = baseName(r.dst);
       pick.appendChild(o);
     }
     pick.value = r.dst;
@@ -583,7 +585,7 @@ $('#saveGo').addEventListener('click', (e) => {
       if (!Array.from(pick.options).some((o) => o.value === r.dst)) {
         const o = document.createElement('option');
         o.value = r.dst;
-        o.textContent = r.dst.split('/').pop();
+        o.textContent = baseName(r.dst);
         pick.appendChild(o);
       }
       pick.value = r.dst;
@@ -1053,13 +1055,13 @@ async function loadRun(path) {
         const img = document.createElement('img');
         img.loading = 'lazy';
         img.src = '/figure?path=' + encodeURIComponent(f);
-        img.alt = f.split('/').pop();
+        img.alt = baseName(f);
         const cap = document.createElement('figcaption');
-        cap.textContent = f.split('/').pop();
+        cap.textContent = baseName(f);
         fig.appendChild(img);
         fig.appendChild(cap);
         fig.addEventListener('click', () => {
-          $('#figTitle').textContent = f.split('/').pop();
+          $('#figTitle').textContent = baseName(f);
           $('#figImg').src = img.src;
           $('#figImg').alt = img.alt;
           $('#figDlg').showModal();
@@ -1080,7 +1082,7 @@ async function loadRun(path) {
       // setting rather than a fault — "where is my eye diagram" is otherwise
       // a puzzle with no clue in the output.
       const have = new Set(c.stages.flatMap((st) => st.figures)
-        .map((f) => f.split('/').pop()));
+        .map((f) => baseName(f)));
       const missing = EXPECTED_FIGS.filter((f) => !have.has(f));
       if (missing.length) {
         const p = document.createElement('p');
@@ -1220,7 +1222,7 @@ async function spRefresh() {
       const p = await api('/api/sparam?path=' + encodeURIComponent(want[i]));
       out.push({ p, colour: SP_COLOURS[i % SP_COLOURS.length] });
     } catch (e) {
-      toast(`${want[i].split('/').pop()}: ${e.message}`, true);
+      toast(`${baseName(want[i])}: ${e.message}`, true);
     }
   }
   SP_LOADED = out;
@@ -1353,6 +1355,12 @@ function spDraw() {
     item.appendChild(document.createTextNode(
       `${p.name}  ·  ports ${p.ports.join(' ')}  ·  ${p.n_points} pts`));
     legend.appendChild(item);
+  }
+  if (showIL && showRL && SP_LOADED.length) {
+    const key = document.createElement('span');
+    key.className = 'spitem muted';
+    key.textContent = 'solid: SDD21 insertion loss  ·  dashed: SDD11 / SDD22 return loss';
+    legend.appendChild(key);
   }
 }
 

@@ -377,5 +377,21 @@ check("the_dashboard_url_normalises_windows_separators",
       "an absolute Windows report path becomes one URL segment and every "
       "relative lib/... link 404s: the dashboard renders with no charts")
 
+# A file name taken with split('/') keeps the whole of a Windows path. In the
+# static results that made every figure caption a full path and, worse, made
+# the "not produced by this run" list name all 17 figures while 15 or 17 were
+# on screen (release audit, 2026-10-01).
+check("file_names_are_split_on_either_separator",
+      not re.search(r"split\(\s*['\"]/['\"]\s*\)\s*\.pop\(\)", src),
+      "app.js takes a file name with split('/').pop(); a Windows path has "
+      "backslashes, so the 'name' is the whole path")
+
+# The unsaved-changes bar sets display:flex, which beats the browser's
+# [hidden] rule: the bar stayed on screen at 0 changes, over the page.
+check("dirty_bar_hides_when_hidden",
+      re.search(r"#dirtyBar\[hidden\]\s*\{[^}]*display\s*:\s*none", css),
+      "#dirtyBar sets display:flex and has no [hidden] rule, so "
+      "el.hidden = true leaves it on screen")
+
 
 finish()

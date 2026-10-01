@@ -116,6 +116,9 @@ button.ghost { background: transparent; color: var(--accent);
   box-shadow: 0 6px 20px rgba(0,0,0,.14);
 }
 #dirtyBar span { color: var(--dirty); font-weight: 600; }
+/* display:flex above beats the browser's [hidden] rule; without this the bar
+   stayed on screen at 0 unsaved changes. Same pattern as .view[hidden]. */
+#dirtyBar[hidden] { display: none; }
 
 dialog { border: 1px solid var(--line); border-radius: 10px; padding: 18px;
   background: var(--panel); color: var(--ink); max-width: 620px; width: 92vw; }
