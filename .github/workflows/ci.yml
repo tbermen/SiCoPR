@@ -168,19 +168,19 @@ jobs:
         # one would put hundreds of MB into every clone and redistribute material
         # that is not ours to redistribute.
         run: |
-          # examples/ is the exception, and only for the workbook. A COM
-          # configuration workbook carries a License Notice sheet placing it
+          # examples/ and benchmark/ are the exception, and only for workbooks. A
+          # COM configuration workbook carries a License Notice sheet placing it
           # under the same BSD-3-Clause licence as the reference code, so it may
-          # be redistributed; the worked example ships one. Channels never ship
-          # under any path: '*.s4p' below has no exception, and the example
-          # names its channel files and checksums them instead of carrying them.
+          # be redistributed; the worked example and the 208-case benchmark ship
+          # them. Channels never ship under any path: '*.s4p' has no exception,
+          # and both name their channel files and checksum them instead.
           bad=$(git ls-files \
             'tests/0_IEEE_802p3dj_PublicArea_CR_KR_Channels/*' \
             'tests/1_IEEE_802p3dj_COM_Spreadsheets*/*' \
             'tests/2_Results_COM_Matlab/*' \
             'tests/ALS_test_configs/*' \
             'dev/prompts/*' \
-            '*.s4p' 'config*.xlsx' | grep -v '^examples/' || true)
+            '*.s4p' 'config*.xlsx' | grep -v -E '^(examples|benchmark)/.*\.xlsx$' || true)
           # Reference VALUES, not just the workbooks they came from: a distillation
           # of the reference numbers is the reference data too, and is excluded on
           # the same grounds.

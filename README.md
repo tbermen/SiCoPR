@@ -214,8 +214,12 @@ The correlation inputs are IEEE contributions and are not redistributed here, an
 result values are never published here; only agreement statistics are. So the 208-case
 figures cannot be reproduced from this repository alone: that needs the channels from
 the IEEE 802.3dj public area and the MATLAB reference results. What you can reproduce
-here is the worked example (above), against both SiCoPR's and COM Octave's results, and
-any case of your own against the Reference Code under Octave (`tools/octave_compare.py`). Method, history
+here is the worked example (above), against both SiCoPR's and COM Octave's results, any
+case of your own against the Reference Code under Octave (`tools/octave_compare.py`), and
+the whole 208-case set against its published COM Octave results:
+[`benchmark/208_case_4p15p0/`](benchmark/208_case_4p15p0/README.md) carries the
+configuration workbooks, the channel list with download URLs and checksums, and the
+COM Octave result for every case, with their provenance. Method, history
 and per-case detail: [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md) and
 [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md).
 
