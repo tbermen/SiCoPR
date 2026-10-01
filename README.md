@@ -90,6 +90,11 @@ each take any number of files.
 The configuration is an IEEE 802.3 COM workbook (sheet `COM_Settings`); start from a
 working-group reference workbook rather than building one. A local web editor that shows
 a workbook as a channel schematic is in [`gui/`](gui/README.md) (`python gui/app.py`).
+It also runs a case and shows its results:
+
+![The GUI's Run tab after the worked example with its five aggressors: the inputs, the command line, and the console output ending in COM 2.8959 dB, FAIL against the 3 dB threshold](docs/images/gui_run.png)
+
+![The GUI's Config tab: the example's workbook drawn as a channel schematic, with the Channel block's settings open on the right](docs/images/gui_config.png)
 
 **What it writes.** The console prints one block per package case:
 
