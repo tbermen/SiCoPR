@@ -203,13 +203,18 @@ own. The Octave route rests on work by members of the COM community, credited in
 - **Against MATLAB, 4p15p0.** 208 reference cases (26 IEEE 802.3dj CR/KR channels ×
   4 package configurations × with/without crosstalk), last re-run **2026-09-23**:
   sampling phase (itick) and every equalizer selection identical on 208 / 208, COM within
-  **4.6e-14 dB**.
+  **4.6e-14 dB** (median 9.3e-15 dB), FOM within **3.4e-11 dB**. The reference is
+  `com_ieee8023_4p15p0_adaptive_local_search.m`, the build the reference results came from.
 - **Against COM Octave, 4p16p0.** 1368 cases (171 distinct channels), **2026-09-26**:
   COM within **5.3e-14 dB**, and itick, Tx FFE and CTLE gain identical on all 1368.
 
 Those differences are double-precision arithmetic noise, not agreement to a tolerance.
 The correlation inputs are IEEE contributions and are not redistributed here, and MATLAB
-result values are never published here; only agreement statistics are. Method, history
+result values are never published here; only agreement statistics are. So the 208-case
+figures cannot be reproduced from this repository alone: that needs the channels from
+the IEEE 802.3dj public area and the MATLAB reference results. What you can reproduce
+here is the worked example (above), against both SiCoPR's and COM Octave's results, and
+any case of your own against the Reference Code under Octave (`tools/octave_compare.py`). Method, history
 and per-case detail: [`MATLAB_Correlation_Review.md`](MATLAB_Correlation_Review.md) and
 [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md).
 
