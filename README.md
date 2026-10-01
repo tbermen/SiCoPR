@@ -148,7 +148,7 @@ exits **3** if any package case misses its COM threshold (2 stays the usage-erro
 
 **Runtime.** One case takes from under a minute to about ten minutes on one core,
 depending mostly on crosstalk and the size of the equaliser search: the shipped example
-took 360 s without crosstalk and 336 s with it (measured 2026-09-26; `run_example.py`
+took 375 s without crosstalk and 335 s with it (measured 2026-10-01; `run_example.py`
 prints the time of every run, so it is also the way to time your own machine). No
 runtime comparison with MATLAB is offered, because the timings that exist were taken on
 different machines; the comparison with the Reference Code under Octave is in the next
@@ -188,7 +188,7 @@ measured 2026-10-01 on the shipped example, same machine, one case at a time, on
 thread (Octave 11.3, Windows): Octave took **2.2 to 2.4 times** SiCoPR's run time
 interpreted (821 s and 786 s against 375 s and 335 s, without and with crosstalk), and
 **1.2 to 1.4 times** with the optional compiled kernels built (457 s and 454 s). All
-three gave the same COM to 1e-14 dB. See [`octave/README.md`](octave/README.md).
+three gave the same COM to within 2e-14 dB. See [`octave/README.md`](octave/README.md).
 
 **Why a Python port, when Octave already runs the Reference Code for free?** The two do
 different jobs, and this repository ships both. Octave runs the Reference Code itself,

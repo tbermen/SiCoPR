@@ -225,7 +225,7 @@ privately with the channels it needs and is not published.
 | earlier: with the compiled kernels (2026-09-18) | about 1.5x | 451 s against 299 s, one 1368-case 4p16p0 case (`wo_C1_R001`) |
 
 The 2026-10-01 rows are current: one case at a time on the same machine, every
-engine giving the same COM to 1e-14 dB. The earlier rows were taken before
+engine giving the same COM to within 2e-14 dB. The earlier rows were taken before
 SiCoPR's September convolution changes and are kept as history.
 
 ## What is in this directory, and what left it
