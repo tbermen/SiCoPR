@@ -115,6 +115,42 @@ a workbook as a channel schematic is in [`gui/`](gui/README.md) (`python gui/app
 To compare two engines, use full precision rather than `results.csv`:
 `tools/_sicopr_case.py` writes every result field to JSON.
 
+### From Python, in batches and in CI
+
+The command line is a thin wrapper around one function, which a script can call directly.
+It is the entry point the repository's own tools use (`tools/_sicopr_case.py`); its
+leading underscore marks it as not yet a frozen API.
+
+```python
+import sicopr
+
+sicopr.COM_MATLAB_VERSION = '4p16p0'            # as --matlab-version; optional
+res = sicopr._run_com('config.xlsx', 1, 1,       # number of FEXT, number of NEXT
+                      ['thru.s4p', 'fext1.s4p', 'next1.s4p'], export_mat=False)
+cases = res if isinstance(res, list) else [res]  # one entry per package case
+for r in cases:
+    print(r.COM_dB, r.FOM, r.itick)              # every reported field is an attribute
+```
+
+A sweep is a loop over that call, one channel or configuration at a time; each call is
+independent, so separate processes can run cases in parallel (memory, about 0.5 to 1.5 GB
+per case, is usually the limit before CPU). The examples' `run_example.py` is a worked
+script of this kind.
+
+**Exit codes.** `python -m sicopr` exits **0 when the run completes, whether COM passes or
+fails**, 1 if the engine returns no result, and non-zero with a traceback on any error
+(for example an unreadable file, or a configuration count that is not a whole number). A
+CI check that should fail on a failing channel reads `COM_dB` from the result or from
+`results.csv` and compares it with the threshold itself.
+
+**Runtime.** One case takes from under a minute to about ten minutes on one core,
+depending mostly on crosstalk and the size of the equaliser search: the shipped example
+took 360 s without crosstalk and 336 s with it (measured 2026-09-26; `run_example.py`
+prints the time of every run, so it is also the way to time your own machine). No
+runtime comparison with MATLAB is offered, because the timings that exist were taken on
+different machines; the comparison with the Reference Code under Octave is in the next
+section.
+
 ### Reading the output
 
 - **COM** (dB): the ratio of the available signal amplitude to the combined noise and
