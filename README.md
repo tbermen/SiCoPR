@@ -258,7 +258,9 @@ SiCoPR is maintained by Todd Bermensolo, and the commitment is deliberately narr
 **consistency and correlation with the IEEE 802.3 COM Reference Code.** The Reference
 Code is the one COM code base: reviewed by the COM ad hoc and released on the IEEE COM
 Git site. SiCoPR is an extra implementation outside it. It is not a second standard,
-not IEEE collateral, and not a place to change COM.
+not IEEE collateral, and not a place to change COM. **For compliance and anything
+normative, the IEEE 802.3 COM Reference Code is the authority; SiCoPR reproduces it but
+does not replace it.**
 
 - **SiCoPR follows official releases.** The default is the latest official Reference
   Code release. An older build stays selectable only while published correlation
