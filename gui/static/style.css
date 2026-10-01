@@ -251,7 +251,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px;
 #spChart { width: 100%; height: auto; display: block;
   background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
 .spgrid { stroke: var(--line); stroke-width: 1; }
-.spaxis { fill: var(--muted); font-size: 11px;
+.spaxis { fill: var(--muted); font-size: 13px;
   font-family: ui-sans-serif, system-ui, sans-serif; }
 .spempty { fill: var(--muted); font-size: 13px;
   font-family: ui-sans-serif, system-ui, sans-serif; }
