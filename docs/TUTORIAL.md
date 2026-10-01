@@ -147,7 +147,7 @@ The translation is close enough that the Python source can be navigated by MATLA
 
 Five things exist here that have no MATLAB counterpart. The first and fourth are part of the maintainer's commitment to the Reference Code, and are redone with every release. The search instrumentation, the study and reporting layer and the configuration editor are supporting tools outside it: none of them changes a COM result, and they are provided as they are (README, [What the maintainer commits to](../README.md#what-the-maintainer-commits-to)).
 
-- **Per-function verification.** Each translated function has its own implementation file and its own test, run against MATLAB behaviour. 2025 tests.
+- **Per-function verification.** Each translated function has its own implementation file and its own test, run against MATLAB behaviour. Over 2,000 tests (count them with `python -m pytest com_functions/fn --collect-only -q`).
 
 - **Search instrumentation.** The equalizer optimiser can log every candidate it considers or prunes, opt-in and with no effect on any COM result. This makes the search itself measurable.
 
@@ -323,7 +323,7 @@ sicopr.py                                  <- generated engine (do not edit)
 | Lines in sicopr.py | 18,762 |
 | Comments carrying MATLAB line references | 311 |
 | Dependency-injection points | 161 |
-| Unit tests | 2025 passing |
+| Unit tests | over 2,000 passing |
 
 Table 2. Scale of the port as of August 2026 (post-correlation).
 
@@ -848,7 +848,7 @@ python -m pytest com_functions/fn -q
 
 | Suite | How to run | Notes |
 |---|---|---|
-| com_functions/fn | python -m pytest com_functions/fn -q | the main suite; 2025 tests across 157 functions |
+| com_functions/fn | python -m pytest com_functions/fn -q | the main suite; over 2,000 tests across 157 functions |
 | tests/ | python tests/<name>.py | Mixed: test_smoke.py, test_checkpoints.py, test_end_to_end.py and test_export_columns.py ARE pytest modules; every other file is a standalone script. Do not point pytest at the directory — the scripts call sys.exit() at import, so collection aborts, pytest reports "no tests ran" AND STILL EXITS 0. Nothing runs and nothing complains. |
 | everything | powershell -ExecutionPolicy Bypass -File tests/run_all.ps1 | The full harness, and what to run before committing: pre-flight audit, assembly, interface checks, unit tests, then every cross-check script. Dispatches both kinds of file above correctly. Current totals (2026-09-26): 2025 per-function tests, and 44 audit scripts; the 41 that print a tally total 628 checks with 20 accepted divergences. |
 
@@ -1499,7 +1499,7 @@ Rscript may not be on PATH. If it is not, invoke it by full path, for example "C
 ```
 python -m pytest com_functions/fn/<name>/test_verify.py -q   # one function
 python assemble_sicopr.py                                    # regenerate sicopr.py
-python -m pytest com_functions/fn -q                         # full suite (2025)
+python -m pytest com_functions/fn -q                         # full suite (over 2,000 tests)
 python tests/<name>.py                                       # standalone checks
 python docs/refresh_tutorial_toc.py                          # after editing this document
 ```
