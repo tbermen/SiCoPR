@@ -36,8 +36,8 @@ The maintainer reproduces it, then:
 
 ## Pull requests
 
-Pull requests are not accepted, and will be closed with a pointer to the issue
-tracker. That is not a judgement on the change. If you have found a fix,
+Pull requests are turned off on this repository; the issue tracker is the way
+in. That is not a judgement on any change. If you have found a fix,
 describe it in an issue, naming the MATLAB lines it matches: the maintainer
 writes and verifies the change. The licence permits forks, and nothing here is
 needed to run one.

@@ -20,9 +20,10 @@ built for a single local user and should not be exposed to a network.
 
 Open a GitHub issue at https://github.com/tbermen/SiCoPR/issues.
 
-If the problem is one you would rather not describe publicly, open an issue
-saying only that you have a security report and asking for a contact, and it
-will be arranged from there.
+If the problem is one you would rather not describe publicly, report it
+privately instead: **Security** tab, then **Report a vulnerability**
+(https://github.com/tbermen/SiCoPR/security/advisories/new). The report is
+not public.
 
 There is no bug bounty, and no service-level commitment on response time — this
 is a single-maintainer project. Reports are read and acted on.
