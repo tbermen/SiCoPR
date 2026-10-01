@@ -222,6 +222,18 @@ One known engine-to-engine difference: `DER_DFE` and `DER_MLSE` can differ by up
 4.5% between any two engines, Octave and MATLAB included, because the reference reads the
 CDF exactly on a bin edge; COM is unaffected.
 
+### How it was built
+
+The port was developed with AI coding assistance. That is why the verification above is
+built the way it is: nothing rests on a reading of the code, by a person or a model. Each
+Reference Code function was translated on its own and checked against that function
+executed under GNU Octave on the same inputs; the assembled engine was then checked stage
+by stage against Octave and case by case against the MATLAB reference results. Where the
+two languages differ in a way a reading would miss (`std`, `round`, `interp1`,
+`transpose` and others), the rule is recorded in
+[`com_functions/verification/builtins.md`](com_functions/verification/builtins.md).
+[`docs/VERIFICATION.md`](docs/VERIFICATION.md) describes the method.
+
 ## Known limitations
 
 - **End-to-end coverage follows the corpora.** The correlation covers what the corpus
