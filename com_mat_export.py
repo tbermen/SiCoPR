@@ -123,12 +123,46 @@ def _fd_ctle(freq, f_z, f_p1, f_p2, kacdc_dB):
 
 
 def _git_commit():
+    """The commit of the code doing the export, or 'unknown'.
+
+    Asked of the repository this module lives in, not of the working directory:
+    runs are launched from a results directory outside the repository (the GUI's
+    --run-dir), where `git rev-parse` fails. Never an empty string: R.matlab's
+    readMat cannot read a zero-length char array, and one empty field in `meta`
+    made the whole export unreadable to the R dashboard (2026-09-05 onwards).
+    """
     try:
         out = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             cwd=os.path.dirname(os.path.abspath(__file__)),
                              capture_output=True, text=True, timeout=5)
-        return out.stdout.strip() if out.returncode == 0 else ""
+        sha = out.stdout.strip() if out.returncode == 0 else ""
     except Exception:
-        return ""
+        sha = ""
+    return sha or "unknown"
+
+
+def _meta(OP, param, case_i):
+    """The `meta` struct of an export. Every text field is non-empty (see
+    _git_commit), and com_version names the release this run emulated."""
+    mv = str(getattr(param, "matlab_version", "") or "").strip()
+    meta = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "com_version": ("com_ieee8023_" + mv) if mv else COM_VERSION,
+        "python_version": sys.version.split()[0],
+        "git_commit": _git_commit(),
+        "input_s4p": list(getattr(OP, "export_s4p_files", [])) or ["none"],
+        "input_config": str(getattr(OP, "export_config_file", "")) or "none",
+        "case_index": int(case_i),
+        "notes": ("H_channel/H_ctle/H_ch_ctle are genuine FD responses captured "
+                  "from the pipeline; H_ffe is evaluated from the selected Tx FFE "
+                  "taps; H_tx/H_final are products of these (DFE excluded from FD). "
+                  "COM is a statistical tool: the eye is a BER contour, not a "
+                  "sampled-waveform eye matrix."),
+    }
+    for k, v in meta.items():
+        if isinstance(v, str) and not v:
+            meta[k] = "none"
+    return meta
 
 
 # ── public entry ─────────────────────────────────────────────────────────────
@@ -464,21 +498,7 @@ def export_case_mat(OP, param, chdata, fom_result, Noise_Struct, PDF, CDF,
     _add(d, "run_summary", run_summary)
 
     # 10. Metadata ----------------------------------------------------------
-    meta = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "com_version": COM_VERSION,
-        "python_version": sys.version.split()[0],
-        "git_commit": _git_commit(),
-        "input_s4p": list(getattr(OP, "export_s4p_files", [])),
-        "input_config": str(getattr(OP, "export_config_file", "")),
-        "case_index": int(case_i),
-        "notes": ("H_channel/H_ctle/H_ch_ctle are genuine FD responses captured "
-                  "from the pipeline; H_ffe is evaluated from the selected Tx FFE "
-                  "taps; H_tx/H_final are products of these (DFE excluded from FD). "
-                  "COM is a statistical tool: the eye is a BER contour, not a "
-                  "sampled-waveform eye matrix."),
-    }
-    _add(d, "meta", meta)
+    _add(d, "meta", _meta(OP, param, case_i))
 
     # write -----------------------------------------------------------------
     run = str(getattr(OP, "export_run_name", "com_run")) or "com_run"
