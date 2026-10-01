@@ -55,8 +55,6 @@ were produced before this file existed and are not restated as changes.
 - `NOTICE` — upstream provenance, origin and SHA-256 checksums for each of the
   four MATLAB reference files.
 - `CITATION.cff`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, this file.
-- DCO sign-off requirement for contributions, enforced by CI
-  (`CONTRIBUTING.md` explains why BSD-3-Clause needs one).
 - `com_functions/inlined_copies.json` — a generated manifest recording, for
   every inlined helper copy in the engine, which helper it came from, which
   function it was inlined into, and the upstream MATLAB line range of both.
