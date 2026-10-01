@@ -11,6 +11,10 @@ differs between them.
 | **`4p16p0`** (default) | nothing, or `--matlab-version 4p16p0` | `matlab/com_ieee8023_4p16p0.m`, the current IEEE release |
 | `4p15p0` | `--matlab-version 4p15p0` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`: 4p15p0 with the adaptive local search backported, the build the 208-case reference results were produced with |
 
+[`VERSION.json`](../VERSION.json) is the source of truth for this table: the default
+release, the supported releases and the reference file for each. Two tests check
+that the engine's default matches it.
+
 ```powershell
 python -m sicopr <config.xlsx> <thru.s4p> --matlab-version 4p15p0     # per run
 ```
