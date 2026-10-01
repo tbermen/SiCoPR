@@ -2,6 +2,8 @@
 
 Generated from the runs behind the 1368-case benchmark, on the configuration workbook in this directory. Two engines, two conditions.
 
+**Provenance of the COM Octave results.** The Reference Code release file `matlab/com_ieee8023_4p16p0.m`, made to run under GNU Octave 11.3.0 as `octave/com_ieee8023_4p16p0_octave_compat.m` by `octave/make_octave_compat.py` (SiCoPR revision `a130aca`; the 2026-09-20 runs before it differ only in a patch comment), run 2026-09-20. Measured against the MATLAB reference results for this case: COM within 7.1e-15 dB without crosstalk and 8.9e-16 dB with it, FOM within 4.8e-12 dB, the same sampling phase. They are COM Octave results, not the MATLAB reference results, which are not published here.
+
 | quantity | SiCoPR, no crosstalk | COM Octave, no crosstalk | SiCoPR, with crosstalk | COM Octave, with crosstalk |
 |---|---|---|---|---|
 | `COM_dB` | 3.507002840250303 | 3.507002840250293 | 2.8958986848732575 | 2.8958986848732593 |
