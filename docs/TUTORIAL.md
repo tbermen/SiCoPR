@@ -1030,13 +1030,13 @@ proved by planting five last-bit defects and confirming it fails on each.
 
 ## 12.5 How fast, and how close
 
-Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). The compiled-build row was measured 2026-09-18 on one 1368-case 4p16p0 case (451 s against 299 s); SiCoPR has changed since and the ratios have not been re-measured, so they are indicative:
+Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). Measured 2026-10-01 on the shipped example, one case at a time (without / with crosstalk: SiCoPR 375 s / 335 s; these files interpreted 821 s / 786 s; with the compiled build 457 s / 454 s):
 
 | | Octave / SiCoPR |
 |---|---|
 | the stock release file under Octave | ~30x slower again (its `CDF_ev` does `find` on a growing axis) |
-| these files, interpreted | about 2.5x |
-| these files, with the compiled build | about 1.5x |
+| these files, interpreted | 2.2x to 2.4x |
+| these files, with the compiled build | 1.2x to 1.4x |
 
 On agreement, see §11: 1368 cases, COM within 5.3e-14 dB and the same sampling
 phase on every one (2026-09-26). `octave/README.md` carries the patch set

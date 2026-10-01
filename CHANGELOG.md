@@ -34,10 +34,10 @@ were produced before this file existed and are not restated as changes.
   byte-identical to the MATLAB releases.
 - The Octave release files run **2.5 to 3 times faster than the same files before
   this work** (measured 2026-09-18: one 4p16p0 case 1418 s to 561 s; one 4p15p0
-  case 137 s to 46 s), and every result is unchanged to the last bit. With the
-  compiled kernels, Octave then took about 1.5 times SiCoPR's run time on that
-  4p16p0 case (451 s against 299 s); SiCoPR has changed since and the ratio has
-  not been re-measured. Part of it is in the patch
+  case 137 s to 46 s), and every result is unchanged to the last bit. On the
+  shipped example (measured 2026-10-01, one case at a time, one BLAS thread),
+  Octave takes 2.2 to 2.4 times SiCoPR's run time interpreted and 1.2 to 1.4
+  times with the compiled kernels. Part of it is in the patch
   set (the touchstone reader, the floating-tap search, the ISI distribution
   build, FFE, two `isequal` tests); the rest is `octave/accel/`, **optional
   compiled kernels** for the three hottest loops, built once per machine with

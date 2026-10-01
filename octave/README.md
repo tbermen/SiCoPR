@@ -219,12 +219,14 @@ privately with the channels it needs and is not published.
 
 | | Octave against SiCoPR | measured |
 |---|---|---|
-| before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
-| interpreted, speed items in | about 2.5x | the row below, times the 1.67x the kernels give on that case |
-| **with the compiled kernels** | **about 1.5x** | 451 s against 299 s, one 1368-case 4p16p0 case (`wo_C1_R001`), 2026-09-18 |
+| **interpreted, speed items in** | **2.2x to 2.4x** | 821 s / 786 s against 375 s / 335 s, the shipped example without / with crosstalk, 2026-10-01 |
+| **with the compiled kernels** | **1.2x to 1.4x** | 457 s / 454 s against the same, 2026-10-01 |
+| earlier: before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
+| earlier: with the compiled kernels (2026-09-18) | about 1.5x | 451 s against 299 s, one 1368-case 4p16p0 case (`wo_C1_R001`) |
 
-SiCoPR has changed since these measurements (its later equivalence-checked
-speed-ups), and the ratios have not been re-measured.
+The 2026-10-01 rows are current: one case at a time on the same machine, every
+engine giving the same COM to 1e-14 dB. The earlier rows were taken before
+SiCoPR's September convolution changes and are kept as history.
 
 ## What is in this directory, and what left it
 

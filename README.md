@@ -184,10 +184,11 @@ is a COM primer.
 small patch set that makes them run under GNU Octave and is a no-op under MATLAB. With
 Octave installed you can run the Reference Code itself on any case and compare it with
 SiCoPR field by field (`tools/octave_compare.py`), without a MATLAB licence. Speed,
-measured 2026-09-18 on one 4p16p0 case (Octave 11.3, Windows, one BLAS thread): with the
-optional compiled kernels built, Octave took about 1.5 times SiCoPR's run time (451 s
-against 299 s); SiCoPR has changed since and the ratio has not been re-measured. See
-[`octave/README.md`](octave/README.md).
+measured 2026-10-01 on the shipped example, same machine, one case at a time, one BLAS
+thread (Octave 11.3, Windows): Octave took **2.2 to 2.4 times** SiCoPR's run time
+interpreted (821 s and 786 s against 375 s and 335 s, without and with crosstalk), and
+**1.2 to 1.4 times** with the optional compiled kernels built (457 s and 454 s). All
+three gave the same COM to 1e-14 dB. See [`octave/README.md`](octave/README.md).
 
 **Why a Python port, when Octave already runs the Reference Code for free?** The two do
 different jobs, and this repository ships both. Octave runs the Reference Code itself,
