@@ -136,11 +136,21 @@ VERSIONS = {
                'octave/com_ieee8023_4p15p0_octave_compat.m'),
     '4p16p0': ('matlab/com_ieee8023_4p16p0.m',
                'octave/com_ieee8023_4p16p0_octave_compat.m'),
+    '4p17p0': ('matlab/com_ieee8023_4p17p0.m',
+               'octave/com_ieee8023_4p17p0_octave_compat.m'),
 }
 
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
             'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp',
             'OptFom_Calc_Noise_XC']
+
+# Replacements a release does not take. 4p17p0 rewrote the arithmetic the
+# FOM_rxffe_floating_taps speed patch inlines: MMSE_FOM's HH is now looked up
+# from H(:,1)'*H by lag, not formed as H(:,sel)'*H(:,sel), and the two differ
+# where H is built from a truncated h. The patch (and the compiled search kernel,
+# reached only through it) reproduces the 4p16p0 arithmetic, so on 4p17p0 the
+# release's own function runs: slower, and exactly the reference.
+NOT_REPLACED = {'4p17p0': {'FOM_rxffe_floating_taps'}}
 ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv',
          'mldivide_matlab', 'com_checkpoint']
 
@@ -509,7 +519,8 @@ def build(ver):
     spans = function_spans(lines)
     closed = ends_functions(lines, spans)
     # replace from the bottom up so earlier spans stay valid
-    for name in sorted(REPLACED, key=lambda n: -spans[n][0]):
+    replaced = [n for n in REPLACED if n not in NOT_REPLACED.get(ver, ())]
+    for name in sorted(replaced, key=lambda n: -spans[n][0]):
         if name not in spans:
             raise SystemExit('%s: function %s not found' % (src_rel, name))
         i, j = spans[name]
@@ -521,7 +532,12 @@ def build(ver):
 
     # provenance block right after the SPDX line of the file header
     k = next(i for i, l in enumerate(lines) if 'SPDX-License-Identifier' in l)
-    lines[k + 1:k + 1] = provenance(ver, src_rel, sha256(src))
+    prov = provenance(ver, src_rel, sha256(src))
+    if 'FOM_rxffe_floating_taps' in NOT_REPLACED.get(ver, ()):
+        i = next(i for i, l in enumerate(prov) if 'FOM_rxffe_floating_taps' in l)
+        prov[i:i + 2] = ['%%   for speed  (not FOM_rxffe_floating_taps: its patch predates the',
+                         '%%             4p17p0 HH lookup) get_pdf_from_sampled_signal (its two helpers']
+    lines[k + 1:k + 1] = prov
     return nl.join(lines), dst_rel
 
 

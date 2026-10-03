@@ -31,12 +31,12 @@ from types import SimpleNamespace
 
 _SENTINEL = object()
 
-# Which MATLAB release to emulate. '4p16p0', the current IEEE release, is the
-# default (VERSION.json, the owner's call). The 208-case reference corpus is
-# 4p15p0 output, so anything reproducing it must ask for '4p15p0' explicitly
-# (see docs/MATLAB_4p16p0_CHANGES.md for what differs).
+# Which MATLAB release to emulate. '4p17p0', the current IEEE release, is the
+# default (VERSION.json, the owner's call, 2026-10-03). The 208-case MATLAB
+# reference results are 4p15p0 output, so anything reproducing them must ask
+# for '4p15p0' explicitly (docs/VERSIONS.md says what differs between releases).
 # A config's 'COM Version' keyword, if present, wins over this default.
-COM_MATLAB_VERSION = '4p16p0'
+COM_MATLAB_VERSION = '4p17p0'
 
 
 # ---------------------------------------------------------------------------
@@ -585,10 +585,13 @@ def read_ParamConfigFile(paramFile, OP):
     # the first such consumer, immediately below.
     param.matlab_version = str(_xls_param(parameter, 'COM Version', False,
                                           COM_MATLAB_VERSION)).strip()
-    if param.matlab_version not in ('4p15p0', '4p16p0'):
-        raise ValueError("unknown COM Version %r (expected '4p15p0' or "
-                         "'4p16p0')" % param.matlab_version)
-    _v416 = param.matlab_version == '4p16p0'
+    if param.matlab_version not in ('4p15p0', '4p16p0', '4p17p0'):
+        raise ValueError("unknown COM Version %r (expected '4p15p0', '4p16p0' "
+                         "or '4p17p0')" % param.matlab_version)
+    # Release names share one fixed shape, so string order is release order;
+    # a 4p16p0 change carries into 4p17p0.
+    _v416 = param.matlab_version >= '4p16p0'
+    _v417 = param.matlab_version >= '4p17p0'
 
     # 4p16p0 L10262 flipped this default from 'Fast' to 'Slow'. Configs that
     # name the keyword are unaffected either way; configs that omit it change
@@ -811,6 +814,10 @@ def read_ParamConfigFile(paramFile, OP):
     param.Txnskew = _xls_param(parameter, 'Txnskew', True, 0)
     param.Rxpskew = _xls_param(parameter, 'Rxpskew', True, 0)
     param.Rxnskew = _xls_param(parameter, 'Rxnskew', True, 0)
+    # 4p17p0 L11034: dB/GHz threshold on d(CICP residual)/df for the apparent
+    # channel bandwidth (get_ACBW). Earlier releases do not read it.
+    if _v417:
+        param.T_dev = _xls_param(parameter, 'T_dev', False, 1)
 
     # ---- OP flags ----
     OP.TIMESTAMP = _xls_param(parameter, 'TIMESTAMP', False, 0)
@@ -972,6 +979,10 @@ def read_ParamConfigFile(paramFile, OP):
         if OP.FFE_OPT_METHOD == 'MMSE' and OP.RxFFE:
             OP.PSDRXCAL = 1
             OP.RX_CALIBRATION = 0
+    # 4p17p0 L11207: report the apparent channel bandwidth (FD_Processing ->
+    # get_ACBW). Off by default; earlier releases have no such keyword, so a
+    # workbook that sets it changes nothing under them.
+    OP.ACBW = _xls_param(parameter, 'ACBW', False, 0) if _v417 else 0
 
     # ---- Validate PSDRXCAL ----
     if OP.PSDRXCAL:

@@ -37,7 +37,18 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 FN = os.path.join(_ROOT, 'com_functions', 'fn')
-DEFAULT_REF = os.path.join(_ROOT, 'matlab', 'com_ieee8023_4p16p0.m')
+
+def _default_ref():
+    """The release the engine emulates by default, from VERSION.json: the coverage
+    is measured against what a plain run follows. (Was hardcoded to 4p16p0, which
+    would have left 4p17p0's four new functions out of the count.)"""
+    import json
+    with open(os.path.join(_ROOT, 'VERSION.json'), encoding='utf-8') as fh:
+        v = json.load(fh)
+    return os.path.join(_ROOT, v['references'][v['default_matlab_version']]['file'])
+
+
+DEFAULT_REF = _default_ref()
 
 # a test that quotes the reference, rather than a reading of it
 ORACLE_MARKS = ('COM Octave', 'octave_oracle', 'COM_Octave')

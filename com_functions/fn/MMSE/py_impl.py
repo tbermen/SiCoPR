@@ -69,12 +69,11 @@ def _mmin(a):
 
 from scipy.linalg import toeplitz
 from types import SimpleNamespace
+# The canonical MMSE_FOM, not a copy: an inlined copy here stopped tracking the
+# original (4p17p0 changed MMSE_FOM). Behaviourally identical to the copy it replaced.
+from com_functions.fn.MMSE_FOM.py_impl import MMSE_FOM as _MMSE_FOM
 
 
-
-# Nb is fixed for a run; these are rebuilt ~130k times per case otherwise.
-_EYE_CACHE = {}
-_ZERO_CACHE = {}
 
 def _fb_mask(ndiff, positions, value):
     """ndiff[positions] = value, growing ndiff the way MATLAB would.
@@ -210,151 +209,6 @@ def _findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     # window, so +idx_st lands on the same 1-based value.
     return idx + idx_st
 
-def _MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-              idx=None, Ht=None, G=None):
-    """Inlined MMSE_FOM for MMSE function."""
-    if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
-        idx = np.array([], dtype=int)
-
-    if len(idx) == 0:
-        Nw = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-        bmax_use = np.asarray(param.bmax, dtype=float).ravel()
-        bmin_use = np.asarray(param.bmin, dtype=float).ravel()
-    else:
-        Nmax = int(param.N_bmax)
-        Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-        Nw = int(dw) + Nmax + 1
-        bmax_use = np.asarray(param.bmax, dtype=float).ravel()
-        bmin_use = np.asarray(param.bmin, dtype=float).ravel()
-
-    Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-    H = np.asarray(H, dtype=float)
-    Rnn = np.asarray(Rnn, dtype=float)
-    d = int(d)
-
-    # ML 2609-2619: H = H(:, [1:Nfix idx+cmx+1]); HH = H'*H; then Hb and h0 are
-    # rows of the SELECTED H. The Gram matrix is formed per call from the
-    # selected columns, as the reference forms it. (It was once hoisted out of
-    # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
-    # sums in a different order, so it was removed on 2026-09-24 with the other
-    # speed-ups that had never been verified against the reference.)
-    if len(idx) > 0:
-        float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
-        col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        # .take is a gather, bit-identical to np.ix_ indexing
-        if Ht is None:
-            Hs = H.take(col_sel, 1)
-            HH = Hs.T @ Hs
-            Hb = Hs[d + 1:d + Nb + 1, :]
-            h0 = Hs[d]
-        else:
-            # The same Gram matrix from a contiguous gather: X holds the
-            # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
-            # Layout only; bit-identical (tests/test_optimization_invariants).
-            if G is None:
-                X = Ht.take(col_sel, 0)
-                HH = X @ X.T
-            else:
-                # G = Ht @ Ht.T, formed once for the bank search; each entry is
-                # the same dot product of two columns of H, so the gathered
-                # block is bit-identical to X @ X.T (400/400 random shapes;
-                # pinned in test_verify.py) at ~3 us instead of ~200 us.
-                HH = G.take(col_sel, 0).take(col_sel, 1)
-            Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
-            h0 = H[d].take(col_sel)
-        Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Nw_cols = len(col_sel)
-    else:
-        HH = H.T @ H
-        Hb = H[d + 1:d + Nb + 1, :]
-        h0 = H[d, :]
-        Nw_cols = H.shape[1]
-
-    R = HH + Rnn / sigma_X2
-    ib = _EYE_CACHE.get(Nb)
-    if ib is None:
-        ib = _EYE_CACHE[Nb] = np.eye(Nb)
-    zb = _ZERO_CACHE.get(Nb)
-    if zb is None:
-        zb = _ZERO_CACHE[Nb] = np.zeros(Nb)
-    # np.block carries heavy per-call Python overhead and MMSE_FOM is invoked
-    # ~130k times per case by the floating-tap bank search. Assembling into a
-    # preallocated array is ~3x faster and bit-identical.
-    _n = R.shape[0]
-    A = np.empty((_n + Nb, _n + Nb), dtype=float)
-    A[:_n, :_n] = R
-    A[:_n, _n:] = -Hb.T
-    A[_n:, :_n] = -Hb
-    A[_n:, _n:] = ib
-    C = np.concatenate([h0, zb])
-    Ct = C.reshape(-1, 1)
-    # ML 2645: Z = A\\Ct on a SQUARE system. MATLAB warns and returns Inf
-    # when A is exactly singular, and the NaNs that follow make this candidate
-    # lose; numpy raises. Measured under Octave with MATLAB backslash
-    # semantics: sigma_e NaN, FOM NaN, w all NaN. Following the 2026-09-23
-    # force() ruling the port stops rather than absorbing the case, but it
-    # says which solve failed instead of reporting a bare LinAlgError.
-    try:
-        Z = np.linalg.solve(A, Ct)
-    except np.linalg.LinAlgError:
-        raise ValueError(
-            'MMSE_FOM: the [R -Hb\'; -Hb ib] system is singular to working '
-            'precision, so the tap solve has no unique answer. MATLAB returns '
-            'Inf here and the candidate loses; SiCoPR stops instead, so the '
-            'degenerate case is visible. Nw=%d, Nb=%d.' % (Nw_cols, Nb))
-    S_inv = float(np.dot(C, Z.ravel()))
-    wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
-    Nw_used = Nw_cols
-    if len(idx) > 0:
-        Nw = Nw_used
-    w = wbl[:Nw_used]
-    b = wbl[Nw_used:Nw_used + Nb]
-    blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b))
-    # array_equal, not allclose: MATLAB guards these two branches with ~isequal,
-    # which is exact (see com_functions/fn/MMSE_FOM for the full note).
-    if Nb > 0 and not np.array_equal(b, blim):
-        _m = R.shape[0]
-        Rb = np.empty((_m + 1, _m + 1), dtype=float)
-        Rb[:_m, :_m] = R
-        Rb[:_m, _m] = -h0
-        Rb[_m, :_m] = h0
-        Rb[_m, _m] = 0.0
-        rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
-        # ML 2669, the same square backslash after the DFE taps are clipped
-        try:
-            wl_full = np.linalg.solve(Rb, rhs)
-        except np.linalg.LinAlgError:
-            raise ValueError(
-                'MMSE_FOM: the clipped-DFE system [R -h0; h0 0] is singular '
-                'to working precision. MATLAB returns Inf here and the '
-                'candidate loses; SiCoPR stops instead. Nw=%d, Nb=%d.'
-                % (Nw_cols, Nb))
-        w = wl_full[:Nw_used]
-    wmax_arr = np.asarray(wmax, dtype=float).ravel()[:Nw_used]
-    wmin_arr = np.asarray(wmin, dtype=float).ravel()[:Nw_used]
-    dw_int = int(dw)
-    w_cursor = float(w[dw_int]) if dw_int < len(w) else 1.0
-    wlim = np.minimum(wmax_arr * w_cursor, np.maximum(wmin_arr * w_cursor, w))
-    # The b/blim refresh belongs INSIDE this branch (MATLAB L2683-2690): with no
-    # clipping, blim stays as clip(b) from the solve rather than clip(Hb @ w).
-    if not np.array_equal(w, wlim):
-        h0w = float(h0 @ wlim)
-        if h0w != 0:
-            wlim = wlim / h0w
-        if Nb > 0:
-            b_upd = Hb @ wlim
-            blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
-    w = wlim
-    Hb_T_blim = Hb.T @ blim if Nb > 0 else np.zeros_like(h0)
-    sigma_e = float(np.sqrt(np.maximum(0.0, sigma_X2 * (
-        float(w @ R @ w) + 1.0 + float(np.dot(blim, blim))
-        - 2.0 * float(np.dot(w, h0)) - 2.0 * float(np.dot(w, Hb_T_blim))
-    ))))
-    R_LM = float(param.R_LM)
-    L = int(param.levels)
-    FOM = float(20.0 * np.log10(R_LM / (L - 1) / sigma_e)) if sigma_e > 0 else np.inf
-    return sigma_e, FOM, w, idx, Nw_used, blim
-
 
 def MMSE(PSD_results, sbr, cursor_i, param, OP):
     """MMSE RxFFE optimisation (MATLAB lines 2480-2578).
@@ -441,6 +295,14 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
         H = toeplitz(h[:len(samp_idx) + Nw - 1], hr1)
     else:
         H = toeplitz(hc1, hr1)
+    # 4p17p0 L2584: HH_val = transpose(H(:,1))*H, formed once here and passed to
+    # MMSE_FOM, which builds HH from it by lag instead of H'*H per candidate.
+    # Equal to H'*H up to summation order here, since the truncated branch above
+    # drops only h's zero padding (see MMSE_FOM). Earlier releases form H'*H, so
+    # HH_val stays None for them.
+    HH_val = None
+    if str(getattr(param, 'matlab_version', '4p15p0')) >= '4p17p0':
+        HH_val = H[:, 0] @ H
     Rnn = toeplitz(Rn[:Nw], Rn[:Nw])
 
     if int(param.N_bg) != 0:
@@ -453,11 +315,13 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
         else:
             idx = FOM_rxffe_floating_taps(
                 param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE_FOM)
+                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE_FOM,
+                HH_unique_values=HH_val)
             idx = np.sort(idx)
 
     sigma_e, FOM, w, idx_out, Nw_out, blim = _MMSE_FOM(
-        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx)
+        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
+        HH_val=HH_val)
 
     Craw = w / (w[dw] if abs(w[dw]) > 1e-12 else 1.0)
 

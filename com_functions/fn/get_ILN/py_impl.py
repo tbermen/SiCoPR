@@ -1,12 +1,14 @@
 import numpy as np
 
 
-def get_ILN(sdd21, faxis_f2):
+def get_ILN(sdd21, faxis_f2, return_alpha=False):
     """Fit insertion loss normalisation curve and return ILN residual.
 
     Returns (ILN, efit) where:
       efit = weighted polynomial fit: a0 + a1*sqrt(f) + a2*f + a3*f^2
       ILN  = 20*log10(|sdd21|) - efit
+    With return_alpha=True, (ILN, efit, alpha): 4p17p0 L7223 added alpha, the four
+    fit coefficients, as a third output. No caller in the release reads it.
     """
     sdd21 = np.squeeze(np.asarray(sdd21, dtype=complex)).ravel()
     faxis_f2 = np.asarray(faxis_f2, dtype=float).ravel()
@@ -60,4 +62,6 @@ def get_ILN(sdd21, faxis_f2):
             + alpha[3] * faxis_f2 ** 2
         )
         ILN = db_s - efit
+    if return_alpha:
+        return ILN, efit, alpha
     return ILN, efit

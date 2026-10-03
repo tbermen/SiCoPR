@@ -25,7 +25,11 @@ import numpy as np
 
 
 def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                            sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None):
+                            sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None,
+                            HH_unique_values=None):
+    """HH_unique_values: 4p17p0 L2099 added it as a trailing argument, MMSE's
+    H(:,1)'*H, handed to every MMSE_FOM call (see MMSE_FOM). None on earlier
+    releases, whose MMSE_FOM forms the Gram matrix itself."""
     mmse_fom = _MMSE_FOM_fn if _MMSE_FOM_fn is not None else MMSE_FOM  # noqa: F821
     # H.T laid out contiguously, once for the whole bank search: MMSE_FOM then
     # gathers each candidate's columns as contiguous rows. Layout only -- the
@@ -37,7 +41,8 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
     # block is bit-identical to forming H(:,sel)'*H(:,sel) per candidate (the
     # August hoist was removed unverified on 2026-09-24; this is the verified
     # form, accepted under the owner's equivalence rule the same day).
-    G = Ht @ Ht.T if Ht is not None else None
+    # (Not needed when HH_unique_values is given: MMSE_FOM then builds HH from it.)
+    G = Ht @ Ht.T if Ht is not None and HH_unique_values is None else None
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -59,7 +64,11 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
         for k, loc in enumerate(valid):
             cand = sorted(all_idx + list(range(loc, loc + bank_size)))
             cand_idx = np.array(cand, dtype=int) + RxFFE_cpx
-            if Ht is None:
+            if HH_unique_values is not None:
+                res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx,
+                               HH_val=HH_unique_values)
+            elif Ht is None:
                 res = mmse_fom(param, H, Nb, Rnn, dw, d,
                                wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
             else:

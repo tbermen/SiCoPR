@@ -18,7 +18,7 @@ Verification strategy (no MATLAB, no golden data):
      faithful transcriptions of the MATLAB 1-based expressions.
   4. MMSE_FOM: the full block-matrix solve is validated against an independent
      re-implementation of the MATLAB (matlab_ref_MMSE_FOM) on a no-clip input,
-     and the hoisted _MMSE__MMSE_FOM copy is checked identical to the top-level.
+     and MMSE is checked to call the top-level MMSE_FOM (it once carried a copy).
 
 One confirmed divergence (EXPECTED FAIL row):
   B12-D17 (medium): MMSE_FOM recomputes blim from Hb*wlim UNCONDITIONALLY when
@@ -248,14 +248,14 @@ check("mmse_fom_noclip_matches_matlab_reference",
       "no-clip MMSE_FOM diverges from MATLAB reference "
       "(block1=%s block2=%s dFOM=%.3e)" % (rf[6], rf[7], abs(py[1] - rf[1])))
 
-# (b) Cross-path: the hoisted _MMSE__MMSE_FOM copy is identical to the top-level.
-py2 = sicopr._MMSE__MMSE_FOM(param_loose, H_test, Nb, Rnn_test, dw, d, wmax_l, wmin_l,
-                          param_loose.bmin, param_loose.bmax, sigma_X2, None)
+# (b) Cross-path: MMSE calls the top-level MMSE_FOM. Until 2026-10-03 it carried a
+# hoisted copy, _MMSE__MMSE_FOM, checked identical here; the copy was replaced by
+# an import (4p17p0 changed MMSE_FOM), so what is pinned now is that the name
+# MMSE calls IS the top-level function and no copy has come back.
 check("mmse_fom_hoisted_copy_identical",
-      abs(py[0] - py2[0]) <= 1e-15 and abs(py[1] - py2[1]) <= 1e-15
-      and np.max(np.abs(py[2] - py2[2])) <= 1e-15
-      and np.max(np.abs(py[5] - py2[5])) <= 1e-15,
-      "_MMSE__MMSE_FOM != top-level MMSE_FOM")
+      getattr(sicopr, '_MMSE_FOM', None) is sicopr.MMSE_FOM
+      and not hasattr(sicopr, '_MMSE__MMSE_FOM'),
+      "MMSE no longer calls the top-level MMSE_FOM, or its copy is back")
 
 # (c) FOM physics sign: less noise (smaller Rnn) => higher FOM (better channel).
 py_lownoise = sicopr.MMSE_FOM(param_loose, H_test, Nb, 0.0001 * np.eye(3), dw, d,

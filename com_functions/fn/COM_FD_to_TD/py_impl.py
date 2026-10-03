@@ -99,7 +99,9 @@ def COM_FD_to_TD(chdata, param, OP,
 
     # MATLAB release being emulated; set by read_ParamConfigFile. Defaults to the
     # 4p15p0 baseline when absent so a hand-built param still behaves as before.
-    _v416 = str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+    # 4p16p0 or later (4p17p0 left this function unchanged); string order is
+    # release order.
+    _v416 = str(getattr(param, 'matlab_version', '4p15p0')) >= '4p16p0'
 
     M = int(param.samples_per_ui)
 

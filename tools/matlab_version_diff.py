@@ -51,11 +51,24 @@ CITE_RE = re.compile(r'(?:MATLAB|ML)\s*(?:source\s*)?lines?\s*[:#]?\s*'
                      r'(\d{3,5})\s*(?:[-–]\s*(\d{3,5}))?', re.I)
 
 
+def _join_continued(lines, i):
+    """A declaration continued with '...' (4p17p0's get_ACBW helpers) read as one line.
+    Unjoined, the name sits on the next line, the declaration is missed, and its body is
+    silently merged into the function above."""
+    line = lines[i]
+    while '...' in line.split('%')[0] and i + 1 < len(lines):
+        i += 1
+        line = line.split('...')[0] + ' ' + lines[i].strip()
+    return line
+
+
 def parse_functions(path):
     """-> {name: {'start','end','body','sig'}} for one .m file."""
     lines = io.open(path, encoding='utf-8', errors='replace').read().splitlines()
     marks = []
     for i, line in enumerate(lines):
+        if re.match(r'^\s*function\b', line):
+            line = _join_continued(lines, i)
         m = _match_function(line)
         if m:
             marks.append((i, m.group('name'), line.strip()))

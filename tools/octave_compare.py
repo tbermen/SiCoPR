@@ -53,7 +53,7 @@ sys.path.insert(0, _HERE)
 from xlsx_to_com_mat import convert, find_octave  # noqa: E402
 
 OCTAVE_DIR = os.path.join(_ROOT, 'octave')
-VERSIONS = ('4p15p0', '4p16p0')
+VERSIONS = ('4p15p0', '4p16p0', '4p17p0')
 
 SCALARS = ['COM_dB', 'FOM', 'itick', 'ERL', 'VEC_dB', 'VEO_mV', 'ICN_mV',
            'DER_thresh', 'DER_MLSE', 'DER_DFE', 'CTLE_DC_gain_dB',
@@ -279,7 +279,7 @@ def main(argv=None):
     ap.add_argument('--fext', nargs='*', default=[])
     ap.add_argument('--next', nargs='*', default=[], dest='nxt')
     ap.add_argument('--cases', help='JSON list of cases for batch mode')
-    ap.add_argument('--version', default='4p16p0', choices=VERSIONS)
+    ap.add_argument('--version', default='4p17p0', choices=VERSIONS)
     ap.add_argument('--out', default='octave_compare_out')
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--octave', help='path to octave-cli (default: PATH, then the stock Windows install)')

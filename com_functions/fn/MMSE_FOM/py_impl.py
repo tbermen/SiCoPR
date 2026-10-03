@@ -29,7 +29,7 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None, Ht=None, G=None):
+             idx=None, Ht=None, G=None, HH_val=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
@@ -40,6 +40,15 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     G: optional Ht @ Ht.T, the Gram matrix of the whole H, from the same
         caller; the selected block is gathered from it. Bit-identical to
         forming it per candidate (measured; pinned in test_verify.py).
+    HH_val: 4p17p0 only (ML 2640-2702 of 4p17p0). H(:,1)'*H of the FULL H,
+        formed once in MMSE. When given, HH is not H'*H of the selected
+        columns but HH_val looked up by lag, HH(i,j) = HH_val(|k_i - k_j|+1)
+        over the kept columns k. That equals H'*H whenever every column of H
+        holds all of h's nonzero samples, which is every H MMSE builds (its
+        truncated branch drops only zero padding), so in the pipeline 4p17p0
+        and 4p16p0 agree to summation-order rounding (~1e-14). On an H cut
+        across nonzero samples the two forms differ; the unit test uses one to
+        pin that this is the form followed.
     """
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -67,7 +76,22 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
     # sums in a different order, so it was removed on 2026-09-24 with the other
     # speed-ups that had never been verified against the reference.)
-    if len(idx) > 0:
+    if HH_val is not None:
+        # 4p17p0 speedup_HH_calculation = 1:
+        #   keep_idx = 1:Nfix;  if N_bg ~= 0, keep_idx = [1:Nfix idx+cmx+1]
+        #   lag_idx = abs(keep_idx(:) - keep_idx) + 1;  HH = HH_val(lag_idx)
+        #   Hb = H(d+2:d+Nb+1, keep_idx);  h0 = H(d+1, keep_idx)
+        # The selection condition stays len(idx) > 0, as on the path below.
+        keep = np.arange(Nfix)
+        if len(idx) > 0:
+            keep = np.concatenate([keep, np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)])
+            Rnn = Rnn.take(keep, 0).take(keep, 1)
+        HH_val = np.asarray(HH_val, dtype=float).ravel()
+        HH = HH_val[np.abs(keep[:, None] - keep[None, :])]
+        Hb = H[d + 1:d + Nb + 1, :].take(keep, 1)
+        h0 = H[d].take(keep)
+        Nw_cols = len(keep)
+    elif len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
         # .take is a gather, bit-identical to np.ix_ indexing

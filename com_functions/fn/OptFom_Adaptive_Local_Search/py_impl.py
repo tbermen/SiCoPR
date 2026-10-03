@@ -195,7 +195,9 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
 
     Returns skip_it (bool): True -> skip evaluating this candidate.
     """
-    _v416 = str(matlab_version) == '4p16p0'
+    # 4p16p0 or later (4p17p0 left this function unchanged). Release names share
+    # one fixed shape, so string order is release order.
+    _v416 = str(matlab_version) >= '4p16p0'
 
     # ---- Tuned knobs (PATCHED values from Hansel's branch) ----
     min_improvement_threshold = 0.002

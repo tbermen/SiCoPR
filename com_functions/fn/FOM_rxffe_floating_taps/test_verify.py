@@ -214,3 +214,26 @@ def test_each_candidate_is_scored_from_h_itself():
             assert kw['Ht'].flags['C_CONTIGUOUS']
         if 'G' in kw:
             np.testing.assert_array_equal(kw['G'], kw['Ht'] @ kw['Ht'].T)
+
+
+
+def test_hh_unique_values_reach_every_candidate():
+    """4p17p0 L2099/L2119: the search hands MMSE_FOM the HH_unique_values MMSE
+    formed, on every candidate. Without them (earlier releases) none is passed."""
+    from types import SimpleNamespace as _NS
+    from com_functions.fn.FOM_rxffe_floating_taps.py_impl import FOM_rxffe_floating_taps
+    seen = []
+
+    def stub(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx, **kw):
+        seen.append(kw.get('HH_val'))
+        return (0.0, -float(np.sum(idx)), None, idx, 0, None)
+    param = _NS(RxFFE_cpx=1, N_bmax=9, N_bf=2, N_bg=2)
+    h = np.concatenate([[0.0], np.linspace(0.1, 0.9, 8)])
+    HH = np.arange(5.0)
+    FOM_rxffe_floating_taps(param, h, None, 1, None, 0, 0, None, None, None, None, 1.0,
+                            0, 9, _MMSE_FOM_fn=stub, HH_unique_values=HH)
+    assert seen and all(v is HH for v in seen)
+    seen.clear()
+    FOM_rxffe_floating_taps(param, h, None, 1, None, 0, 0, None, None, None, None, 1.0,
+                            0, 9, _MMSE_FOM_fn=stub)
+    assert seen and all(v is None for v in seen)

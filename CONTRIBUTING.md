@@ -212,10 +212,10 @@ inlined copies of 45 functions**. `tests/test_inlined_copies.py` compares each
 copy against its canonical top-level version and reports plainly how far it gets:
 
 ```
-62 inlined copies of 45 functions; 28 comparison(s) made, 34 skipped
+61 inlined copies of 44 functions; 28 comparison(s) made, 33 skipped
 ```
 
-**34 of those 62 copies have no behavioural verification.** They are not skipped
+**33 of those 61 copies have no behavioural verification.** They are not skipped
 by choice: the harness drives both sides from synthetic inputs, and for these it
 cannot build any without a populated `param`/`OP` struct or a real Touchstone
 file. For them the only check is that the copy still accepts the same arguments
@@ -251,7 +251,7 @@ failure and verified by re-introducing it:
 | script | guards against | why |
 |---|---|---|
 | `test_reference_leaks.py` | writing to a parameter the function never returns | MATLAB passes structs **by value**, Python by reference. **Five of the original eight** correlation defects were this class, and five of the eighteen correlation-era entries in [`docs/FIX_SUMMARY.md`](docs/FIX_SUMMARY.md). Caught a new instance during the 4p16p0 port. |
-| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **62 copies of 45 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
+| `test_inlined_copies.py` | an inlined copy drifting from its canonical function | there are **61 copies of 44 functions**; a fix to `py_impl.py` reaches only one of them. Engine defect #6 lived in three copies. |
 | `test_optimization_invariants.py` | the speed work silently breaking | cache transparency and key completeness, the verified Gram gather, direct (never FFT) convolution, shared buffers. Found a live cache-aliasing defect. |
 | `test_matlab_stage_oracles.py` | drift from real MATLAB values | pins **208 cases × 35 scalars + 14 vector families** taken from the reference workbooks. The oracle file itself is not tracked (it *is* reference data); point `COM_STAGE_ORACLES` at a local copy, and without it the test skips. |
 | `test_octave_checkpoints.py` | a stage drifting from the reference code | compares 10 stage structs on 28 cases against COM Octave goldens (`COM_OCTAVE_CHECKPOINTS`; `COM_CHECKPOINT_CASES=all` for every case). The goldens are local-only, so it skips in a clone. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md). |

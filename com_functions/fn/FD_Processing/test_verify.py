@@ -590,3 +590,38 @@ def test_oracle_wc_portz_include_pcb_and_noise_channel():
     _eq(out.loss_with_PCB, _O_LOSS_WITH_PCB, 'loss_with_PCB')
     _eq(out.ICN_mV, _O_ICN_FEXT_ONLY, 'ICN_mV (NOISE skipped)')
     _eq(out.FOM_ILD, _O_FOM_ILD, 'FOM_ILD')
+
+
+
+# ---------------------------------------------------------------------------
+# 4p17p0 L1868-1872: with OP.ACBW the THRU channel's apparent bandwidth is
+# computed, get_ACBW(sdd21f, faxis/1e9, OP, param), and reported as
+# output_args.ACBW_GHz. The fit goes into a stray variable in the reference
+# (CICP_fit_chdata(i).db), so chdata gets no fit field. get_ACBW's own values are
+# pinned against COM Octave in its test; this pins the call.
+# ---------------------------------------------------------------------------
+def test_acbw_is_called_for_the_thru_only_when_asked(monkeypatch):
+    import com_functions.fn.FD_Processing.py_impl as fdp
+    calls = []
+
+    def spy(Hch, fGHz, OP, param):
+        calls.append((np.asarray(Hch).copy(), np.asarray(fGHz).copy()))
+        return 42.5, np.zeros(3), np.ones(3), np.full(3, 2.0), np.arange(4.0), np.zeros(3)
+    monkeypatch.setattr(fdp, '_get_ACBW', spy)
+    for acbw in (1, 0):
+        calls.clear()
+        param = _make_param(n_chan=2)
+        OP = _make_op()
+        OP.ACBW = acbw
+        chdata = [_make_ch('THRU'), _make_ch('FEXT')]
+        chdata, out = FD_Processing(chdata, SimpleNamespace(), param, OP, DO_ONCE=True,
+                                    _get_ILN_fn=_stub_get_ILN)
+        if acbw:
+            assert len(calls) == 1, 'get_ACBW once, for the THRU'
+            np.testing.assert_array_equal(calls[0][0], chdata[0].sdd21f)
+            np.testing.assert_array_equal(calls[0][1], chdata[0].faxis / 1e9)
+            assert out.ACBW_GHz == 42.5 and chdata[0].Bch_GHz == 42.5
+            np.testing.assert_array_equal(chdata[0].CICP_alpha, np.arange(4.0))
+            assert not hasattr(chdata[0], 'CICP_fit_db'), 'the reference stores no fit on chdata'
+        else:
+            assert not calls and not hasattr(out, 'ACBW_GHz')

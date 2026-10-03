@@ -101,7 +101,7 @@ def test_min_radius_rule_is_version_independent():
     fails.
     """
     BEST, THIS = _mk([0, 0, 0], [1, 1, 0], ctle_index=3, best_ctle=3)
-    for ver in ('4p15p0', '4p16p0'):
+    for ver in ('4p15p0', '4p16p0', '4p17p0'):
         reset_state()
         assert OptFom_Adaptive_Local_Search(
             2, BEST, THIS, [4.0, 4.0, 4.0], 10, 5, matlab_version=ver) is False
@@ -114,7 +114,7 @@ def test_overwrite_min_radius_wins_on_both_paths():
     4p15p0 had it silently discarded.
     """
     BEST, THIS = _mk([0, 0, 0], [1, 1, 0], ctle_index=3, best_ctle=3)
-    for ver in ('4p15p0', '4p16p0'):
+    for ver in ('4p15p0', '4p16p0', '4p17p0'):
         reset_state()
         # multi-candidate grid would give 2; the override forces it back to 1
         assert OptFom_Adaptive_Local_Search(

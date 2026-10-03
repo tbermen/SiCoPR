@@ -221,8 +221,10 @@ def test_main_tap_is_unity_and_taps_are_unclipped():
 
 
 # --------------------------------------------------------------------------
-# MMSE carries its own copy of MMSE_FOM as _MMSE_FOM, so the copy has to be
-# checked, not only the canonical. read_s4p_files is the cautionary tale: its
+# MMSE carried its own copy of MMSE_FOM as _MMSE_FOM until 2026-10-03, when it
+# was replaced by an import of the canonical (4p17p0 changed MMSE_FOM). These
+# checks now hold trivially and are kept as the guard against a copy coming
+# back. Why it mattered: read_s4p_files is the cautionary tale: its
 # inlined reader had drifted from read_p4_s4params on the skew binding and was
 # 0.19 out while the canonical was right.
 #
@@ -312,11 +314,14 @@ def test_inlined_singular_clipped_dfe_solve_stops():
 # ---------------------------------------------------------------------------
 
 def test_gram_matrix_is_formed_from_the_selected_columns():
+    # Since 2026-10-03 MMSE calls the canonical MMSE_FOM rather than a copy
+    # (4p17p0 changed MMSE_FOM, and a copy would not have followed). The form is
+    # pinned where it lives, in MMSE_FOM's own test; here, that it is that one.
     import inspect
     src = inspect.getsource(__import__('com_functions.fn.MMSE.py_impl', fromlist=['x']))
     assert 'HH_full' not in src, 'the hoisted Gram matrix is back'
-    assert 'Hs = H.take(col_sel, 1)' in src and 'HH = Hs.T @ Hs' in src, (
-        "HH must be H(:,sel)'*H(:,sel), as ML 2612 forms it")
+    assert _MMSE_FOM is _canonical_MMSE_FOM, 'MMSE has its own MMSE_FOM again'
+    assert 'def _MMSE_FOM' not in src, 'an inlined copy of MMSE_FOM is back in MMSE'
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +363,79 @@ def test_ht_layout_gives_bit_identical_results():
             np.testing.assert_allclose(a[1], r[1], rtol=1e-12, atol=0)
             np.testing.assert_allclose(a[2], r[2], rtol=1e-12, atol=1e-15)
             np.testing.assert_allclose(a[0], r[0], rtol=1e-12, atol=1e-15)
+
+
+# ---------------------------------------------------------------------------
+# 4p17p0, the whole MMSE with floating taps placed by the FOM search
+# (RXFFE_FLOAT_CTL 'fom') and num_ui longer than the pulse, so MMSE builds H
+# from a truncated h and forms HH_val = H(:,1)'*H for MMSE_FOM (ML 2584).
+#
+# COM Octave values: MMSE with FOM_rxffe_floating_taps, MMSE_FOM and
+# findbankloc extracted verbatim from octave/com_ieee8023_4p17p0_octave_compat.m
+# by tools/octave_oracle.py. Generator: runs/4p17p0_oracles/gen_mmse_oracle.py
+# (local). Residual ~2e-13: solve and dot-product accumulation order.
+#
+# The truncation here cuts only the zero padding of h (it is padded to num_ui),
+# so every column keeps all the nonzero samples and the lag lookup equals H'*H
+# in exact arithmetic: 4p16p0's MMSE gives the same taps to ~1e-14. That is the
+# reference's case for calling the two forms equivalent, and it holds wherever
+# MMSE uses them.
+# ---------------------------------------------------------------------------
+
+_OCT417_FOM = 29.86099611037465
+_OCT417_SIGMA_E = 0.010710973375126737
+_OCT417_C = [0.028344999489438184, -0.25545716222909043, 1.0, 0.21254918591032454,
+             -0.017537443267505316, -0.015178671887135026, 0.0, 0.0,
+             0.023709901785619637, -0.07762697844205811, 0.0, 0.0, 0.0, 0.0, 0.0]
+_OCT417_BLIM = [0.6189022243450225, 0.16607908958681133]
+_OCT417_LOC = [9, 10]
+
+
+def _mmse_417_inputs():
+    sbr, S_n = _mmse_inputs()
+    t = np.arange(len(sbr), dtype=float)
+    sbr = sbr + 0.05 * np.exp(-((t - (_CURSOR1 - 1 + 7 * _M)) / 3.0) ** 2)
+    sbr[t < _CURSOR1 - 1 - 3 * _M] = 0.0
+    p = _mmse_param()
+    p.num_ui_RXFF_noise = 40
+    p.N_bg, p.N_bf, p.N_bmax = 1, 2, 12
+    p.matlab_version = '4p17p0'
+    return sbr, S_n, p
+
+
+def test_4p17p0_floating_tap_search_matches_com_octave(monkeypatch):
+    import com_functions.fn.MMSE.py_impl as mmse_mod
+    from com_functions.fn.FOM_rxffe_floating_taps.py_impl import FOM_rxffe_floating_taps
+    # resolved by bare name in the assembled engine; supplied here the same way
+    monkeypatch.setattr(mmse_mod, 'FOM_rxffe_floating_taps', FOM_rxffe_floating_taps, raising=False)
+    sbr, S_n, p = _mmse_417_inputs()
+    r = mmse_mod.MMSE(SimpleNamespace(S_n=S_n), sbr, _CURSOR1 - 1, p,
+                      SimpleNamespace(RXFFE_FLOAT_CTL='fom'))
+    assert list(np.asarray(r.floating_tap_locations).ravel()) == _OCT417_LOC
+    assert r.Nw == 8
+    assert abs(r.FOM - _OCT417_FOM) / _OCT417_FOM < 1e-11
+    assert abs(r.sigma_e - _OCT417_SIGMA_E) / _OCT417_SIGMA_E < 1e-11
+    np.testing.assert_allclose(np.asarray(r.C).ravel(), _OCT417_C, rtol=0, atol=1e-11)
+    np.testing.assert_allclose(np.asarray(r.blim).ravel(), _OCT417_BLIM, rtol=0, atol=1e-11)
+
+
+def test_4p17p0_hands_mmse_fom_the_hh_values(monkeypatch):
+    """MMSE must pass HH_val on 4p17p0 and not before: the search and the final
+    solve both use it."""
+    import com_functions.fn.MMSE.py_impl as mmse_mod
+    from com_functions.fn.FOM_rxffe_floating_taps.py_impl import FOM_rxffe_floating_taps
+    monkeypatch.setattr(mmse_mod, 'FOM_rxffe_floating_taps', FOM_rxffe_floating_taps, raising=False)
+    seen = []
+    real = mmse_mod._MMSE_FOM
+
+    def spy(*a, **k):
+        seen.append(k.get('HH_val') is not None)
+        return real(*a, **k)
+    monkeypatch.setattr(mmse_mod, '_MMSE_FOM', spy)
+    sbr, S_n, p = _mmse_417_inputs()
+    mmse_mod.MMSE(SimpleNamespace(S_n=S_n), sbr, _CURSOR1 - 1, p, SimpleNamespace(RXFFE_FLOAT_CTL='fom'))
+    assert seen and all(seen), 'a 4p17p0 MMSE_FOM call went without HH_val'
+    seen.clear()
+    p.matlab_version = '4p16p0'
+    mmse_mod.MMSE(SimpleNamespace(S_n=S_n), sbr, _CURSOR1 - 1, p, SimpleNamespace(RXFFE_FLOAT_CTL='fom'))
+    assert seen and not any(seen), 'a 4p16p0 MMSE_FOM call was given HH_val'

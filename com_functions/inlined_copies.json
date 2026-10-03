@@ -457,20 +457,6 @@
    ]
   },
   {
-   "copy": "_MMSE__MMSE_FOM",
-   "helper": "MMSE_FOM",
-   "inlined_into": "MMSE",
-   "inlined_into_matlab_lines": [
-    2480,
-    2579
-   ],
-   "canonical": "MMSE_FOM",
-   "canonical_matlab_lines": [
-    2580,
-    2692
-   ]
-  },
-  {
    "copy": "_MMSE__fb_mask",
    "helper": "fb_mask",
    "inlined_into": "MMSE",
@@ -1403,6 +1389,96 @@
    "inlined_into_matlab_lines": [
     6090,
     6253
+   ]
+  },
+  {
+   "copy": "_get_ACBW__mround",
+   "helper": "mround",
+   "inlined_into": "get_ACBW",
+   "inlined_into_matlab_lines": [
+    6759,
+    6891
+   ]
+  },
+  {
+   "copy": "_get_BW_from_CICP_residual__gradient",
+   "helper": "gradient",
+   "inlined_into": "get_BW_from_CICP_residual",
+   "inlined_into_matlab_lines": [
+    6893,
+    6995
+   ]
+  },
+  {
+   "copy": "_get_BW_from_CICP_residual__movmean_omitnan",
+   "helper": "movmean_omitnan",
+   "inlined_into": "get_BW_from_CICP_residual",
+   "inlined_into_matlab_lines": [
+    6893,
+    6995
+   ]
+  },
+  {
+   "copy": "_get_BW_from_CICP_residual__mround",
+   "helper": "mround",
+   "inlined_into": "get_BW_from_CICP_residual",
+   "inlined_into_matlab_lines": [
+    6893,
+    6995
+   ]
+  },
+  {
+   "copy": "_get_BW_from_CICP_residual__row",
+   "helper": "row",
+   "inlined_into": "get_BW_from_CICP_residual",
+   "inlined_into_matlab_lines": [
+    6893,
+    6995
+   ]
+  },
+  {
+   "copy": "_get_CICP_fit_residual__backslash_sym",
+   "helper": "backslash_sym",
+   "inlined_into": "get_CICP_fit_residual",
+   "inlined_into_matlab_lines": [
+    6997,
+    7075
+   ]
+  },
+  {
+   "copy": "_get_CICP_fit_residual__row",
+   "helper": "row",
+   "inlined_into": "get_CICP_fit_residual",
+   "inlined_into_matlab_lines": [
+    6997,
+    7075
+   ]
+  },
+  {
+   "copy": "_get_CICP_fit_sweep__colon",
+   "helper": "colon",
+   "inlined_into": "get_CICP_fit_sweep",
+   "inlined_into_matlab_lines": [
+    7077,
+    7222
+   ]
+  },
+  {
+   "copy": "_get_CICP_fit_sweep__first_index",
+   "helper": "first_index",
+   "inlined_into": "get_CICP_fit_sweep",
+   "inlined_into_matlab_lines": [
+    7077,
+    7222
+   ]
+  },
+  {
+   "copy": "_get_CICP_fit_sweep__polyfit1",
+   "helper": "polyfit1",
+   "inlined_into": "get_CICP_fit_sweep",
+   "inlined_into_matlab_lines": [
+    7077,
+    7222
    ]
   },
   {

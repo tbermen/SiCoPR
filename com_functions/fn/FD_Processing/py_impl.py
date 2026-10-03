@@ -6,6 +6,7 @@ MATLAB lines 1684–2025.
 import numpy as np
 from types import SimpleNamespace
 from scipy.special import erfcinv
+from com_functions.fn.get_ACBW.py_impl import get_ACBW as _get_ACBW
 
 
 _EPS0 = np.nextafter(0.0, 1.0)   # MATLAB eps(0) = 4.9406564584124654e-324
@@ -218,6 +219,15 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             # common-mode rejection.  `/(EC + 1e-300)` reported ~2993 dB.
             output_args.SCMR_FD_CD_ch_dB = _db10_ratio(P_signal, EC_CD)
             output_args.SCMR_FD_DC_ch_dB = _db10_ratio(P_signal, EC_DC)
+
+            # 4p17p0 L1868-1872: apparent channel bandwidth, when the workbook
+            # sets ACBW (read_ParamConfigFile leaves OP.ACBW 0 on earlier
+            # releases). The reference stores the fit into a stray variable,
+            # CICP_fit_chdata(i).db, so chdata gets no fit field; neither does ch.
+            if getattr(OP, 'ACBW', 0):
+                (ch.Bch_GHz, ch.CICP_db, _CICP_fit_db, ch.CICP_residual,
+                 ch.CICP_alpha, _) = _get_ACBW(sdd21f, faxis / 1e9, OP, param)
+                output_args.ACBW_GHz = ch.Bch_GHz
 
             # ILD fit over [f1, f2_ild]
             ILD_magft, ch.fit_f2_ild = _get_ILN_fn(

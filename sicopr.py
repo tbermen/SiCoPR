@@ -1,7 +1,7 @@
 """
 sicopr.py — the SiCoPR engine
 IEEE 802.3 Channel Operating Margin (COM), ported from the MATLAB reference
-Emulates com_ieee8023_4p16p0 by default; 4p15p0 and 4p16p0 supported via --matlab-version
+Emulates com_ieee8023_4p17p0 by default; 4p15p0 and 4p16p0 and 4p17p0 supported via --matlab-version
 (or sicopr.COM_MATLAB_VERSION, or a "COM Version" keyword in the config).
 
 This file is machine-assembled from individually verified function translations
@@ -1567,7 +1567,9 @@ def COM_FD_to_TD(chdata, param, OP,
 
     # MATLAB release being emulated; set by read_ParamConfigFile. Defaults to the
     # 4p15p0 baseline when absent so a hand-built param still behaves as before.
-    _v416 = str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+    # 4p16p0 or later (4p17p0 left this function unchanged); string order is
+    # release order.
+    _v416 = str(getattr(param, 'matlab_version', '4p15p0')) >= '4p16p0'
 
     M = int(param.samples_per_ui)
 
@@ -2756,6 +2758,15 @@ def FD_Processing(chdata, output_args, param, OP, SDDp2p=None, DO_ONCE=True,
             output_args.SCMR_FD_CD_ch_dB = _FD_Processing__db10_ratio(P_signal, EC_CD)
             output_args.SCMR_FD_DC_ch_dB = _FD_Processing__db10_ratio(P_signal, EC_DC)
 
+            # 4p17p0 L1868-1872: apparent channel bandwidth, when the workbook
+            # sets ACBW (read_ParamConfigFile leaves OP.ACBW 0 on earlier
+            # releases). The reference stores the fit into a stray variable,
+            # CICP_fit_chdata(i).db, so chdata gets no fit field; neither does ch.
+            if getattr(OP, 'ACBW', 0):
+                (ch.Bch_GHz, ch.CICP_db, _CICP_fit_db, ch.CICP_residual,
+                 ch.CICP_alpha, _) = _get_ACBW(sdd21f, faxis / 1e9, OP, param)
+                output_args.ACBW_GHz = ch.Bch_GHz
+
             # ILD fit over [f1, f2_ild]
             ILD_magft, ch.fit_f2_ild = _get_ILN_fn(
                 sdd21f[idx_f1:idx_f2_ild + 1], faxis[idx_f1:idx_f2_ild + 1])
@@ -2967,7 +2978,11 @@ def FFE_Fast(C, V_shift):
 
 
 def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                            sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None):
+                            sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=None,
+                            HH_unique_values=None):
+    """HH_unique_values: 4p17p0 L2099 added it as a trailing argument, MMSE's
+    H(:,1)'*H, handed to every MMSE_FOM call (see MMSE_FOM). None on earlier
+    releases, whose MMSE_FOM forms the Gram matrix itself."""
     mmse_fom = _MMSE_FOM_fn if _MMSE_FOM_fn is not None else MMSE_FOM  # noqa: F821
     # H.T laid out contiguously, once for the whole bank search: MMSE_FOM then
     # gathers each candidate's columns as contiguous rows. Layout only -- the
@@ -2979,7 +2994,8 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
     # block is bit-identical to forming H(:,sel)'*H(:,sel) per candidate (the
     # August hoist was removed unverified on 2026-09-24; this is the verified
     # form, accepted under the owner's equivalence rule the same day).
-    G = Ht @ Ht.T if Ht is not None else None
+    # (Not needed when HH_unique_values is given: MMSE_FOM then builds HH from it.)
+    G = Ht @ Ht.T if Ht is not None and HH_unique_values is None else None
 
     h = np.asarray(h, dtype=float).ravel()
     RxFFE_cpx = int(param.RxFFE_cpx)
@@ -3001,7 +3017,11 @@ def FOM_rxffe_floating_taps(param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
         for k, loc in enumerate(valid):
             cand = sorted(all_idx + list(range(loc, loc + bank_size)))
             cand_idx = np.array(cand, dtype=int) + RxFFE_cpx
-            if Ht is None:
+            if HH_unique_values is not None:
+                res = mmse_fom(param, H, Nb, Rnn, dw, d,
+                               wmax, wmin, bmin, bmax, sigma_X2, cand_idx,
+                               HH_val=HH_unique_values)
+            elif Ht is None:
                 res = mmse_fom(param, H, Nb, Rnn, dw, d,
                                wmax, wmin, bmin, bmax, sigma_X2, cand_idx)
             else:
@@ -3543,7 +3563,7 @@ def MLSE_U1_c_178A(param, b, A_s, A_ni, PDF, CDF, PSD_results):
 # H: toeplitz(hc1, hr1) where hc1=[h, zeros(Nw-1)], hr1=[h[0], zeros(Nw-1)].
 # Rnn: toeplitz(Rn[0:Nw]).
 # RXFFE_FLOAT_CTL=='isi': use findbankloc; else: FOM_rxffe_floating_taps (greedy FOM banks,
-#   top-level fn, called with our inlined _MMSE__MMSE_FOM injected so both use the same kernel).
+#   top-level fn, called with our inlined _MMSE_FOM injected so both use the same kernel).
 # MMSE_FOM inlined via import (same package, but per protocol we call it directly).
 # Craw = w / w[dw] → normalised by cursor tap.
 # floating_tap_locations: MATLAB idx + RxFFE_cmx + 1 (1-based) → Python idx + RxFFE_cmx (0-based? No — MATLAB returns 1-based indices here as locations for reporting).
@@ -3599,12 +3619,10 @@ def _MMSE__mmin(a):
         return np.min(a)
     return np.nanmin(a)
 
+# The canonical MMSE_FOM, not a copy: an inlined copy here stopped tracking the
+# original (4p17p0 changed MMSE_FOM). Behaviourally identical to the copy it replaced.
 
 
-
-# Nb is fixed for a run; these are rebuilt ~130k times per case otherwise.
-_EYE_CACHE = {}
-_ZERO_CACHE = {}
 
 def _MMSE__fb_mask(ndiff, positions, value):
     """ndiff[positions] = value, growing ndiff the way MATLAB would.
@@ -3740,151 +3758,6 @@ def _MMSE__findbankloc(hisi, idx_st, idx_en, tap_bk, curval, bmaxg, N_bg):
     # window, so +idx_st lands on the same 1-based value.
     return idx + idx_st
 
-def _MMSE__MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-              idx=None, Ht=None, G=None):
-    """Inlined MMSE_FOM for MMSE function."""
-    if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
-        idx = np.array([], dtype=int)
-
-    if len(idx) == 0:
-        Nw = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-        bmax_use = np.asarray(param.bmax, dtype=float).ravel()
-        bmin_use = np.asarray(param.bmin, dtype=float).ravel()
-    else:
-        Nmax = int(param.N_bmax)
-        Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-        Nw = int(dw) + Nmax + 1
-        bmax_use = np.asarray(param.bmax, dtype=float).ravel()
-        bmin_use = np.asarray(param.bmin, dtype=float).ravel()
-
-    Nfix = int(param.RxFFE_cmx) + 1 + int(param.RxFFE_cpx)
-    H = np.asarray(H, dtype=float)
-    Rnn = np.asarray(Rnn, dtype=float)
-    d = int(d)
-
-    # ML 2609-2619: H = H(:, [1:Nfix idx+cmx+1]); HH = H'*H; then Hb and h0 are
-    # rows of the SELECTED H. The Gram matrix is formed per call from the
-    # selected columns, as the reference forms it. (It was once hoisted out of
-    # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
-    # sums in a different order, so it was removed on 2026-09-24 with the other
-    # speed-ups that had never been verified against the reference.)
-    if len(idx) > 0:
-        float_cols = np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)
-        col_sel = np.concatenate([np.arange(Nfix), float_cols])
-        # .take is a gather, bit-identical to np.ix_ indexing
-        if Ht is None:
-            Hs = H.take(col_sel, 1)
-            HH = Hs.T @ Hs
-            Hb = Hs[d + 1:d + Nb + 1, :]
-            h0 = Hs[d]
-        else:
-            # The same Gram matrix from a contiguous gather: X holds the
-            # selected ROWS of H.T, i.e. Hs.T, so X @ X.T is Hs.T @ Hs.
-            # Layout only; bit-identical (tests/test_optimization_invariants).
-            if G is None:
-                X = Ht.take(col_sel, 0)
-                HH = X @ X.T
-            else:
-                # G = Ht @ Ht.T, formed once for the bank search; each entry is
-                # the same dot product of two columns of H, so the gathered
-                # block is bit-identical to X @ X.T (400/400 random shapes;
-                # pinned in test_verify.py) at ~3 us instead of ~200 us.
-                HH = G.take(col_sel, 0).take(col_sel, 1)
-            Hb = H[d + 1:d + Nb + 1, :].take(col_sel, 1)
-            h0 = H[d].take(col_sel)
-        Rnn = Rnn.take(col_sel, 0).take(col_sel, 1)
-        Nw_cols = len(col_sel)
-    else:
-        HH = H.T @ H
-        Hb = H[d + 1:d + Nb + 1, :]
-        h0 = H[d, :]
-        Nw_cols = H.shape[1]
-
-    R = HH + Rnn / sigma_X2
-    ib = _EYE_CACHE.get(Nb)
-    if ib is None:
-        ib = _EYE_CACHE[Nb] = np.eye(Nb)
-    zb = _ZERO_CACHE.get(Nb)
-    if zb is None:
-        zb = _ZERO_CACHE[Nb] = np.zeros(Nb)
-    # np.block carries heavy per-call Python overhead and MMSE_FOM is invoked
-    # ~130k times per case by the floating-tap bank search. Assembling into a
-    # preallocated array is ~3x faster and bit-identical.
-    _n = R.shape[0]
-    A = np.empty((_n + Nb, _n + Nb), dtype=float)
-    A[:_n, :_n] = R
-    A[:_n, _n:] = -Hb.T
-    A[_n:, :_n] = -Hb
-    A[_n:, _n:] = ib
-    C = np.concatenate([h0, zb])
-    Ct = C.reshape(-1, 1)
-    # ML 2645: Z = A\\Ct on a SQUARE system. MATLAB warns and returns Inf
-    # when A is exactly singular, and the NaNs that follow make this candidate
-    # lose; numpy raises. Measured under Octave with MATLAB backslash
-    # semantics: sigma_e NaN, FOM NaN, w all NaN. Following the 2026-09-23
-    # force() ruling the port stops rather than absorbing the case, but it
-    # says which solve failed instead of reporting a bare LinAlgError.
-    try:
-        Z = np.linalg.solve(A, Ct)
-    except np.linalg.LinAlgError:
-        raise ValueError(
-            'MMSE_FOM: the [R -Hb\'; -Hb ib] system is singular to working '
-            'precision, so the tap solve has no unique answer. MATLAB returns '
-            'Inf here and the candidate loses; SiCoPR stops instead, so the '
-            'degenerate case is visible. Nw=%d, Nb=%d.' % (Nw_cols, Nb))
-    S_inv = float(np.dot(C, Z.ravel()))
-    wbl = np.concatenate([Z.ravel(), [1 - S_inv]]) / S_inv
-    Nw_used = Nw_cols
-    if len(idx) > 0:
-        Nw = Nw_used
-    w = wbl[:Nw_used]
-    b = wbl[Nw_used:Nw_used + Nb]
-    blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b))
-    # array_equal, not allclose: MATLAB guards these two branches with ~isequal,
-    # which is exact (see com_functions/fn/MMSE_FOM for the full note).
-    if Nb > 0 and not np.array_equal(b, blim):
-        _m = R.shape[0]
-        Rb = np.empty((_m + 1, _m + 1), dtype=float)
-        Rb[:_m, :_m] = R
-        Rb[:_m, _m] = -h0
-        Rb[_m, :_m] = h0
-        Rb[_m, _m] = 0.0
-        rhs = np.concatenate([h0 + Hb.T @ blim, [1.0]])
-        # ML 2669, the same square backslash after the DFE taps are clipped
-        try:
-            wl_full = np.linalg.solve(Rb, rhs)
-        except np.linalg.LinAlgError:
-            raise ValueError(
-                'MMSE_FOM: the clipped-DFE system [R -h0; h0 0] is singular '
-                'to working precision. MATLAB returns Inf here and the '
-                'candidate loses; SiCoPR stops instead. Nw=%d, Nb=%d.'
-                % (Nw_cols, Nb))
-        w = wl_full[:Nw_used]
-    wmax_arr = np.asarray(wmax, dtype=float).ravel()[:Nw_used]
-    wmin_arr = np.asarray(wmin, dtype=float).ravel()[:Nw_used]
-    dw_int = int(dw)
-    w_cursor = float(w[dw_int]) if dw_int < len(w) else 1.0
-    wlim = np.minimum(wmax_arr * w_cursor, np.maximum(wmin_arr * w_cursor, w))
-    # The b/blim refresh belongs INSIDE this branch (MATLAB L2683-2690): with no
-    # clipping, blim stays as clip(b) from the solve rather than clip(Hb @ w).
-    if not np.array_equal(w, wlim):
-        h0w = float(h0 @ wlim)
-        if h0w != 0:
-            wlim = wlim / h0w
-        if Nb > 0:
-            b_upd = Hb @ wlim
-            blim = np.minimum(bmax_use[:Nb], np.maximum(bmin_use[:Nb], b_upd))
-    w = wlim
-    Hb_T_blim = Hb.T @ blim if Nb > 0 else np.zeros_like(h0)
-    sigma_e = float(np.sqrt(np.maximum(0.0, sigma_X2 * (
-        float(w @ R @ w) + 1.0 + float(np.dot(blim, blim))
-        - 2.0 * float(np.dot(w, h0)) - 2.0 * float(np.dot(w, Hb_T_blim))
-    ))))
-    R_LM = float(param.R_LM)
-    L = int(param.levels)
-    FOM = float(20.0 * np.log10(R_LM / (L - 1) / sigma_e)) if sigma_e > 0 else np.inf
-    return sigma_e, FOM, w, idx, Nw_used, blim
-
 
 def MMSE(PSD_results, sbr, cursor_i, param, OP):
     """MMSE RxFFE optimisation (MATLAB lines 2480-2578).
@@ -3971,6 +3844,14 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
         H = toeplitz(h[:len(samp_idx) + Nw - 1], hr1)
     else:
         H = toeplitz(hc1, hr1)
+    # 4p17p0 L2584: HH_val = transpose(H(:,1))*H, formed once here and passed to
+    # MMSE_FOM, which builds HH from it by lag instead of H'*H per candidate.
+    # Equal to H'*H up to summation order here, since the truncated branch above
+    # drops only h's zero padding (see MMSE_FOM). Earlier releases form H'*H, so
+    # HH_val stays None for them.
+    HH_val = None
+    if str(getattr(param, 'matlab_version', '4p15p0')) >= '4p17p0':
+        HH_val = H[:, 0] @ H
     Rnn = toeplitz(Rn[:Nw], Rn[:Nw])
 
     if int(param.N_bg) != 0:
@@ -3983,11 +3864,13 @@ def MMSE(PSD_results, sbr, cursor_i, param, OP):
         else:
             idx = FOM_rxffe_floating_taps(
                 param, h, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax,
-                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE__MMSE_FOM)
+                sigma_X2, isi_start, isi_end, _MMSE_FOM_fn=_MMSE_FOM,
+                HH_unique_values=HH_val)
             idx = np.sort(idx)
 
-    sigma_e, FOM, w, idx_out, Nw_out, blim = _MMSE__MMSE_FOM(
-        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx)
+    sigma_e, FOM, w, idx_out, Nw_out, blim = _MMSE_FOM(
+        param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2, idx,
+        HH_val=HH_val)
 
     Craw = w / (w[dw] if abs(w[dw]) > 1e-12 else 1.0)
 
@@ -4061,7 +3944,7 @@ _EYE_CACHE = {}
 _ZERO_CACHE = {}
 
 def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
-             idx=None, Ht=None, G=None):
+             idx=None, Ht=None, G=None, HH_val=None):
     """Compute MMSE FOM and optimal equalizer taps (MATLAB lines 2580-2692).
 
     Returns (sigma_e, FOM, w, idx, Nw, blim).
@@ -4072,6 +3955,15 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     G: optional Ht @ Ht.T, the Gram matrix of the whole H, from the same
         caller; the selected block is gathered from it. Bit-identical to
         forming it per candidate (measured; pinned in test_verify.py).
+    HH_val: 4p17p0 only (ML 2640-2702 of 4p17p0). H(:,1)'*H of the FULL H,
+        formed once in MMSE. When given, HH is not H'*H of the selected
+        columns but HH_val looked up by lag, HH(i,j) = HH_val(|k_i - k_j|+1)
+        over the kept columns k. That equals H'*H whenever every column of H
+        holds all of h's nonzero samples, which is every H MMSE builds (its
+        truncated branch drops only zero padding), so in the pipeline 4p17p0
+        and 4p16p0 agree to summation-order rounding (~1e-14). On an H cut
+        across nonzero samples the two forms differ; the unit test uses one to
+        pin that this is the form followed.
     """
     if idx is None or (hasattr(idx, '__len__') and len(idx) == 0):
         idx = np.array([], dtype=int)
@@ -4099,7 +3991,22 @@ def MMSE_FOM(param, H, Nb, Rnn, dw, d, wmax, wmin, bmin, bmax, sigma_X2,
     # the floating-tap search as (H'*H)(sel,sel) of the full H, for speed; that
     # sums in a different order, so it was removed on 2026-09-24 with the other
     # speed-ups that had never been verified against the reference.)
-    if len(idx) > 0:
+    if HH_val is not None:
+        # 4p17p0 speedup_HH_calculation = 1:
+        #   keep_idx = 1:Nfix;  if N_bg ~= 0, keep_idx = [1:Nfix idx+cmx+1]
+        #   lag_idx = abs(keep_idx(:) - keep_idx) + 1;  HH = HH_val(lag_idx)
+        #   Hb = H(d+2:d+Nb+1, keep_idx);  h0 = H(d+1, keep_idx)
+        # The selection condition stays len(idx) > 0, as on the path below.
+        keep = np.arange(Nfix)
+        if len(idx) > 0:
+            keep = np.concatenate([keep, np.asarray(idx, dtype=int) + int(param.RxFFE_cmx)])
+            Rnn = Rnn.take(keep, 0).take(keep, 1)
+        HH_val = np.asarray(HH_val, dtype=float).ravel()
+        HH = HH_val[np.abs(keep[:, None] - keep[None, :])]
+        Hb = H[d + 1:d + Nb + 1, :].take(keep, 1)
+        h0 = H[d].take(keep)
+        Nw_cols = len(keep)
+    elif len(idx) > 0:
         float_cols = (np.asarray(idx, dtype=int) + int(param.RxFFE_cmx))  # 0-based cols
         col_sel = np.concatenate([np.arange(Nfix), float_cols])
         # .take is a gather, bit-identical to np.ix_ indexing
@@ -4608,7 +4515,9 @@ def OptFom_Adaptive_Local_Search(LocalSearch_Value, BEST, THIS, FOM_history,
 
     Returns skip_it (bool): True -> skip evaluating this candidate.
     """
-    _v416 = str(matlab_version) == '4p16p0'
+    # 4p16p0 or later (4p17p0 left this function unchanged). Release names share
+    # one fixed shape, so string order is release order.
+    _v416 = str(matlab_version) >= '4p16p0'
 
     # ---- Tuned knobs (PATCHED values from Hansel's branch) ----
     min_improvement_threshold = 0.002
@@ -11330,12 +11239,14 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
 # --- get_ILN (MATLAB lines 6254–6269) ---
 
-def get_ILN(sdd21, faxis_f2):
+def get_ILN(sdd21, faxis_f2, return_alpha=False):
     """Fit insertion loss normalisation curve and return ILN residual.
 
     Returns (ILN, efit) where:
       efit = weighted polynomial fit: a0 + a1*sqrt(f) + a2*f + a3*f^2
       ILN  = 20*log10(|sdd21|) - efit
+    With return_alpha=True, (ILN, efit, alpha): 4p17p0 L7223 added alpha, the four
+    fit coefficients, as a third output. No caller in the release reads it.
     """
     sdd21 = np.squeeze(np.asarray(sdd21, dtype=complex)).ravel()
     faxis_f2 = np.asarray(faxis_f2, dtype=float).ravel()
@@ -11389,6 +11300,8 @@ def get_ILN(sdd21, faxis_f2):
             + alpha[3] * faxis_f2 ** 2
         )
         ILN = db_s - efit
+    if return_alpha:
+        return ILN, efit, alpha
     return ILN, efit
 
 
@@ -12509,6 +12422,82 @@ def get_RILN_cmp_td(sdd21, RIL_struct, faxis_f2, OP, param, A_T,
 
 
 
+# --- get_ACBW (MATLAB lines 6759–6891) ---
+
+# ============================================================
+# MATLAB->Python translation of get_ACBW
+# MATLAB lines: 6759-6891 (com_ieee8023_4p17p0.m; new in 4p17p0)
+# ============================================================
+# Apparent channel bandwidth from the Cumulative Inverse-Channel Penalty:
+#   CICP = cumsum(1/|H|^2) * mean(diff f), normalised to its last value, in dB;
+#   fit it (get_CICP_fit_sweep), then take the first frequency where the
+#   residual's slope reaches T_dev (get_BW_from_CICP_residual).
+# Called from FD_Processing only when the workbook sets ACBW = 1 (4p17p0).
+#
+# Reproduced from the reference as it stands:
+#   - The smoothing-window default tests isfield(param,'smooth_window_ghz'),
+#     lower case, but sets smooth_window_GHz. The lower-case field never exists,
+#     so the window is always 2 GHz, even if smooth_window_GHz was set.
+#   - `valid` is computed and never used.
+#   - The defaults land on MATLAB's by-value copy of param; the caller's param
+#     is not changed, so nothing is written back here either.
+# ============================================================
+
+
+
+
+def _get_ACBW__mround(x):
+    """MATLAB round(): half away from zero."""
+    x = float(x)
+    if not np.isfinite(x):
+        return x
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not send
+    # 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def get_ACBW(Hch, fGHz, OP, param):
+    """Returns (Bch_GHz, CICP_db, CICP_fit_db, CICP_residual, alpha, diff_residual)."""
+    def p(name, default):
+        return getattr(param, name, default)
+
+    # isfield(param,'smooth_window_ghz') -- the lower-case spelling (see header)
+    smooth_window_GHz = p('smooth_window_ghz', None)
+    smooth_window_GHz = 2 if smooth_window_GHz is None else param.smooth_window_GHz
+    T_dev = p('T_dev', 1)
+    f_fit_min_GHz = p('f_fit_min_GHz', 10)
+    f_upper_min_GHz = p('f_upper_min_GHz', 20)
+    f_upper_max_GHz = p('f_upper_max_GHz', 130)
+    f_test_min_GHz = p('f_test_min_GHz', 20)
+    f_test_max_GHz = p('f_test_max_GHz', 60)
+    step_GHz = p('step_GHz', 5)
+
+    Hch = np.asarray(Hch).squeeze().reshape(-1)
+    fGHz = np.asarray(fGHz, dtype=float).squeeze().reshape(-1)
+    delta_f = float(np.mean(np.diff(fGHz)))
+    Nwin = max(3, _get_ACBW__mround(smooth_window_GHz / delta_f))
+
+    salz_density = 1.0 / np.abs(Hch) ** 2
+    CICP = np.cumsum(salz_density) * delta_f
+    CICP = CICP / CICP[-1]
+    with np.errstate(divide='ignore'):
+        CICP_db = 20 * np.log10(np.abs(CICP))
+
+    CICP_residual, CICP_fit_db, alpha, idx_fit, idx_valid, f_upper = _get_CICP_fit_sweep(
+        CICP_db, fGHz, OP,
+        f_fit_min_GHz=f_fit_min_GHz, f_upper_min_GHz=f_upper_min_GHz,
+        f_upper_max_GHz=f_upper_max_GHz, f_test_min_GHz=f_test_min_GHz,
+        f_test_max_GHz=f_test_max_GHz, step_GHz=step_GHz, Nwin=Nwin)
+
+    Bch_GHz, idx_BW, diff_residual = _get_BW_from_CICP_residual(
+        fGHz, CICP_residual, idx_valid, T_dev, OP, smooth_window_GHz=smooth_window_GHz)
+    return Bch_GHz, CICP_db, CICP_fit_db, CICP_residual, alpha, diff_residual
+
+
+
 # --- get_StepR (MATLAB lines 6876–6903) ---
 
 _EPS = np.finfo(float).eps
@@ -12578,6 +12567,116 @@ def get_StepR(ir, param, cb_step, ZT):
 
     TDR_response = (1 + pulse) / (1 - pulse) * float(ZT) * 2
     return SimpleNamespace(ZSR=TDR_response, pulse=pulse)
+
+
+
+# --- get_BW_from_CICP_residual (MATLAB lines 6893–6995) ---
+
+# ============================================================
+# MATLAB->Python translation of get_BW_from_CICP_residual
+# MATLAB lines: 6893-6995 (com_ieee8023_4p17p0.m; new in 4p17p0)
+# ============================================================
+# Bandwidth = first frequency inside idx_fit where the slope of the smoothed
+# CICP residual reaches T_dev (dB/GHz); the last frequency if none does.
+#
+# Two MATLAB built-ins are reproduced, not borrowed from numpy:
+#   movmean(x, N, 'omitnan')  N odd: (N-1)/2 each side; N even: N/2 before and
+#                             N/2-1 after; the window shrinks at the ends.
+#   gradient(y, x)            centred difference over the two neighbours,
+#                             one-sided at the ends. numpy.gradient with an x
+#                             array uses a second-order non-uniform formula,
+#                             which is not what MATLAB computes.
+# Index: idx_BW is returned 0-based (MATLAB's find(...,1,'first') minus one).
+# ============================================================
+
+
+
+def _get_BW_from_CICP_residual__mround(x):
+    """MATLAB round(): half away from zero."""
+    x = float(x)
+    if not np.isfinite(x):
+        return x
+    t = int(x)                      # int() truncates toward zero
+    if abs(x - t) == 0.5:           # exact tie: MATLAB goes away from zero
+        return t + (1 if x > 0 else -1)
+    # Off a tie round() is exact, and unlike floor(x + 0.5) it does not send
+    # 0.49999999999999994 to 1: that sum is exactly 1.0 in binary.
+    return int(round(x))
+
+
+def _get_BW_from_CICP_residual__movmean_omitnan(x, N):
+    x = np.asarray(x, dtype=float)
+    n = len(x)
+    if N % 2:
+        kb = kf = (N - 1) // 2
+    else:
+        kb, kf = N // 2, N // 2 - 1
+    out = np.empty(n)
+    for i in range(n):
+        seg = x[max(0, i - kb):min(n, i + kf + 1)]
+        seg = seg[~np.isnan(seg)]
+        out[i] = seg.mean() if seg.size else np.nan
+    return out
+
+
+def _get_BW_from_CICP_residual__gradient(y, x):
+    y = np.asarray(y, dtype=float)
+    x = np.asarray(x, dtype=float)
+    n = len(y)
+    g = np.empty(n)
+    if n == 1:
+        g[0] = 0.0
+        return g
+    g[0] = (y[1] - y[0]) / (x[1] - x[0])
+    g[-1] = (y[-1] - y[-2]) / (x[-1] - x[-2])
+    if n > 2:
+        g[1:-1] = (y[2:] - y[:-2]) / (x[2:] - x[:-2])
+    return g
+
+
+def _get_BW_from_CICP_residual__row(x):
+    return np.asarray(x).squeeze().reshape(-1)
+
+
+def get_BW_from_CICP_residual(fGHz, residual_db, idx_fit, T_dev, OP,
+                              smooth_window_GHz=None):
+    """Returns (Bch_GHz, idx_BW, diff_residual). idx_BW is 0-based.
+
+    smooth_window_GHz stands for the 'smooth_window_ghz' name-value pair; MATLAB
+    has no default for it and fails if it is not given, as this does.
+    """
+    fGHz = _get_BW_from_CICP_residual__row(fGHz).astype(float)
+    residual_db = _get_BW_from_CICP_residual__row(residual_db).astype(float)
+    idx_fit = _get_BW_from_CICP_residual__row(idx_fit)
+    if len(fGHz) != len(residual_db):
+        raise ValueError('fGHz and residual_db must have the same length.')
+    if len(idx_fit) != len(fGHz):
+        raise ValueError('idx_fit must have the same length as fGHz.')
+    valid = np.isfinite(fGHz) & np.isfinite(residual_db)
+    idx_fit = idx_fit.astype(bool) & valid
+    if np.count_nonzero(idx_fit) < 3:
+        raise ValueError('idx_fit does not contain enough valid samples.')
+    df_GHz = float(np.median(np.diff(fGHz[valid])))
+    if not np.isfinite(df_GHz) or df_GHz <= 0:
+        raise ValueError('Invalid frequency axis.')
+    if smooth_window_GHz is None:
+        # MATLAB: 'smooth_window_GHz' undefined -> error at first use
+        raise ValueError("get_BW_from_CICP_residual: 'smooth_window_ghz' was not given")
+
+    Nwin = int(max(3, _get_BW_from_CICP_residual__mround(smooth_window_GHz / df_GHz)))
+    res_smooth = _get_BW_from_CICP_residual__movmean_omitnan(residual_db, Nwin)
+    dDdf = _get_BW_from_CICP_residual__gradient(res_smooth, fGHz)
+    masked = dDdf * idx_fit                   # NaN * 0 stays NaN, as in MATLAB
+    hits = np.nonzero(masked >= T_dev)[0]
+    if hits.size == 0:
+        idx_BW = len(fGHz) - 1
+        if getattr(OP, 'DISPLAY_WINDOW', 0):
+            print('No strong rolloff detected: reporting max frequency')
+    else:
+        idx_BW = int(hits[0])
+    diff_residual = masked
+    Bch_GHz = float(fGHz[idx_BW])
+    return Bch_GHz, idx_BW, diff_residual
 
 
 
@@ -12830,7 +12929,7 @@ def get_TDR(S, OP, param, ZT, nport,
     # "some test fixtures have almost zero CM and will cause TD conversion to
     # fail" -- 4p15p0 ran the conversion regardless. Returns a degenerate result
     # with ERL = inf (infinitely good return loss) and ERLRMS = -300 dB.
-    if (str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+    if (str(getattr(param, 'matlab_version', '4p15p0')) >= '4p16p0'   # and 4p17p0
             and float(np.mean(np.abs(RL))) < 1e-6):
         dt = float(param.sample_dt)
         M = int(param.samples_per_ui)
@@ -13033,6 +13132,168 @@ def get_TDR(S, OP, param, ZT, nport,
             TDR_results.ERLRMS = -20.0 * np.log10(abs(ERLRMS))
 
     return TDR_results
+
+
+
+# --- get_CICP_fit_residual (MATLAB lines 6997–7075) ---
+
+# ============================================================
+# MATLAB->Python translation of get_CICP_fit_residual
+# MATLAB lines: 6997-7075 (com_ieee8023_4p17p0.m; new in 4p17p0)
+# ============================================================
+# COM-style basis fit of CICP_db over a logical mask:
+#   efit_db = a0 + a1*sqrt(f) + a2*f + a3*f^2, extrapolated over all of fGHz,
+#   residual_db = CICP_db - efit_db.
+# alpha = (fmbg'*fmbg) \ (fmbg'*LGw): a SQUARE symmetric system. MATLAB's and
+# Octave's backslash try a Cholesky factorisation first when the matrix is
+# symmetric with a positive diagonal, and fall back to LU only if that fails,
+# so the solve is done the same way here rather than by np.linalg.solve (LU).
+# The fit weights w are all ones, so w .* x is x exactly.
+# ============================================================
+
+
+
+def _get_CICP_fit_residual__backslash_sym(A, b):
+    """MATLAB A\\b for a symmetric A with a positive diagonal: Cholesky, else LU.
+
+    On an exactly singular system MATLAB warns and returns Inf, and the fit and
+    everything after it is Inf or NaN. As with the other square solves in the
+    port (the 2026-09-23 force() ruling), SiCoPR stops instead and names the
+    solve, rather than substituting a least-squares answer the reference never
+    gives. Reached only by a fit window whose samples are degenerate.
+    """
+    try:
+        return cho_solve(cho_factor(A, lower=False, check_finite=False), b,
+                         check_finite=False)
+    except np.linalg.LinAlgError:
+        pass
+    try:
+        return np.linalg.solve(A, b)
+    except np.linalg.LinAlgError:
+        raise ValueError('get_CICP_fit_residual: the 4x4 CICP fit system is singular '
+                         '(degenerate fit window); MATLAB returns Inf here, SiCoPR stops')
+
+
+def _get_CICP_fit_residual__row(x):
+    return np.asarray(x).squeeze().reshape(-1)
+
+
+def get_CICP_fit_residual(CICP_db, fGHz, idx_fit):
+    """Returns (residual_db, efit_db, alpha, idx_fit), all row vectors.
+
+    idx_fit comes back cleaned: the mask actually used (finite, f >= 0).
+    """
+    CICP_db = _get_CICP_fit_residual__row(CICP_db).astype(float)
+    fGHz = _get_CICP_fit_residual__row(fGHz).astype(float)
+    idx_fit = _get_CICP_fit_residual__row(idx_fit)
+    if len(CICP_db) != len(fGHz):
+        raise ValueError('CICP_db and fGHz must have the same length.')
+    if len(idx_fit) != len(fGHz):
+        raise ValueError('idx_fit must have the same length as fGHz.')
+    valid = np.isfinite(CICP_db) & np.isfinite(fGHz) & (fGHz >= 0)
+    idx_fit = idx_fit.astype(bool) & valid
+    if np.count_nonzero(idx_fit) < 4:
+        raise ValueError('Fit region must contain at least 4 valid samples.')
+
+    x = fGHz[idx_fit]
+    y = CICP_db[idx_fit]
+    fmbg = np.column_stack([np.ones(len(x)), np.sqrt(x), x, x ** 2])
+    LGw = y
+    alpha = _get_CICP_fit_residual__backslash_sym(fmbg.T @ fmbg, fmbg.T @ LGw)
+
+    efit_db = alpha[0] + alpha[1] * np.sqrt(fGHz) + alpha[2] * fGHz + alpha[3] * fGHz ** 2
+    residual_db = CICP_db - efit_db
+    return residual_db, efit_db, alpha, idx_fit
+
+
+
+# --- get_CICP_fit_sweep (MATLAB lines 7077–7222) ---
+
+# ============================================================
+# MATLAB->Python translation of get_CICP_fit_sweep
+# MATLAB lines: 7077-7222 (com_ieee8023_4p17p0.m; new in 4p17p0)
+# ============================================================
+# Fits CICP_db over [f_fit_min, f_upper] for f_upper = f_upper_min:step:f_upper_max,
+# scores each fit by the slope of its residual over [f_test_min, f_test_max]
+# (polyfit order 1), and keeps the flattest: the FIRST minimum of |slope|.
+#
+# Reproduced from the reference as it stands:
+#   - the default block assigns f_test_min_GHz twice (20, then 60) and never
+#     defaults f_test_max_GHz; get_ACBW always passes both, and a call without
+#     f_test_max_ghz fails here as it does in MATLAB.
+#   - smoothed_residual, rms_residual_smoothed, idx_ref and fGHz_fit are computed
+#     and never used, and nothing they call can fail, so they are not computed.
+#     Nwin is accepted for the same reason and has no effect on any output.
+#   - the diagnostic figure is behind `OP.DISPLAY_WINDOW && 0`: never drawn.
+# polyfit(x,y,1) is done as MATLAB and Octave do it, [Q,R]=qr(V,0); p=R\(Q'*y),
+# not by numpy.polyfit (an SVD least-squares solve).
+# ============================================================
+
+
+
+
+def _get_CICP_fit_sweep__colon(a, step, b):
+    """MATLAB a:step:b."""
+    n = int(np.floor((b - a) / step + 1e-10))
+    return [a + k * step for k in range(n + 1)] if n >= 0 else []
+
+
+def _get_CICP_fit_sweep__polyfit1(x, y):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if x.size < 2:
+        # MATLAB polyfit on fewer points than coefficients warns and returns a
+        # rank-deficient fit; with no points at all it errors. The range here
+        # is empty only when fGHz never reaches f_test_max_GHz.
+        raise ValueError('get_CICP_fit_sweep: polyfit range %d points; fGHz must reach '
+                         'f_test_max_GHz' % x.size)
+    V = np.column_stack([x, np.ones_like(x)])
+    Q, R = np.linalg.qr(V, mode='reduced')
+    # R\(Q'*y): MATLAB sees R is upper triangular and back-substitutes
+    return solve_triangular(R, Q.T @ y, lower=False)
+
+
+def _get_CICP_fit_sweep__first_index(mask):
+    hits = np.nonzero(mask)[0]
+    return int(hits[0]) if hits.size else None
+
+
+def get_CICP_fit_sweep(CICP_db, fGHz, OP, f_fit_min_GHz=5, f_upper_min_GHz=10,
+                       f_upper_max_GHz=130, f_test_min_GHz=60, f_test_max_GHz=None,
+                       step_GHz=10, Nwin=3):
+    """Returns (CICP_residual, CICP_fit_db, alpha, idx_fit, idx_valid, f_upper).
+
+    Keyword defaults are the reference's, including f_test_min_GHz = 60 (its
+    second assignment wins) and no default for f_test_max_GHz.
+    """
+    CICP_db = np.asarray(CICP_db, dtype=float).squeeze().reshape(-1)
+    fGHz = np.asarray(fGHz, dtype=float).squeeze().reshape(-1)
+    if f_test_max_GHz is None:
+        raise ValueError("get_CICP_fit_sweep: 'f_test_max_GHz' undefined")
+
+    fits, fom, f_upper_list = [], [], []
+    for f_upper_tmp in _get_CICP_fit_sweep__colon(f_upper_min_GHz, step_GHz, f_upper_max_GHz):
+        mask = (fGHz >= f_fit_min_GHz) & (fGHz <= f_upper_tmp)
+        res_ext, fit_db, alpha, mask = _get_CICP_fit_residual(CICP_db, fGHz, mask)
+        ixmax = _get_CICP_fit_sweep__first_index(fGHz >= f_test_max_GHz)
+        ixmin = _get_CICP_fit_sweep__first_index(fGHz >= f_test_min_GHz)
+        if ixmax is None or ixmin is None:
+            sl = slice(0, 0)        # MATLAB ixmin:[] is empty
+        else:
+            sl = slice(ixmin, ixmax + 1)
+        p = _get_CICP_fit_sweep__polyfit1(fGHz[sl], res_ext[sl])
+        fits.append((res_ext, fit_db, alpha, mask))
+        fom.append(float(p[0]))
+        f_upper_list.append(f_upper_tmp)
+
+    afom = np.abs(np.asarray(fom))
+    if afom.size == 0 or np.all(np.isnan(afom)):
+        raise ValueError('get_CICP_fit_sweep: no candidate fit')
+    best = int(np.nonzero(afom == np.nanmin(afom))[0][0])
+    f_upper = f_upper_list[best]
+    CICP_residual, CICP_fit_db, alpha, idx_fit = fits[best]
+    idx_valid = fGHz >= f_fit_min_GHz
+    return CICP_residual, CICP_fit_db, alpha, idx_fit, idx_valid, f_upper
 
 
 
@@ -16853,12 +17114,12 @@ def read_PR_files(param, OP, chdata):
 
 _SENTINEL = object()
 
-# Which MATLAB release to emulate. '4p16p0', the current IEEE release, is the
-# default (VERSION.json, the owner's call). The 208-case reference corpus is
-# 4p15p0 output, so anything reproducing it must ask for '4p15p0' explicitly
-# (see docs/MATLAB_4p16p0_CHANGES.md for what differs).
+# Which MATLAB release to emulate. '4p17p0', the current IEEE release, is the
+# default (VERSION.json, the owner's call, 2026-10-03). The 208-case MATLAB
+# reference results are 4p15p0 output, so anything reproducing them must ask
+# for '4p15p0' explicitly (docs/VERSIONS.md says what differs between releases).
 # A config's 'COM Version' keyword, if present, wins over this default.
-COM_MATLAB_VERSION = '4p16p0'
+COM_MATLAB_VERSION = '4p17p0'
 
 
 # ---------------------------------------------------------------------------
@@ -17407,10 +17668,13 @@ def read_ParamConfigFile(paramFile, OP):
     # the first such consumer, immediately below.
     param.matlab_version = str(_read_ParamConfigFile__xls_param(parameter, 'COM Version', False,
                                           COM_MATLAB_VERSION)).strip()
-    if param.matlab_version not in ('4p15p0', '4p16p0'):
-        raise ValueError("unknown COM Version %r (expected '4p15p0' or "
-                         "'4p16p0')" % param.matlab_version)
-    _v416 = param.matlab_version == '4p16p0'
+    if param.matlab_version not in ('4p15p0', '4p16p0', '4p17p0'):
+        raise ValueError("unknown COM Version %r (expected '4p15p0', '4p16p0' "
+                         "or '4p17p0')" % param.matlab_version)
+    # Release names share one fixed shape, so string order is release order;
+    # a 4p16p0 change carries into 4p17p0.
+    _v416 = param.matlab_version >= '4p16p0'
+    _v417 = param.matlab_version >= '4p17p0'
 
     # 4p16p0 L10262 flipped this default from 'Fast' to 'Slow'. Configs that
     # name the keyword are unaffected either way; configs that omit it change
@@ -17633,6 +17897,10 @@ def read_ParamConfigFile(paramFile, OP):
     param.Txnskew = _read_ParamConfigFile__xls_param(parameter, 'Txnskew', True, 0)
     param.Rxpskew = _read_ParamConfigFile__xls_param(parameter, 'Rxpskew', True, 0)
     param.Rxnskew = _read_ParamConfigFile__xls_param(parameter, 'Rxnskew', True, 0)
+    # 4p17p0 L11034: dB/GHz threshold on d(CICP residual)/df for the apparent
+    # channel bandwidth (get_ACBW). Earlier releases do not read it.
+    if _v417:
+        param.T_dev = _read_ParamConfigFile__xls_param(parameter, 'T_dev', False, 1)
 
     # ---- OP flags ----
     OP.TIMESTAMP = _read_ParamConfigFile__xls_param(parameter, 'TIMESTAMP', False, 0)
@@ -17794,6 +18062,10 @@ def read_ParamConfigFile(paramFile, OP):
         if OP.FFE_OPT_METHOD == 'MMSE' and OP.RxFFE:
             OP.PSDRXCAL = 1
             OP.RX_CALIBRATION = 0
+    # 4p17p0 L11207: report the apparent channel bandwidth (FD_Processing ->
+    # get_ACBW). Off by default; earlier releases have no such keyword, so a
+    # workbook that sets it changes nothing under them.
+    OP.ACBW = _read_ParamConfigFile__xls_param(parameter, 'ACBW', False, 0) if _v417 else 0
 
     # ---- Validate PSDRXCAL ----
     if OP.PSDRXCAL:
@@ -21107,6 +21379,7 @@ _normal_dist = normal_dist
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
+_get_ACBW = get_ACBW
 _CDF_ev = CDF_ev
 _CDF_inv_ev = CDF_inv_ev
 _CDF_ev = CDF_ev
@@ -21114,6 +21387,7 @@ _CDF_inv_ev = CDF_inv_ev
 _scaleCDF = scaleCDF
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
+_MMSE_FOM = MMSE_FOM
 _Full_Grid_Matrix = Full_Grid_Matrix
 _compute_hard_cap = compute_hard_cap
 _normal_dist = normal_dist
@@ -21175,6 +21449,9 @@ _normal_dist = normal_dist
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
+_get_CICP_fit_sweep = get_CICP_fit_sweep
+_get_BW_from_CICP_residual = get_BW_from_CICP_residual
+_get_CICP_fit_residual = get_CICP_fit_residual
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
@@ -21227,11 +21504,11 @@ if __name__ == '__main__':
     parser.add_argument('--next', nargs='*', default=[])
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
-    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0'],
-                        help='which MATLAB release to emulate. Default 4p16p0, the '
+    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0', '4p17p0'],
+                        help='which MATLAB release to emulate. Default 4p17p0, the '
                              'current IEEE release. 4p15p0 is the version the 208-case '
-                             'reference corpus was produced with -- see '
-                             'docs/MATLAB_4p16p0_CHANGES.md')
+                             'MATLAB reference results were produced with -- see '
+                             'docs/VERSIONS.md')
     parser.add_argument('--eye-under-mlse', action='store_true',
                         help='compute the eye contour and timing bathtub for PLOTTING even '
                              'when MLSE is enabled. MATLAB gates the eye on MLSE == 0 '

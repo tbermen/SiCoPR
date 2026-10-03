@@ -46,6 +46,8 @@ reference. These are where the port's real defects have come from.
 
 | name | verdict | rule |
 |---|---|---|
+| `gradient` | differs | `gradient(y, x)` with a coordinate vector is the **centred difference over the two neighbours**, `(y(i+1)-y(i-1))/(x(i+1)-x(i-1))`, one-sided at the ends. `np.gradient(y, x)` uses a second-order formula on uneven spacing, so the two agree only on a uniform axis. Use the explicit form (`get_BW_from_CICP_residual._gradient`). COM Octave 11.3: `x=[0 1 3 6]; gradient(x.^2,x)` is `1 3 7 9` (2026-10-03). New in 4p17p0 (get_BW_from_CICP_residual) |
+| `movmean` | differs | `movmean(x, k, 'omitnan')`: odd `k` takes `(k-1)/2` each side; **even `k` takes `k/2` before and `k/2-1` after**; the window **shrinks** at the ends; `'omitnan'` averages the non-NaN entries and gives NaN only when the window is all NaN. No numpy built-in matches (convolution does not shrink). COM Octave 11.3: `movmean(1:7,4,'omitnan')` is `1.5 2 2.5 3.5 4.5 5.5 6` (2026-10-03). New in 4p17p0 (get_BW_from_CICP_residual) |
 | `std` | differs | MATLAB normalises by **N-1**; `np.std` defaults to **N**. Use `ddof=1`. On a matrix it is **column-wise**, where `np.std` flattens: pass `axis=0`. Complex input: both use `abs` of the deviation, so `ddof=1` is all it needs. This is the defect that prompted the whole verification contract (d5bff6c). Checked live against COM Octave 11.3 in `tests/test_matlab_semantics.py` (2026-09-24). |
 | `round` | differs | MATLAB rounds **half away from zero**; `np.round` rounds **half to even**. 41 sites. Use `_mround` / `_mround_arr`; NaN and Inf pass through both. Checked live against COM Octave 11.3 in `tests/test_matlab_semantics.py` (2026-09-24). |
 | `max` | differs | MATLAB **skips NaN**; `np.max` propagates it. MATLAB `max` of an empty array is empty, numpy raises. Use `_mmax` |
@@ -97,6 +99,10 @@ port may use the obvious numpy equivalent directly.
 
 | name | verdict | rule |
 |---|---|---|
+| `isfinite` | same | `np.isfinite`; new in 4p17p0 |
+| `logical` | same | `.astype(bool)` on numeric input (nonzero is true; MATLAB errors on NaN, which the 4p17p0 callers never pass: their masks are comparisons); new in 4p17p0 |
+| `nnz` | same | `np.count_nonzero`; new in 4p17p0 |
+| `rms` | no-numeric-result | used once in 4p17p0 (get_CICP_fit_sweep, `rms_residual_smoothed`), on a value computed and never read; the port does not compute it. Were it ever used: `sqrt(mean(x.^2))`, NaN-propagating, column-wise on a matrix |
 | `abs` | same | |
 | `angle` | same | |
 | `atan` | same | |

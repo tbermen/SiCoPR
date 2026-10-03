@@ -332,7 +332,8 @@ def _oracle_P():
 
 def _oracle_run(P=None, Zref=50.0, ZT=50.0 * np.sqrt(2), NumPorts=2, S2P=0,
                 fb=10e9, M=4, dt=2.5e-11, RL_sel=0, Grr=1, beta_x=0.0,
-                N=12, BinSize=1e-3, RL_norm_test=0, TDR=1, PTDR=1):
+                N=12, BinSize=1e-3, RL_norm_test=0, TDR=1, PTDR=1,
+                matlab_version='4p16p0'):
     """get_TDR with the real callees, on the oracle's inputs."""
     P = _oracle_P() if P is None else P
     param = SimpleNamespace(
@@ -340,7 +341,7 @@ def _oracle_run(P=None, Zref=50.0, ZT=50.0 * np.sqrt(2), NumPorts=2, S2P=0,
         tfx=np.array([0.0, 0.0]), ui=1.0 / fb, fb=fb, samples_per_ui=M,
         sample_dt=dt, ndfe=4, N_bx=4, beta_x=beta_x, Grr=Grr, rho_x=0.1,
         levels=4, specBER=1e-4, Tukey_Window=0, fb_BT_cutoff=0.75,
-        fb_BW_cutoff=0.75, BTorder=4, f_r=0.75, matlab_version='4p16p0')
+        fb_BW_cutoff=0.75, BTorder=4, f_r=0.75, matlab_version=matlab_version)
     OP = SimpleNamespace(
         DISPLAY_WINDOW=False, DEBUG=False, N=N, T_k=1e-9, BinSize=BinSize,
         cb_Guassian=1, RL_norm_test=bool(RL_norm_test),
@@ -532,3 +533,18 @@ def test_oracle_degenerate_bailout_4p16p0():
     assert len(r.WC_ptdr_samples) == 250                    # COM Octave
     assert r.ERL == np.inf and r.ERLRMS == -300             # COM Octave
     assert r.avgZport == 0
+
+
+def test_oracle_degenerate_bailout_carries_into_4p17p0():
+    """get_TDR is byte-identical in 4p16p0 and 4p17p0 (tools/matlab_version_diff.py),
+    so the 4p16p0 guard and its COM Octave result hold under 4p17p0; the port's
+    version switch must say 4p16p0-or-later, not 4p16p0 only."""
+    P = np.zeros((41, 2, 2))
+    P[:, 0, 1] = 0.9
+    P[:, 1, 0] = 0.9
+    r = _oracle_run(P=P, ZT=25.0, matlab_version='4p17p0')
+    assert len(r.tdr) == 1000 and np.all(r.tdr == 1.0)      # COM Octave (4p16p0 = 4p17p0)
+    assert len(r.WC_ptdr_samples_t) == 250
+    assert r.ERL == np.inf and r.ERLRMS == -300
+    r15 = _oracle_run(P=P, ZT=25.0, matlab_version='4p15p0')
+    assert len(r15.tdr) != 1000 or not np.all(r15.tdr == 1.0), '4p15p0 has no such guard'

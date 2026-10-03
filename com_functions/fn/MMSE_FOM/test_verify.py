@@ -372,3 +372,86 @@ def test_ht_layout_gives_bit_identical_results():
             np.testing.assert_allclose(a[1], r[1], rtol=1e-12, atol=0)
             np.testing.assert_allclose(a[2], r[2], rtol=1e-12, atol=1e-15)
             np.testing.assert_allclose(a[0], r[0], rtol=1e-12, atol=1e-15)
+
+
+# ---------------------------------------------------------------------------
+# 4p17p0: HH from H(:,1)'*H by lag (ML 2640-2702 of com_ieee8023_4p17p0.m).
+#
+# COM Octave values: MMSE_FOM extracted verbatim from
+# octave/com_ieee8023_4p17p0_octave_compat.m by tools/octave_oracle.py, run on
+# the two problems _case_417 builds, with HH_val = H(:,1)'*H formed in Python
+# and passed to both sides. Generator: runs/4p17p0_oracles/gen_mmse_fom_oracle.py
+# (local). Residual ~1e-13 relative: the order the linear solve accumulates in.
+#
+# FULL: complete Toeplitz H, no floating taps; the lookup equals H'*H in exact
+# arithmetic. TRUNC: an H whose columns are cut short across NONZERO samples,
+# with floating taps. There H(:,1)'*H by lag is not H'*H, so the two releases
+# answer differently, which is what lets this test tell the forms apart. MMSE
+# itself never builds such an H (its truncated branch drops only zero padding,
+# see MMSE's 4p17p0 test), so in the pipeline the forms agree to rounding; this
+# case exists to pin which form is followed. The 4p16p0 value, run through
+# 4p16p0's MMSE_FOM, is the negative control: a 4p17p0 path that quietly formed
+# H'*H would give it.
+# ---------------------------------------------------------------------------
+
+_OCT417 = {
+    'FULL': (0.05177049124753655, 16.175929185617246,
+             [-0.00917767010494733, -0.27014445600796705, 1.6558649645831518,
+              0.3036460917637337, 0.018594272554600094, -0.10565191264956038],
+             [0.5165531664347394, 0.17271870423196065]),
+    'TRUNC': (0.05090976631086431, 16.3215528352725,
+              [-0.00888530495712958, -0.2715327783670887, 1.6541988350219803,
+               0.3508630606139819, -0.1522864485469117, -0.05206521770225447,
+               -0.0204208702030805, 0.008078953610315636],
+              [0.5293730500921382, 0.08188276405929407]),
+}
+_OCT416_TRUNC_FOM = 16.881615193307734
+
+
+def _case_417(truncated):
+    cmx, cpx, Nb, L = 2, 3, 2, 4
+    sigma_X2 = (L ** 2 - 1) / (3.0 * (L - 1) ** 2)
+    h = np.array([0.02, 0.10, 0.62, 0.21, 0.07, 0.03, -0.02, 0.012, 0.006,
+                  -0.004, 0.003, 0.002, 0.0015, 0.001])
+    if truncated:
+        Nmax, N_bf, N_bg = 9, 1, 2
+        Nw = cmx + Nmax + 1
+        H = scipy.linalg.toeplitz(h[:10], np.concatenate([[h[0]], np.zeros(Nw - 1)]))
+        idx = np.array([6, 8])
+        wmax = np.concatenate([np.full(cmx + 1 + cpx, 50.0), np.full(N_bf * N_bg, 0.2)])
+    else:
+        Nmax, N_bf, N_bg = 0, 0, 0
+        Nw = cmx + 1 + cpx
+        H = scipy.linalg.toeplitz(np.concatenate([h, np.zeros(Nw - 1)]),
+                                  np.concatenate([[h[0]], np.zeros(Nw - 1)]))
+        idx = np.array([], dtype=int)
+        wmax = np.full(Nw, 50.0)
+    rn = 0.02 ** 2 * (0.6 ** np.arange(Nw))
+    bmax, bmin = np.full(Nb, 1.5), np.full(Nb, -1.5)
+    p = SimpleNamespace(RxFFE_cmx=cmx, RxFFE_cpx=cpx, N_bg=N_bg, N_bf=N_bf,
+                        N_bmax=Nmax, levels=L, R_LM=1, bmax=bmax, bmin=bmin)
+    return (p, H, Nb, scipy.linalg.toeplitz(rn, rn), cmx, cmx + 2, wmax, -wmax,
+            bmin, bmax, sigma_X2, idx)
+
+
+@pytest.mark.parametrize('name', ['FULL', 'TRUNC'])
+def test_4p17p0_hh_lookup_matches_com_octave(name):
+    args = _case_417(name == 'TRUNC')
+    H = args[1]
+    sigma_e, FOM, w, _idx, _Nw, blim = MMSE_FOM(*args, HH_val=H[:, 0] @ H)
+    want_s, want_F, want_w, want_b = _OCT417[name]
+    assert abs(sigma_e - want_s) / want_s < 1e-11
+    assert abs(FOM - want_F) / want_F < 1e-11
+    np.testing.assert_allclose(w, want_w, rtol=0, atol=1e-11)
+    np.testing.assert_allclose(blim, want_b, rtol=0, atol=1e-11)
+
+
+def test_4p17p0_truncated_h_is_not_the_4p16p0_answer():
+    args = _case_417(True)
+    H = args[1]
+    FOM_417 = MMSE_FOM(*args, HH_val=H[:, 0] @ H)[1]
+    FOM_416 = MMSE_FOM(*args)[1]
+    assert abs(FOM_416 - _OCT416_TRUNC_FOM) / _OCT416_TRUNC_FOM < 1e-11
+    assert abs(FOM_417 - FOM_416) > 0.5, (
+        'the lag lookup and H\'*H agree on a truncated H: the 4p17p0 path is '
+        'not doing what the reference does')

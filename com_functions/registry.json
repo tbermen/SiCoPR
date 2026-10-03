@@ -1977,6 +1977,59 @@
       "status": "verified",
       "depends_on": [],
       "notes": "NEW: ALS hard-cap helper (Hansel branch)"
+    },
+    {
+      "name": "get_ACBW",
+      "matlab_lines": [
+        6759,
+        6891
+      ],
+      "lines": 133,
+      "tier": "medium",
+      "status": "verified",
+      "depends_on": [
+        "get_CICP_fit_sweep",
+        "get_BW_from_CICP_residual"
+      ],
+      "notes": "new in 4p17p0; matlab_lines are com_ieee8023_4p17p0.m lines"
+    },
+    {
+      "name": "get_BW_from_CICP_residual",
+      "matlab_lines": [
+        6893,
+        6995
+      ],
+      "lines": 103,
+      "tier": "medium",
+      "status": "verified",
+      "depends_on": [],
+      "notes": "new in 4p17p0; matlab_lines are com_ieee8023_4p17p0.m lines"
+    },
+    {
+      "name": "get_CICP_fit_residual",
+      "matlab_lines": [
+        6997,
+        7075
+      ],
+      "lines": 79,
+      "tier": "small",
+      "status": "verified",
+      "depends_on": [],
+      "notes": "new in 4p17p0; matlab_lines are com_ieee8023_4p17p0.m lines"
+    },
+    {
+      "name": "get_CICP_fit_sweep",
+      "matlab_lines": [
+        7077,
+        7222
+      ],
+      "lines": 146,
+      "tier": "medium",
+      "status": "verified",
+      "depends_on": [
+        "get_CICP_fit_residual"
+      ],
+      "notes": "new in 4p17p0; matlab_lines are com_ieee8023_4p17p0.m lines"
     }
   ]
 }

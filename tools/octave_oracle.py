@@ -47,7 +47,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 
-DEFAULT_VERSION = '4p16p0'
+DEFAULT_VERSION = '4p17p0'
 
 
 def compat_path(version=DEFAULT_VERSION):

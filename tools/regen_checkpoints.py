@@ -40,7 +40,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from octave_compare import OCTAVE_DIR, convert, find_octave   # noqa: E402
 
-VERSIONS = ('4p15p0', '4p16p0')
+VERSIONS = ('4p15p0', '4p16p0', '4p17p0')
 
 
 def _fwd(p):

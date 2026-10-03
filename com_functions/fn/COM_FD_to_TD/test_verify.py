@@ -519,3 +519,21 @@ def test_octave_nonfinite_scalars(field):
     got = float(np.ravel(np.asarray(getattr(r0, field)))[0])
     assert np.isinf(got) and np.sign(got) == np.sign(want), (
         '%s is %.17g, COM Octave gives %r' % (field, got, want))
+
+
+def test_octave_values_hold_under_4p17p0():
+    """COM_FD_to_TD is byte-identical in 4p16p0 and 4p17p0, so the 4p16p0 COM
+    Octave values above (including uneq_step_response, which 4p15p0 lacks) are
+    4p17p0's too. The port's version switch must take the 4p16p0 branch here."""
+    import sicopr
+    ch, param, op = _oct_fd_inputs()
+    param.matlab_version = '4p17p0'
+    r0 = COM_FD_to_TD([ch], param, op,
+                      _s21_to_impulse_DC_fn=sicopr.s21_to_impulse_DC,
+                      _Bessel_Thomson_Filter_fn=sicopr.Bessel_Thomson_Filter,
+                      _Butterworth_Filter_fn=sicopr.Butterworth_Filter,
+                      _get_cm_noise_fn=sicopr.get_cm_noise)[0]
+    for field, (want_n, want_i, want_pk) in _OCT_FD_VEC.items():
+        v = np.ravel(np.asarray(getattr(r0, field))).astype(float)
+        assert v.size == want_n and int(np.argmax(np.abs(v))) == want_i, field
+        assert abs(float(np.max(np.abs(v))) - want_pk) <= 1e-11 * abs(want_pk), field

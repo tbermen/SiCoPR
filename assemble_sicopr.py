@@ -445,11 +445,11 @@ if __name__ == '__main__':
     parser.add_argument('--next', nargs='*', default=[])
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
-    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0'],
-                        help='which MATLAB release to emulate. Default 4p16p0, the '
+    parser.add_argument('--matlab-version', choices=__MATLAB_VERSIONS__,
+                        help='which MATLAB release to emulate. Default __MATLAB_DEFAULT__, the '
                              'current IEEE release. 4p15p0 is the version the 208-case '
-                             'reference corpus was produced with -- see '
-                             'docs/MATLAB_4p16p0_CHANGES.md')
+                             'MATLAB reference results were produced with -- see '
+                             'docs/VERSIONS.md')
     parser.add_argument('--eye-under-mlse', action='store_true',
                         help='compute the eye contour and timing bathtub for PLOTTING even '
                              'when MLSE is enabled. MATLAB gates the eye on MLSE == 0 '
@@ -505,7 +505,8 @@ if __name__ == '__main__':
         print()
     if args.exit_on_fail and _any_fail:
         _sys.exit(3)
-""")
+""".replace('__MATLAB_VERSIONS__', repr(list(_VERSION['supported_matlab_versions'])))
+   .replace('__MATLAB_DEFAULT__', _VERSION['default_matlab_version']))
 
 output = '\n'.join(collected_lines)
 

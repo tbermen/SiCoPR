@@ -248,7 +248,7 @@ def get_TDR(S, OP, param, ZT, nport,
     # "some test fixtures have almost zero CM and will cause TD conversion to
     # fail" -- 4p15p0 ran the conversion regardless. Returns a degenerate result
     # with ERL = inf (infinitely good return loss) and ERLRMS = -300 dB.
-    if (str(getattr(param, 'matlab_version', '4p15p0')) == '4p16p0'
+    if (str(getattr(param, 'matlab_version', '4p15p0')) >= '4p16p0'   # and 4p17p0
             and float(np.mean(np.abs(RL))) < 1e-6):
         dt = float(param.sample_dt)
         M = int(param.samples_per_ui)

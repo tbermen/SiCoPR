@@ -155,7 +155,7 @@ KNOWN_SURVIVORS = frozenset([
 # happens to cover this input" is a reason to write a test, and belongs in
 # KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
-    'drop_dot_copy:MMSE:406',       # :392, :390 (a007fc8), :399 (a47c8f2); moved by the G gather
+    'drop_dot_copy:MMSE:260',       # :392, :390, :399, :406; moved when the MMSE_FOM copy became an import
     'drop_dot_copy:get_PSDs:479',   # :436, then :472; moved by the iphase and hk fixes
     'drop_dot_copy:get_pdf_full:165',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local
@@ -173,6 +173,10 @@ EQUIVALENT = frozenset([
     # can change a result. The SQUARE site at line 341 is caught, by the
     # singular-VV test added under the 2026-09-23 ruling.
     'solve_to_lstsq:force:352',
+    # 4p17p0 get_ACBW's Nwin feeds only get_CICP_fit_sweep's Nwin, which the
+    # reference uses for two values it computes and never reads (not computed in
+    # the port). Argued in equivalent_mutants.md.
+    'mround_to_np_round:get_ACBW:58',
 ])
 
 

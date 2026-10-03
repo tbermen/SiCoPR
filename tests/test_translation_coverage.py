@@ -96,7 +96,7 @@ check('shape_baseline_is_current',
 # 2026-09-23: optimize_fom closed the last composite, by running the reference
 # through a matching stub set and pinning the CALL TRACE rather than a number.
 # 2026-09-23: LFSR, the last one, tested directly inside its host PRBS13Q.
-BASELINE_ORACLE_BACKED = 146
+BASELINE_ORACLE_BACKED = 150   # 146 until 2026-10-03: 4p17p0's four ACBW functions
 n_oracle = sum(1 for r in bearing if r['grade'] == 'oracle')
 
 check('oracle_coverage_does_not_fall',

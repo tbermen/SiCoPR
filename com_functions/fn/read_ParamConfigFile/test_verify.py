@@ -524,7 +524,8 @@ def test_ctle_type_CL120e_divides_fz_by_the_dc_gain():
 
 
 # ---------------------------------------------------------------------------
-# Default emulated release (owner's call, 2026-09-27): 4p16p0, from VERSION.json.
+# Default emulated release (owner's call): 4p16p0 from 2026-09-27, 4p17p0 from
+# 2026-10-03, from VERSION.json.
 # VERSION.json said 4p16p0 from 2026-09-22 while this module's constant still
 # said 4p15p0, so the generated header announced one release and a plain run
 # emulated the other. These pin the two to each other and to what a config
@@ -537,13 +538,13 @@ def test_default_version_is_the_one_VERSION_json_names():
         os.path.abspath(__file__)))))
     with open(os.path.join(root, 'VERSION.json'), encoding='utf-8') as fh:
         want = json.load(fh)['default_matlab_version']
-    assert want == '4p16p0'
+    assert want == '4p17p0'          # the owner's call, 2026-10-03
     assert impl.COM_MATLAB_VERSION == want
 
 
-def test_config_without_version_keyword_emulates_4p16p0(minimal_csv_file):
+def test_config_without_version_keyword_emulates_4p17p0(minimal_csv_file):
     param, _ = read_ParamConfigFile(minimal_csv_file, make_op())
-    assert param.matlab_version == '4p16p0'
+    assert param.matlab_version == '4p17p0'
 
 
 # ---------------------------------------------------------------------------
@@ -591,3 +592,31 @@ def test_fractional_count_keyword_is_a_named_error(tmp_path):
     p.write_text(MINIMAL_CSV.replace('M,32', 'M,32.5'))
     with pytest.raises(ValueError, match='"M" must be a whole number'):
         read_ParamConfigFile(str(p), make_op())
+
+
+# ---------------------------------------------------------------------------
+# 4p17p0 keywords (L11034, L11207 of com_ieee8023_4p17p0.m): T_dev, default 1,
+# and ACBW, default 0, which turns on the apparent channel bandwidth in
+# FD_Processing. Earlier releases have neither, so a workbook that sets ACBW
+# must change nothing under them.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize('ver,acbw,tdev', [('4p17p0', 1, 0.4), ('4p16p0', 0, None),
+                                           ('4p15p0', 0, None)])
+def test_acbw_keywords_follow_the_release(tmp_path, ver, acbw, tdev):
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'COM Version,%s\nACBW,1\nT_dev,0.4\n' % ver)
+    param, OP = read_ParamConfigFile(path, make_op())
+    assert OP.ACBW == acbw
+    assert getattr(param, 'T_dev', None) == tdev
+
+
+def test_acbw_defaults_on_4p17p0(tmp_path):
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'COM Version,4p17p0\n')
+    param, OP = read_ParamConfigFile(path, make_op())
+    assert OP.ACBW == 0 and param.T_dev == 1
+
+
+def test_4p17p0_keeps_the_4p16p0_clip_default(tmp_path):
+    """A 4p16p0 change carries into 4p17p0: the Clip Method default stays Slow."""
+    path = _write_csv(tmp_path, MINIMAL_CSV + 'COM Version,4p17p0\n')
+    param, _ = read_ParamConfigFile(path, make_op())
+    assert param.clip_method == 'Slow'

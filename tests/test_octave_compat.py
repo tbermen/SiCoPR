@@ -54,6 +54,7 @@ OCT = os.path.join(_ROOT, 'octave')
 GEN = os.path.join(OCT, 'make_octave_compat.py')
 sys.path.insert(0, OCT)
 from make_octave_compat import VERSIONS as FILES   # noqa: E402  source -> output, per version
+from make_octave_compat import NOT_REPLACED as _NOT_REPLACED   # noqa: E402
 
 # --------------------------------------------------- generated, not edited
 p = subprocess.run([sys.executable, GEN, '--check'], capture_output=True, text=True, cwd=_ROOT)
@@ -88,9 +89,20 @@ for ver, (src_rel, dst_rel) in FILES.items():
     markers = ["Rn=real(Rn)", "lookup(PDF.x", "OCTAVE_VERSION", "csvread4com(paramFile)",
                "raw = str2double(tokens)", "any(b ~= blim)", "any(w ~= wlim)",
                "V0(s_V+1:n_V)=Vt(1:n_V-s_V)*C(i)+V0(s_V+1:n_V)", "pdf_y = conv2(pdf_y, q)",
-               "q(bp) = prob", "R = Hs'*Hs+RnnS(cols,cols)", "fom_num/sigma_e",
-               "com_octave_accel('floating_fom'", "com_octave_accel('pdf_build'",
+               "q(bp) = prob", "com_octave_accel('pdf_build'",
                "com_octave_accel('ffe'", "OCTAVE-CAPABLE DERIVATIVE"]
+    # The floating-tap search patch and its kernel, except where a release does
+    # not take it (4p17p0: the patch reproduces 4p16p0's HH arithmetic). There
+    # the release's own search, which hands MMSE_FOM HH_unique_values, must run.
+    if 'FOM_rxffe_floating_taps' in _NOT_REPLACED.get(ver, ()):
+        markers += ["sigma_X2,new_idx,HH_unique_values);"]
+        stale = [m for m in ("R = Hs'*Hs+RnnS(cols,cols)", "com_octave_accel('floating_fom'")
+                 if m in dst]
+        check("%s_compat_file_runs_the_release_floating_tap_search" % ver, not stale,
+              "%s carries the pre-4p17p0 search patch: %s" % (dst_rel, stale))
+    else:
+        markers += ["R = Hs'*Hs+RnnS(cols,cols)", "fom_num/sigma_e",
+                    "com_octave_accel('floating_fom'"]
     missing = [m for m in markers if m not in dst]
     check("%s_compat_file_carries_every_named_change" % ver, not missing,
           "%s lacks: %s" % (dst_rel, missing))

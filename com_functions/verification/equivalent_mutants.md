@@ -39,7 +39,7 @@ would excuse the other five.
 
 | operator | site | why the mutant cannot change the result |
 |---|---|---|
-| `drop_dot_copy` | `MMSE:406` | `wmin = -wmax.copy()`. Unary negation already allocates a new array, so `-wmax` is not a view of `wmax` whether or not `.copy()` is there. The later `wmin[...] = 1.0` cannot reach `wmax` either way |
+| `drop_dot_copy` | `MMSE:260` | `wmin = -wmax.copy()`. Unary negation already allocates a new array, so `-wmax` is not a view of `wmax` whether or not `.copy()` is there. The later `wmin[...] = 1.0` cannot reach `wmax` either way |
 | `drop_dot_copy` | `get_PSDs:479` | `hisi = h[samp_idx].copy()` where `samp_idx = np.arange(...)`. Indexing with an integer ARRAY is fancy indexing, which always returns a new array, never a view. The copy is redundant |
 | `drop_dot_copy` | `get_pdf_full:165` | `residual_response = SBR.copy()` where `SBR = np.interp(...)` on the line above. `np.interp` allocates its result, and nothing else holds a reference to it, so writing `residual_response` cannot be observed |
 
@@ -82,6 +82,7 @@ comment.
 
 | operator | site | why the mutant cannot change the result |
 |---|---|---|
+| `mround_to_np_round` | `get_ACBW:58` | `Nwin = max(3, round(smooth_window_GHz/delta_f))` (4p17p0 L6859). Its only consumer is `get_CICP_fit_sweep`'s `Nwin` argument, which the reference uses for `smoothed_residual` and `rms_residual_smoothed`, both computed and never read; the port does not compute them. The value cannot reach an output, so neither can its rounding. `get_BW_from_CICP_residual` computes its own window, and its rounding is caught (2026-10-03) |
 | `solve_to_lstsq` | `force:352` | The non-square else-branch. `VV` is built as `zeros(num_taps, num_taps)` in both languages, so the branch cannot execute and nothing in it can change a result. Its SQUARE counterpart at line 341 is caught, by the singular-VV test added under the 2026-09-23 ruling |
 
 This is equivalence of a different kind from the rest of the file: not "the

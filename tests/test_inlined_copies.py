@@ -679,7 +679,7 @@ print("\n%d inlined copies of %d functions; %d comparison(s) made, "
 # whole 2026-09-22 propagation pass while this test reported success. The set is
 # pinned so a NEW undrivable copy has to be looked at, and so the count can only
 # go down.
-BASELINE_UNDRIVABLE = 34
+BASELINE_UNDRIVABLE = 33   # 34 until 2026-10-03: MMSE's copy of MMSE_FOM became an import
 _undrivable = sorted({(c, p) for _, c, p in COPIES if c not in FACTORY})
 
 check("undrivable_copy_set_does_not_grow",

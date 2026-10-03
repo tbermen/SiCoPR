@@ -186,3 +186,24 @@ def test_octave_oracle_all_zero_sdd21_is_nan():
     ILN, efit = get_ILN(np.zeros(6, dtype=complex), _ORACLE_F[:6])
     assert np.all(np.isnan(efit))
     assert np.all(np.isnan(ILN))
+
+
+# ---------------------------------------------------------------------------
+# 4p17p0 L7223: get_ILN returns alpha, the four fit coefficients, as a third
+# output. COM Octave: get_ILN from octave/com_ieee8023_4p17p0_octave_compat.m on
+# the channel below, 401 points to 100 GHz (runs/4p17p0_oracles/gen_acbw_oracle.py).
+# ---------------------------------------------------------------------------
+_OCT417_ALPHA = [-0.6470286103841077, -3.4651010720478254e-05, -2.2532005491426083e-10,
+                 -4.777342092042056e-21]
+
+
+def test_alpha_output_matches_com_octave_4p17p0():
+    f = np.linspace(10e6, 100e9, 401)
+    g = f / 1e9
+    loss_db = 0.5 + 1.1 * np.sqrt(g) + 0.25 * g + 0.004 * g ** 2 + 6.0 / (1 + np.exp(-(g - 55) / 4))
+    mag = 10 ** (-(loss_db + 0.3 * np.sin(2 * np.pi * g / 7.3)) / 20)
+    sdd21 = mag * np.exp(1j * (-2 * np.pi * f * 1.2e-9))
+    ILN, efit, alpha = get_ILN(sdd21, f, return_alpha=True)
+    np.testing.assert_allclose(alpha, _OCT417_ALPHA, rtol=1e-11, atol=0)
+    ILN2, efit2 = get_ILN(sdd21, f)                 # two outputs unless asked
+    assert np.array_equal(ILN, ILN2) and np.array_equal(efit, efit2)
