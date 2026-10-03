@@ -214,10 +214,29 @@ def compare(oct_r, py_r):
     return rows
 
 
-def run_case(case, version, out_dir, octave=None):
-    """Both engines on one case. -> flat dict for a CSV row."""
+def run_case(case, version, out_dir, octave=None, resume=False):
+    """Both engines on one case. -> flat dict for a CSV row.
+
+    The row is also written to <case>/row.json as soon as the case finishes, so
+    a long batch that is interrupted keeps every case it completed; with
+    resume=True a case that already has an error-free row.json is not re-run."""
     cid = case.get('id') or os.path.splitext(os.path.basename(case['thru']))[0]
     work = os.path.join(out_dir, cid)
+    done = os.path.join(work, 'row.json')
+    if resume and os.path.isfile(done):
+        with open(done, encoding='utf-8') as fh:
+            prev = json.load(fh)
+        if prev.get('version') == version and not ('octave_error' in prev or 'sicopr_error' in prev):
+            return prev
+    row = _run_case(case, version, work, cid, octave)
+    os.makedirs(work, exist_ok=True)
+    with open(done, 'w', encoding='utf-8') as fh:
+        # numpy scalars (an itick, say) are not JSON; .item() gives the Python value
+        json.dump(row, fh, indent=1, default=lambda o: o.item() if hasattr(o, 'item') else str(o))
+    return row
+
+
+def _run_case(case, version, work, cid, octave):
     row = {'id': cid, 'version': version, 'config': os.path.basename(case['config']),
            'thru': os.path.basename(case['thru']),
            'n_fext': len(case.get('fext') or []), 'n_next': len(case.get('next') or [])}
@@ -283,6 +302,8 @@ def main(argv=None):
     ap.add_argument('--out', default='octave_compare_out')
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--octave', help='path to octave-cli (default: PATH, then the stock Windows install)')
+    ap.add_argument('--resume', action='store_true',
+                    help='skip cases whose <case>/row.json is already complete for this version')
     a = ap.parse_args(argv)
 
     if a.cases:
@@ -296,7 +317,7 @@ def main(argv=None):
 
     rows = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, a.jobs)) as ex:
-        futs = {ex.submit(run_case, c, a.version, a.out, a.octave): c for c in cases}
+        futs = {ex.submit(run_case, c, a.version, a.out, a.octave, a.resume): c for c in cases}
         for f in concurrent.futures.as_completed(futs):
             row = f.result()
             rows.append(row)
