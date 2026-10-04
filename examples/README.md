@@ -51,9 +51,11 @@ octave-cli --no-gui --no-window-system --eval ^
   "addpath('octave'); r = com_ieee8023_4p16p0_octave_compat('config.mat', 0, 0, '<channels>/..._thru1.s4p'); save('-v7','r.mat','r')"
 ```
 
-`--matlab-version 4p16p0` is the engine's default and is spelled out so the
-command still means the same thing if the default ever changes
-([`docs/VERSIONS.md`](../docs/VERSIONS.md)). Add the
+`--matlab-version 4p16p0` is spelled out so the command means the same thing
+whatever the default is; the default moved to 4p17p0 on 2026-10-03
+([`docs/VERSIONS.md`](../docs/VERSIONS.md)). Under 4p17p0 this case gives the same
+COM to about 1e-14 dB, with the same sampling phase and equalizer: 4p17p0 changes
+this calculation only in summation order. Add the
 five aggressors with `--fext` and `--next` for the crosstalk case; the file roles
 are in `CHANNEL.md`.
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sicopr"
-version = "1.0.0"
+version = "1.1.0"
 description = "A Python port of the IEEE 802.3 COM (Channel Operating Margin) reference code"
 readme = "README.md"
 requires-python = ">=3.10"

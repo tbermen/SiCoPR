@@ -1,6 +1,6 @@
 # MATLAB versions
 
-SiCoPR emulates two releases of the IEEE 802.3 COM Reference Code. This page says
+SiCoPR emulates three releases of the IEEE 802.3 COM Reference Code. This page says
 which is the default, how to choose, which evidence belongs to which, and what
 differs between them.
 
@@ -8,7 +8,8 @@ differs between them.
 
 | release | how to select | source it follows |
 |---|---|---|
-| **`4p16p0`** (default) | nothing, or `--matlab-version 4p16p0` | `matlab/com_ieee8023_4p16p0.m`, the current IEEE release |
+| **`4p17p0`** (default) | nothing, or `--matlab-version 4p17p0` | `matlab/com_ieee8023_4p17p0.m`, the current IEEE release (4.17.0, 2026-09-23) |
+| `4p16p0` | `--matlab-version 4p16p0` | `matlab/com_ieee8023_4p16p0.m` |
 | `4p15p0` | `--matlab-version 4p15p0` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`: 4p15p0 with the adaptive local search backported, the build the 208-case reference results were produced with |
 
 [`VERSION.json`](../VERSION.json) is the source of truth for this table: the default
@@ -23,7 +24,10 @@ From Python, `sicopr.COM_MATLAB_VERSION = '4p15p0'` does the same. A `COM Versio
 keyword in the configuration workbook wins over both.
 
 [`VERSION.json`](../VERSION.json) is the single record of the default and the supported
-releases; `assemble_sicopr.py` writes it into `sicopr.py`'s header. `matlab/` also keeps
+releases; `assemble_sicopr.py` writes it into `sicopr.py`'s header and the command line's
+choices. Every reference file's origin, the tagged release at
+https://opensource.ieee.org/802-com/com_code it is byte-identical to, is in
+[`../NOTICE`](../NOTICE). `matlab/` also keeps
 `com_ieee8023_4p14p0.m`, the original translation source, for history; it is no longer
 emulated.
 
@@ -32,6 +36,7 @@ emulated.
 | corpus | version | compared against | result |
 |---|---|---|---|
 | 208 cases, 26 IEEE 802.3dj CR/KR channels × 4 package configurations × with/without crosstalk | **4p15p0** | MATLAB reference results | last re-run 2026-09-23: itick and every equalizer selection identical on 208 / 208, COM within 4.6e-14 dB |
+| 208 cases, the same corpus | **4p17p0** | COM Octave | 2026-10-04: COM within 5.2e-14 dB (median 8.9e-15), FOM 6.0e-12 dB, itick, CTLE gain, Tx FFE and ERL identical on 208 / 208 ([`../benchmark/208_case_4p17p0/`](../benchmark/208_case_4p17p0/README.md)); against the same corpus's 4p15p0 COM Octave results, COM within 5.0e-14 dB and itick identical on all 208 |
 | 1368 cases, 171 distinct channels | **4p16p0** | COM Octave (the Reference Code run under Octave, [`../octave/README.md`](../octave/README.md)) | 2026-09-26: COM within 5.3e-14 dB, itick, Tx FFE and CTLE gain identical on all 1368 |
 
 Reproducing the 208-case result therefore takes `--matlab-version 4p15p0`. Detail is in
@@ -40,6 +45,22 @@ Reproducing the 208-case result therefore takes `--matlab-version 4p15p0`. Detai
 The 208-case corpus has also been run in 4p16p0 mode: 210 of 213 output columns are
 identical on all 208 cases, and no COM, FOM, VEO, VEC, itick or ERL value moves. That
 measurement predates the September 2026 oracle fixes and has not been re-run since.
+
+## What 4p17p0 changes
+
+4p17p0 is a small delta from 4p16p0: 149 function bodies unchanged, 7 changed, 4 added,
+none removed. Full detail, with the reference behaviour reproduced as it stands:
+[`MATLAB_4p17p0_CHANGES.md`](MATLAB_4p17p0_CHANGES.md).
+
+| change | measured effect |
+|---|---|
+| `MMSE_FOM` builds its Gram matrix by lag from `H(:,1)'*H`, formed once in `MMSE` | equal to `H'*H` on every `H` `MMSE` builds, so results move by summation order only (~1e-14 dB) |
+| apparent channel bandwidth: `get_ACBW` and three helpers, reported as `ACBW_GHz` | **off by default**; a workbook turns it on with `ACBW = 1` (threshold `T_dev`) |
+| `get_ILN` returns its fit coefficients | no caller reads them |
+| a `msgbox` in `MLSE_U1_c_178A` commented out | none in the port, which never had one |
+
+Every 4p16p0 change carries into 4p17p0 (the `Clip Method` default, the pulse and step
+scaling, the guards), since 4p17p0 left those functions unchanged.
 
 ## What 4p16p0 changes
 

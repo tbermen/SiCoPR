@@ -158,7 +158,8 @@ def compare(got, want):
 def run_sicopr(cfg, thru, fext, next_, out):
     # The engine writes under its working directory, so the run happens in `out`.
     # tools/_sicopr_case.py is `python -m sicopr ... --matlab-version 4p16p0`
-    # (this example's workbook is a 4p16p0 one, which is also the engine's default)
+    # (this example's workbook is a 4p16p0 one; the engine's default is 4p17p0 since
+    # 2026-10-03, so the release is named rather than left to the default)
     # plus the result at full precision, which the CSV report does not carry.
     cmd = [sys.executable, os.path.join(ROOT, 'tools', '_sicopr_case.py'),
            os.path.join(out, 'sicopr_result.json'), '4p16p0',

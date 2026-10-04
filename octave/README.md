@@ -14,12 +14,13 @@ to a `.mat`, then call the release file. Nothing here needs building.
 **To understand what was changed and why**, read on: the patch set is the point
 of this directory, and every item in it is a no-op under MATLAB.
 
-## The two files
+## The three files
 
 | file | derived from | how |
 |---|---|---|
 | `com_ieee8023_4p15p0_octave_compat.m` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m` | `make_octave_compat.py` |
 | `com_ieee8023_4p16p0_octave_compat.m` | `matlab/com_ieee8023_4p16p0.m` | `make_octave_compat.py` |
+| `com_ieee8023_4p17p0_octave_compat.m` | `matlab/com_ieee8023_4p17p0.m` | `make_octave_compat.py` |
 
 They are **generated** from `matlab/` by a small, named patch set, and committed so a
 reader needs no build step, the same arrangement as `sicopr.py`. (The optional
@@ -34,9 +35,15 @@ reference results. Those were produced with **4p15p0 plus the adaptive local
 search**, the build in `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`,
 which is also the build SiCoPR emulates (`VERSION.json`, `primary_reference`).
 So that is the 4p15p0 source here, not the bare release, whose legacy local
-search would agree with neither. The 4p16p0 file is the current release, which
-adopted the adaptive search into the mainline. Both take the same patch set; the
-two sources are identical in every function it touches.
+search would agree with neither. The 4p16p0 file is the release that adopted the
+adaptive search into the mainline, and the 4p17p0 file is the current release.
+All three take the same patch set, with one exception: **4p17p0 does not take the
+`FOM_rxffe_floating_taps` speed patch.** That patch inlines `MMSE_FOM`'s Gram matrix
+as 4p16p0 forms it, `H(:,sel)'*H(:,sel)`; 4p17p0 builds it by lag from
+`H(:,1)'*H`, so on 4p17p0 the patch would compute the previous release's
+arithmetic. The release's own search runs there, and the compiled search kernel,
+reached only through the patch, stays off (`NOT_REPLACED` in the generator). The
+cost: on the shipped example 4p17p0 under Octave took 789 s against SiCoPR's 374 s.
 
 ```
 python octave/make_octave_compat.py            # regenerate both

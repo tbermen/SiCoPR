@@ -9,8 +9,8 @@ Questions and defect reports: [GitHub issues](https://github.com/tbermen/SiCoPR/
 SiCoPR is a Python port of the IEEE 802.3 **COM** (Channel Operating Margin) Reference
 Code. It reads the same Excel configuration workbook and Touchstone `.s4p` files as the
 MATLAB tool and computes COM, VEO/VEC and the supporting equalization and noise analysis,
-without MATLAB. It emulates **`com_ieee8023_4p16p0`** by default and `com_ieee8023_4p15p0`
-with `--matlab-version 4p15p0`. Licence: BSD-3-Clause, the same as the Reference Code
+without MATLAB. It emulates **`com_ieee8023_4p17p0`** (release 4.17.0, the current one) by
+default, and `4p16p0` or `4p15p0` with `--matlab-version`. Licence: BSD-3-Clause, the same as the Reference Code
 ([`LICENSE`](LICENSE), provenance in [`NOTICE`](NOTICE)).
 
 The full guide is [`docs/TUTORIAL.md`](docs/TUTORIAL.md): architecture, every feature,
@@ -82,7 +82,7 @@ each take any number of files.
 |---|---|
 | `--fext F ...` | far-end crosstalk aggressor files |
 | `--next N ...` | near-end crosstalk aggressor files |
-| `--matlab-version {4p15p0,4p16p0}` | which reference release to emulate; default `4p16p0` ([`docs/VERSIONS.md`](docs/VERSIONS.md)) |
+| `--matlab-version {4p15p0,4p16p0,4p17p0}` | which reference release to emulate; default `4p17p0` ([`docs/VERSIONS.md`](docs/VERSIONS.md)) |
 | `--export-mat` | also write a per-case engineering `.mat` snapshot for the R dashboard (TUTORIAL §7.4). Changes no result |
 | `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. Diagnostic only; no reported value changes |
 | `--exit-on-fail` | exit with status 3 if any package case fails its COM threshold (for CI); without it a completed run exits 0, pass or fail |
@@ -132,7 +132,7 @@ leading underscore marks it as not yet a frozen API.
 ```python
 import sicopr
 
-sicopr.COM_MATLAB_VERSION = '4p16p0'            # as --matlab-version; optional
+sicopr.COM_MATLAB_VERSION = '4p17p0'            # as --matlab-version; optional
 res = sicopr._run_com('config.xlsx', 1, 1,       # number of FEXT, number of NEXT
                       ['thru.s4p', 'fext1.s4p', 'next1.s4p'], export_mat=False)
 cases = res if isinstance(res, list) else [res]  # one entry per package case
@@ -185,7 +185,7 @@ is a COM primer.
 
 ## The Reference Code under GNU Octave (optional)
 
-`octave/` carries the COM 4p15p0 and 4p16p0 release files, generated from `matlab/` by a
+`octave/` carries the COM 4p15p0, 4p16p0 and 4p17p0 release files, generated from `matlab/` by a
 small patch set that makes them run under GNU Octave and is a no-op under MATLAB. With
 Octave installed you can run the Reference Code itself on any case and compare it with
 SiCoPR field by field (`tools/octave_compare.py`), without a MATLAB licence. Speed,
@@ -216,6 +216,10 @@ own. The Octave route rests on work by members of the COM community, credited in
   `com_ieee8023_4p15p0_adaptive_local_search.m`, the build the reference results came from.
 - **Against COM Octave, 4p16p0.** 1368 cases (171 distinct channels), **2026-09-26**:
   COM within **5.3e-14 dB**, and itick, Tx FFE and CTLE gain identical on all 1368.
+- **Against COM Octave, 4p17p0**, the default. The same 208 cases, **2026-10-04**: COM
+  within **5.2e-14 dB**, FOM 6.0e-12 dB, and itick, CTLE gain, Tx FFE and ERL identical on
+  all 208. The COM Octave results ship in
+  [`benchmark/208_case_4p17p0/`](benchmark/208_case_4p17p0/README.md).
 
 Those differences are double-precision arithmetic noise, not agreement to a tolerance.
 The correlation inputs are IEEE contributions and are not redistributed here, and MATLAB
@@ -286,7 +290,8 @@ does not replace it.**
   3. Rerun the per-function tests and the benchmark cases.
   4. Publish the correlation tables.
 
-  The 4p15p0 to 4p16p0 step was done this way ([`docs/VERSIONS.md`](docs/VERSIONS.md)).
+  The 4p15p0 to 4p16p0 and 4p16p0 to 4p17p0 steps were done this way
+  ([`docs/VERSIONS.md`](docs/VERSIONS.md), [`docs/MATLAB_4p17p0_CHANGES.md`](docs/MATLAB_4p17p0_CHANGES.md)).
 - **Between releases the engine changes for two reasons only:**
   - a **port defect**, meaning SiCoPR disagrees with the release it emulates;
   - a **speed-up proven to change no result**, judged by `tools/equivalence_check.py`
