@@ -21,6 +21,8 @@ The MATLAB reference is BSD-3-Clause; this port is a derivative work released un
 import sys
 import os
 import re
+import csv
+import io
 import math
 from math import factorial, ceil, floor, log, log2, log10, exp, sqrt, pi
 import copy
@@ -35,6 +37,7 @@ from scipy import signal as sp_signal
 from scipy import interpolate as sp_interp
 from scipy import special as sp_special
 from scipy import linalg as sp_linalg
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 try:
     import openpyxl
@@ -17112,7 +17115,9 @@ def read_PR_files(param, OP, chdata):
 # ============================================================
 
 
-_SENTINEL = object()
+# Named for this module alone: assembly puts every module in one namespace, and
+# xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
+_NO_DEFAULT = object()
 
 # Which MATLAB release to emulate. '4p17p0', the current IEEE release, is the
 # default (VERSION.json, the owner's call, 2026-10-03). The 208-case MATLAB
@@ -17315,7 +17320,7 @@ def _read_ParamConfigFile__eval_matlab_value(v, eval_if_string):
         return v_str
 
 
-def _read_ParamConfigFile__xls_param(parameter, param_name, eval_if_string=False, default_value=_SENTINEL):
+def _read_ParamConfigFile__xls_param(parameter, param_name, eval_if_string=False, default_value=_NO_DEFAULT):
     """Inline xls_parameter — case-insensitive lookup in 2D parameter sheet."""
     name_lower = param_name.lower()
     matches = [
@@ -17325,7 +17330,7 @@ def _read_ParamConfigFile__xls_param(parameter, param_name, eval_if_string=False
         if isinstance(cell, str) and cell.strip().lower() == name_lower
     ]
     if len(matches) == 0:
-        if default_value is _SENTINEL:
+        if default_value is _NO_DEFAULT:
             raise KeyError(f'Mandatory parameter "{param_name}" not found in config file')
         return default_value
     if len(matches) > 1:

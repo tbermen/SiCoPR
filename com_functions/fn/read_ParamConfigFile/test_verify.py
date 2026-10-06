@@ -380,6 +380,19 @@ def test_octave_mandatory_keywords(tmp_path, keyword):
         read_ParamConfigFile(path, make_op())
 
 
+def test_mandatory_keyword_survives_another_module_sentinel(tmp_path, monkeypatch):
+    """Finding F05 (2026-10-03). In the assembled sicopr.py, xls_parameter's own
+    `_SENTINEL = object()` came after this module's and rebound the name, so
+    `default_value is _SENTINEL` was never true and a missing M came back as a
+    bare object, failing later with an unrelated TypeError. Rebinding the old
+    module-level name here does what assembly did."""
+    import com_functions.fn.read_ParamConfigFile.py_impl as impl
+    monkeypatch.setattr(impl, '_SENTINEL', object(), raising=False)
+    path = _write_csv(tmp_path, MINIMAL_CSV.replace('M,32\n', ''))
+    with pytest.raises(KeyError, match='Mandatory parameter "M"'):
+        read_ParamConfigFile(path, make_op())
+
+
 def test_octave_R_0_string_is_evaluated(tmp_path):
     """COM Octave: R_0 = '[50 50]' gives param.Z0 = [50 50], because
     xls_parameter's eval_if_string argument is the truthy 50."""

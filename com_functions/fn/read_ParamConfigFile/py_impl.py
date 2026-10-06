@@ -29,7 +29,9 @@ import re
 import numpy as np
 from types import SimpleNamespace
 
-_SENTINEL = object()
+# Named for this module alone: assembly puts every module in one namespace, and
+# xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
+_NO_DEFAULT = object()
 
 # Which MATLAB release to emulate. '4p17p0', the current IEEE release, is the
 # default (VERSION.json, the owner's call, 2026-10-03). The 208-case MATLAB
@@ -232,7 +234,7 @@ def _eval_matlab_value(v, eval_if_string):
         return v_str
 
 
-def _xls_param(parameter, param_name, eval_if_string=False, default_value=_SENTINEL):
+def _xls_param(parameter, param_name, eval_if_string=False, default_value=_NO_DEFAULT):
     """Inline xls_parameter — case-insensitive lookup in 2D parameter sheet."""
     name_lower = param_name.lower()
     matches = [
@@ -242,7 +244,7 @@ def _xls_param(parameter, param_name, eval_if_string=False, default_value=_SENTI
         if isinstance(cell, str) and cell.strip().lower() == name_lower
     ]
     if len(matches) == 0:
-        if default_value is _SENTINEL:
+        if default_value is _NO_DEFAULT:
             raise KeyError(f'Mandatory parameter "{param_name}" not found in config file')
         return default_value
     if len(matches) > 1:

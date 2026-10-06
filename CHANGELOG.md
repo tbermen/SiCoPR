@@ -18,6 +18,21 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
+### Fixed
+
+- The engine dropped imports its function sources had, so paths no unit test
+  reached raised `NameError`: a `.csv` configuration file and
+  `writecsv_transposed` (`csv`), a `.csv` pulse-response file (`io`), and the
+  apparent channel bandwidth fit when a workbook sets `ACBW = 1` (`cho_factor`,
+  `cho_solve`, `solve_triangular`). The Reference Code reads a `.csv`
+  configuration, so this was a port defect.
+- A configuration missing a mandatory keyword (`M`, `R_0`, `RESULT_DIR`, `f_b`
+  and the rest) failed later with an unrelated `TypeError` instead of naming the
+  keyword: two modules' private `_SENTINEL` collided once assembled.
+- `tests/test_assembled_names.py` now fails on either kind of defect in the
+  assembled engine, and `tests/test_csv_inputs.py` loads every shipped workbook
+  as a `.csv` and requires the same `param` and `OP`.
+
 ## [1.1.0] - 2026-10-04
 
 ### Added

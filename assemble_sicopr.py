@@ -30,6 +30,8 @@ To fix a function, edit its py_impl.py, re-run its test, then re-run assemble_si
 import sys
 import os
 import re
+import csv
+import io
 import math
 from math import factorial, ceil, floor, log, log2, log10, exp, sqrt, pi
 import copy
@@ -44,6 +46,7 @@ from scipy import signal as sp_signal
 from scipy import interpolate as sp_interp
 from scipy import special as sp_special
 from scipy import linalg as sp_linalg
+from scipy.linalg import cho_factor, cho_solve, solve_triangular
 
 try:
     import openpyxl
