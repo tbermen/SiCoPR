@@ -163,3 +163,48 @@ def test_oracle_key_is_not_stripped():
     COM Octave, sheet key 'c(-1) ' looked up as 'c(-1)' -> p=0, found=0.
     """
     assert xls_parameter_txffe([['c(-1) ', '0.5']], 'c(-1)') == (0, 0)
+
+
+# ============================================================
+# COM Octave (Octave 11.3.0, 2026-10-06): eval of each config string, as the
+# reference's xls_parameter does with eval_if_string. MATLAB's colon is
+# start + k*step, counted with a tolerant floor, and the last element is set to
+# the limit only when that sum overshoots it. Findings F06 (a range built by
+# linspace over a rounded count, so [0:0.3:1] reached 1) and F12 (no clamp, so
+# [0:0.1:0.3] ended at 0.30000000000000004).
+# Octave is the proxy here: MATLAB forms the second half of a range from its
+# end, so a few elements can differ from MATLAB by one ulp. Not pinned.
+# ============================================================
+COLON_PINS = [
+    ('[0:0.3:1]', [0.0, 0.3, 0.6, 0.8999999999999999]),
+    ('[-0.2:0.05:0.05]', [-0.2, -0.15000000000000002, -0.1, -0.04999999999999999, 0.0,
+                          0.04999999999999999]),
+    ('[0:0.1:0.3]', [0.0, 0.1, 0.2, 0.3]),
+    ('[-0.3:0.1:0]', [-0.3, -0.19999999999999998, -0.09999999999999998, 0.0]),
+    ('[1:0]', []),
+    ('[0.14:-.02:0]', [0.14, 0.12000000000000001, 0.1, 0.08000000000000002, 0.06000000000000001,
+                       0.04000000000000001, 0.020000000000000018, 0.0]),
+    ('[0.1e-4:0.5e-5:0.5e-4]', [1e-05, 1.5000000000000002e-05, 2e-05, 2.5000000000000005e-05,
+                                3.0000000000000004e-05, 3.5000000000000004e-05, 4e-05, 4.5e-05,
+                                5e-05]),
+    ('[0:0.25:1 ; 1:0.25:2]', [[0.0, 0.25, 0.5, 0.75, 1.0], [1.0, 1.25, 1.5, 1.75, 2.0]]),
+    ('[ -0.34:.02:0]', [-0.34, -0.32, -0.30000000000000004, -0.28, -0.26, -0.24000000000000002,
+                        -0.22000000000000003, -0.2, -0.18000000000000002, -0.16000000000000003,
+                        -0.14, -0.12000000000000002, -0.10000000000000003, -0.08000000000000002,
+                        -0.06, -0.040000000000000036, -0.020000000000000018, 0.0]),
+    ('[-12:4:0]', [-12.0, -8.0, -4.0, 0.0]),
+    ('[0:0.1:1]', [0.0, 0.1, 0.2, 0.30000000000000004, 0.4, 0.5, 0.6000000000000001,
+                   0.7000000000000001, 0.8, 0.9, 1.0]),
+    ('[1:3]', [1.0, 2.0, 3.0]),
+]
+
+
+@pytest.mark.parametrize('text,want', COLON_PINS, ids=[t for t, _ in COLON_PINS])
+def test_octave_colon_ranges(text, want):
+    got = np.asarray(xls_parameter_txffe([['k', text]], 'k')[0], dtype=float)
+    want = np.asarray(want, dtype=float)
+    if want.size == 0:
+        assert got.size == 0
+        return
+    assert got.shape == want.shape
+    assert got.tolist() == want.tolist()        # bit for bit

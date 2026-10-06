@@ -172,7 +172,14 @@ def _isempty(x):
 
 
 def _parse_matlab_scalar_or_range(token):
-    """Parse a single token that may be a scalar or a MATLAB range start:step:end."""
+    """Parse a single token that may be a scalar or a MATLAB range start:step:end.
+
+    MATLAB's colon: start + k*step, counted with a tolerant floor, the last
+    element set to the limit only when that sum overshoots it. A range that does
+    not land on its limit stops short of it. COM Octave: '[0:0.3:1]' is
+    0, 0.3, 0.6, 0.8999999999999999 (finding F06: linspace over a rounded count
+    gave 0, 0.333, 0.667, 1); '[0:0.1:0.3]' ends at exactly 0.3.
+    """
     token = token.rstrip(';').strip()
     if ':' in token:
         parts = token.split(':')
@@ -183,8 +190,13 @@ def _parse_matlab_scalar_or_range(token):
             start, step, stop = float(parts[0]), float(parts[1]), float(parts[2])
         else:
             return [float(token)]
-        n = int(round((stop - start) / step)) + 1
-        return list(np.linspace(start, stop, max(n, 0)))
+        n = int(math.floor((stop - start) / step + 3.0 * np.finfo(float).eps)) + 1
+        if n <= 0:
+            return []
+        x = start + np.arange(n) * step
+        if (step > 0 and x[-1] > stop) or (step < 0 and x[-1] < stop):
+            x[-1] = stop                                # colon end clamp
+        return list(x)
     return [float(token)]
 
 

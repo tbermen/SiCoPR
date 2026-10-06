@@ -29,6 +29,13 @@ Two things this file is *not*:
 - A configuration missing a mandatory keyword (`M`, `R_0`, `RESULT_DIR`, `f_b`
   and the rest) failed later with an unrelated `TypeError` instead of naming the
   keyword: two modules' private `_SENTINEL` collided once assembled.
+- A MATLAB range in a configuration cell that does not land on its limit is
+  now read as MATLAB reads it: `[0:0.3:1]` is 0, 0.3, 0.6, 0.9, where the reader
+  stretched it to 0, 0.333, 0.667, 1. The Tx FFE range reader now sets the last
+  element to the limit when `start + k*step` overshoots it, as the colon does
+  (`[0:0.1:0.3]` ends at 0.3, not one ulp above). Both are pinned against
+  COM Octave. Every range in the shipped and reference workbooks reads exactly
+  as before, so no reference result moves.
 - `tests/test_assembled_names.py` now fails on either kind of defect in the
   assembled engine, and `tests/test_csv_inputs.py` loads every shipped workbook
   as a `.csv` and requires the same `param` and `OP`.

@@ -278,6 +278,25 @@ CATALOGUE = [
        "com_functions/verification/builtins.md, row `transpose`; "
        "get_ILN_cmp_td and get_RILN_cmp_td (commit 5276a8e); Phase 0 complex "
        "census 2026-09-23: no hit"),
+
+    # The config reader's range parser built a MATLAB colon range with
+    # linspace over a rounded count, so [0:0.3:1] reached 1 (finding F06).
+    Op('colon_as_linspace',
+       r'start \+ np\.arange\((n|max\(n, 0\))\) \* step',
+       r'np.linspace(start, stop, \1)',
+       'A MATLAB start:step:stop range built with linspace: a range that does '
+       'not land on its limit is stretched to reach it, and one that lands '
+       'differs by an ulp in most elements.',
+       'finding F06, 2026-10-03; read_ParamConfigFile COLON_PINS'),
+
+    # The Tx FFE range parser never clamped an overshooting last element, so
+    # [0:0.1:0.3] ended at 0.30000000000000004 (finding F12).
+    Op('colon_drop_end_clamp',
+       r'x\[-1\] = stop', 'x[-1] = x[-1]',
+       'MATLAB and Octave set the last element of start:step:stop to the limit '
+       'when start + k*step overshoots it; without that the end is one ulp off.',
+       'finding F12, 2026-10-06; xls_parameter_txffe COLON_PINS',
+       require=r'colon end clamp'),
 ]
 
 

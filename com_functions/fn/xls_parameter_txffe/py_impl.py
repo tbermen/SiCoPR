@@ -13,14 +13,19 @@ _COLON_TOL = 3.0 * np.finfo(float).eps
 
 def _colon(token):
     """MATLAB a:b or a:s:b.  COM Octave: '[ -0.34:.02:0]' -> 18 points ending
-    at exactly 0; '[ 0.14:.02:0]' -> empty; '[0.14:-.02:0]' -> 8 points."""
+    at exactly 0; '[ 0.14:.02:0]' -> empty; '[0.14:-.02:0]' -> 8 points.
+    The last element is set to the limit when start + k*step overshoots it:
+    COM Octave '[0:0.1:0.3]' ends at 0.3, not 0.30000000000000004 (finding F12)."""
     parts = token.split(':')
     if len(parts) == 2:
         start, step, stop = float(parts[0]), 1.0, float(parts[1])
     else:
         start, step, stop = (float(p) for p in parts)
     n = int(math.floor((stop - start) / step + _COLON_TOL)) + 1
-    return start + np.arange(max(n, 0)) * step
+    x = start + np.arange(max(n, 0)) * step
+    if n > 0 and ((step > 0 and x[-1] > stop) or (step < 0 and x[-1] < stop)):
+        x[-1] = stop                                    # colon end clamp
+    return x
 
 
 def _matlab_matrix(body):
