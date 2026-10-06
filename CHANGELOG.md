@@ -18,6 +18,8 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-06
+
 ### Fixed
 
 - The engine dropped imports its function sources had, so paths no unit test
