@@ -29,6 +29,10 @@ Two things this file is *not*:
 - A configuration missing a mandatory keyword (`M`, `R_0`, `RESULT_DIR`, `f_b`
   and the rest) failed later with an unrelated `TypeError` instead of naming the
   keyword: two modules' private `_SENTINEL` collided once assembled.
+- A `.mat` configuration (the `parameter` cell array the Reference Code loads,
+  as `tools/xlsx_to_com_mat.py` writes it for COM Octave) failed on its first
+  arithmetic, because each cell arrived as a small array. It now loads to the
+  same `param` and `OP` as the workbook it came from.
 - A MATLAB range in a configuration cell that does not land on its limit is
   now read as MATLAB reads it: `[0:0.3:1]` is 0, 0.3, 0.6, 0.9, where the reader
   stretched it to 0, 0.333, 0.667, 1. The Tx FFE range reader now sets the last

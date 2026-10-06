@@ -2271,6 +2271,15 @@
    ]
   },
   {
+   "copy": "_read_ParamConfigFile__mat_cell",
+   "helper": "mat_cell",
+   "inlined_into": "read_ParamConfigFile",
+   "inlined_into_matlab_lines": [
+    9601,
+    10258
+   ]
+  },
+  {
    "copy": "_read_ParamConfigFile__parse_cell",
    "helper": "parse_cell",
    "inlined_into": "read_ParamConfigFile",

@@ -297,6 +297,17 @@ CATALOGUE = [
        'when start + k*step overshoots it; without that the end is one ulp off.',
        'finding F12, 2026-10-06; xls_parameter_txffe COLON_PINS',
        require=r'colon end clamp'),
+
+    # The .mat branch of the config reader returned scipy's cells as they
+    # came, each a small array, and the first arithmetic failed (finding F04).
+    Op('mat_cells_left_wrapped',
+       r'\[\[_mat_cell\(c\) for c in row\] for row in (\w+)\.tolist\(\)\]',
+       r'\1.tolist()',
+       'A .mat config cell array read with scipy.io.loadmat holds every cell as '
+       'an ndarray (1x1 double, char array); used as is, no keyword matches and '
+       'no number multiplies.',
+       'finding F04, 2026-10-03; read_ParamConfigFile '
+       'test_mat_config_loads_like_the_same_grid_as_csv'),
 ]
 
 

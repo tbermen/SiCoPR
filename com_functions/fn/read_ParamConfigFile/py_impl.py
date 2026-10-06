@@ -84,6 +84,20 @@ def _whole_to_int(v):
     return v
 
 
+def _mat_cell(c):
+    """One cell of a .mat `parameter` cell array, as the CSV and Excel readers
+    give it: text as str, a 1x1 number through _parse_cell, an empty cell NaN."""
+    a = np.asarray(c)
+    if a.dtype.kind == 'U':
+        return _parse_cell(''.join(a.ravel().tolist()))
+    if a.size == 0:
+        return float('nan')
+    if a.size == 1 and a.dtype.kind in 'biuf':
+        v = a.ravel()[0]
+        return _parse_cell(bool(v) if a.dtype.kind == 'b' else float(v))
+    return a
+
+
 def _load_csv(path):
     """Load a CSV config file → list-of-lists (parameter sheet)."""
     rows = []
@@ -134,7 +148,10 @@ def _load_parameter_sheet(param_file):
         parameter = mat.get('parameter')
         if parameter is None:
             raise KeyError("'parameter' variable not found in .mat file")
-        return parameter.tolist()
+        # load(matcongfile) gives the same cell array xlsread would (ML 10620).
+        # scipy returns each cell as a small array, a 1x1 double or a char
+        # array, which reached the arithmetic as is (finding F04).
+        return [[_mat_cell(c) for c in row] for row in parameter.tolist()]
     else:
         # Try Excel for unknown extensions (matches MATLAB xlsread fallback)
         return _load_excel(param_file)

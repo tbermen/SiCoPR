@@ -636,6 +636,50 @@ def test_4p17p0_keeps_the_4p16p0_clip_default(tmp_path):
     assert param.clip_method == 'Slow'
 
 
+def _same_load(a, b):
+    """param and OP from two loads, field for field (arrays by value, NaN equal)."""
+    for x, y in zip(a, b):
+        dx, dy = vars(x), vars(y)
+        assert sorted(dx) == sorted(dy)
+        for k in dx:
+            u, v = dx[k], dy[k]
+            if isinstance(u, SimpleNamespace):
+                _same_load((u,), (v,))
+            elif isinstance(u, (np.ndarray, list, float)) or isinstance(v, (np.ndarray, list, float)):
+                np.testing.assert_array_equal(np.asarray(u, dtype=object if isinstance(u, list) else None),
+                                              np.asarray(v, dtype=object if isinstance(v, list) else None),
+                                              err_msg=k)
+            else:
+                assert u == v, k
+
+
+def test_mat_config_loads_like_the_same_grid_as_csv(tmp_path):
+    """Finding F04 (2026-10-03). The reference loads a .mat config holding the
+    `parameter` cell array (4p17p0 L10620, `load(matcongfile)`) and reads it with
+    the same code as a workbook. scipy hands each cell back as a small array
+    (1x1 double, 1-element char), which reached the arithmetic as is and failed:
+    "unsupported operand type(s) for *: 'object' and 'float'". The grid here is
+    MINIMAL_CSV's, written as tools/xlsx_to_com_mat.py writes a .mat for Octave:
+    numbers as doubles, text as char, a blank as NaN."""
+    import csv as _csv
+    import scipy.io
+    csv_path = _write_csv(tmp_path, MINIMAL_CSV)
+    rows = [r for r in _csv.reader(MINIMAL_CSV.splitlines()) if r]
+    ncol = max(len(r) for r in rows)
+    grid = np.empty((len(rows), ncol), dtype=object)
+    for i, r in enumerate(rows):
+        for j in range(ncol):
+            c = r[j] if j < len(r) else ''
+            try:
+                grid[i, j] = float(c) if c.strip() else float('nan')
+            except ValueError:
+                grid[i, j] = c
+    mat_path = str(tmp_path / 'cfg.mat')
+    scipy.io.savemat(mat_path, {'parameter': grid}, format='5', oned_as='row')
+    _same_load(read_ParamConfigFile(mat_path, make_op()),
+               read_ParamConfigFile(csv_path, make_op()))
+
+
 # ============================================================
 # COM Octave (Octave 11.3.0, 2026-10-06): eval of each config string, as the
 # reference's xls_parameter does with eval_if_string. MATLAB's colon is

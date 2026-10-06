@@ -17,7 +17,9 @@ assembled `sicopr`:
   * a config missing a mandatory keyword gave an unrelated TypeError instead
     of the missing-keyword error: two modules' `_SENTINEL` collided (F05);
   * the apparent-channel-bandwidth helpers (4p17p0, ACBW = 1) raised NameError
-    on `cho_factor`, `cho_solve` and `solve_triangular` (F13).
+    on `cho_factor`, `cho_solve` and `solve_triangular` (F13);
+  * a `.mat` config, as `tools/xlsx_to_com_mat.py` writes it for COM Octave,
+    failed on its first arithmetic: the cells came back as scipy arrays (F04).
 
 Every workbook under benchmark/ and examples/ ships with the repository, so
 nothing here skips.
@@ -171,7 +173,7 @@ def main():
     check('there_are_workbooks_to_compare', len(books) >= 9, '%d found' % len(books))
     tmp = tempfile.mkdtemp(prefix='sicopr_csv_')
     try:
-        n_csv = 0
+        n_csv = n_mat = 0
         for i, src in enumerate(books):
             name = os.path.basename(src)
             # A load can write a .mat beside the file it reads; work on copies.
@@ -189,7 +191,18 @@ def main():
             n_csv += not bad
             check('csv_loads_like_the_workbook: %s' % name, not bad, '; '.join(bad[:3]))
 
-        print('compared %d workbooks: %d .csv loaded identically' % (len(books), n_csv))
+            from xlsx_to_com_mat import convert
+            path = os.path.join(tmp, '%02d_cfg.mat' % i)
+            convert(xlsx, path)
+            try:
+                bad = _fields_equal(want, _load(path), name)
+            except Exception as e:                      # noqa: BLE001
+                bad = ['%s: %s' % (type(e).__name__, e)]
+            n_mat += not bad
+            check('mat_loads_like_the_workbook: %s' % name, not bad, '; '.join(bad[:3]))
+
+        print('compared %d workbooks: %d .csv and %d .mat loaded identically'
+              % (len(books), n_csv, n_mat))
 
         # F05: a missing mandatory keyword is the missing-keyword error.
         grid = _grid(os.path.join(tmp, '00_' + os.path.basename(books[0])))
