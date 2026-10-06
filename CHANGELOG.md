@@ -37,10 +37,10 @@ Two things this file is *not*:
   same `param` and `OP` as the workbook it came from.
 - A MATLAB range in a configuration cell that does not land on its limit is
   now read as MATLAB reads it: `[0:0.3:1]` is 0, 0.3, 0.6, 0.9, where the reader
-  stretched it to 0, 0.333, 0.667, 1. The Tx FFE range reader now sets the last
-  element to the limit when `start + k*step` overshoots it, as the colon does
-  (`[0:0.1:0.3]` ends at 0.3, not one ulp above). Both are pinned against
-  COM Octave. Every range in the shipped and reference workbooks reads exactly
+  stretched it to 0, 0.333, 0.667, 1, and an end that the steps overshoot by
+  rounding is set to the limit, as the colon does (`[0:0.1:0.3]` ends at 0.3).
+  The translated `xls_parameter_txffe`, which the engine does not call, lacked
+  that end clamp and now has it. Both are pinned against COM Octave. Every range in the shipped and reference workbooks reads exactly
   as before, so no reference result moves.
 - `tests/test_assembled_names.py` now fails on either kind of defect in the
   assembled engine, and `tests/test_csv_inputs.py` loads every shipped workbook
