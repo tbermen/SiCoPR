@@ -336,3 +336,29 @@ button.link { background: transparent; color: var(--accent); border: 0;
 .brlist li .c { color: var(--dirty); font-variant-numeric: tabular-nums; }
 .brlist li.empty { color: var(--muted); cursor: default; }
 .modal .grow { flex: 1; }
+
+/* ---- panel slot (README, "Panels") ------------------------------------
+ * One column, as before, until a panel is loaded; then the views and a
+ * 400 px panel column with its own scroll, one column again under 1200 px. */
+.views { min-width: 0; }
+.appgrid.withpanel { display: grid; align-items: start;
+  grid-template-columns: minmax(0, 1fr) 400px; }
+.panelslot { display: flex; flex-direction: column; position: sticky; top: 53px;
+  height: calc(100vh - 53px); overflow-y: auto; background: var(--panel);
+  border-left: 1px solid var(--line); }
+/* display:flex above beats the browser's [hidden] rule; same pattern as
+   .view[hidden] and .modalback[hidden]. */
+.panelslot[hidden] { display: none; }
+@media (max-width: 1200px) {
+  .appgrid.withpanel { grid-template-columns: 1fr; }
+  .panelslot { position: static; height: auto; border-left: 0;
+    border-top: 1px solid var(--line); }
+}
+.panelbox { padding: 12px 14px; }
+.panelbox > h2 { margin: 0 0 8px; font-size: 15px; }
+/* a value a panel laid over the workbook, and the block that holds one */
+.tag.overlay { background: var(--accent-soft); color: var(--accent);
+  border-color: var(--accent); }
+.cell.overlaid:not(.changed) input { border-color: var(--accent); }
+.blk.overlaid rect { stroke: var(--accent); stroke-width: 2;
+  stroke-dasharray: 6 3; }

@@ -23,6 +23,8 @@
   <span id="ctxConfig" class="counts"></span>
 </header>
 
+<div id="appGrid" class="appgrid">
+<main class="views">
 <!-- ==================================================== Config ========= -->
 <section id="configView" class="view" hidden>
   <div class="rhead">
@@ -95,6 +97,7 @@
         <code id="nlConfig">(none)</code>
         <button id="btnToConfig" class="link">change in Config</button>
       </div>
+      <p id="nlOverlayNote" class="muted" hidden></p>
       <div class="cfgline">
         <span class="muted">Working directory</span>
         <code id="nlCwd">(repository)</code>
@@ -193,6 +196,10 @@
     </div>
   </div>
 </section>
+</main>
+<!-- panels of installed packages (README, "Panels"); hidden when there are none -->
+<aside id="panelSlot" class="panelslot" hidden></aside>
+</div>
 
 <div id="dirtyBar" hidden>
   <span id="dirtyCount"></span>

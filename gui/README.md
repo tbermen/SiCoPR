@@ -240,13 +240,82 @@ rather than by being swept into one block:
 Between the two, nothing in the workbook disappears; `test_gui_server.py`
 asserts it.
 
+## Panels
+
+An installed package may add a panel on the right of the page, for example a
+command box that drives the engine its own way. **No panel means no change:**
+with none installed `/api/panels` lists nothing, the slot stays hidden, the
+page is laid out as before, and every other response is what it was. Start
+with `--no-panels` to leave installed panels out.
+
+A panel is registered in the Python entry-point group `sicopr.gui_panels`, for
+example in its `pyproject.toml`:
+
+```
+[project.entry-points."sicopr.gui_panels"]
+mypanel = "mypackage.panel"
+```
+
+The entry point names an object (a module is fine) with:
+
+| attribute | meaning |
+| --- | --- |
+| `API` | `1`; a panel with another value is skipped with a console line |
+| `NAME` | a slug, `[a-z0-9_]+`, used in its URLs |
+| `TITLE` | the heading shown above the panel |
+| `STATIC` | a folder holding `panel.js` and optionally `panel.css` |
+| `handle(method, path, query, body, host)` | answers `/panel/<NAME>/api/<path>`; returns a JSON-able object, or `(status, content_type, bytes)` |
+| `busy()` (optional) | `None`, or a short text while the panel has a COM run in progress |
+
+`query` is a dict of the query string (last value of each name), `body` the
+JSON body of a POST or `None`. `host` is all a panel sees of the server:
+`host.roots()` (the opened directories, a copy), `host.run_dir()` (the Run
+tab's working directory) and `host.com_running()` (whether the Run tab's run
+is live). A panel checks its own paths against `host.roots()`, so it keeps the
+trust model of the rest of the editor. A panel that fails to load, or whose
+`API`, `NAME` or `STATIC` is wrong, is skipped with a console line; a
+`handle()` that raises gives a JSON 500 and the server goes on. While
+`busy()` returns a text, **Run sicopr.py** is refused with that text.
+
+`/panel/<NAME>/static/<file>` serves `.js` and `.css` files from `STATIC` by
+base name only, as `/static/` does. The page loads `panel.js` (and
+`panel.css`) and gives the panel a box in the slot with a mount element whose
+id is `panel-<NAME>`.
+
+The page and a panel talk through `CustomEvent`s on `window`. The page sends:
+
+| event | detail | when |
+| --- | --- | --- |
+| `sicopr:config` | `{path, name, cause, keys}` | a workbook was loaded in Config; `cause` is `user`, `boot` (the first load) or `panel`; `keys` are the field keys shown |
+| `sicopr:edit` | `{key, name, half, value, before}` | a changed field is committed (Enter, or leaving it) |
+| `sicopr:view` | `{view}` | the tab changed |
+| `sicopr:run` | `{returncode, command, cwd}` | a run started from the Run tab finished (once per run) |
+| `sicopr:browsed` | `{purpose, path}` | the Browse dialog opened for a panel was used; the directory is opened as with any Browse |
+
+and handles:
+
+| event | detail | what the page does |
+| --- | --- | --- |
+| `sicopr:open-config` | `{path}` | selects and loads that workbook, asking first if there are unsaved edits; answers with `sicopr:config` |
+| `sicopr:overlay` | `{title, cells: {key: {value, tag, note}}, save_hint, run_note, focus}` or `null` | shows each listed key with the overlay value in place of the workbook's, the `tag` beside its name and the `note` in its info line; outlines the blocks that hold one; a key the workbook does not hold is shown in Other settings; `title` goes in the header; **Save as** is disabled with `save_hint` as its tooltip; the Run tab shows `run_note` under its configuration; `focus` (a list of keys) selects their block when they all sit in one. `null` removes it. Loading a workbook removes it too |
+| `sicopr:clear-edits` | `{keys}` | drops those keys from the unsaved edits (the panel took them) |
+| `sicopr:show` | `{view, run}` | switches tab; with `run`, selects that run folder in the Results tabs |
+| `sicopr:browse` | `{purpose, title}` | opens the Browse dialog; **Use this directory** opens it and answers with `sicopr:browsed` |
+
+Keys are the editor's own: `name` for a main-area keyword, `name#tx` and
+`name#rx` for the halves of a `[TX RX]` cell.
+
 ## Tests
 
 ```
 python tests/test_config_roundtrip.py     # the writer  (18 checks)
-python tests/test_gui_server.py           # the HTTP layer (71 checks)
-python tests/test_gui_static.py           # page assets (7 checks)
+python tests/test_gui_server.py           # the HTTP layer (94 checks with a workbook)
+python tests/test_gui_static.py           # page assets (23 checks)
 ```
+
+The panel checks of both run with no data: a stand-in panel is loaded in
+place of the entry points, and the checks pin that with none loaded nothing
+changes.
 
 Both run as part of `tests/run_all.ps1`.
 

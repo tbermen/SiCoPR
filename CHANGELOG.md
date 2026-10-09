@@ -153,6 +153,19 @@ stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
   observation about a zero pre-cursor tap, and a proposed fix for the COM
   ad hoc: [`docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
 
+### Added
+
+- **A panel slot in the config editor** (`gui/`, a supporting tool; no engine
+  change). An installed package can register a panel in the entry-point group
+  `sicopr.gui_panels`; the editor shows it on the right of the page, serves its
+  `panel.js` and `panel.css`, routes `/panel/<name>/api/...` to it with a
+  narrow view of the server (the opened directories, the run directory, whether
+  a run is live), and exchanges ten named events with it on the page. With no
+  panel installed, `/api/panels` lists nothing and the page and every other
+  response are as before; `--no-panels` leaves installed panels out. The
+  contract is in `gui/README.md`, *Panels*; `tests/test_gui_server.py` and
+  `tests/test_gui_static.py` pin both the contract and the no-panel case.
+
 ## [1.1.2] - 2026-10-16
 
 A security fix for the GUI, a faster COM Octave on 4p17p0, and test and tooling

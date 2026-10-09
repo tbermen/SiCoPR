@@ -394,4 +394,36 @@ check("dirty_bar_hides_when_hidden",
       "el.hidden = true leaves it on screen")
 
 
+# ---- panels: the slot and the event contract ----------------------------
+#
+# With no panel installed the page must look as it did before panels: the slot
+# starts hidden, and only loadPanels() shows it, after /api/panels lists one.
+check("the_panel_slot_is_hidden_by_default",
+      re.search(r'<aside id="panelSlot"[^>]*\bhidden\b', html) is not None,
+      "index.html does not start the panel slot hidden; with no panel it "
+      "would take a column of the page")
+check("the_panel_slot_has_its_own_hidden_rule",
+      re.search(r"\.panelslot\[hidden\]\s*\{[^}]*display\s*:\s*none", css),
+      ".panelslot sets display and has no [hidden] rule, so the empty slot "
+      "would stay on screen")
+
+# The events are the whole of the contract on the page. A name the script
+# sends or handles that the README does not list is one no panel author can
+# know about; a renamed one silently breaks every panel.
+_readme = io.open(os.path.join(_ROOT, 'gui', 'README.md'), encoding='utf-8').read()
+_sent = set(re.findall(r"\bemit\('([a-z-]+)'", src))
+_heard = set(re.findall(r"addEventListener\('sicopr:([a-z-]+)'", src))
+_documented = set(re.findall(r'`sicopr:([a-z-]+)`', _readme))
+check("the_page_sends_and_handles_panel_events", _sent and _heard,
+      "found no sicopr: events in app.js (sent %r, handled %r)" % (_sent, _heard))
+check("every_panel_event_is_in_the_readme",
+      not ((_sent | _heard) - _documented),
+      "app.js uses these events, which gui/README.md does not list: %s"
+      % sorted((_sent | _heard) - _documented))
+check("the_readme_lists_no_event_the_page_lacks",
+      not (_documented - (_sent | _heard)),
+      "gui/README.md lists these events, which app.js neither sends nor "
+      "handles: %s" % sorted(_documented - (_sent | _heard)))
+
+
 finish()

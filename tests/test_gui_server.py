@@ -268,6 +268,148 @@ try:
     finally:
         shutil.rmtree(victim, ignore_errors=True)
 
+    # -------------------------------------------------------------- panels
+    #
+    # Panels (README, "Panels") are optional. Importing gui.app loads none;
+    # main() does, from the entry points, unless --no-panels. With none loaded
+    # the page and every response above are what they were before panels
+    # existed, and this block pins that before driving a stand-in panel.
+    # Needs no data, so it runs on a fresh clone.
+    check("importing_the_server_loads_no_panel", gui_app.PANELS == [],
+          "gui.app loaded %r at import; panels are loaded by main() only"
+          % gui_app.PANELS)
+    check("no_panel_lists_none", get_json('/api/panels') == {'api': 1, 'panels': []},
+          "/api/panels with no panel returned %r" % get_json('/api/panels'))
+    served = [(p, get(p)[0]) for p in ('/panel/standin/static/panel.js',
+                                       '/panel/standin/static/app.js',
+                                       '/panel/standin/api/state')]
+    check("no_panel_serves_no_panel_route",
+          all(code == 404 for _, code in served),
+          "with no panel, these /panel/ routes answered: %r" % served)
+    page0 = get('/')[1].decode('utf-8')
+    check("the_panel_slot_is_hidden_without_a_panel",
+          _re.search(r'<aside id="panelSlot"[^>]*\bhidden\b', page0) is not None,
+          "the page's panel slot is not hidden by default")
+
+    import types as _types
+    pdir = tempfile.mkdtemp(prefix='sicopr_panel_')
+    try:
+        static = os.path.join(pdir, 'static')
+        os.makedirs(static)
+        with open(os.path.join(static, 'panel.js'), 'w') as f:
+            f.write("'use strict';\n/* stand-in */\n")
+        with open(os.path.join(static, 'panel.css'), 'w') as f:
+            f.write('.standin { color: red; }\n')
+        with open(os.path.join(static, 'notes.txt'), 'w') as f:
+            f.write('not served\n')
+        # a real file one level up from STATIC: what ../ would reach
+        with open(os.path.join(pdir, 'secret.js'), 'w') as f:
+            f.write('secret\n')
+        seen = []
+
+        def _handle(method, path, query, body, host):
+            seen.append((method, path, query, body, host))
+            if path == 'boom':
+                raise RuntimeError('the stand-in raised')
+            if path == 'raw':
+                return (201, 'text/plain', b'raw bytes')
+            return {'method': method, 'path': path, 'query': query, 'body': body,
+                    'roots': host.roots(), 'run_dir': host.run_dir(),
+                    'com_running': host.com_running()}
+        busy_text = [None]
+        good = _types.SimpleNamespace(API=1, NAME='standin', TITLE='Stand-in',
+                                      STATIC=static, handle=_handle,
+                                      busy=lambda: busy_text[0])
+
+        def _raises():
+            raise ImportError('the stand-in package is broken')
+        bad_api = _types.SimpleNamespace(API=2, NAME='later', TITLE='', STATIC=static,
+                                         handle=_handle)
+        bad_name = _types.SimpleNamespace(API=1, NAME='Bad Name', TITLE='',
+                                          STATIC=static, handle=_handle)
+        loaded = gui_app.load_panels([('raises', _raises), ('api2', lambda: bad_api),
+                                      ('badname', lambda: bad_name),
+                                      ('standin', lambda: good),
+                                      ('twice', lambda: good)])
+        check("a_broken_or_foreign_panel_is_skipped_and_the_rest_load",
+              [p.NAME for p in loaded] == ['standin'],
+              "loading a raising panel, an API 2 panel, a bad name, a good one "
+              "and the good one again gave %r" % [p.NAME for p in loaded])
+        lst = get_json('/api/panels')
+        check("a_loaded_panel_is_listed",
+              lst == {'api': 1, 'panels': [{
+                  'name': 'standin', 'title': 'Stand-in',
+                  'script': '/panel/standin/static/panel.js',
+                  'style': '/panel/standin/static/panel.css'}]},
+              "/api/panels returned %r" % lst)
+        code, body, ctype = get('/panel/standin/static/panel.js')
+        check("a_panel_script_is_served",
+              code == 200 and b'stand-in' in body and 'javascript' in ctype,
+              "GET panel.js returned %s %s %r" % (code, ctype, body[:40]))
+        code, body, ctype = get('/panel/standin/static/panel.css')
+        check("a_panel_stylesheet_is_served", code == 200 and 'css' in ctype,
+              "GET panel.css returned %s %s" % (code, ctype))
+        check("the_bait_beside_static_exists",
+              os.path.isfile(os.path.join(static, '..', 'secret.js')),
+              "the probe file is missing, so the next check would pass vacuously")
+        refused = []
+        for probe in ('../secret.js', '..%2fsecret.js',
+                      urllib.parse.quote(os.path.join(pdir, 'secret.js')),
+                      'notes.txt'):
+            c, b, _ = get('/panel/standin/static/' + probe)
+            if c != 404 or b'secret' in b:
+                refused.append((probe, c))
+        check("panel_static_is_served_by_base_name_only", not refused,
+              "these reached a file outside STATIC or a type that is not .js or "
+              ".css: %r" % refused)
+        r = get_json('/panel/standin/api/state?x=1')
+        check("a_panel_api_get_reaches_handle",
+              r.get('method') == 'GET' and r.get('path') == 'state'
+              and r.get('query') == {'x': '1'} and r.get('body') is None,
+              "GET /panel/standin/api/state?x=1 returned %r" % r)
+        check("the_host_gives_the_opened_roots_and_the_run_dir",
+              any(os.path.normcase(x) == os.path.normcase(_ROOT)
+                  for x in r.get('roots', []))
+              and os.path.normcase(r.get('run_dir', '')) == os.path.normcase(gui_app.RUN_CWD)
+              and r.get('com_running') is False,
+              "host gave roots=%r run_dir=%r com_running=%r"
+              % (r.get('roots'), r.get('run_dir'), r.get('com_running')))
+        check("the_host_hands_out_a_copy_of_the_roots",
+              seen and seen[-1][4].roots() is not gui_app.EXTRA_ROOTS
+              and (seen[-1][4].roots().append('x') or True)
+              and 'x' not in gui_app._roots(),
+              "a panel could change the server's list of opened roots")
+        code, r = post_json('/panel/standin/api/edit/deep', {'a': 1})
+        check("a_panel_api_post_reaches_handle",
+              code == 200 and r.get('method') == 'POST'
+              and r.get('path') == 'edit/deep' and r.get('body') == {'a': 1},
+              "POST returned %s %r" % (code, r))
+        code, body, ctype = get('/panel/standin/api/raw')
+        check("a_panel_may_answer_with_its_own_bytes",
+              code == 201 and body == b'raw bytes' and 'text/plain' in ctype,
+              "GET raw returned %s %s %r" % (code, ctype, body))
+        code, body, ctype = get('/panel/standin/api/boom')
+        check("a_raising_panel_gives_a_json_500",
+              code == 500 and 'json' in ctype and b'the stand-in raised' in body,
+              "a raising handle() gave %s %s %r" % (code, ctype, body[:80]))
+        busy_text[0] = 'a run started from the stand-in is in progress'
+        code, r = post_json('/api/exec/start', {'config': '', 'thru': ''})
+        check("a_busy_panel_makes_the_run_tab_refuse",
+              r.get('error') == busy_text[0],
+              "with a panel busy, /api/exec/start returned %r" % r)
+        busy_text[0] = None
+        code, r = post_json('/api/exec/start', {'config': '', 'thru': ''})
+        check("an_idle_panel_does_not_block_the_run_tab",
+              r.get('error') == 'the inputs are not runnable',
+              "with the panel idle, /api/exec/start returned %r" % r)
+    finally:
+        gui_app.load_panels([])
+        shutil.rmtree(pdir, ignore_errors=True)
+    check("unloading_the_panels_restores_the_empty_list",
+          get_json('/api/panels') == {'api': 1, 'panels': []}
+          and get('/panel/standin/static/panel.js')[0] == 404,
+          "after unloading, /api/panels returned %r" % get_json('/api/panels'))
+
     # ------------------------------------------------------------- configs
     configs = get_json('/api/configs')
     check("the_configs_endpoint_answers", isinstance(configs, list),

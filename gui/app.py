@@ -61,6 +61,12 @@ Endpoints
     GET  /api/dynamic?path=    .mat exports in a run and their dashboards
     POST /api/render           build the R dashboard for one .mat export
     GET  /rpt/<path>           a generated dashboard and its lib/ assets
+    GET  /api/panels           the panels installed packages registered
+    GET  /panel/<n>/static/<f> a panel's panel.js or panel.css
+    *    /panel/<n>/api/<path> handed to that panel's handle()
+
+Panels are optional and off with --no-panels; with none installed every
+other response is what it was without them (README, "Panels").
 
 Jobs run in named slots: 'com' for the COM run itself (one at a time, it is
 CPU-heavy) and 'render' for the R dashboard build, which is different work and
@@ -72,6 +78,7 @@ must neither block nor be blocked by a run.
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import webbrowser
@@ -1100,6 +1107,105 @@ def run_payload(rel):
             'configs_here': runs_here, 'overwritten': overwritten}
 
 
+# ---- panels (panel API 1) -------------------------------------------------
+#
+# An installed package may add a panel on the right of the page by naming an
+# object in the entry-point group `sicopr.gui_panels` (README, "Panels"). With
+# none installed, PANELS stays empty: /api/panels lists nothing, the slot stays
+# hidden, and every other response is what it was before panels existed. A
+# panel that fails to load is reported on the console and skipped, so a broken
+# package cannot take the editor down with it.
+PANEL_API = 1
+PANEL_GROUP = 'sicopr.gui_panels'
+PANELS = []
+_PANEL_NAME = re.compile(r'[a-z0-9_]+')
+
+
+def _panel_problem(p):
+    """Why `p` cannot be a panel, or None."""
+    if getattr(p, 'API', None) != PANEL_API:
+        return 'API is %r, this editor takes %d' % (getattr(p, 'API', None), PANEL_API)
+    if not isinstance(getattr(p, 'NAME', None), str) \
+            or not _PANEL_NAME.fullmatch(p.NAME):
+        return 'NAME must be a slug of a-z, 0-9 and _'
+    if any(q.NAME == p.NAME for q in PANELS):
+        return 'a panel named %s is already loaded' % p.NAME
+    if not os.path.isfile(os.path.join(str(getattr(p, 'STATIC', '')), 'panel.js')):
+        return 'STATIC holds no panel.js'
+    if not callable(getattr(p, 'handle', None)):
+        return 'it has no handle()'
+    return None
+
+
+def _entry_point_panels():
+    """[(label, loader)] for each registered panel."""
+    from importlib import metadata
+    try:
+        eps = metadata.entry_points(group=PANEL_GROUP)
+    except Exception:                                 # noqa: BLE001
+        return []
+    return [(ep.name, ep.load) for ep in eps]
+
+
+def load_panels(candidates=None):
+    """Load the registered panels, or `candidates` ([(label, loader)]) in
+    their place. Returns PANELS."""
+    del PANELS[:]
+    for label, loader in (_entry_point_panels() if candidates is None
+                          else candidates):
+        try:
+            p = loader()
+            why = _panel_problem(p)
+        except Exception as e:                        # noqa: BLE001
+            why = '%s: %s' % (type(e).__name__, e)
+        if why:
+            print('panel %s skipped: %s' % (label, why))
+            continue
+        PANELS.append(p)
+        print('panel %s loaded (%s)' % (p.NAME, getattr(p, 'TITLE', p.NAME)))
+    return PANELS
+
+
+def _panel(name):
+    return next((p for p in PANELS if p.NAME == name), None)
+
+
+class PanelHost(object):
+    """All a panel sees of this server: copies, never the lists themselves."""
+
+    def roots(self):
+        return list(_roots())
+
+    def run_dir(self):
+        return RUN_CWD
+
+    def com_running(self):
+        r = runner.current('com')
+        return bool(r is not None and r.running)
+
+
+def panels_payload():
+    out = []
+    for p in PANELS:
+        css = os.path.isfile(os.path.join(p.STATIC, 'panel.css'))
+        out.append({'name': p.NAME, 'title': getattr(p, 'TITLE', p.NAME),
+                    'script': '/panel/%s/static/panel.js' % p.NAME,
+                    'style': '/panel/%s/static/panel.css' % p.NAME if css else None})
+    return {'api': PANEL_API, 'panels': out}
+
+
+def panel_busy():
+    """The text of the first panel that reports a COM run in progress, or None."""
+    for p in PANELS:
+        try:
+            b = p.busy() if callable(getattr(p, 'busy', None)) else None
+        except Exception as e:                        # noqa: BLE001
+            b = 'panel %s could not say whether it is busy: %s' % (p.NAME, e)
+        if b:
+            return str(b)
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):        # quieter console
         pass
@@ -1211,6 +1317,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._report(q.get('path', [''])[0])
             if u.path == '/figure':
                 return self._figure(q.get('path', [''])[0])
+            if u.path == '/api/panels':
+                return self._json(panels_payload())
+            if u.path.startswith('/panel/'):
+                return self._panel_route('GET', u.path, q, None)
             return self._send(404, b'not found', 'text/plain')
         except FileNotFoundError as e:
             return self._json({'error': 'not found: %s' % e}, 404)
@@ -1223,7 +1333,45 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             return self._json({'error': '%s: %s' % (type(e).__name__, e)}, 500)
 
+    def _panel_route(self, method, path, q, body):
+        """/panel/<name>/static/<file> and /panel/<name>/api/<path>.
+
+        Static files are served by base name from the panel's own STATIC
+        folder, as /static/ is, and only .js and .css: no path a request gives
+        can leave that folder. Everything under api/ goes to the panel's
+        handle(), which checks its own paths against PanelHost.roots().
+        """
+        parts = path.split('/', 4)            # '', 'panel', name, kind, rest
+        p = _panel(parts[2]) if len(parts) == 5 else None
+        if p is None:
+            return self._send(404, b'not found', 'text/plain')
+        if parts[3] == 'static' and method == 'GET':
+            name = os.path.basename(parts[4])
+            full = os.path.join(p.STATIC, name)
+            if not name.endswith(('.js', '.css')) or not os.path.isfile(full):
+                return self._send(404, b'not found', 'text/plain')
+            ctype = 'text/css' if name.endswith('.css') else 'application/javascript'
+            with open(full, 'rb') as f:
+                return self._send(200, f.read(), ctype + '; charset=utf-8')
+        if parts[3] != 'api':
+            return self._send(404, b'not found', 'text/plain')
+        try:
+            got = p.handle(method, parts[4], {k: v[-1] for k, v in q.items()},
+                           body, PanelHost())
+        except Exception as e:                            # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            return self._json({'error': 'panel %s: %s: %s'
+                               % (p.NAME, type(e).__name__, e)}, 500)
+        if isinstance(got, tuple):
+            status, ctype, data = got
+            return self._send(status, data, ctype)
+        return self._json(got)
+
     def _start(self, body):
+        busy = panel_busy()
+        if busy:
+            return {'error': busy}
         argv, problems = build_netlist(body)
         if problems:
             return {'error': 'the inputs are not runnable', 'problems': problems}
@@ -1326,6 +1474,8 @@ class Handler(BaseHTTPRequestHandler):
                     {'stopped': runner.stop(body.get('slot', 'com'))})
             if u.path == '/api/render':
                 return self._json(render_dynamic(body.get('mat', '')))
+            if u.path.startswith('/panel/'):
+                return self._panel_route('POST', u.path, parse_qs(u.query), body)
             return self._send(404, b'not found', 'text/plain')
         except Exception as e:                            # noqa: BLE001
             import traceback
@@ -1397,6 +1547,8 @@ def main():
     if dup:
         print('schematic.BLOCKS lists these keywords more than once: %s' % dup)
         return 1
+    if '--no-panels' not in sys.argv:
+        load_panels()
     srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     url = 'http://127.0.0.1:%d' % PORT
     print('SiCoPR config editor on %s   (Ctrl-C to stop)' % url)

@@ -17,8 +17,17 @@ const baseName = (p) => String(p).split(/[\\/]/).pop();
 let CFG = null;        // current /api/config payload
 let SEL = null;        // selected block id
 let EDITS = {};        // keyword -> new value (typed, not raw text)
+let OVERLAY = null;    // a panel's values laid over the workbook (sicopr:overlay), or null
+let WANT_RUN = null;   // a run folder a panel asked the Results tabs to show
 
 /* ---------------------------------------------------------------- helpers */
+
+/* Panels (README, "Panels") hear about the page through events on window and
+ * talk back the same way. With no panel installed nobody listens, OVERLAY stays
+ * null, and every path below is the one the page took before panels existed. */
+function emit(name, detail) {
+  window.dispatchEvent(new CustomEvent('sicopr:' + name, { detail }));
+}
 
 function toast(msg, bad) {
   const t = $('#toast');
@@ -64,6 +73,27 @@ function dirtyBlocks() {
   return out;
 }
 
+/* Overlay entries for keys the workbook does not hold (a keyword a panel
+ * added): shown in the Other settings block. */
+function extraOverlay() {
+  if (!CFG || !OVERLAY) return [];
+  const have = new Set(CFG.blocks.flatMap((b) => b.cells.map((c) => c.key)));
+  return Object.keys(OVERLAY.cells).filter((k) => !have.has(k) && !k.includes('/'))
+    .map((k) => ({ key: k, name: k, half: null, value: null, units: '', note: '',
+      info: '', coord: '', matlab: '', is_sweep: false, is_formula: false,
+      engine_read: true, default: null }));
+}
+
+function overlaidBlocks() {
+  const out = new Set();
+  if (!CFG || !OVERLAY) return out;
+  for (const b of CFG.blocks) {
+    if (b.cells.some((c) => c.key in OVERLAY.cells)) out.add(b.id);
+  }
+  if (extraOverlay().length) out.add('other');
+  return out;
+}
+
 /* -------------------------------------------------------------- schematic */
 
 const LANE_ORDER = ['signal', 'agg', 'eq', 'ctl'];
@@ -91,6 +121,7 @@ function drawSchematic() {
   for (const b of CFG.blocks) (lanes[b.row] = lanes[b.row] || []).push(b);
 
   const dirty = dirtyBlocks();
+  const over = overlaidBlocks();
   const W = 1000, PAD = 24, BH = 58, LANE_GAP = 46, TOP = 34;
 
   const used = LANE_ORDER.filter((r) => (lanes[r] || []).length);
@@ -120,6 +151,7 @@ function drawSchematic() {
       const g = el('g', {
         class: 'blk' + (b.id === SEL ? ' sel' : '') +
           (b.cells.length ? '' : ' empty') +
+          (over.has(b.id) ? ' overlaid' : '') +
           (dirty.has(b.id) ? ' dirty' : ''),
         tabindex: '0', role: 'button',
       });
@@ -193,10 +225,14 @@ function renderPanel() {
     + ' from ' + CFG.name
     + (nref ? `  ·  ${nref} reference-only (not read by the engine)` : '');
 
-  for (const c of b.cells) {
+  const cells = b.id === 'other' ? b.cells.concat(extraOverlay()) : b.cells;
+  for (const c of cells) {
     // A [TX RX] cell is one spreadsheet cell shown under both ends of the
     // link; each field edits its own half and the server recombines on save.
-    const base = c.half ? c.half_value : c.value;
+    // With a panel's overlay, the overlay value stands in for the workbook's,
+    // so editing a field back to it is not a change.
+    const ov = OVERLAY ? OVERLAY.cells[c.key] : undefined;
+    const base = ov ? ov.value : (c.half ? c.half_value : c.value);
 
     const wrap = document.createElement('div');
     wrap.className = 'cell';
@@ -218,6 +254,8 @@ function renderPanel() {
     if (c.half) top.appendChild(tag('pair', '[TX RX] pair'));
     if (!c.engine_read) top.appendChild(tag('ref', 'reference only'));
     if (c.key in EDITS) top.appendChild(tag('dirty', 'changed'));
+    if (ov && ov.tag) top.appendChild(tag('overlay', ov.tag));
+    if (ov) wrap.classList.add('overlaid');
     wrap.appendChild(top);
 
     const inp = document.createElement('input');
@@ -235,6 +273,12 @@ function renderPanel() {
       refreshDirty();
       drawSchematic();
     });
+    // Committed (Enter, or leaving the field): a panel may take the edit.
+    inp.addEventListener('change', () => {
+      if (!(c.key in EDITS)) return;
+      emit('edit', { key: c.key, name: c.name, half: c.half,
+        value: EDITS[c.key], before: base });
+    });
     wrap.classList.toggle('changed', c.key in EDITS);
     wrap.appendChild(inp);
 
@@ -243,6 +287,7 @@ function renderPanel() {
     // used to sit in a separate "not read by the engine" block, where it told
     // the reader nothing because it was away from the field it describes.
     const bits = [];
+    if (ov && ov.note) bits.push(ov.note);
     if (c.note) bits.push(c.note);
     if (c.info) bits.push(c.info);
     if (c.half) bits.push('one half of ' + c.name + ' = ' + fmt(c.value));
@@ -277,14 +322,21 @@ function refreshDirty() {
   const n = Object.keys(EDITS).length;
   $('#dirtyBar').hidden = n === 0;
   $('#dirtyCount').textContent = n + ' unsaved change' + (n === 1 ? '' : 's');
-  $('#btnSave').disabled = n === 0;
+  $('#btnSave').disabled = n === 0 || !!OVERLAY;
+  // Save as writes the workbook plus EDITS: with an overlay set it would leave
+  // out every value the panel holds, so the panel's own save is pointed to.
+  if (OVERLAY) $('#btnSave').title = OVERLAY.save_hint || '';
+  else $('#btnSave').removeAttribute('title');
 }
 
 /* ------------------------------------------------------------------ load */
 
-async function loadConfig(path) {
+/* cause says who loaded it, for a panel: 'user' (a picker, Browse, New, Save
+ * as), 'boot' (the first load) or 'panel' (sicopr:open-config). */
+async function loadConfig(path, cause) {
   CFG = await api('/api/config?path=' + encodeURIComponent(path));
   EDITS = {};
+  OVERLAY = null;     // it belonged to the workbook shown before
   SEL = SEL && CFG.blocks.some((b) => b.id === SEL) ? SEL : 'channel';
   const c = CFG.counts;
   $('#counts').textContent =
@@ -294,6 +346,34 @@ async function loadConfig(path) {
   refreshDirty();
   drawSchematic();
   renderPanel();
+  emit('config', { path: CFG.path, name: CFG.name, cause: cause || 'user',
+    keys: CFG.blocks.flatMap((b) => b.cells.map((x) => x.key)) });
+}
+
+/* sicopr:open-config: select and load a workbook a panel names. */
+async function openConfig(path) {
+  if (!path) return;
+  if (CFG && CFG.path === path) {      // already shown: say so, keep the edits
+    emit('config', { path: CFG.path, name: CFG.name, cause: 'panel',
+      keys: CFG.blocks.flatMap((b) => b.cells.map((x) => x.key)) });
+    return;
+  }
+  if (Object.keys(EDITS).length
+    && !confirm('Discard unsaved changes and load another config?')) return;
+  const dir = String(path).replace(/[\\/][^\\/]*$/, '');
+  for (const [sel, value, fill] of [['#dirPick', dir, null],
+                                    ['#configPick', path, dir]]) {
+    if (fill !== null) await fillConfigList(fill);
+    const s = $(sel);
+    if (![...s.options].some((o) => o.value === value)) {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = sel === '#dirPick' ? value : baseName(value);
+      s.appendChild(o);
+    }
+    s.value = value;
+  }
+  await loadConfig(path, 'panel');
 }
 
 async function fillConfigList(dir) {
@@ -343,9 +423,11 @@ function fillDirPick(dirs, dsel) {
   }
 }
 
-function brOpen(purpose) {
+let BR_PANEL = '';       // the purpose a panel gave with sicopr:browse
+
+function brOpen(purpose, title) {
   BR_FOR = purpose;
-  $('#brTitle').textContent = BR_TITLES[purpose];
+  $('#brTitle').textContent = title || BR_TITLES[purpose] || 'Choose a directory';
   $('#browseBack').hidden = false;
   brShow('').catch((e) => toast(e.message, true));
 }
@@ -416,6 +498,10 @@ async function brUse() {
     return;
   }
   await api(`/api/open?path=${encodeURIComponent(chosen)}`);
+  if (BR_FOR === 'panel') {
+    emit('browsed', { purpose: BR_PANEL, path: chosen });
+    return;
+  }
   if (BR_FOR === 'channel') {
     const dirs = await fillChannelDirs();
     // prefer a directory under what was just opened, else keep the first
@@ -448,6 +534,7 @@ async function brUse() {
 }
 
 async function boot() {
+  await loadPanels();
   const dirs = await api('/api/config_dirs');
   const dsel = $('#dirPick');
   fillDirPick(dirs, dsel);
@@ -489,7 +576,7 @@ async function boot() {
     }
     loadConfig(pick.value).catch((e) => toast(e.message, true));
   });
-  if (list.length) await loadConfig(list[0].path);
+  if (list.length) await loadConfig(list[0].path, 'boot');
   else toast('no configuration workbooks found \u2014 use Browse to point at '
              + 'a directory that has some', true);
 }
@@ -630,6 +717,15 @@ function show(which) {
   if (which === 'run') runEnter();
   if (which === 'results') resultsEnter();
   if (which === 'dynamic') dynEnter();
+  emit('view', { view: which });
+}
+
+/* The run folder a panel asked for (sicopr:show), if the listing has it. */
+function wantedRun(rows) {
+  if (!WANT_RUN) return null;
+  const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const hit = rows.find((r) => norm(r.path) === norm(WANT_RUN));
+  return hit ? hit.path : null;
 }
 
 /* The full figure set com_plots can produce, so a run that made fewer can say
@@ -923,6 +1019,8 @@ async function pollStatus() {
   // with no way back. `started` identifies the run; each one is announced once.
   if (RUN_DONE === st.started) return;
   RUN_DONE = st.started;
+  emit('run', { returncode: st.returncode, command: st.command,
+    cwd: $('#nlCwd').textContent });
 
   if (st.returncode === 0) {
     if ($('#nlMat').checked) {
@@ -959,7 +1057,8 @@ function resultsEnter() {
         + `${r.png} figures)`;
       pick.appendChild(o);
     }
-    pick.value = rows.some((r) => r.path === keep) ? keep : rows[0].path;
+    pick.value = wantedRun(rows)
+      || (rows.some((r) => r.path === keep) ? keep : rows[0].path);
     return loadRun(pick.value);
   }).catch((e) => toast(e.message, true));
 }
@@ -1148,6 +1247,91 @@ function fmtNum(text) {
 
 window.addEventListener('beforeunload', (e) => {
   if (Object.keys(EDITS).length) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ---------------------------------------------------------------- panels */
+
+/* Each panel /api/panels lists gets a box in the right-hand slot, with a mount
+ * element `#panel-<name>` for its script to fill. No panel: the slot stays
+ * hidden and the page is laid out as before. */
+async function loadPanels() {
+  let got;
+  try { got = await api('/api/panels'); } catch (e) { return; }
+  const list = (got && got.api === 1 && got.panels) || [];
+  if (!list.length) return;
+  const slot = $('#panelSlot');
+  for (const p of list) {
+    const box = document.createElement('section');
+    box.className = 'panelbox';
+    box.dataset.panel = p.name;
+    const h = document.createElement('h2');
+    h.textContent = p.title;
+    box.appendChild(h);
+    const mount = document.createElement('div');
+    mount.id = 'panel-' + p.name;
+    mount.className = 'panelmount';
+    box.appendChild(mount);
+    slot.appendChild(box);
+    if (p.style) {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.href = p.style;
+      document.head.appendChild(l);
+    }
+    await new Promise((done) => {
+      const s = document.createElement('script');
+      s.src = p.script;
+      s.onload = done;
+      s.onerror = () => { toast('panel ' + p.name + ' could not be loaded', true); done(); };
+      document.body.appendChild(s);
+    });
+  }
+  slot.hidden = false;
+  $('#appGrid').classList.add('withpanel');
+}
+
+window.addEventListener('sicopr:open-config', (e) => {
+  openConfig((e.detail || {}).path).catch((x) => toast(x.message, true));
+});
+
+window.addEventListener('sicopr:overlay', (e) => {
+  const d = e.detail;
+  OVERLAY = d && d.cells ? d : null;
+  $('#ctxConfig').textContent = OVERLAY ? (OVERLAY.title || '') : '';
+  const note = $('#nlOverlayNote');
+  note.textContent = OVERLAY ? (OVERLAY.run_note || '') : '';
+  note.hidden = !(OVERLAY && OVERLAY.run_note);
+  if (!CFG) return;
+  // focus: keys the panel just changed; the view switches to their block
+  // when they all sit in one
+  const want = new Set([].concat((OVERLAY && OVERLAY.focus) || []));
+  const ids = new Set(CFG.blocks.filter((b) => b.cells.some((c) => want.has(c.key)))
+    .map((b) => b.id));
+  if (extraOverlay().some((c) => want.has(c.key))) ids.add('other');
+  if (ids.size === 1) SEL = [...ids][0];
+  refreshDirty();
+  drawSchematic();
+  renderPanel();
+});
+
+window.addEventListener('sicopr:clear-edits', (e) => {
+  for (const k of (e.detail || {}).keys || []) delete EDITS[k];
+  if (!CFG) return;
+  refreshDirty();
+  drawSchematic();
+  renderPanel();
+});
+
+window.addEventListener('sicopr:show', (e) => {
+  const d = e.detail || {};
+  WANT_RUN = d.run || null;
+  show(d.view);
+});
+
+window.addEventListener('sicopr:browse', (e) => {
+  const d = e.detail || {};
+  BR_PANEL = d.purpose || '';
+  brOpen('panel', d.title);
 });
 
 show('config');
@@ -1390,7 +1574,8 @@ async function dynEnter() {
       $('#dynList').textContent = NO_RUNS;
       return;
     }
-    pick.value = rows.some((r) => r.path === keep) ? keep : rows[0].path;
+    pick.value = wantedRun(rows)
+      || (rows.some((r) => r.path === keep) ? keep : rows[0].path);
     await dynLoad(pick.value);
   } catch (e) { toast(e.message, true); }
 }
