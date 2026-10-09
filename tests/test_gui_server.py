@@ -379,7 +379,10 @@ try:
               and (seen[-1][4].roots().append('x') or True)
               and 'x' not in gui_app._roots(),
               "a panel could change the server's list of opened roots")
-        code, r = post_json('/panel/standin/api/edit/deep', {'a': 1})
+        try:
+            code, r = post_json('/panel/standin/api/edit/deep', {'a': 1})
+        except ValueError:                  # not JSON: the route did not reach the panel
+            code, r = 0, {}
         check("a_panel_api_post_reaches_handle",
               code == 200 and r.get('method') == 'POST'
               and r.get('path') == 'edit/deep' and r.get('body') == {'a': 1},
