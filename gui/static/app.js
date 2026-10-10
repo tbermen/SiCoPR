@@ -579,6 +579,7 @@ async function boot() {
   if (list.length) await loadConfig(list[0].path, 'boot');
   else toast('no configuration workbooks found \u2014 use Browse to point at '
              + 'a directory that has some', true);
+  emitChannels('boot');
 }
 
 /* ------------------------------------------------------------ new config */
@@ -757,6 +758,25 @@ function selected(sel) {
   return Array.from(sel.selectedOptions).map((o) => o.value);
 }
 
+/* The channel files chosen for a run, for a panel (sicopr:channels): sent once
+ * at start, and whenever the selection differs from the one last sent, whoever
+ * changed it. cause: 'boot', 'user' (a pick in THRU, FEXT or NEXT) or 'list'
+ * (the lists were filled again: a directory, the filter, the first THRU taken
+ * by default). */
+let CHANNELS_SENT = null;
+
+function emitChannels(cause) {
+  const d = {
+    thru: $('#nlThru').value,
+    fext: selected($('#nlFext')),
+    next: selected($('#nlNext')),
+  };
+  const now = JSON.stringify(d);
+  if (cause !== 'boot' && now === CHANNELS_SENT) return;
+  CHANNELS_SENT = now;
+  emit('channels', Object.assign(d, { cause }));
+}
+
 function netlistBody() {
   return {
     config: CFG ? CFG.path : '',
@@ -841,6 +861,7 @@ function fillChannelSelects(files) {
     const first = CHANNELS.find((f) => f.role === 'thru');
     if (first) thru.value = first.path;
   }
+  emitChannels('list');
   refreshNetlist();
 }
 
@@ -897,6 +918,9 @@ $('#nlDir').addEventListener('change', async () => {
 
 for (const id of ['#nlThru', '#nlFext', '#nlNext', '#nlMat', '#nlEye', '#nlVer']) {
   $(id).addEventListener('change', refreshNetlist);
+}
+for (const id of ['#nlThru', '#nlFext', '#nlNext']) {
+  $(id).addEventListener('change', () => emitChannels('user'));
 }
 $('#nlFilter').addEventListener('change', () => fillChannelSelects(null));
 

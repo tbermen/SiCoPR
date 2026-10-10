@@ -291,6 +291,7 @@ The page and a panel talk through `CustomEvent`s on `window`. The page sends:
 | `sicopr:view` | `{view}` | the tab changed |
 | `sicopr:run` | `{returncode, command, cwd}` | a run started from the Run tab finished (once per run) |
 | `sicopr:browsed` | `{purpose, path}` | the Browse dialog opened for a panel was used; the directory is opened as with any Browse |
+| `sicopr:channels` | `{thru, fext, next, cause}` | the channel files chosen in Run changed: `thru` is a path (empty when none), `fext` and `next` are lists of paths, as the page holds them. Sent once at start (`cause` is `boot`; the lists are empty until Run is first opened), on a pick in THRU, FEXT or NEXT (`user`), and when the lists are filled again and the selection differs (`list`: a directory, the filter, the first THRU taken by default) |
 
 and handles:
 
@@ -310,7 +311,7 @@ Keys are the editor's own: `name` for a main-area keyword, `name#tx` and
 ```
 python tests/test_config_roundtrip.py     # the writer  (18 checks)
 python tests/test_gui_server.py           # the HTTP layer (94 checks with a workbook)
-python tests/test_gui_static.py           # page assets (23 checks)
+python tests/test_gui_static.py           # page assets (30 checks)
 ```
 
 The panel checks of both run with no data: a stand-in panel is loaded in

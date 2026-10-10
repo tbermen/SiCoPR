@@ -160,7 +160,9 @@ stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
   `sicopr.gui_panels`; the editor shows it on the right of the page, serves its
   `panel.js` and `panel.css`, routes `/panel/<name>/api/...` to it with a
   narrow view of the server (the opened directories, the run directory, whether
-  a run is live), and exchanges ten named events with it on the page. With no
+  a run is live), and exchanges eleven named events with it on the page, among
+  them `sicopr:channels`, which tells a panel the THRU, FEXT and NEXT files
+  chosen in Run, at start and whenever that selection changes. With no
   panel installed, `/api/panels` lists nothing and the page and every other
   response are as before; `--no-panels` leaves installed panels out. The
   contract is in `gui/README.md`, *Panels*; `tests/test_gui_server.py` and

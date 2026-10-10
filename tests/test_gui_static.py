@@ -426,4 +426,68 @@ check("the_readme_lists_no_event_the_page_lacks",
       "handles: %s" % sorted(_documented - (_sent | _heard)))
 
 
+# ---- panels: the channel files chosen for a run (sicopr:channels) -------
+#
+# A panel hears which workbook is shown (sicopr:config) but had no way to know
+# which THRU, FEXT and NEXT files are picked in Run, so "run what is selected"
+# typed in a panel could not mean anything. The event is sent once at start
+# and whenever that selection changes, whoever changed it: a pick, or the
+# lists being filled again (a directory, the filter, the first THRU taken by
+# default).
+def _fn_body(name):
+    """The text of a top-level function of app.js: from its header to the
+    closing brace in column 0."""
+    m = re.search(r'^(?:async )?function %s\(' % re.escape(name), src, re.M)
+    if not m:
+        return ''
+    end = re.search(r'^\}', src[m.start():], re.M)
+    return src[m.start():m.start() + end.end()] if end else ''
+
+
+_ec = _fn_body('emitChannels')
+check("the_channels_event_carries_thru_fext_next_and_cause",
+      re.search(r"emit\('channels'", _ec)
+      and re.search(r"thru:\s*\$\('#nlThru'\)\.value", _ec)
+      and re.search(r"fext:\s*selected\(\$\('#nlFext'\)\)", _ec)
+      and re.search(r"next:\s*selected\(\$\('#nlNext'\)\)", _ec)
+      and re.search(r"\{\s*cause\s*\}", _ec),
+      "emitChannels() does not send sicopr:channels with the THRU, the FEXT "
+      "and NEXT lists as the Run tab holds them, and the cause")
+check("the_channels_event_is_sent_once_at_start",
+      re.search(r"emitChannels\('boot'\)", _fn_body('boot')),
+      "boot() does not send sicopr:channels, so a panel that starts with the "
+      "page does not know the selection until something changes")
+check("the_channels_event_is_sent_when_the_lists_are_filled",
+      re.search(r"emitChannels\('list'\)", _fn_body('fillChannelSelects')),
+      "fillChannelSelects() changes what is selected (a directory, the filter, "
+      "the first THRU by default) without sending sicopr:channels")
+_picks = re.search(
+    r"for \(const id of \[([^\]]*)\]\) \{\s*\$\(id\)\.addEventListener\("
+    r"'change', \(\) => emitChannels\('user'\)\);", src)
+check("the_channels_event_is_sent_on_every_pick",
+      _picks and set(re.findall(r"'(#\w+)'", _picks.group(1)))
+      == {'#nlThru', '#nlFext', '#nlNext'},
+      "a change of #nlThru, #nlFext or #nlNext does not send sicopr:channels "
+      "(listeners found for %r)"
+      % (_picks and re.findall(r"'(#\w+)'", _picks.group(1)),))
+check("an_unchanged_selection_is_not_sent_again",
+      re.search(r"cause !== 'boot' && now === CHANNELS_SENT\) return", _ec)
+      and re.search(r"CHANNELS_SENT = now", _ec),
+      "emitChannels() sends the same selection again; the filter checkbox and "
+      "a refilled list would then look like a change to a panel")
+# With no panel installed the event has no listener. It must then cost
+# nothing: no request, no change on the page.
+check("the_channels_event_makes_no_request_and_changes_nothing",
+      _ec and not re.search(r"\bapi\(|\bfetch\(|textContent|\.hidden\b|"
+                            r"\.value\s*=[^=]", _ec),
+      "emitChannels() does more than dispatch an event, so the page with no "
+      "panel installed is no longer what it was")
+_row = re.search(r'^\| `sicopr:channels` \|([^|]*)\|([^\n]*)$', _readme, re.M)
+check("the_readme_gives_the_channels_event_its_detail_and_causes",
+      _row and all(w in _row.group(1) for w in ('thru', 'fext', 'next', 'cause'))
+      and all(('`%s`' % c) in _row.group(2) for c in ('boot', 'user', 'list')),
+      "gui/README.md does not list sicopr:channels with {thru, fext, next, "
+      "cause} and the three causes")
+
+
 finish()
