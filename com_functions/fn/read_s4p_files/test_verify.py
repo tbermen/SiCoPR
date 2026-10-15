@@ -526,3 +526,25 @@ def test_inlined_two_port_reader_matches_the_canonical(tmp_path):
         assert np.array_equal(a, b), (
             'the inlined copy has drifted: %s differs by up to %.3e'
             % (name, float(np.max(np.abs(a - b)))))
+
+
+# ============================================================
+# The two INFO lines are the reference's own text (4p17p0 L11730-11737), F14 of the
+# SiCoPR-Assist build (2026-10-06): the port printed paraphrases.
+# COM Octave (fprintf with the reference's format strings, on this case's values,
+# 'X' standing for the file name):
+#    INFO: In X: the maximum frequency provided, 3.3 GHz, is less than the signaling rate: 28 GHz and zero pad was not specified
+#   INFO: In X: minimum frequency, 0.3 GHz, is larger than the recommended 0.1 GH
+# (the second ends "GH" in the reference, reproduced)
+# ============================================================
+_OCT_INFO_FMAX = (' INFO: In X: the maximum frequency provided, 3.3 GHz, is less than the '
+                  'signaling rate: 28 GHz and zero pad was not specified')
+_OCT_INFO_FMIN = 'INFO: In X: minimum frequency, 0.3 GHz, is larger than the recommended 0.1 GH'
+
+
+def test_octave_info_messages_are_the_references_text(tmp_path, capsys):
+    p, _ = _uniform_s4p(tmp_path, 0.3)          # 0.3 .. 3.3 GHz, below fb = 28 GHz
+    read_s4p_files(_make_param(tmp_path), _make_OP(), [_make_chdata(p)])
+    out = capsys.readouterr().out.replace(p, 'X').splitlines()
+    assert _OCT_INFO_FMAX in out, out
+    assert _OCT_INFO_FMIN in out, out

@@ -19315,11 +19315,17 @@ def read_s4p_files(param, OP, chdata):
 
             freq = ch.faxis
             fb = float(param.fb)
+            # The reference's own wording, word for word (4p17p0 L11730-11737),
+            # including "GH" for "GHz" at the end of the second. fmaxi is the
+            # last index here, so freq[-1] is both Sch.freq(fmaxi) and Sch.freq(end).
             if freq[-1] < fb and not getattr(OP, 'ZERO_PAD', False):
-                print(f' INFO: In {ch.filename}: max freq {freq[-1]/1e9:.3g} GHz < fb {fb/1e9:.3g} GHz')
+                print(' INFO: In %s: the maximum frequency provided, %g GHz, is less than '
+                      'the signaling rate: %g GHz and zero pad was not specified'
+                      % (ch.filename, freq[-1] / 1e9, fb / 1e9))
             max_start_freq = float(getattr(param, 'max_start_freq', 0.1e9))
             if freq[0] > max_start_freq:
-                print(f'INFO: In {ch.filename}: min freq {freq[0]/1e9:.2g} GHz > recommended {max_start_freq/1e9:.2g} GHz')
+                print('INFO: In %s: minimum frequency, %.2g GHz, is larger than the '
+                      'recommended %.2g GH' % (ch.filename, freq[0] / 1e9, max_start_freq / 1e9))
             if len(freq) > 1:
                 freqstep = np.diff(freq)
                 if max(freqstep) - min(freqstep) > 1:
