@@ -31,7 +31,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _here)
 sys.path.insert(0, os.path.dirname(_here))
 
-from audit_check import check, xcheck, finish  # noqa: E402
+from audit_check import check, finish  # noqa: E402
 import sicopr  # noqa: E402
 
 
@@ -559,21 +559,20 @@ check("get_PSDs_Sn_rho_matches_matlab",
       rel_err(res.Sn_rho, S_isi_ml + S_n4_ml) <= 1e-12,
       "Sn_rho mismatch (ML 6781)")
 
-# ---- Stub defaults (py 9443-9456): EXPECTED FAIL, API-level trap ----
-# When get_PSDs is called without injection (as MATLAB callers would), the
-# defaults are stubs: flat eta_0 (no /2, no CTLE/BT filter) and zero S_IN.
-stub_srn = sicopr._get_PSDs__S_RN(fvec, G_DC, G_DC2, param)
-real_srn = sicopr.S_RN(fvec, G_DC, G_DC2, param)
-xcheck("get_PSDs_stub_SRN_agrees_with_S_RN", rel_err(stub_srn, real_srn) <= 1e-6,
-      "DIVERGENT default: _get_PSDs__S_RN is a flat-eta_0 stub, not ML S_RN "
-      "(in-repo call sites inject the real S_RN, so mainline is unaffected)")
-par_sin = SimpleNamespace(**vars(param))
-par_sin.sigma_ns = 2e-3
-par_sin.f_hp = 1e9
-stub_sin = sicopr._get_PSDs__S_IN(fvec, np.ones(n_fvec), G_DC, G_DC2, par_sin, OP_179)
-real_sin = sicopr.S_IN(fvec, np.ones(n_fvec), G_DC, G_DC2, par_sin, OP_179)
-xcheck("get_PSDs_stub_SIN_agrees_with_S_IN", rel_err(stub_sin, real_sin) <= 1e-6,
-      "DIVERGENT default: _get_PSDs__S_IN returns zeros, not ML S_IN "
-      "(in-repo call sites inject the real S_IN, so mainline is unaffected)")
+# ---- Defaults without injection ----
+# Until 2026-10-15 a get_PSDs called without injection fell back to stubs: a
+# flat eta_0 S_RN (no /2, no CTLE/BT filter) and a zero S_IN, recorded here as
+# expected failures. The defaults are now the canonical functions, the same
+# ones sicopr.py injects, so the uninjected call computes the same noise.
+import com_functions.fn.get_PSDs.py_impl as _gp  # noqa: E402
+from com_functions.fn.S_RN.py_impl import S_RN as _S_RN_canon  # noqa: E402
+from com_functions.fn.S_IN.py_impl import S_IN as _S_IN_canon  # noqa: E402
+from com_functions.fn.H_interp.py_impl import H_interp as _H_interp_canon  # noqa: E402
+check("get_PSDs_default_S_RN_is_canonical", _gp._S_RN is _S_RN_canon,
+      "get_PSDs' S_RN default is not the canonical S_RN")
+check("get_PSDs_default_S_IN_is_canonical", _gp._S_IN is _S_IN_canon,
+      "get_PSDs' S_IN default is not the canonical S_IN")
+check("get_PSDs_default_H_interp_is_canonical", _gp._H_interp is _H_interp_canon,
+      "get_PSDs' H_interp default is not the canonical H_interp")
 
 finish()

@@ -36,6 +36,12 @@ Two things this file is *not*:
   counts sites in `__main__` demo blocks. The verification report's `Finding:`
   trailer check is scoped to `py_impl.py`, as `docs/VERIFICATION.md` specifies.
   No engine result changes.
+- `COM_FD_to_TD`, `COM_eye_width`, `get_TDR` and `get_PSDs` no longer carry
+  hand-written fallback stubs for their callees: a call that does not inject them
+  now uses the canonical functions, the same ones the engine injects. Several stubs
+  were badly wrong (a Bessel-Thomson filter with DC gain 105, an eye contour with its
+  edges swapped), though the engine never reached them. No engine result changes;
+  the last two unguarded `.copy()` gaps went with them.
 
 ### Fixed
 

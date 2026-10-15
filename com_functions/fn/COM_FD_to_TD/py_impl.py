@@ -21,51 +21,16 @@ from types import SimpleNamespace
 
 
 # ---------------------------------------------------------------------------
-# Callee stubs (minimal correct implementations)
+# Callees: the canonical functions, the same ones sicopr.py injects.
+# Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 # ---------------------------------------------------------------------------
-
-def _Bessel_Thomson_Filter(param, faxis, enable):
-    """Stub: returns unit response (no filter) when not enabled, else BT shape."""
-    if not enable:
-        return np.ones(len(faxis))
-    # Minimal BT: 4th-order Bessel-Thomson magnitude at faxis
-    # using the bessel polynomial coefficients (verified fn)
-    f0 = param.fb_BT_cutoff * param.fb  # 3 dB cutoff
-    s = 1j * faxis / (f0 + 1e-300)
-    # 4th-order Bessel poly coefficients [highest to lowest]
-    b = [105, 105, 45, 10, 1]  # bessel(4)
-    H0 = b[0]
-    p = np.polyval(b, s)
-    return np.abs(H0 / p)
-
-
-def _Butterworth_Filter(param, faxis, enable):
-    """Stub: returns unit response when not enabled, else BW shape."""
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb / 2.0
-    order = 4
-    return 1.0 / np.sqrt(1.0 + (faxis / (f0 + 1e-300)) ** (2 * order))
-
-
-def _s21_to_impulse_DC(sdd21, faxis, sample_dt, OP, param):
-    """Stub: minimal s21→impulse via ifft (matches s21_to_impulse_DC intent)."""
-    N = len(sdd21)
-    # Mirror spectrum and compute IFFT
-    S = np.zeros(2 * N - 2, dtype=complex)
-    S[:N] = sdd21
-    S[N:] = np.conj(sdd21[-2:0:-1])
-    ir = np.real(np.fft.ifft(S))
-    dt = sample_dt
-    t = np.arange(len(ir)) * dt
-    return ir, t, 0.0, 0.0
-
-
-def _get_cm_noise(M, pulse_resp, levels, P_peak, OP):
-    """Stub: returns a struct with CMn = RMS of pulse_resp."""
-    rms_val = np.sqrt(np.mean(pulse_resp ** 2)) + 1e-30
-    result = SimpleNamespace(CMn=rms_val, CMn_peak=rms_val)
-    return result
+from com_functions.fn.Bessel_Thomson_Filter.py_impl import Bessel_Thomson_Filter as _Bessel_Thomson_Filter
+from com_functions.fn.Butterworth_Filter.py_impl import Butterworth_Filter as _Butterworth_Filter
+from com_functions.fn.s21_to_impulse_DC.py_impl import s21_to_impulse_DC as _s21_to_impulse_DC
+from com_functions.fn.get_cm_noise.py_impl import get_cm_noise as _get_cm_noise
 
 
 # ---------------------------------------------------------------------------

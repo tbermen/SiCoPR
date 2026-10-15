@@ -73,13 +73,11 @@ KNOWN_SURVIVORS = frozenset([
     # Output_Arg_Fill and get_sigma_eta_ACCM_noise gained a NEGATIVE
     # AC_CM_RMS case, which is the only input on which the reference's
     # `~= 0` and a `> 0` differ.
-    # 2026-10-15: drop_dot_copy closed except in fallback stubs production never
-    # calls (COM_eye_width's helpers, get_TDR's _get_PulseR). 20 sites gained a
-    # catch through com_functions/verification/value_semantics.py or a value
-    # test, 28 are argued equivalent in equivalent_mutants.md, and process_sxp's
-    # 16 were in its __main__ demo block, which mutations.py no longer offers.
-    'drop_dot_copy:COM_eye_width',
-    'drop_dot_copy:get_TDR',
+    # 2026-10-15: drop_dot_copy closed. 20 sites gained a catch through
+    # com_functions/verification/value_semantics.py or a value test, 28 are
+    # argued equivalent in equivalent_mutants.md, process_sxp's 16 were in its
+    # __main__ demo block (no longer offered), and the last two functions'
+    # survivors went with their fallback stubs, now imports. Not a gain.
     # 'mlength_to_len:get_RILN_cmp_td' removed 2026-09-23: the _length
     # helper went with get_RILN_cmp_td's fallback stubs, so the site is
     # gone rather than covered. Not a gain.
@@ -132,7 +130,7 @@ KNOWN_SURVIVORS = frozenset([
 # KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
     'drop_dot_copy:MMSE:260',       # :392, :390, :399, :406; moved when the MMSE_FOM copy became an import
-    'drop_dot_copy:get_PSDs:479',   # :436, then :472; moved by the iphase and hk fixes
+    'drop_dot_copy:get_PSDs:473',   # :436, :472, :479; moved by the iphase and hk fixes and the stub imports
     'drop_dot_copy:get_pdf_full:165',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local
     # that its own branch has already finished reading, so the in-place write
@@ -169,7 +167,7 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:floatingDFE:19', 'drop_dot_copy:auto_port_order:54',
     'drop_dot_copy:auto_port_order:106', 'drop_dot_copy:comb_fct:33',
     'drop_dot_copy:comb_fct:34', 'drop_dot_copy:SNDR_ref:93',
-    'drop_dot_copy:read_ParamConfigFile:660', 'drop_dot_copy:get_TDR:301',
+    'drop_dot_copy:read_ParamConfigFile:660', 'drop_dot_copy:get_TDR:257',
     'drop_dot_copy:Bathtub_Contribution_Wrapper:41',
     'drop_dot_copy:plot_bathtub_curves:43',
 ])

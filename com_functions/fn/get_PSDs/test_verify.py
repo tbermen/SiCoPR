@@ -730,3 +730,17 @@ def test_value_semantics_pdf_cache_hits_are_separate_values():
     a = mod._get_pdf_from_sampled_signal(x, 4, 1e-3)
     b = mod._get_pdf_from_sampled_signal(x, 4, 1e-3)      # a hit
     assert_no_shared_memory(a=a, b=b)
+
+
+# ============================================================
+# Since 2026-10-15 a call without injection uses the functions sicopr.py injects,
+# not hand-written fallback stubs (tests/test_inlined_copies.py recorded each as
+# a known divergence; the S_IN one returned zeros).
+# ============================================================
+
+def test_fallbacks_are_the_canonical_functions():
+    import importlib
+    import com_functions.fn.get_PSDs.py_impl as m
+    for name in ('S_RN', 'S_IN', 'H_interp'):
+        canon = getattr(importlib.import_module('com_functions.fn.%s.py_impl' % name), name)
+        assert getattr(m, '_' + name) is canon, name

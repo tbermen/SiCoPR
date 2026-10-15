@@ -57,12 +57,12 @@ def _make_fom(samp_UI=16):
 
 
 def _stub_get_pdf_full(chdata_0, delta_y, t_s, param, OP, pdf_range):
+    # On the caller's delta_y grid: since 2026-10-15 the other callees are the
+    # real ones, which (as in MATLAB) refuse to combine PDFs of unequal bin size.
     samp_UI = int(param.samples_for_C2M)
-    n_bins = 16
-    x0 = np.linspace(-0.5, 0.5, n_bins)
-    dx = x0[1] - x0[0]
-    y0 = np.ones(n_bins) / n_bins
-    pdf_list = [SimpleNamespace(x=x0.copy(), y=y0.copy(), BinSize=dx, Min=-n_bins//2)
+    x0 = np.arange(-50, 51) * delta_y
+    y0 = np.ones(len(x0)) / len(x0)
+    pdf_list = [SimpleNamespace(x=x0.copy(), y=y0.copy(), BinSize=delta_y, Min=-50)
                 for _ in range(samp_UI)]
     h_j_full = np.zeros((2, samp_UI))
     A_s_vec = np.ones(samp_UI) * 0.3
@@ -166,11 +166,9 @@ def test_pam2_single_eye():
 
     def stub_pdf2(chdata_0, delta_y, t_s, p, op, pr):
         n = samp_UI
-        nb = 16
-        x0 = np.linspace(-0.5, 0.5, nb)
-        dx = x0[1] - x0[0]
-        y0 = np.ones(nb) / nb
-        pdf_list = [SimpleNamespace(x=x0.copy(), y=y0.copy(), BinSize=dx, Min=-nb//2)
+        x0 = np.arange(-50, 51) * delta_y
+        y0 = np.ones(len(x0)) / len(x0)
+        pdf_list = [SimpleNamespace(x=x0.copy(), y=y0.copy(), BinSize=delta_y, Min=-50)
                     for _ in range(n)]
         h_j = np.zeros((1, n))
         A_s = np.ones(n) * 0.3
@@ -347,10 +345,15 @@ def test_window_weights_are_symmetric_and_peak_at_one():
         assert float(np.min(w)) < 0.99, '%s is flat, not shaped' % hw_type
 
 
-def test_stub_convolution_is_direct():
-    """The stub _conv1d convolves directly, as conv2 does; its FFT dispatch at
-    128 bins was the shortcut removed from conv_fct in 8ec85b0."""
+def test_fallbacks_are_the_canonical_functions():
+    """Since 2026-10-15 a call without injection uses the functions sicopr.py
+    injects, not hand-written stubs (one returned the eye edges swapped). The
+    stub _conv1d, and the FFT shortcut it once carried, went with them."""
+    import importlib
     import com_functions.fn.COM_eye_width.py_impl as m
-    assert not hasattr(m, '_CONV_FFT_MIN')
-    a = np.exp(-np.arange(300.0) / 3)
-    np.testing.assert_array_equal(m._conv1d(a, a), np.convolve(a, a))
+    for name in ('get_pdf_full', 'normal_dist', 'conv_fct', 'conv_fct_MeanNotZero',
+                 'get_pdf_from_sampled_signal', 'pdf_to_cdf', 'cdf_to_ber_contour',
+                 'find_eye_width', 'combine_pdf_same_voltage_axis'):
+        canon = getattr(importlib.import_module('com_functions.fn.%s.py_impl' % name), name)
+        assert getattr(m, '_' + name) is canon, name
+    assert not hasattr(m, '_conv1d') and not hasattr(m, '_CONV_FFT_MIN')

@@ -548,3 +548,17 @@ def test_oracle_degenerate_bailout_carries_into_4p17p0():
     assert r.ERL == np.inf and r.ERLRMS == -300
     r15 = _oracle_run(P=P, ZT=25.0, matlab_version='4p15p0')
     assert len(r15.tdr) != 1000 or not np.all(r15.tdr == 1.0), '4p15p0 has no such guard'
+
+
+# ============================================================
+# Since 2026-10-15 a call without injection uses the functions sicopr.py injects,
+# not hand-written fallback stubs (tests/test_inlined_copies.py recorded each as
+# a known divergence; the Tukey one returned ones whatever param.Tukey_Window said).
+# ============================================================
+
+def test_fallbacks_are_the_canonical_functions():
+    import importlib
+    import com_functions.fn.get_TDR.py_impl as m
+    for name in ('Bessel_Thomson_Filter', 'Butterworth_Filter', 'Tukey_Window', 's21_to_impulse_DC', 'get_StepR', 'get_PulseR', 'get_pdf_from_sampled_signal'):
+        canon = getattr(importlib.import_module('com_functions.fn.%s.py_impl' % name), name)
+        assert getattr(m, '_' + name) is canon, name

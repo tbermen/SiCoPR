@@ -15,12 +15,13 @@
 >
 > Treat the EQUIVALENT verdicts below as evidence, not proof. Twelve divergences
 > remained open and accepted when this was written. **As of 2026-10-15 the suite
-> accepts 20, and they are these**: 17 inlined copies
-> that differ from their canonical function (fallback stubs production never
-> calls, or deliberate index-base splits, one of them D12;
-> `tests/test_inlined_copies.py`), two `get_PSDs` default stubs that every call
-> site overrides, and the owner-ruled stop on a singular MMSE solve
-> (FIX_SUMMARY #31). They are marked `xcheck` in `tests/` and print as `XFAIL`;
+> accepts 5, and they are these**: four inlined copies that differ from their
+> canonical function on purpose, each a deliberate index-base split (the two
+> `findbankloc` copies, `hrem`, and `get_center_of_UI` in `get_pdf_full`, which is
+> D12; `tests/test_inlined_copies.py`), and the owner-ruled stop on a singular
+> MMSE solve (FIX_SUMMARY #31). Fifteen more, all fallback stubs production never
+> called, went the same day when the stubs became imports of the canonical
+> functions. They are marked `xcheck` in `tests/` and print as `XFAIL`;
 > `python com_functions/verification/report.py` counts them on every run.
 
 ## Which verdicts are weakest

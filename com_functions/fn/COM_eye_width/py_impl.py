@@ -116,96 +116,21 @@ from types import SimpleNamespace
 
 
 # ---------------------------------------------------------------------------
-# Callee stubs
+# Callees: the canonical functions, the same ones sicopr.py injects.
+# Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 # ---------------------------------------------------------------------------
-
-
-def _conv1d(a, b):
-    """Direct convolution, as conv2 is. (This stub's FFT dispatch went with
-    conv_fct's in 8ec85b0: an FFT loses the far tail of a PDF.)"""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    return np.convolve(a, b)
-
-
-def _get_pdf_full(chdata_0, delta_y, t_s, param, OP, pdf_range):
-    """Stub: returns list of trivial PDFs, zero ISI, unit signal."""
-    samp_UI = int(param.samples_for_C2M)
-    n_bins = max(32, int(2.0 / delta_y))
-    x0 = np.linspace(-1.0, 1.0, n_bins)
-    dx = x0[1] - x0[0]
-    y0 = np.ones(n_bins) / n_bins
-    pdf_list = [SimpleNamespace(x=x0.copy(), y=y0.copy(), BinSize=dx, Min=-n_bins//2)
-                for _ in range(samp_UI)]
-    # h_j_full: ISI matrix shape (1, samp_UI) — minimal
-    h_j_full = np.zeros((1, samp_UI))
-    A_s_vec = np.ones(samp_UI) * 0.5  # representative signal amplitude
-    return pdf_list, h_j_full, A_s_vec
-
-
-def _normal_dist(sigma, n_sigma, delta_y):
-    """Stub: Gaussian PDF."""
-    n = max(32, int(n_sigma * sigma / (delta_y + 1e-300) * 2))
-    x = np.linspace(-n_sigma * sigma, n_sigma * sigma, n)
-    dx = x[1] - x[0] if n > 1 else 1.0
-    y = np.exp(-0.5 * (x / (sigma + 1e-300))**2) / ((sigma + 1e-300) * np.sqrt(2 * np.pi)) * dx
-    y /= y.sum() + 1e-300
-    return SimpleNamespace(x=x, y=y, BinSize=dx, Min=int(x[0] / (dx + 1e-300)))
-
-
-def _conv_fct(pdf_a, pdf_b):
-    """Stub: convolve two PDFs (same x axis assumption)."""
-    y_c = _conv1d(pdf_a.y, pdf_b.y)
-    dx = float(getattr(pdf_a, 'BinSize', 1e-3))
-    x_c = np.arange(len(y_c)) * dx + float(pdf_a.x[0]) + float(pdf_b.x[0])
-    total = y_c.sum()
-    y_c = y_c / (total + 1e-300)
-    return SimpleNamespace(x=x_c, y=y_c, BinSize=dx, Min=int(x_c[0] / (dx + 1e-300)))
-
-
-def _conv_fct_MeanNotZero(pdf_a, pdf_b):
-    return _conv_fct(pdf_a, pdf_b)
-
-
-def _get_pdf_from_sampled_signal(samples, levels, delta_y):
-    """Stub: Gaussian from samples."""
-    rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=float)**2))) + 1e-30
-    n = max(32, int(4 * rms / (delta_y + 1e-300)))
-    x = np.linspace(-4 * rms, 4 * rms, n)
-    dx = x[1] - x[0] if n > 1 else delta_y
-    y = np.exp(-0.5 * (x / rms)**2) / (rms * np.sqrt(2 * np.pi)) * dx
-    y /= y.sum() + 1e-300
-    return SimpleNamespace(x=x, y=y, BinSize=dx, Min=int(x[0] / (dx + 1e-300)))
-
-
-def _pdf_to_cdf(pdf):
-    cdf_y = np.cumsum(pdf.y)
-    return SimpleNamespace(x=pdf.x.copy(), y=cdf_y, BinSize=pdf.BinSize, Min=pdf.Min)
-
-
-def _cdf_to_ber_contour(cdf, specBER):
-    """Find top (V where CDF(V) >= 1-specBER) and bottom (V where CDF(V) >= specBER) voltages."""
-    idx_top = int(np.searchsorted(cdf.y, 1.0 - specBER))
-    idx_bot = int(np.searchsorted(cdf.y, specBER))
-    x = cdf.x
-    top = float(x[min(idx_top, len(x) - 1)])
-    bot = float(x[min(idx_bot, len(x) - 1)])
-    return top, bot
-
-
-def _find_eye_width(eye_contour_n, half_UI, samp_UI, vref):
-    """Stub: return half of samp_UI as symmetric eye width."""
-    half = samp_UI // 4
-    return float(half), float(half)
-
-
-def _combine_pdf_same_voltage_axis(pdf_a, pdf_b):
-    """Stub: add y values (assumes same x axis)."""
-    if len(pdf_a.y) == len(pdf_b.y):
-        y_combined = pdf_a.y + pdf_b.y
-    else:
-        y_combined = pdf_a.y.copy()
-    return SimpleNamespace(x=pdf_a.x.copy(), y=y_combined, BinSize=pdf_a.BinSize, Min=pdf_a.Min)
+from com_functions.fn.get_pdf_full.py_impl import get_pdf_full as _get_pdf_full
+from com_functions.fn.normal_dist.py_impl import normal_dist as _normal_dist
+from com_functions.fn.conv_fct.py_impl import conv_fct as _conv_fct
+from com_functions.fn.conv_fct_MeanNotZero.py_impl import conv_fct_MeanNotZero as _conv_fct_MeanNotZero
+from com_functions.fn.get_pdf_from_sampled_signal.py_impl import get_pdf_from_sampled_signal as _get_pdf_from_sampled_signal
+from com_functions.fn.pdf_to_cdf.py_impl import pdf_to_cdf as _pdf_to_cdf
+from com_functions.fn.cdf_to_ber_contour.py_impl import cdf_to_ber_contour as _cdf_to_ber_contour
+from com_functions.fn.find_eye_width.py_impl import find_eye_width as _find_eye_width
+from com_functions.fn.combine_pdf_same_voltage_axis.py_impl import combine_pdf_same_voltage_axis as _combine_pdf_same_voltage_axis
 
 
 # ---------------------------------------------------------------------------

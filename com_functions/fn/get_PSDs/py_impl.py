@@ -89,20 +89,14 @@ def _get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_CONV=0):
     return _detach(_res)
 
 
-def _S_RN(fvec, G_DC, G_DC2, param):
-    """Stub for S_RN — returns flat receiver noise PSD (V^2/GHz)."""
-    eta_0 = param.eta_0  # V^2/GHz
-    return eta_0 * np.ones(len(fvec))
-
-
-def _S_IN(fvec, H_noise, G_DC, G_DC2, param, OP):
-    """Stub for S_IN — returns zeros."""
-    return np.zeros(len(fvec))
-
-
-def _H_interp(sdd21p, faxis, fvec, fb):
-    """Stub for H_interp — interpolates linearly."""
-    return np.interp(fvec, faxis, np.abs(sdd21p))
+# S_RN, S_IN, H_interp: the canonical functions, the same ones sicopr.py
+# injects. Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
+from com_functions.fn.S_RN.py_impl import S_RN as _S_RN
+from com_functions.fn.S_IN.py_impl import S_IN as _S_IN
+from com_functions.fn.H_interp.py_impl import H_interp as _H_interp
 
 
 # ---------------------------------------------------------------------------

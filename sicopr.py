@@ -1492,51 +1492,12 @@ def COM_CommandLine_Parse(OP, *varargin):
 
 
 # ---------------------------------------------------------------------------
-# Callee stubs (minimal correct implementations)
+# Callees: the canonical functions, the same ones sicopr.py injects.
+# Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 # ---------------------------------------------------------------------------
-
-def _COM_FD_to_TD__Bessel_Thomson_Filter(param, faxis, enable):
-    """Stub: returns unit response (no filter) when not enabled, else BT shape."""
-    if not enable:
-        return np.ones(len(faxis))
-    # Minimal BT: 4th-order Bessel-Thomson magnitude at faxis
-    # using the bessel polynomial coefficients (verified fn)
-    f0 = param.fb_BT_cutoff * param.fb  # 3 dB cutoff
-    s = 1j * faxis / (f0 + 1e-300)
-    # 4th-order Bessel poly coefficients [highest to lowest]
-    b = [105, 105, 45, 10, 1]  # bessel(4)
-    H0 = b[0]
-    p = np.polyval(b, s)
-    return np.abs(H0 / p)
-
-
-def _COM_FD_to_TD__Butterworth_Filter(param, faxis, enable):
-    """Stub: returns unit response when not enabled, else BW shape."""
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb / 2.0
-    order = 4
-    return 1.0 / np.sqrt(1.0 + (faxis / (f0 + 1e-300)) ** (2 * order))
-
-
-def _COM_FD_to_TD__s21_to_impulse_DC(sdd21, faxis, sample_dt, OP, param):
-    """Stub: minimal s21→impulse via ifft (matches s21_to_impulse_DC intent)."""
-    N = len(sdd21)
-    # Mirror spectrum and compute IFFT
-    S = np.zeros(2 * N - 2, dtype=complex)
-    S[:N] = sdd21
-    S[N:] = np.conj(sdd21[-2:0:-1])
-    ir = np.real(np.fft.ifft(S))
-    dt = sample_dt
-    t = np.arange(len(ir)) * dt
-    return ir, t, 0.0, 0.0
-
-
-def _COM_FD_to_TD__get_cm_noise(M, pulse_resp, levels, P_peak, OP):
-    """Stub: returns a struct with CMn = RMS of pulse_resp."""
-    rms_val = np.sqrt(np.mean(pulse_resp ** 2)) + 1e-30
-    result = SimpleNamespace(CMn=rms_val, CMn_peak=rms_val)
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1563,10 +1524,10 @@ def COM_FD_to_TD(chdata, param, OP,
     Returns chdata (modified in place).
     """
     # Inject dependencies or use stubs
-    s21_fn = _s21_to_impulse_DC_fn if _s21_to_impulse_DC_fn is not None else _COM_FD_to_TD__s21_to_impulse_DC
-    bt_fn = _Bessel_Thomson_Filter_fn if _Bessel_Thomson_Filter_fn is not None else _COM_FD_to_TD__Bessel_Thomson_Filter
-    bw_fn = _Butterworth_Filter_fn if _Butterworth_Filter_fn is not None else _COM_FD_to_TD__Butterworth_Filter
-    cm_fn = _get_cm_noise_fn if _get_cm_noise_fn is not None else _COM_FD_to_TD__get_cm_noise
+    s21_fn = _s21_to_impulse_DC_fn if _s21_to_impulse_DC_fn is not None else _s21_to_impulse_DC
+    bt_fn = _Bessel_Thomson_Filter_fn if _Bessel_Thomson_Filter_fn is not None else _Bessel_Thomson_Filter
+    bw_fn = _Butterworth_Filter_fn if _Butterworth_Filter_fn is not None else _Butterworth_Filter
+    cm_fn = _get_cm_noise_fn if _get_cm_noise_fn is not None else _get_cm_noise
 
     # MATLAB release being emulated; set by read_ParamConfigFile. Defaults to the
     # 4p15p0 baseline when absent so a hand-built param still behaves as before.
@@ -1874,96 +1835,12 @@ def _COM_eye_width__mmin(a):
 
 
 # ---------------------------------------------------------------------------
-# Callee stubs
+# Callees: the canonical functions, the same ones sicopr.py injects.
+# Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 # ---------------------------------------------------------------------------
-
-
-def _COM_eye_width__conv1d(a, b):
-    """Direct convolution, as conv2 is. (This stub's FFT dispatch went with
-    conv_fct's in 8ec85b0: an FFT loses the far tail of a PDF.)"""
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    return np.convolve(a, b)
-
-
-def _COM_eye_width__get_pdf_full(chdata_0, delta_y, t_s, param, OP, pdf_range):
-    """Stub: returns list of trivial PDFs, zero ISI, unit signal."""
-    samp_UI = int(param.samples_for_C2M)
-    n_bins = max(32, int(2.0 / delta_y))
-    x0 = np.linspace(-1.0, 1.0, n_bins)
-    dx = x0[1] - x0[0]
-    y0 = np.ones(n_bins) / n_bins
-    pdf_list = [SimpleNamespace(x=x0.copy(), y=y0.copy(), BinSize=dx, Min=-n_bins//2)
-                for _ in range(samp_UI)]
-    # h_j_full: ISI matrix shape (1, samp_UI) — minimal
-    h_j_full = np.zeros((1, samp_UI))
-    A_s_vec = np.ones(samp_UI) * 0.5  # representative signal amplitude
-    return pdf_list, h_j_full, A_s_vec
-
-
-def _COM_eye_width__normal_dist(sigma, n_sigma, delta_y):
-    """Stub: Gaussian PDF."""
-    n = max(32, int(n_sigma * sigma / (delta_y + 1e-300) * 2))
-    x = np.linspace(-n_sigma * sigma, n_sigma * sigma, n)
-    dx = x[1] - x[0] if n > 1 else 1.0
-    y = np.exp(-0.5 * (x / (sigma + 1e-300))**2) / ((sigma + 1e-300) * np.sqrt(2 * np.pi)) * dx
-    y /= y.sum() + 1e-300
-    return SimpleNamespace(x=x, y=y, BinSize=dx, Min=int(x[0] / (dx + 1e-300)))
-
-
-def _COM_eye_width__conv_fct(pdf_a, pdf_b):
-    """Stub: convolve two PDFs (same x axis assumption)."""
-    y_c = _COM_eye_width__conv1d(pdf_a.y, pdf_b.y)
-    dx = float(getattr(pdf_a, 'BinSize', 1e-3))
-    x_c = np.arange(len(y_c)) * dx + float(pdf_a.x[0]) + float(pdf_b.x[0])
-    total = y_c.sum()
-    y_c = y_c / (total + 1e-300)
-    return SimpleNamespace(x=x_c, y=y_c, BinSize=dx, Min=int(x_c[0] / (dx + 1e-300)))
-
-
-def _COM_eye_width__conv_fct_MeanNotZero(pdf_a, pdf_b):
-    return _COM_eye_width__conv_fct(pdf_a, pdf_b)
-
-
-def _COM_eye_width__get_pdf_from_sampled_signal(samples, levels, delta_y):
-    """Stub: Gaussian from samples."""
-    rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=float)**2))) + 1e-30
-    n = max(32, int(4 * rms / (delta_y + 1e-300)))
-    x = np.linspace(-4 * rms, 4 * rms, n)
-    dx = x[1] - x[0] if n > 1 else delta_y
-    y = np.exp(-0.5 * (x / rms)**2) / (rms * np.sqrt(2 * np.pi)) * dx
-    y /= y.sum() + 1e-300
-    return SimpleNamespace(x=x, y=y, BinSize=dx, Min=int(x[0] / (dx + 1e-300)))
-
-
-def _COM_eye_width__pdf_to_cdf(pdf):
-    cdf_y = np.cumsum(pdf.y)
-    return SimpleNamespace(x=pdf.x.copy(), y=cdf_y, BinSize=pdf.BinSize, Min=pdf.Min)
-
-
-def _COM_eye_width__cdf_to_ber_contour(cdf, specBER):
-    """Find top (V where CDF(V) >= 1-specBER) and bottom (V where CDF(V) >= specBER) voltages."""
-    idx_top = int(np.searchsorted(cdf.y, 1.0 - specBER))
-    idx_bot = int(np.searchsorted(cdf.y, specBER))
-    x = cdf.x
-    top = float(x[min(idx_top, len(x) - 1)])
-    bot = float(x[min(idx_bot, len(x) - 1)])
-    return top, bot
-
-
-def _COM_eye_width__find_eye_width(eye_contour_n, half_UI, samp_UI, vref):
-    """Stub: return half of samp_UI as symmetric eye width."""
-    half = samp_UI // 4
-    return float(half), float(half)
-
-
-def _COM_eye_width__combine_pdf_same_voltage_axis(pdf_a, pdf_b):
-    """Stub: add y values (assumes same x axis)."""
-    if len(pdf_a.y) == len(pdf_b.y):
-        y_combined = pdf_a.y + pdf_b.y
-    else:
-        y_combined = pdf_a.y.copy()
-    return SimpleNamespace(x=pdf_a.x.copy(), y=y_combined, BinSize=pdf_a.BinSize, Min=pdf_a.Min)
 
 
 # ---------------------------------------------------------------------------
@@ -2000,15 +1877,15 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         out_VT, out_VB: scalars or [] (only set when T_O != 0)
     """
     gcu_fn = _get_center_of_UI_fn or _get_center_of_UI
-    gpf_fn = _get_pdf_full_fn or _COM_eye_width__get_pdf_full
-    nd_fn = _normal_dist_fn or _COM_eye_width__normal_dist
-    cf_fn = _conv_fct_fn or _COM_eye_width__conv_fct
-    cfmz_fn = _conv_fct_MNZ_fn or _COM_eye_width__conv_fct_MeanNotZero
-    gpss_fn = _get_pdf_ss_fn or _COM_eye_width__get_pdf_from_sampled_signal
-    ptc_fn = _pdf_to_cdf_fn or _COM_eye_width__pdf_to_cdf
-    ber_fn = _cdf_to_ber_fn or _COM_eye_width__cdf_to_ber_contour
-    few_fn = _find_eye_width_fn or _COM_eye_width__find_eye_width
-    cpdf_fn = _combine_pdf_fn or _COM_eye_width__combine_pdf_same_voltage_axis
+    gpf_fn = _get_pdf_full_fn or _get_pdf_full
+    nd_fn = _normal_dist_fn or _normal_dist
+    cf_fn = _conv_fct_fn or _conv_fct
+    cfmz_fn = _conv_fct_MNZ_fn or _conv_fct_MeanNotZero
+    gpss_fn = _get_pdf_ss_fn or _get_pdf_from_sampled_signal
+    ptc_fn = _pdf_to_cdf_fn or _pdf_to_cdf
+    ber_fn = _cdf_to_ber_fn or _cdf_to_ber_contour
+    few_fn = _find_eye_width_fn or _find_eye_width
+    cpdf_fn = _combine_pdf_fn or _combine_pdf_same_voltage_axis
 
     samp_UI = int(param.samples_for_C2M)
     levels = int(param.levels)
@@ -11658,20 +11535,11 @@ def _get_PSDs__get_pdf_from_sampled_signal(input_vector, L, BinSize, FAST_NOISE_
     return _get_PSDs__detach(_res)
 
 
-def _get_PSDs__S_RN(fvec, G_DC, G_DC2, param):
-    """Stub for S_RN — returns flat receiver noise PSD (V^2/GHz)."""
-    eta_0 = param.eta_0  # V^2/GHz
-    return eta_0 * np.ones(len(fvec))
-
-
-def _get_PSDs__S_IN(fvec, H_noise, G_DC, G_DC2, param, OP):
-    """Stub for S_IN — returns zeros."""
-    return np.zeros(len(fvec))
-
-
-def _get_PSDs__H_interp(sdd21p, faxis, fvec, fb):
-    """Stub for H_interp — interpolates linearly."""
-    return np.interp(fvec, faxis, np.abs(sdd21p))
+# S_RN, S_IN, H_interp: the canonical functions, the same ones sicopr.py
+# injects. Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 
 
 # ---------------------------------------------------------------------------
@@ -11763,9 +11631,9 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
     Dependency injection via optional *_fn params.
     Returns result (modified in place).
     """
-    S_RN_fn = _S_RN_fn if _S_RN_fn is not None else _get_PSDs__S_RN
-    S_IN_fn = _S_IN_fn if _S_IN_fn is not None else _get_PSDs__S_IN
-    H_interp_fn = _H_interp_fn if _H_interp_fn is not None else _get_PSDs__H_interp
+    S_RN_fn = _S_RN_fn if _S_RN_fn is not None else _S_RN
+    S_IN_fn = _S_IN_fn if _S_IN_fn is not None else _S_IN
+    H_interp_fn = _H_interp_fn if _H_interp_fn is not None else _H_interp
 
     # MATLAB passes [] for an uninitialised result; assigning a field to [] there
     # auto-creates a struct. Replicate that: None -> new namespace.
@@ -12698,7 +12566,7 @@ def get_BW_from_CICP_residual(fGHz, residual_db, idx_fit, T_dev, OP,
 # MATLAB find(t>=x,1,'first') → np.searchsorted(t, x) → 0-based index
 # MATLAB filter(ones(1,M),1,x) → lfilter(ones(M),1,x)
 # MATLAB 1-based loop `for ki=1:M` → Python `for ki in range(M)` with 0-based slice
-# Tukey_Window stub: returns ones (matching MATLAB override in this function)
+# Tukey_Window: applied when param.Tukey_Window ~= 0, ones otherwise (ML get_TDR)
 # TDR_RL formula: direct translation of long algebraic expression
 # PTDR phase search: 0-based ki, PTDR.pulse[ki::M]
 # iscolumn checks: replaced by .ravel() for all frequency-domain arrays
@@ -12707,62 +12575,12 @@ def get_BW_from_CICP_residual(fGHz, residual_db, idx_fit, T_dev, OP,
 
 
 # ---------------------------------------------------------------------------
-# Callee stubs
+# Callees: the canonical functions, the same ones sicopr.py injects.
+# Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 # ---------------------------------------------------------------------------
-
-def _get_TDR__Bessel_Thomson_Filter(param, faxis, enable):
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb_BT_cutoff * param.fb
-    s = 1j * np.asarray(faxis) / (f0 + 1e-300)
-    b = [105, 105, 45, 10, 1]
-    return np.abs(b[0] / np.polyval(b, s))
-
-
-def _get_TDR__Butterworth_Filter(param, faxis, enable):
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb / 2.0
-    return 1.0 / np.sqrt(1.0 + (np.asarray(faxis) / (f0 + 1e-300)) ** 8)
-
-
-def _get_TDR__Tukey_Window(faxis, param):
-    """Stub: ones (MATLAB overrides to ones in get_TDR)."""
-    return np.ones(len(faxis))
-
-
-def _get_TDR__s21_to_impulse_DC(sdd21, faxis, sample_dt, OP, param):
-    N = len(sdd21)
-    S = np.zeros(2 * N - 2, dtype=complex)
-    S[:N] = sdd21
-    S[N:] = np.conj(sdd21[-2:0:-1])
-    ir = np.real(np.fft.ifft(S))
-    t = np.arange(len(ir)) * sample_dt
-    return ir, t, 0.0, 0.0
-
-
-def _get_TDR__get_StepR(ir, param, cb_step, ZT):
-    """Stub: step response via cumsum; ZSR = (1 + cumsum(ir)) * ZT."""
-    step = np.cumsum(ir)
-    ZSR = (1.0 + step) * ZT
-    return SimpleNamespace(ZSR=ZSR, step=step)
-
-
-def _get_TDR__get_PulseR(ir, param, cb_step, ZT):
-    """Stub: pulse response = ir (delta = derivative of step)."""
-    M = int(param.samples_per_ui)
-    pulse = lfilter(np.ones(M), 1, ir)
-    return SimpleNamespace(pulse=pulse, pulse_orig=pulse.copy())
-
-
-def _get_TDR__get_pdf_from_sampled_signal(samples, levels, bin_size, flag):
-    rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=float)**2))) + 1e-30
-    n = max(32, int(8 * rms / (bin_size + 1e-30)))
-    x = np.linspace(-4 * rms, 4 * rms, n)
-    dx = x[1] - x[0] if n > 1 else 1.0
-    y = np.exp(-0.5 * (x / rms)**2) / (rms * np.sqrt(2 * np.pi)) * dx
-    y = y / (y.sum() + 1e-300)
-    return SimpleNamespace(x=x, y=y)
 
 
 # ---------------------------------------------------------------------------
@@ -12817,13 +12635,13 @@ def get_TDR(S, OP, param, ZT, nport,
     Dependency injection via optional *_fn params.
     Returns TDR_results SimpleNamespace.
     """
-    bt_fn = _Bessel_Thomson_Filter_fn or _get_TDR__Bessel_Thomson_Filter
-    bw_fn = _Butterworth_Filter_fn or _get_TDR__Butterworth_Filter
-    tw_fn = _Tukey_Window_fn or _get_TDR__Tukey_Window
-    s21_fn = _s21_to_impulse_DC_fn or _get_TDR__s21_to_impulse_DC
-    step_fn = _get_StepR_fn or _get_TDR__get_StepR
-    pulse_fn = _get_PulseR_fn or _get_TDR__get_PulseR
-    pdf_fn = _get_pdf_fn or _get_TDR__get_pdf_from_sampled_signal
+    bt_fn = _Bessel_Thomson_Filter_fn or _Bessel_Thomson_Filter
+    bw_fn = _Butterworth_Filter_fn or _Butterworth_Filter
+    tw_fn = _Tukey_Window_fn or _Tukey_Window
+    s21_fn = _s21_to_impulse_DC_fn or _s21_to_impulse_DC
+    step_fn = _get_StepR_fn or _get_StepR
+    pulse_fn = _get_PulseR_fn or _get_PulseR
+    pdf_fn = _get_pdf_fn or _get_pdf_from_sampled_signal
 
     TDR_results = SimpleNamespace()
 
@@ -21423,7 +21241,20 @@ _bessel = bessel
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
+_Bessel_Thomson_Filter = Bessel_Thomson_Filter
+_Butterworth_Filter = Butterworth_Filter
+_s21_to_impulse_DC = s21_to_impulse_DC
+_get_cm_noise = get_cm_noise
 _get_center_of_UI = get_center_of_UI
+_get_pdf_full = get_pdf_full
+_normal_dist = normal_dist
+_conv_fct = conv_fct
+_conv_fct_MeanNotZero = conv_fct_MeanNotZero
+_get_pdf_from_sampled_signal = get_pdf_from_sampled_signal
+_pdf_to_cdf = pdf_to_cdf
+_cdf_to_ber_contour = cdf_to_ber_contour
+_find_eye_width = find_eye_width
+_combine_pdf_same_voltage_axis = combine_pdf_same_voltage_axis
 _normal_dist = normal_dist
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
@@ -21498,8 +21329,18 @@ _normal_dist = normal_dist
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
+_S_RN = S_RN
+_S_IN = S_IN
+_H_interp = H_interp
 _get_CICP_fit_sweep = get_CICP_fit_sweep
 _get_BW_from_CICP_residual = get_BW_from_CICP_residual
+_Bessel_Thomson_Filter = Bessel_Thomson_Filter
+_Butterworth_Filter = Butterworth_Filter
+_Tukey_Window = Tukey_Window
+_s21_to_impulse_DC = s21_to_impulse_DC
+_get_StepR = get_StepR
+_get_PulseR = get_PulseR
+_get_pdf_from_sampled_signal = get_pdf_from_sampled_signal
 _get_CICP_fit_residual = get_CICP_fit_residual
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct

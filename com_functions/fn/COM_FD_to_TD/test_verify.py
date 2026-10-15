@@ -537,3 +537,17 @@ def test_octave_values_hold_under_4p17p0():
         v = np.ravel(np.asarray(getattr(r0, field))).astype(float)
         assert v.size == want_n and int(np.argmax(np.abs(v))) == want_i, field
         assert abs(float(np.max(np.abs(v))) - want_pk) <= 1e-11 * abs(want_pk), field
+
+
+# ============================================================
+# Since 2026-10-15 a call without injection uses the functions sicopr.py injects,
+# not hand-written fallback stubs (tests/test_inlined_copies.py recorded each as
+# a known divergence; the Bessel-Thomson one was a magnitude with DC gain 105).
+# ============================================================
+
+def test_fallbacks_are_the_canonical_functions():
+    import importlib
+    import com_functions.fn.COM_FD_to_TD.py_impl as m
+    for name in ('Bessel_Thomson_Filter', 'Butterworth_Filter', 's21_to_impulse_DC', 'get_cm_noise'):
+        canon = getattr(importlib.import_module('com_functions.fn.%s.py_impl' % name), name)
+        assert getattr(m, '_' + name) is canon, name

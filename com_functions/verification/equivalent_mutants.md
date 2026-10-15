@@ -40,7 +40,7 @@ would excuse the other five.
 | operator | site | why the mutant cannot change the result |
 |---|---|---|
 | `drop_dot_copy` | `MMSE:260` | `wmin = -wmax.copy()`. Unary negation already allocates a new array, so `-wmax` is not a view of `wmax` whether or not `.copy()` is there. The later `wmin[...] = 1.0` cannot reach `wmax` either way |
-| `drop_dot_copy` | `get_PSDs:479` | `hisi = h[samp_idx].copy()` where `samp_idx = np.arange(...)`. Indexing with an integer ARRAY is fancy indexing, which always returns a new array, never a view. The copy is redundant |
+| `drop_dot_copy` | `get_PSDs:473` | `hisi = h[samp_idx].copy()` where `samp_idx = np.arange(...)`. Indexing with an integer ARRAY is fancy indexing, which always returns a new array, never a view. The copy is redundant |
 | `drop_dot_copy` | `get_pdf_full:165` | `residual_response = SBR.copy()` where `SBR = np.interp(...)` on the line above. `np.interp` allocates its result, and nothing else holds a reference to it, so writing `residual_response` cannot be observed |
 
 Note how each argument turns on **provenance of the source**, not on what the
@@ -97,10 +97,10 @@ Fifty-four sites, read one by one. Twenty became catches, through
 `com_functions/verification/value_semantics.py` (no two arrays MATLAB would
 hold as separate values may share memory; an input the reference treats as
 read-only comes back unchanged) or a value test where the copy guards a
-result. Six sit in fallback stubs that production never calls
-(`COM_eye_width`, `get_TDR:71`) and stay in `KNOWN_SURVIVORS`: pinning a stub's
-behaviour would protect the wrong code, and the stubs themselves are the
-subject of a separate decision. The rest are below, each on the same footing
+result. Six sat in fallback stubs that production never calls
+(`COM_eye_width`, `get_TDR:71`); the same day the owner approved replacing
+those stubs with imports of the canonical functions, and the six sites went
+with them. The rest are below, each on the same footing
 as the entries above: the argument is about what the code can do, never about
 what a test happens to cover.
 
@@ -120,5 +120,5 @@ what a test happens to cover.
 | `drop_dot_copy` | `comb_fct:33`, `comb_fct:34` | `p1_y` and `p2_y` are never written in place (the padding writes a new array), and the output `p.y = p1_y + p2_y` allocates |
 | `drop_dot_copy` | `SNDR_ref:93` | `PR_noFFE` is never written, `FFE` writes nothing, and nothing derived from it by slicing is returned: `results` holds fresh arrays and floats |
 | `drop_dot_copy` | `read_ParamConfigFile:660` | The branch runs only when `param.bmax` is empty, so no element write through either name can be observed |
-| `drop_dot_copy` | `get_TDR:301` | `PTDR.pulse_orig` is never read after it is set, and `PTDR.pulse` is only rebound (line 387 allocates) |
+| `drop_dot_copy` | `get_TDR:257` | `PTDR.pulse_orig` is never read after it is set, and `PTDR.pulse` is only rebound (`PTDR.pulse = PTDR.pulse * fctrx` allocates) |
 | `drop_dot_copy` | `Bathtub_Contribution_Wrapper:41`, `plot_bathtub_curves:43` | `cursors_r.y`'s copy. `cursors` is not read after `cursors_r` is made and `cursors_l.y` was copied before, so the in-place zeroing through the shared array reaches nothing that is read again. `cursors_l.y`'s copy is NOT redundant and is caught |

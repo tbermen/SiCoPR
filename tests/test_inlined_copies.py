@@ -92,19 +92,14 @@ def _arity(fn):
 # supplies what the canonical version defaults.
 KNOWN_ARITY = {
     ('get_pdf_from_sampled_signal', 'Burst_Probability_Calc'),
-    ('get_pdf_from_sampled_signal', 'COM_eye_width'),
     ('get_pdf_from_sampled_signal', 'Create_Noise_PDF'),
     ('get_pdf_from_sampled_signal', 'RILN_TD'),
     ('get_pdf_from_sampled_signal', 'adjust_Rx_noise_for_quantization'),
     ('get_pdf_from_sampled_signal', 'get_ILN_cmp_td'),
-    ('get_pdf_from_sampled_signal', 'get_TDR'),
     ('get_pdf_from_sampled_signal', 'get_cm_noise'),
     ('get_pdf_from_sampled_signal', 'get_pdf'),
     ('get_pdf_from_sampled_signal', 'get_pdf_full'),
-    ('get_cm_noise', 'COM_FD_to_TD'),
-    ('get_pdf_full', 'COM_eye_width'),
     ('SL', 'add_pkg_with_die'),
-    ('Tukey_Window', 'get_TDR'),
     ('make_pkg', 'make_full_pkg'),
     ('make_pkg', 'read_s4p_files'),
     ('make_pkg', 's21_pkg'),
@@ -408,62 +403,11 @@ EDGE['d_cpdf'].append(
 # They are recorded rather than fixed because they are unreachable today -- but
 # they are a live trap if a new call path ever forgets to inject.
 KNOWN_BEHAVIOUR = {
-    ('normal_dist', 'COM_eye_width'):
-        'fallback stub spans +/-nsigma; ML 8542 uses -round(2*nsigma*sigma/'
-        'binsize) to "capture more of the tails" -> 1000 bins vs 2001. '
-        'Dead in production: sicopr.py injects _normal_dist_fn=normal_dist.',
-    ('pdf_to_cdf', 'COM_eye_width'):
-        'canonical returns a CDF with yB/yT tails; this stub returns a PDF-'
-        'shaped x/y/BinSize/Min. Dead in production (injected).',
     ('get_center_of_UI', 'get_pdf_full'):
         'INTENTIONAL: the get_pdf_full copy is M//2+1 (1-based, MATLAB-'
         'faithful) where the canonical is M//2. See audit finding D12.',
 
-    # --- surfaced 2026-08-22 when behavioural coverage rose 50 -> 113 copies.
-    # Every one was checked against sicopr.py's _wired_* partials before being
-    # recorded; none is a live divergence. The filter stubs matter because they
-    # are BADLY wrong, not subtly so -- the get_TDR Bessel stub hardcodes the
-    # 4th-order coefficients without reversing them, giving DC gain 105 instead
-    # of 1 and returning a magnitude where MATLAB returns a complex response
-    # (ML 1033-1040 uses fliplr). Harmless only for as long as the injection
-    # holds.
-    ('Bessel_Thomson_Filter', 'get_TDR'):
-        'fallback stub: hardcoded coefficients, not reversed (DC gain 105 vs 1) '
-        'and magnitude-only. Dead in production: sicopr.py:132 injects the real '
-        'function into _wired_get_TDR.',
-    ('Butterworth_Filter', 'get_TDR'):
-        'fallback stub alongside the Bessel one. Injected at sicopr.py:133.',
-    ('Tukey_Window', 'get_TDR'):
-        'fallback stub returning ones, matching the MATLAB override inside this '
-        'function (H_tw=ones). Injected at sicopr.py:134.',
-    ('get_pdf_from_sampled_signal', 'get_TDR'):
-        'fallback stub: a Gaussian fitted to the sample RMS, not the successive '
-        'delta convolution. Injected at sicopr.py:138 (_get_pdf_fn).',
-
     # --- surfaced 2026-08-31 by the second factory sweep (113 -> 127 copies).
-    # Three more injection stubs and one deliberate index-base split. Each was
-    # read against its caller before being recorded here.
-    ('H_interp', 'get_PSDs'):
-        'fallback stub: np.interp on the MAGNITUDE only, so it drops the phase '
-        'the canonical carries through unwrap/pchip, and never applies the '
-        'fb/2 cutoff. Dead in production: sicopr.py:5211 passes '
-        '_H_interp_fn=H_interp into get_PSDs.',
-    ('find_eye_width', 'COM_eye_width'):
-        'fallback stub returning samp_UI//4 on both sides regardless of the '
-        'contour. Dead in production: sicopr.py:177 injects '
-        '_find_eye_width_fn=find_eye_width.',
-    ('combine_pdf_same_voltage_axis', 'COM_eye_width'):
-        'fallback stub adds y elementwise and keeps pdf_a.x, where the '
-        'canonical resamples onto a common axis -- so the two disagree in '
-        'LENGTH (4002 vs 8002) whenever the inputs differ in span. Dead in '
-        'production: injected alongside the other COM_eye_width helpers.',
-    ('cdf_to_ber_contour', 'COM_eye_width'):
-        'fallback stub, and badly wrong rather than subtly so: it returns '
-        '(top, bottom) where the canonical returns (bottom, top), and finds '
-        'the top edge with searchsorted(1 - specBER) instead of the flipped '
-        'argmax(y > specBER) of ML 5254-5257. Dead in production: sicopr.py:176 '
-        'injects _cdf_to_ber_fn=cdf_to_ber_contour, and sicopr.py:1810 falls '
-        'back to this only if that injection is ever dropped.',
     ('hrem', 'floating_taps_1sttest'):
         'INTENTIONAL index-base split, the same shape as the get_center_of_UI '
         'entry above: the canonical takes a 1-BASED index and subtracts 1 '
@@ -473,12 +417,12 @@ KNOWN_BEHAVIOUR = {
         'sicopr.py:9605 documents as the 0-based form of MATLAB ig1 = N_b+1:end1. '
         'Driving both with the same integer therefore shifts the window by one '
         'on purpose.',
-    ('Bessel_Thomson_Filter', 'COM_FD_to_TD'):
-        'fallback stub; injected at sicopr.py:148.',
-    ('Butterworth_Filter', 'COM_FD_to_TD'):
-        'fallback stub; injected at sicopr.py:149.',
-    ('get_pdf_from_sampled_signal', 'COM_eye_width'):
-        'fallback stub (Gaussian); injected at sicopr.py:167 (_get_pdf_ss_fn).',
+    # Thirteen entries here until 2026-10-15 were fallback stubs in COM_FD_to_TD,
+    # COM_eye_width, get_TDR and get_PSDs, reached only when a caller skipped
+    # the injection, and some BADLY wrong (get_TDR's Bessel-Thomson stub had DC
+    # gain 105; COM_eye_width's cdf_to_ber_contour returned the edges swapped).
+    # They were replaced by imports of the canonical functions, the ones
+    # sicopr.py injects, so they can no longer differ.
     # get_RILN_cmp_td's six fallback stubs (Bessel_Thomson_Filter,
     # Butterworth_Filter, s21_to_impulse_DC, calculate_delay_...,
     # get_pdf_from_sampled_signal, normal_dist) were removed on 2026-09-23: it
@@ -679,7 +623,8 @@ print("\n%d inlined copies of %d functions; %d comparison(s) made, "
 # whole 2026-09-22 propagation pass while this test reported success. The set is
 # pinned so a NEW undrivable copy has to be looked at, and so the count can only
 # go down.
-BASELINE_UNDRIVABLE = 33   # 34 until 2026-10-03: MMSE's copy of MMSE_FOM became an import
+BASELINE_UNDRIVABLE = 25   # 33 until 2026-10-15: four hosts' fallback stubs became imports;
+                           # 34 until 2026-10-03: MMSE's copy of MMSE_FOM became an import
 _undrivable = sorted({(c, p) for _, c, p in COPIES if c not in FACTORY})
 
 check("undrivable_copy_set_does_not_grow",

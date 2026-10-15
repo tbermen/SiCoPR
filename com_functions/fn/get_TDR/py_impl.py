@@ -11,74 +11,30 @@
 # MATLAB find(t>=x,1,'first') → np.searchsorted(t, x) → 0-based index
 # MATLAB filter(ones(1,M),1,x) → lfilter(ones(M),1,x)
 # MATLAB 1-based loop `for ki=1:M` → Python `for ki in range(M)` with 0-based slice
-# Tukey_Window stub: returns ones (matching MATLAB override in this function)
+# Tukey_Window: applied when param.Tukey_Window ~= 0, ones otherwise (ML get_TDR)
 # TDR_RL formula: direct translation of long algebraic expression
 # PTDR phase search: 0-based ki, PTDR.pulse[ki::M]
 # iscolumn checks: replaced by .ravel() for all frequency-domain arrays
 # ============================================================
 
 import numpy as np
-from scipy.signal import lfilter
 from types import SimpleNamespace
 
 
 # ---------------------------------------------------------------------------
-# Callee stubs
+# Callees: the canonical functions, the same ones sicopr.py injects.
+# Until 2026-10-15 these were hand-written fallback stubs, reached only when a
+# caller skipped the injection, and several were badly wrong (tests/
+# test_inlined_copies.py recorded each). A call without injection now does
+# what production does.
 # ---------------------------------------------------------------------------
-
-def _Bessel_Thomson_Filter(param, faxis, enable):
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb_BT_cutoff * param.fb
-    s = 1j * np.asarray(faxis) / (f0 + 1e-300)
-    b = [105, 105, 45, 10, 1]
-    return np.abs(b[0] / np.polyval(b, s))
-
-
-def _Butterworth_Filter(param, faxis, enable):
-    if not enable:
-        return np.ones(len(faxis))
-    f0 = param.fb / 2.0
-    return 1.0 / np.sqrt(1.0 + (np.asarray(faxis) / (f0 + 1e-300)) ** 8)
-
-
-def _Tukey_Window(faxis, param):
-    """Stub: ones (MATLAB overrides to ones in get_TDR)."""
-    return np.ones(len(faxis))
-
-
-def _s21_to_impulse_DC(sdd21, faxis, sample_dt, OP, param):
-    N = len(sdd21)
-    S = np.zeros(2 * N - 2, dtype=complex)
-    S[:N] = sdd21
-    S[N:] = np.conj(sdd21[-2:0:-1])
-    ir = np.real(np.fft.ifft(S))
-    t = np.arange(len(ir)) * sample_dt
-    return ir, t, 0.0, 0.0
-
-
-def _get_StepR(ir, param, cb_step, ZT):
-    """Stub: step response via cumsum; ZSR = (1 + cumsum(ir)) * ZT."""
-    step = np.cumsum(ir)
-    ZSR = (1.0 + step) * ZT
-    return SimpleNamespace(ZSR=ZSR, step=step)
-
-
-def _get_PulseR(ir, param, cb_step, ZT):
-    """Stub: pulse response = ir (delta = derivative of step)."""
-    M = int(param.samples_per_ui)
-    pulse = lfilter(np.ones(M), 1, ir)
-    return SimpleNamespace(pulse=pulse, pulse_orig=pulse.copy())
-
-
-def _get_pdf_from_sampled_signal(samples, levels, bin_size, flag):
-    rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=float)**2))) + 1e-30
-    n = max(32, int(8 * rms / (bin_size + 1e-30)))
-    x = np.linspace(-4 * rms, 4 * rms, n)
-    dx = x[1] - x[0] if n > 1 else 1.0
-    y = np.exp(-0.5 * (x / rms)**2) / (rms * np.sqrt(2 * np.pi)) * dx
-    y = y / (y.sum() + 1e-300)
-    return SimpleNamespace(x=x, y=y)
+from com_functions.fn.Bessel_Thomson_Filter.py_impl import Bessel_Thomson_Filter as _Bessel_Thomson_Filter
+from com_functions.fn.Butterworth_Filter.py_impl import Butterworth_Filter as _Butterworth_Filter
+from com_functions.fn.Tukey_Window.py_impl import Tukey_Window as _Tukey_Window
+from com_functions.fn.s21_to_impulse_DC.py_impl import s21_to_impulse_DC as _s21_to_impulse_DC
+from com_functions.fn.get_StepR.py_impl import get_StepR as _get_StepR
+from com_functions.fn.get_PulseR.py_impl import get_PulseR as _get_PulseR
+from com_functions.fn.get_pdf_from_sampled_signal.py_impl import get_pdf_from_sampled_signal as _get_pdf_from_sampled_signal
 
 
 # ---------------------------------------------------------------------------

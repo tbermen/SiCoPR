@@ -83,16 +83,10 @@ def injected_deps(src):
 # "<function>:<file>:<line>". Remove an entry when the call starts injecting;
 # never add one to silence a new bare call without saying why below.
 #
-# get_PSDs' five were found by this gate on 2026-09-23 and are real: its unit
-# tests exercise the stubs, so any value they pin is stub output rather than
-# the engine's. They are pinned here rather than fixed blind, because changing
-# what those tests drive changes what they assert.
+# get_PSDs' five, found 2026-09-23, closed 2026-10-15: its defaults became the
+# canonical S_RN, S_IN and H_interp, so those calls drive the engine's own
+# functions, and every value they assert still holds.
 KNOWN_BARE = frozenset([
-    'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:127',
-    'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:151',
-    'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:173',
-    'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:220',
-    'get_PSDs:com_functions/fn/get_PSDs/test_verify.py:246',
 ])
 
 
