@@ -160,8 +160,10 @@ def untrailered_commits(sha):
     """
     if not sha:
         return None
+    # The contract scopes the trailer to py_impl.py; a commit touching only a
+    # test_verify.py is not a fix to the port and was a false NOTE here.
     log = git('log', '--format=%H%x1f%s%x1f%b%x1e',
-              '%s..HEAD' % sha, '--', 'com_functions/fn')
+              '%s..HEAD' % sha, '--', ':(glob)com_functions/fn/*/py_impl.py')
     if not log:
         return []
     out = []
