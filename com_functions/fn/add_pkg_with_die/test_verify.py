@@ -187,3 +187,20 @@ def test_matrix_die_adds_sections_beyond_the_first():
     assert abs(full - trunc) > 1e-6, (
         'keeping only the first die section changed s11 by %.2e; the later '
         'sections are not reaching the network' % abs(full - trunc))
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): TX_RL = Smx.Parameters(2,2,:) is
+# a value in MATLAB, not a view into the returned Smx.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_tx_rl_is_not_a_view_of_smx():
+    f, P = _channel()
+    S = SimpleNamespace(Parameters=P, Frequencies=f, Impedance=100, NumPorts=2)
+    snap = snapshot(P=P)
+    Smx, TX_RL = add_pkg_with_die(S, 'dd', _pkg_param(), SimpleNamespace())
+    assert_no_shared_memory(Smx_Parameters=Smx.Parameters, TX_RL=TX_RL)
+    assert_unchanged(snap, P=P)

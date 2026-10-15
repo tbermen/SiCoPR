@@ -162,3 +162,19 @@ def test_octave_dfetaps_past_end_raises():
     with pytest.raises(IndexError):
         OptFom_Update_Best_Settings_EQ_Failed(
             BEST, _THIS(cursor_i=4), sbr, _chdata(), param, _op())
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): BEST is a snapshot. Nothing in
+# it may share memory with the THIS, sbr or chdata it was taken from.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_best_shares_nothing_with_its_sources():
+    THIS, sbr, chdata = _THIS(), _sbr(), _chdata()
+    THIS.dfetaps = np.array([0.1, 0.05])
+    out = OptFom_Update_Best_Settings_EQ_Failed(SimpleNamespace(), THIS, sbr, chdata,
+                                                _param(), _op())
+    assert_no_shared_memory(BEST=out, THIS=THIS, sbr=sbr, chdata=chdata)

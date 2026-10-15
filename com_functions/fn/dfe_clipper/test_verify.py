@@ -162,3 +162,20 @@ def test_oracle_scalar_threshold_legal_only_within_bounds():
         [2.0, 1.0, 1.0])
     with pytest.raises(IndexError):
         dfe_clipper(np.array([1., 3, 1]), np.array(2.0), np.array(-9.0))
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): the clip writes its own copy,
+# never the caller's input.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_input_unchanged():
+    x = np.array([0.0, 1.5, 3.0, -2.0])
+    hi, lo = np.ones(4), -np.ones(4)
+    snap = snapshot(x=x)
+    out = dfe_clipper(x, hi, lo)
+    assert_unchanged(snap, x=x)
+    assert_no_shared_memory(x=x, out=out)

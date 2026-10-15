@@ -240,3 +240,32 @@ def test_renormalisation_guard_is_exact_not_a_tolerance(tmp_path):
         'an exact guard from a tolerance')
     assert np.array_equal(got, renormalised), (
         'this file was NOT renormalised, where the reference renormalises it')
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): the 2-port S12/S21 swap needs
+# its temporary as a value, or S12 is lost. An ASYMMETRIC file shows it.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+# COM Octave, read_Nport_touchstone(<this file>, [1 2], 50), sch(:, i, j):
+#   rows: f, S11, S21, S12, S22 (RI) =
+#     1 0.1 0.01 0.8 -0.2 0.3 0.05 0.2 -0.03
+#     2 0.12 0.02 0.7 -0.3 0.25 0.06 0.18 -0.04
+#     3 0.14 0.03 0.6 -0.4 0.22 0.07 0.16 -0.05
+_OCT_ASYM_10 = np.array([0.8 - 0.2j, 0.7 - 0.3j, 0.6 - 0.4j])
+_OCT_ASYM_01 = np.array([0.3 + 0.05j, 0.25 + 0.06j, 0.22 + 0.07j])
+
+
+def test_octave_asymmetric_two_port_keeps_both_transfer_terms(tmp_path):
+    p = str(tmp_path / 'asym.s2p')
+    with open(p, 'w') as f:
+        f.write('# GHz S RI R 50\n'
+                '1 0.1 0.01 0.8 -0.2 0.3 0.05 0.2 -0.03\n'
+                '2 0.12 0.02 0.7 -0.3 0.25 0.06 0.18 -0.04\n'
+                '3 0.14 0.03 0.6 -0.4 0.22 0.07 0.16 -0.05\n')
+    sch, _, _ = read_Nport_touchstone(p, [1, 2], 50.0)
+    np.testing.assert_array_equal(sch[:, 1, 0], _OCT_ASYM_10)
+    np.testing.assert_array_equal(sch[:, 0, 1], _OCT_ASYM_01)

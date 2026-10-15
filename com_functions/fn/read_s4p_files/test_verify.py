@@ -548,3 +548,124 @@ def test_octave_info_messages_are_the_references_text(tmp_path, capsys):
     out = capsys.readouterr().out.replace(p, 'X').splitlines()
     assert _OCT_INFO_FMAX in out, out
     assert _OCT_INFO_FMIN in out, out
+
+
+# ============================================================
+# MATLAB value semantics. ch.sdd11 = ch.sdd11_raw in the reference makes two
+# arrays; the port's .copy() is what keeps them two, and a dropped one let a
+# later in-place write reach the other field unseen (the drop_dot_copy class,
+# com_functions/verification/value_semantics.py). No two arrays of the returned
+# records may share memory, and OP, which the reference never writes here,
+# comes back unchanged. SDDch is not a root: the *_raw fields are views into
+# it, as the port has always made them, and nothing writes SDDch after the read
+# (com_ieee8023_ hands it to process_sxp, which ignores it).
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+
+def _random_S(n, freqs, seed=20261015):
+    rng = np.random.default_rng(seed)
+    return [(rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))) * 0.2
+            for _ in freqs]
+
+
+def test_value_semantics_s4p(tmp_path):
+    freqs = np.array([0.05, 1.05, 2.05, 3.05])
+    p = str(tmp_path / 'vs.s4p')
+    _write_s4p(p, freqs, _random_S(4, freqs))
+    OP = _make_OP()
+    snap = snapshot(OP=OP)
+    chdata, _, _, _ = read_s4p_files(_make_param(tmp_path), OP, [_make_chdata(p)])
+    assert_no_shared_memory(chdata=chdata)
+    assert_unchanged(snap, OP=OP)
+
+
+def test_value_semantics_s2p(tmp_path):
+    freqs = np.array([0.05, 1.05, 2.05, 3.05])
+    p = str(tmp_path / 'vs.s2p')
+    _write_s2p_matrix(p, freqs, _random_S(2, freqs), 100.0)
+    ch = SimpleNamespace(filename=p, ext='.s2p', type='THRU', faxis=None)
+    param = _make_param(tmp_path)
+    param.FLAG = SimpleNamespace(S2P=True)
+    OP = _make_OP()
+    snap = snapshot(OP=OP)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        chdata, _, _, _ = read_s4p_files(param, OP, [ch])
+    assert_no_shared_memory(chdata=chdata)
+    assert_unchanged(snap, OP=OP)
+
+
+def _fresh_s21_pkg(chdata, param, OP, channel_number, mode='dd', include_die=1):
+    """Stands in for the package build: fresh arrays every call, so any sharing
+    the check finds was made by read_s4p_files itself."""
+    n = len(chdata.faxis)
+    return (np.full(n, 0.5 + 0.1j * channel_number), np.zeros((n, 2, 2), dtype=complex),
+            0.0)
+
+
+def test_value_semantics_package_path(tmp_path, monkeypatch):
+    import com_functions.fn.read_s4p_files.py_impl as mod
+    monkeypatch.setattr(mod, '_s21_pkg', _fresh_s21_pkg)
+    freqs = np.array([0.05, 1.05, 2.05, 3.05])
+    p = str(tmp_path / 'pkg.s4p')
+    _write_s4p(p, freqs, _random_S(4, freqs))
+    OP = _make_OP()
+    OP.INC_PACKAGE = 1
+    snap = snapshot(OP=OP)
+    chdata, _, _, _ = read_s4p_files(_make_param(tmp_path), OP, [_make_chdata(p)])
+    assert_no_shared_memory(chdata=chdata)
+    assert_unchanged(snap, OP=OP)
+
+
+def test_value_semantics_rx_calibration_second_channel(tmp_path, monkeypatch):
+    """RX_CALIBRATION = 1: the second channel takes sdd21 straight from sdd21_raw."""
+    import com_functions.fn.read_s4p_files.py_impl as mod
+    monkeypatch.setattr(mod, '_s21_pkg', _fresh_s21_pkg)
+    freqs = np.array([0.05, 1.05, 2.05, 3.05])
+    paths = []
+    for k in range(2):
+        p = str(tmp_path / ('rx%d.s4p' % k))
+        _write_s4p(p, freqs, _random_S(4, freqs, seed=k))
+        paths.append(p)
+    OP = _make_OP()
+    OP.INC_PACKAGE = 1
+    OP.RX_CALIBRATION = 1
+    chdata, _, _, _ = read_s4p_files(_make_param(tmp_path), OP,
+                                     [_make_chdata(q) for q in paths])
+    assert_no_shared_memory(chdata=chdata)
+
+
+# The real package build, on s21_pkg's own Octave-backed package (its
+# _oracle_param), for the two places _s21_pkg hands back the channel's own s21:
+# INC_PACKAGE = 0 (reached through RX_CALIBRATION = 1 on the first channel), and
+# include_die = 0 with both terminations ideal, where no cascade replaces s21.
+_PKG = dict(
+    R_diepad=np.array([55.0, 48.0]), Tx_rd_sel=1, Rx_rd_sel=2, kappa1=1.0, kappa2=1.0,
+    C_diepad=np.array([1.3e-13, 1.1e-13]), C_pkg_board=np.array([5e-14, 5e-14]),
+    L_comp=np.array([1e-10, 1.2e-10]), C_bump=np.array([3e-14, 3.2e-14]),
+    z_p_next_cases=np.array([[12.0]]), pkg_Z_c=np.array([78.2, 78.2]),
+    Pkg_len_TX=np.array([12.0]), Pkg_len_RX=np.array([12.0]),
+    Pkg_len_NEXT=np.array([12.0]), Pkg_len_FEXT=np.array([12.0]), pkg_tau=6.141e-3,
+    pkg_gamma0_a1_a2=np.array([0.0, 1.734e-3, 1.455e-4]), num_s4p_files=1, BTorder=4,
+    fb_BT_cutoff=0.75, ACCM_MAX_Freq=30e9, AC_CM_RMS_TX=0.01,
+    C_v=np.array([2e-14, 2e-14]), PKG_NAME=None)
+
+
+@pytest.mark.parametrize('inc_pkg, rx_cal, ideal', [(0, 1, 0), (1, 0, 1)])
+def test_value_semantics_real_package(tmp_path, inc_pkg, rx_cal, ideal):
+    freqs = np.array([0.05, 1.05, 2.05, 3.05])
+    p = str(tmp_path / 'real.s4p')
+    _write_s4p(p, freqs, _random_S(4, freqs))
+    param = _make_param(tmp_path)
+    for k, v in _PKG.items():
+        setattr(param, k, v)
+    OP = _make_OP()
+    OP.INC_PACKAGE, OP.RX_CALIBRATION = inc_pkg, rx_cal
+    OP.IDEAL_TX_TERM = OP.IDEAL_RX_TERM = ideal
+    OP.transmitter_transition_time, OP.T_r_meas_point = 0.008, 0
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        chdata, _, _, _ = read_s4p_files(param, OP, [_make_chdata(p)])
+    assert_no_shared_memory(chdata=chdata)

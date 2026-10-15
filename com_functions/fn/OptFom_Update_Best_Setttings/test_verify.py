@@ -259,3 +259,17 @@ def test_octave_copied_scalars():
     np.testing.assert_array_equal(out.bmax, [1.0])
     np.testing.assert_array_equal(out.bmin, [-1.0])
     np.testing.assert_array_equal(out.dfetaps, THIS.dfetaps)
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): BEST is a snapshot. Nothing in
+# it may share memory with the THIS, sbr or chdata it was taken from.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_best_shares_nothing_with_its_sources():
+    THIS, sbr, chdata = _THIS(), np.arange(200.0), _chdata()
+    out = OptFom_Update_Best_Setttings(SimpleNamespace(), THIS, sbr, chdata, _param(), _op())
+    assert_no_shared_memory(BEST=out, THIS=THIS, sbr=sbr, chdata=chdata)

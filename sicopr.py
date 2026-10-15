@@ -19194,7 +19194,11 @@ def _read_s4p_files__read_p2_s2params_inline(infile, ports, param, OP):
     sp = np.zeros((2, 2, nfreq), dtype=complex)
     for j in range(2):
         sp[j, :, :] = cdata[:, j * 2:(j + 1) * 2].T
-    sp[0, 1, :], sp[1, 0, :] = sp[1, 0, :].copy(), sp[0, 1, :].copy()
+    # Two lines so the mutation gate can tell the copies apart: the first is
+    # redundant (the right side is evaluated before either slot is written),
+    # the second is not (equivalent_mutants.md).
+    sp[0, 1, :], sp[1, 0, :] = (sp[1, 0, :].copy(),
+                                sp[0, 1, :].copy())
     # ML read_Nport_touchstone 209-216, inlined here. ~isequal is exact,
     # and the reference computes an EXPLICIT inverse rather than a solve.
     if file_Z0 != Z_renorm:

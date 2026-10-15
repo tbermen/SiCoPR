@@ -1259,3 +1259,47 @@ def test_octave_outputs(name, ls, c0, c2m, width, zlo, _w,
     # mutations optimize_fom makes to its own copy and reads back later
     assert list(np.ravel(param.ts_sample_adj_range)) == [0.0, 2.0]
     assert int(param.ndfe) == 4 and int(param.ndfe_passed) == 4
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class). A function MATLAB calls gets
+# its own copy of sbr, so nothing a callee does to it reaches the caller. The
+# port's copies stand in for that at three places, and a callee that writes in
+# place shows each: Find_Sample_Point writing the TXFFE result (line 284), DFE
+# writing one tick's sbr before the next tick starts (line 311), and DFE writing
+# the sbr that SETTINGS.delta_sbr was taken from (line 343).
+# ============================================================
+
+def test_value_semantics_callee_writes_do_not_reach_the_search():
+    stubs = _make_stubs(fom_val=10.0, best_cursor=10)
+    clean = np.zeros(60)
+    clean[9] = 1.0
+    seen, settings = [], []
+
+    def compute_txffe(chdata, pulse_struc, txffe, updated, param, OP):
+        return clean.copy(), chdata, pulse_struc
+
+    def find_sample_point(sbr, param, OP, peak_range):
+        sbr[:] = -7.0                          # a write MATLAB would keep local
+        return 10, False, 10
+
+    def compute_dfe(sbr, THIS, param, do_C2M, T_O):
+        seen.append(np.array(sbr))
+        sbr += 100.0
+        return THIS, param
+
+    def calc_settings(*a):
+        s = _make_stubs()['_OptFom_Calculate_Settings_fn'](*a)
+        settings.append(s)
+        return s
+
+    stubs.update(_OptFom_Compute_TXFFE_fn=compute_txffe,
+                 _OptFom_Find_Sample_Point_fn=find_sample_point,
+                 _OptFom_Compute_DFE_fn=compute_dfe,
+                 _OptFom_Calculate_Settings_fn=calc_settings)
+    optimize_fom(_make_op(), _make_param(ts_range=np.array([-1.0, 1.0])), _make_chdata(),
+                 None, do_C2M=False, **stubs)
+    assert len(seen) >= 2, 'the sweep must run more than one tick for this to mean anything'
+    for k, s in enumerate(seen):
+        np.testing.assert_array_equal(s, clean, err_msg='tick %d saw a callee write' % k)
+    np.testing.assert_array_equal(settings[0].delta_sbr, clean)

@@ -144,3 +144,22 @@ def test_octave_td_mode_reads_ctle_pulse_response():
                                         np.array([0.0, 1.0, 0.0]), True,
                                         param, OP)
     np.testing.assert_array_equal(ps[0].pulse_ctle, pulse)
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): with TDMODE the pulse is the
+# channel's CTLE response itself, and pulse_struc keeps it as its own value.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_tdmode_pulse_is_not_chdata():
+    chdata, ps = _chdata(), _pulse_struc()
+    chdata[0].ctle_pulse_response = _pulse()        # the TDMODE field
+    op = _op()
+    op.TDMODE = True
+    snap = snapshot(p=chdata[0].ctle_pulse_response)
+    sbr, chdata, ps = OptFom_Compute_TXFFE(chdata, ps, [0, 0, 1, 0, 0], True, _param(), op)
+    assert_no_shared_memory(chdata=chdata, pulse_struc=ps)
+    assert_unchanged(snap, p=chdata[0].ctle_pulse_response)

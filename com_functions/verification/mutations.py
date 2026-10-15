@@ -341,6 +341,20 @@ def code_mask(text):
         a, b = pos(*tok.start), pos(*tok.end)
         if a is not None and b is not None:
             masked.update(range(a, b))
+    # A top-level `if __name__ == '__main__':` demo block is not engine code:
+    # assemble_sicopr.py leaves it out of sicopr.py and no call ever reaches
+    # it, so a mutant there cannot change any result. Its 18 `.copy()` calls
+    # (16 in process_sxp) were reported as sleeping tests until 2026-10-15.
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return masked
+    for node in tree.body:
+        if (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+                and getattr(node.test.left, 'id', None) == '__name__'):
+            a, b = pos(node.lineno, 0), pos(node.end_lineno, node.end_col_offset)
+            if a is not None and b is not None:
+                masked.update(range(a, b))
     return masked
 
 

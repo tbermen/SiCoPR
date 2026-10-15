@@ -294,3 +294,24 @@ def test_octave_dc_sigma_accm_below_first_point_errors():
     with pytest.raises(IndexError):
         s21_pkg(_oracle_chdata(), _oracle_param(ACCM_MAX_Freq=-1.0),
                 _oracle_OP(), 1, 'dc', 1)
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): with include_die = 0 and both
+# terminations ideal, no cascade replaces s21, and s21p must still be its own
+# value, not the channel's sdd21_raw.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_no_die_s21p_is_not_the_channel():
+    ch = _oracle_chdata()
+    for k, v in list(vars(ch).items()):     # the fixture reuses arrays across fields
+        if isinstance(v, np.ndarray):
+            setattr(ch, k, v.copy())
+    snap = snapshot(ch=ch)
+    s21p, SCH, _ = s21_pkg(ch, _oracle_param(), _oracle_OP(IDEAL_TX_TERM=1, IDEAL_RX_TERM=1),
+                           1, 'dd', 0)
+    assert_no_shared_memory(ch=ch, s21p=s21p)
+    assert_unchanged(snap, ch=ch)

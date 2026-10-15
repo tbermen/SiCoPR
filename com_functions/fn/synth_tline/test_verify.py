@@ -154,3 +154,17 @@ def test_octave_zero_Zc_shorted_line():
                                      [0.0002, 0.0034, 0.0001], 1e-11, 0.15)
     np.testing.assert_array_equal(s11, np.full(5, -1.0, dtype=complex))
     np.testing.assert_array_equal(s21, np.zeros(5, dtype=complex))
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): ML 11315-11316 assign s12 = s21
+# and s22 = s11, two values each in MATLAB.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_outputs_are_four_values():
+    f = np.linspace(0, 40e9, 9)
+    s11, s12, s21, s22 = synth_tline(f, 100.0, 50.0, [0.1, 0.05, 0.01], 1e-11, 0.1)
+    assert_no_shared_memory(s11=s11, s12=s12, s21=s21, s22=s22)

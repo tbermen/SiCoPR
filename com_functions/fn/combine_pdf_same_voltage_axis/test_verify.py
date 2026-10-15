@@ -189,3 +189,20 @@ def test_nan_binsize_refused():
     pdf2 = make_pdf(_X3, [1, 2, 1], binsize=float('nan'))
     with pytest.raises(ValueError):
         combine_pdf_same_voltage_axis(pdf1, pdf2)
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): when pdf1 reaches further left
+# and stays longer, out.x is built from pdf1.x and must not BE pdf1.x.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_output_is_not_an_input():
+    pdf1 = make_pdf(_X5, [1, 2, 3, 2, 1])
+    pdf2 = make_pdf(_X3, [1, 2, 1])
+    snap = snapshot(pdf1=pdf1, pdf2=pdf2)
+    out = combine_pdf_same_voltage_axis(pdf1, pdf2)
+    assert_no_shared_memory(pdf1=pdf1, pdf2=pdf2, out=out)
+    assert_unchanged(snap, pdf1=pdf1, pdf2=pdf2)

@@ -73,37 +73,13 @@ KNOWN_SURVIVORS = frozenset([
     # Output_Arg_Fill and get_sigma_eta_ACCM_noise gained a NEGATIVE
     # AC_CM_RMS case, which is the only input on which the reference's
     # `~= 0` and a `> 0` differ.
-    'drop_dot_copy:Bathtub_Contribution_Wrapper',
-    'drop_dot_copy:COM_FD_to_TD',
+    # 2026-10-15: drop_dot_copy closed except in fallback stubs production never
+    # calls (COM_eye_width's helpers, get_TDR's _get_PulseR). 20 sites gained a
+    # catch through com_functions/verification/value_semantics.py or a value
+    # test, 28 are argued equivalent in equivalent_mutants.md, and process_sxp's
+    # 16 were in its __main__ demo block, which mutations.py no longer offers.
     'drop_dot_copy:COM_eye_width',
-    'drop_dot_copy:OptFom_Compute_DFE',
-    'drop_dot_copy:OptFom_Compute_TXFFE',
-    'drop_dot_copy:OptFom_Create_Output',
-    'drop_dot_copy:OptFom_Update_BEST_Post_Optimize',
-    'drop_dot_copy:OptFom_Update_Best_Settings_EQ_Failed',
-    'drop_dot_copy:OptFom_Update_Best_Setttings',
-    'drop_dot_copy:SNDR_ref',
-    'drop_dot_copy:add_pkg_with_die',
-    'drop_dot_copy:applyDFEbk',
-    'drop_dot_copy:auto_port_order',
-    'drop_dot_copy:comb_fct',
-    'drop_dot_copy:combine_pdf_same_voltage_axis',
-    'drop_dot_copy:dfe_clipper',
-    'drop_dot_copy:floatingDFE',
-    'drop_dot_copy:get_PSDs',
     'drop_dot_copy:get_TDR',
-    'drop_dot_copy:interp_Sparam',
-    'drop_dot_copy:make_full_pkg',
-    'drop_dot_copy:make_pkg',
-    'drop_dot_copy:optimize_fom',
-    'drop_dot_copy:plot_bathtub_curves',
-    'drop_dot_copy:process_sxp',
-    'drop_dot_copy:read_Nport_touchstone',
-    'drop_dot_copy:read_ParamConfigFile',
-    'drop_dot_copy:read_s4p_files',
-    'drop_dot_copy:s21_pkg',
-    'drop_dot_copy:s21_to_impulse_DC',
-    'drop_dot_copy:synth_tline',
     # 'mlength_to_len:get_RILN_cmp_td' removed 2026-09-23: the _length
     # helper went with get_RILN_cmp_td's fallback stubs, so the site is
     # gone rather than covered. Not a gain.
@@ -177,6 +153,25 @@ EQUIVALENT = frozenset([
     # reference uses for two values it computes and never reads (not computed in
     # the port). Argued in equivalent_mutants.md.
     'mround_to_np_round:get_ACBW:58',
+    # 2026-10-15, each argued in equivalent_mutants.md ("The 2026-10-15 pass").
+    'drop_dot_copy:read_s4p_files:79', 'drop_dot_copy:make_pkg:24',
+    'drop_dot_copy:make_pkg:25', 'drop_dot_copy:make_full_pkg:77',
+    'drop_dot_copy:make_full_pkg:78', 'drop_dot_copy:s21_pkg:56',
+    'drop_dot_copy:read_s4p_files:581', 'drop_dot_copy:read_s4p_files:714',
+    'drop_dot_copy:interp_Sparam:84', 'drop_dot_copy:interp_Sparam:85',
+    'drop_dot_copy:interp_Sparam:147', 'drop_dot_copy:interp_Sparam:148',
+    'drop_dot_copy:interp_Sparam:247', 'drop_dot_copy:interp_Sparam:248',
+    'drop_dot_copy:s21_to_impulse_DC:86', 'drop_dot_copy:s21_to_impulse_DC:127',
+    'drop_dot_copy:s21_to_impulse_DC:207',
+    'drop_dot_copy:OptFom_Create_Output:120',
+    'drop_dot_copy:OptFom_Update_BEST_Post_Optimize:148',
+    'drop_dot_copy:OptFom_Compute_DFE:79', 'drop_dot_copy:applyDFEbk:38',
+    'drop_dot_copy:floatingDFE:19', 'drop_dot_copy:auto_port_order:54',
+    'drop_dot_copy:auto_port_order:106', 'drop_dot_copy:comb_fct:33',
+    'drop_dot_copy:comb_fct:34', 'drop_dot_copy:SNDR_ref:93',
+    'drop_dot_copy:read_ParamConfigFile:660', 'drop_dot_copy:get_TDR:301',
+    'drop_dot_copy:Bathtub_Contribution_Wrapper:41',
+    'drop_dot_copy:plot_bathtub_curves:43',
 ])
 
 

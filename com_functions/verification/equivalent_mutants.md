@@ -90,3 +90,35 @@ write cannot be observed" but "the code cannot run". It is the weaker claim of
 the two, because it rests on a reading of how `VV` is built rather than on a
 property of the values, so it is worth re-checking if `force` is ever
 restructured.
+
+## The 2026-10-15 pass over the remaining `drop_dot_copy` survivors
+
+Fifty-four sites, read one by one. Twenty became catches, through
+`com_functions/verification/value_semantics.py` (no two arrays MATLAB would
+hold as separate values may share memory; an input the reference treats as
+read-only comes back unchanged) or a value test where the copy guards a
+result. Six sit in fallback stubs that production never calls
+(`COM_eye_width`, `get_TDR:71`) and stay in `KNOWN_SURVIVORS`: pinning a stub's
+behaviour would protect the wrong code, and the stubs themselves are the
+subject of a separate decision. The rest are below, each on the same footing
+as the entries above: the argument is about what the code can do, never about
+what a test happens to cover.
+
+| operator | site | why the mutant cannot change the result |
+|---|---|---|
+| `drop_dot_copy` | `read_s4p_files:79`, `make_pkg:24`, `make_pkg:25`, `make_full_pkg:77`, `make_full_pkg:78`, `s21_pkg:56` | `s12pad = s21pad.copy()` and `s22pad = s11pad.copy()` in the pad model. The four pad arrays are only ever passed to `combines4p`, which reads its arguments and allocates its results, and then rebound; nothing writes them and none is returned |
+| `drop_dot_copy` | `read_s4p_files:581` | Both copies of the S12/S21 swap in `_read_p4_s4params_inline`'s `nport == 2` branch. That reader is called only from the `.s4p` branch and takes `nport` from the extension, so `nport` is 4 and the branch cannot run |
+| `drop_dot_copy` | `read_s4p_files:714` | The FIRST copy of the 2-port swap, `sp[1,0,:].copy()`: Python evaluates the whole right side before writing either slot, so the view it would be reads the old value. The second copy, on the next line, is not redundant and is caught |
+| `drop_dot_copy` | `interp_Sparam:84`, `:85`, `:147`, `:148`, `:247`, `:248`; `s21_to_impulse_DC:86`, `:127`, `:207` | `fin_x = fin.copy()`, `H_mag_x = H_mag.copy()`, `ph_x = H_ph_corr.copy()`. Each is only read: by `np.concatenate`, which allocates, and by `_interp_extrap`, which writes only its own `np.interp` result. None is written or returned |
+| `drop_dot_copy` | `OptFom_Create_Output:120` | `SRn = PR.copy()`; `SRn` is only rebound (`SRn = SRn + SPR` allocates) and compared, never written in place or returned |
+| `drop_dot_copy` | `OptFom_Update_BEST_Post_Optimize:148` | `dfe_SBRcursors` is read once, in `dfe_SBRcursors - BEST.DFE_taps_mV`, which allocates before the slice assignment writes `BEST.sampled_sbr_postcursors`; nothing between writes that buffer (`dfe_clipper` writes only its own copy, which its test now guards) |
+| `drop_dot_copy` | `OptFom_Compute_DFE:79` | `dfecursors_q` goes only to `dfe_clipper`, which writes only its own copy (guarded by its test), and is not returned |
+| `drop_dot_copy` | `applyDFEbk:38` | `flt_curval` is last read in the `tap_coef` line, which allocates, before `hisi[sl]` is written |
+| `drop_dot_copy` | `floatingDFE:19` | `hisi[tap_loc]` indexes with an integer array, which always allocates; the copy is redundant |
+| `drop_dot_copy` | `auto_port_order:54` | `LowFreq_Matrix` is rebound by a subtraction, never written in place, so `Raw_LowFreq_Matrix` is the same with or without the copy |
+| `drop_dot_copy` | `auto_port_order:106` | `Floc` is only rebound by slicing and read; nothing writes it and it is not returned |
+| `drop_dot_copy` | `comb_fct:33`, `comb_fct:34` | `p1_y` and `p2_y` are never written in place (the padding writes a new array), and the output `p.y = p1_y + p2_y` allocates |
+| `drop_dot_copy` | `SNDR_ref:93` | `PR_noFFE` is never written, `FFE` writes nothing, and nothing derived from it by slicing is returned: `results` holds fresh arrays and floats |
+| `drop_dot_copy` | `read_ParamConfigFile:660` | The branch runs only when `param.bmax` is empty, so no element write through either name can be observed |
+| `drop_dot_copy` | `get_TDR:301` | `PTDR.pulse_orig` is never read after it is set, and `PTDR.pulse` is only rebound (line 387 allocates) |
+| `drop_dot_copy` | `Bathtub_Contribution_Wrapper:41`, `plot_bathtub_curves:43` | `cursors_r.y`'s copy. `cursors` is not read after `cursors_r` is made and `cursors_l.y` was copied before, so the in-place zeroing through the shared array reaches nothing that is read again. `cursors_l.y`'s copy is NOT redundant and is caught |

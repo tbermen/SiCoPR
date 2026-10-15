@@ -71,3 +71,38 @@ def test_plot_adds_lines():
         plt.close('all')
     except ImportError:
         pytest.skip('matplotlib not available')
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class). cursors_l and cursors_r are
+# two copies of the two-point cursor PDF, each with one half zeroed. Without
+# cursors_l's own y, zeroing its right half would zero it in cursors too, and
+# cursors_r would be built from that, all zeros. What _conv_fct receives shows it.
+# ============================================================
+import copy as _copy  # noqa: E402
+
+
+def test_value_semantics_left_and_right_cursors_are_separate(monkeypatch):
+    pytest.importorskip('matplotlib')
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import com_functions.fn.plot_bathtub_curves.py_impl as mod
+    seen = []
+    real = mod._conv_fct
+
+    def recording(p1, p2):
+        seen.append(_copy.deepcopy(p1))
+        return real(p1, p2)
+
+    monkeypatch.setattr(mod, '_conv_fct', recording)
+    bs = 0.001
+    g, d = _gaussian_pdf(sigma=0.05, bin_size=bs), _dummy_pdf(bs)
+    fig, ax = plt.subplots()
+    try:
+        mod.plot_bathtub_curves(ax, 0.5, g, d, g, g, d, g, bs)
+    finally:
+        plt.close('all')
+    cursors, left, right = seen[0], seen[-2], seen[-1]
+    np.testing.assert_array_equal(left.y, np.where(cursors.x > 0, 0, cursors.y))
+    np.testing.assert_array_equal(right.y, np.where(cursors.x < 0, 0, cursors.y))

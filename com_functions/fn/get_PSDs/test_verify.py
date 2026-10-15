@@ -714,3 +714,19 @@ def test_crosstalk_hk_carries_k_hrn_and_s_xn():
         np.testing.assert_array_equal(np.asarray(h.hrn), k[ph::_M])
         total = total + np.asarray(h.S_xn)
     np.testing.assert_array_equal(total, r.S_xn)
+
+
+# ============================================================
+# MATLAB value semantics (the drop_dot_copy class): a PDF served from the cache is a
+# fresh value each time; a caller's in-place write must not reach the cache.
+# com_functions/verification/value_semantics.py says why this needs no oracle.
+# ============================================================
+from com_functions.verification.value_semantics import (  # noqa: E402
+    assert_no_shared_memory, assert_unchanged, snapshot)
+
+def test_value_semantics_pdf_cache_hits_are_separate_values():
+    import com_functions.fn.get_PSDs.py_impl as mod
+    x = np.sin(np.linspace(0.0, 3.0, 41))
+    a = mod._get_pdf_from_sampled_signal(x, 4, 1e-3)
+    b = mod._get_pdf_from_sampled_signal(x, 4, 1e-3)      # a hit
+    assert_no_shared_memory(a=a, b=b)
