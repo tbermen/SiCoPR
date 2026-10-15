@@ -37,13 +37,17 @@ which is also the build SiCoPR emulates (`VERSION.json`, `primary_reference`).
 So that is the 4p15p0 source here, not the bare release, whose legacy local
 search would agree with neither. The 4p16p0 file is the release that adopted the
 adaptive search into the mainline, and the 4p17p0 file is the current release.
-All three take the same patch set, with one exception: **4p17p0 does not take the
-`FOM_rxffe_floating_taps` speed patch.** That patch inlines `MMSE_FOM`'s Gram matrix
-as 4p16p0 forms it, `H(:,sel)'*H(:,sel)`; 4p17p0 builds it by lag from
-`H(:,1)'*H`, so on 4p17p0 the patch would compute the previous release's
-arithmetic. The release's own search runs there, and the compiled search kernel,
-reached only through the patch, stays off (`NOT_REPLACED` in the generator). The
-cost: on the shipped example 4p17p0 under Octave took 789 s against SiCoPR's 374 s.
+All three take the same patch set, with one difference: **4p17p0 takes its own
+variant of the `FOM_rxffe_floating_taps` speed patch**
+(`patches/FOM_rxffe_floating_taps_4p17p0.m`, `PATCH_VARIANT` in the generator). The
+4p16p0 patch inlines `MMSE_FOM`'s Gram matrix as 4p16p0 forms it,
+`H(:,sel)'*H(:,sel)`; 4p17p0 builds it by lag from `H(:,1)'*H`, and the variant does
+that, as does the compiled kernel when given `HH_unique_values`. Checked 2026-10-14:
+every candidate FOM and the chosen taps byte-identical to the release's own search
+(`tests/test_octave_compat.py`), and four whole 208-corpus cases bit-identical in
+every result field. Like for like, back to back: 1.59x on a case without
+crosstalk (57 s to 36 s), 1.80x on one with crosstalk and the Tx FFE swept (532 s to
+296 s). From 2026-10-03 to 2026-10-14 4p17p0 ran the release's own, slower search.
 
 ```
 python octave/make_octave_compat.py            # regenerate both

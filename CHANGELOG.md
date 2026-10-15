@@ -18,6 +18,20 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
+### Changed
+
+- COM Octave 4p17p0 runs a 4p17p0 variant of the floating-tap search speed patch
+  (`octave/patches/FOM_rxffe_floating_taps_4p17p0.m`), and the optional compiled
+  kernel has the matching mode: 1.6x to 1.8x faster, bit-identical to the release's
+  own search. Rebuild the kernel (`python octave/accel/build_accel.py`) to use it.
+
+### Fixed
+
+- The two INFO lines about a channel's frequency range (data ending below the
+  signalling rate; data starting above the recommended frequency) now print the
+  Reference Code's own text, including its "GH" for "GHz". The conditions were
+  already the reference's.
+
 ## [1.1.1] - 2026-10-06
 
 ### Fixed

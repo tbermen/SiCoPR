@@ -144,13 +144,18 @@ REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
             'writecsv_transposed', 'FOM_rxffe_floating_taps', 'H_interp',
             'OptFom_Calc_Noise_XC']
 
-# Replacements a release does not take. 4p17p0 rewrote the arithmetic the
-# FOM_rxffe_floating_taps speed patch inlines: MMSE_FOM's HH is now looked up
-# from H(:,1)'*H by lag, not formed as H(:,sel)'*H(:,sel), and the two differ
-# where H is built from a truncated h. The patch (and the compiled search kernel,
-# reached only through it) reproduces the 4p16p0 arithmetic, so on 4p17p0 the
-# release's own function runs: slower, and exactly the reference.
-NOT_REPLACED = {'4p17p0': {'FOM_rxffe_floating_taps'}}
+# Replacements a release does not take (none at present). A patch whose function,
+# or whose inlined callee, changed upstream goes here until it has a variant for
+# that release, proven bit-identical to the release.
+NOT_REPLACED = {}
+
+# Replacements a release takes from a variant file. 4p17p0 rewrote the arithmetic
+# the FOM_rxffe_floating_taps speed patch inlines: MMSE_FOM's HH is looked up by
+# lag from H(:,1)'*H (passed in as HH_unique_values), not formed as
+# H(:,sel)'*H(:,sel). The variant (2026-10-14) does what 4p17p0 does; the compiled
+# kernel takes HH_unique_values as its last argument. Between 2026-10-03 and
+# 2026-10-14 4p17p0 ran the release's own search instead.
+PATCH_VARIANT = {'4p17p0': {'FOM_rxffe_floating_taps': 'FOM_rxffe_floating_taps_4p17p0'}}
 ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv',
          'mldivide_matlab', 'com_checkpoint']
 
@@ -524,7 +529,7 @@ def build(ver):
         if name not in spans:
             raise SystemExit('%s: function %s not found' % (src_rel, name))
         i, j = spans[name]
-        lines[i:j] = read_patch(name, closed) + ['']
+        lines[i:j] = read_patch(PATCH_VARIANT.get(ver, {}).get(name, name), closed) + ['']
     for name in ADDED:
         if name in spans:
             raise SystemExit('%s: %s already exists in the release' % (src_rel, name))
@@ -532,12 +537,7 @@ def build(ver):
 
     # provenance block right after the SPDX line of the file header
     k = next(i for i, l in enumerate(lines) if 'SPDX-License-Identifier' in l)
-    prov = provenance(ver, src_rel, sha256(src))
-    if 'FOM_rxffe_floating_taps' in NOT_REPLACED.get(ver, ()):
-        i = next(i for i, l in enumerate(prov) if 'FOM_rxffe_floating_taps' in l)
-        prov[i:i + 2] = ['%%   for speed  (not FOM_rxffe_floating_taps: its patch predates the',
-                         '%%             4p17p0 HH lookup) get_pdf_from_sampled_signal (its two helpers']
-    lines[k + 1:k + 1] = prov
+    lines[k + 1:k + 1] = provenance(ver, src_rel, sha256(src))
     return nl.join(lines), dst_rel
 
 

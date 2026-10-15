@@ -43,8 +43,8 @@ function results=com_ieee8023_(varargin)
 %%             (the file read whole, no textscan), writecsv_transposed,
 %%             csvread4com (added); verLessThan guard; MMSE Rn=real(Rn);
 %%             MLSE real() on CDF_ev args; .csv config via csvread4com
-%%   for speed  (not FOM_rxffe_floating_taps: its patch predates the
-%%             4p17p0 HH lookup) get_pdf_from_sampled_signal (its two helpers
+%%   for speed  FOM_rxffe_floating_taps (the search inlined, invariants
+%%             hoisted); get_pdf_from_sampled_signal (its two helpers
 %%             inlined); FFE (taps added in place); MMSE_FOM (elementwise
 %%             tests for isequal). Results are bit-identical: checked by
 %%             running whole cases before and after and comparing every
@@ -2239,38 +2239,155 @@ for i=1:length(C)
     end
 end
 function idx = FOM_rxffe_floating_taps(param,h,H,Nb,Rnn,dw,d,wmax,wmin,bmin,bmax,sigma_X2,isi_start,isi_end,HH_unique_values)
+%% License Notice
+%
+% Copyright 2025 802-COM Authors
+%
+% Redistribution and use in source and binary forms, with or without
+% modification, are permitted provided that the following conditions are
+% met:
+%
+% - Redistributions of source code must retain the above copyright
+%   notice, this list of conditions and the following disclaimer.
+%
+% - Redistributions in binary form must reproduce the above copyright
+%   notice, this list of conditions and the following disclaimer in the
+%   documentation and/or other materials provided with the distribution.
+%
+% - Neither the name of the copyright holder nor the names of its
+%   contributors may be used to endorse or promote products derived from
+%   this software without specific prior written permission.
+%
+% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+% "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+% LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+% A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+% HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+% SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+% LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+% DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+% THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+% (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+%
+% SPDX-License-Identifier: BSD-3-Clause
+%
+% 4p17p0 VERSION (2026-10-14). The 4p17p0 release's MMSE_FOM builds HH by lag from
+% HH_unique_values = H(:,1)'*H, formed once in MMSE and passed in here, instead of
+% H(:,sel)'*H(:,sel). This file is the 4p16p0 patch below with exactly that
+% change, in the release's form: keep_idx = [1:Nfix idx+cmx+1],
+% HH = HH_val(abs(keep_idx(:)-keep_idx)+1), R = HH + Rnn(keep_idx,keep_idx)/sigma_X2,
+% Hb and h0 from H(:,keep_idx). Everything after R is the release's, unchanged
+% from 4p16p0. The compiled kernel takes HH_unique_values as its last argument.
+% Bit-identity with the release is checked as for the 4p16p0 patch.
+%
+% SPEED (2026-09-18): the release calls MMSE_FOM once per candidate tap set,
+% about 133 times per equalizer evaluation, and uses only its FOM. Here that
+% search-mode work is written into the loop, and what does not change between
+% candidates is computed once: Rnn/sigma_X2, eye(Nb), zeros(1,Nb) and the
+% fixed-tap count. Every other operation is MMSE_FOM's, in MMSE_FOM's order,
+% and each candidate still forms its own H(:,cols)'*H(:,cols). Measured on
+% captured inputs: 1.25 to 1.33x on this function, every candidate FOM
+% bit-identical to the release's. The caller, MMSE, still solves the chosen
+% tap set with MMSE_FOM itself.
+%
+% Deliberately NOT done: forming H'*H once over all columns and indexing it.
+% That is 1.8x here, but the indexed product differs from the per-candidate
+% one in the last bits on 135 of 138 tap sets tried (search FOMs move by up to
+% 3e-14 dB), so a result would stop being bit-identical to the release.
+%
+% Second pass, 2026-09-18: three more invariants hoisted -- the RxFFE_cpx
+% lookup, the wmax/wmin truncation (Nw is fixed within a group), and the FOM
+% numerator R_LM/(levels-1), which the release computes first in the same
+% expression, so the division by sigma_e sees the same operands. 1.08 to
+% 1.10x more on this function, every candidate FOM still bit-identical.
+%
+% COMPILED (2026-09-18): when the optional kernel com_octave_accel.oct is
+% present (octave/accel/), the candidate loop runs there instead and returns
+% the same best_FOM, value for value. If a candidate's variance comes out
+% negative, where this code would go complex, the kernel says so and the loop
+% below runs instead.
 hisi=h(isi_start:isi_end);
 hisi=hisi(param.RxFFE_cpx+1:param.N_bmax);
 bank_size = param.N_bf;
 num_groups = param.N_bg;
-
-
-%start with one by one Floating Tap
 num_isi=length(hisi);
 max_isi=num_isi-bank_size+1;
 valid_tap_locations=1:max_isi;
 all_idx=[];
+Nfix = param.RxFFE_cmx+1+param.RxFFE_cpx;
+cmx1 = param.RxFFE_cmx+1;
+RnnS = Rnn/sigma_X2;
+ib = eye(Nb);
+zb = zeros(1,Nb);
+cpx = param.RxFFE_cpx;
+fom_num = param.R_LM/(param.levels-1);
 for j=1:num_groups
     best_FOM=ones(1,length(valid_tap_locations))*-Inf;
+    Nw = Nfix+length(all_idx)+bank_size;
+    wmx = wmax;
+    wmn = wmin;
+    if Nw<length(wmx)
+        wmx=wmx(1:Nw);
+        wmn=wmn(1:Nw);
+    end
+    accel_done = false;
+    if com_octave_accel_on()
+        [accel_FOM, accel_fb] = com_octave_accel('floating_fom', H, RnnS, Nb, dw, d, wmx, wmn, ...
+            bmin, bmax, sigma_X2, fom_num, Nfix, cmx1, cpx, all_idx, valid_tap_locations, bank_size, ...
+            HH_unique_values);
+        if ~accel_fb
+            best_FOM = accel_FOM;
+            accel_done = true;
+        end
+    end
+    if ~accel_done
     for k=1:length(valid_tap_locations)
         this_location=valid_tap_locations(k);
         new_idx = [all_idx this_location:this_location+bank_size-1];
         new_idx=sort(new_idx);
-        new_idx = new_idx+param.RxFFE_cpx;
-        %calculate FOM for each one
-        [~,best_FOM(k),~,~] = MMSE_FOM(param,H,Nb,Rnn,dw,d,wmax,wmin,bmin,bmax,sigma_X2,new_idx,HH_unique_values);
+        new_idx = new_idx+cpx;
+        % ---- MMSE_FOM(...,sigma_X2,new_idx,HH_unique_values), FOM only (4p17p0)
+        cols = [1:Nfix new_idx+cmx1];
+        lag_idx = abs(cols(:) - cols) + 1;
+        HH = HH_unique_values(lag_idx);
+        R = HH+RnnS(cols,cols);
+        Hb = H(d+2:d+Nb+1, cols);
+        h0 = H(d+1, cols);
+        A = [R  -Hb'; -Hb ib];
+        C = [h0  zb];
+        Ct = C';
+        Z = A\Ct;
+        S_inv = C*Z;
+        wbl = [Z; 1-S_inv]/S_inv;
+        w=wbl(1:Nw);
+        b=wbl(Nw+1:length(wbl)-1);
+        blim = min(bmax(:), max(bmin(:), b));
+        if (Nb > 0) && any(b ~= blim)
+            wl = [R, -h0'; h0, 0]\[h0'+Hb'*blim; 1];
+            w = wl(1:Nw);
+        end
+        wlim = min(wmx(:)*w(1+dw), max(wmn(:)*w(1+dw), w));
+        if any(w ~= wlim)
+            wlim = wlim/(h0*wlim);
+            if Nb > 0
+                b = Hb*wlim;
+                blim = min(bmax(:), max(bmin(:), b));
+            end
+        end
+        w=wlim;
+        b=blim;
+        w_tr = w';
+        sigma_e=sqrt(sigma_X2*(w_tr*R*w+1+b'*b-2*w_tr*h0'-2*w_tr*Hb'*b));
+        best_FOM(k)=20*log10(fom_num/sigma_e);
     end
-    %choose the location with best FOM
-    %add it to the "all_idx" list and remove it from valid locations
+    end
     [~,best_FOM_idx]=max(best_FOM);
     start_tap = valid_tap_locations(best_FOM_idx);
     all_idx=[all_idx start_tap:start_tap+bank_size-1];
     remove_range=best_FOM_idx:best_FOM_idx+bank_size-1;
     remove_range(remove_range>length(valid_tap_locations))=[];
     valid_tap_locations(remove_range)=[];
-    
-    %Also remove illegal taps from valid locations
-    %illegal taps are ones that would overlap with the chosen bank
     bad_tap=start_tap-bank_size+1:start_tap-1;
     bad_tap(bad_tap<1)=[];
     for n=1:length(bad_tap)
@@ -2280,10 +2397,9 @@ for j=1:num_groups
         end
     end
 end
-
-%put idx back in the right location (adding RxFFE_cpx)
 idx = all_idx+param.RxFFE_cpx;
 idx = sort(idx);
+
 function [ V0 ] = Fract_T_FFE( V , skew_step)
 % skew_step   sub UI skew assuming param.samples_per_ui
 % V      input signal

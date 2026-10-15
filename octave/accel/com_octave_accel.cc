@@ -104,7 +104,9 @@ any_differ (const Matrix& a, const Matrix& b)
 // ---------------------------------------------------------------- floating_fom
 // best_FOM = com_octave_accel ('floating_fom', H, RnnS, Nb, dw, d, wmx, wmn,
 //                              bmin, bmax, sigma_X2, fom_num, Nfix, cmx1, cpx,
-//                              all_idx, valid_tap_locations, bank_size)
+//                              all_idx, valid_tap_locations, bank_size [, HH_val])
+// With HH_val (4p17p0's H(:,1)'*H), R is built from it by lag, as the 4p17p0
+// patch and MMSE_FOM build it; without it, as Hs'*Hs (4p15p0, 4p16p0).
 // Mirrors the inner loop of the FOM_rxffe_floating_taps patch, one candidate at
 // a time. Second output true if a candidate's variance came out negative, -0 or
 // NaN, where the interpreter would go complex or NaN: the caller then reruns the
@@ -129,6 +131,10 @@ floating_fom (const octave_value_list& args)
   const Matrix all_idx = args(15).matrix_value ();
   const Matrix valid = args(16).matrix_value ();
   const double bank_size = args(17).double_value ();
+  // 4p17p0: HH_unique_values = H(:,1)'*H, formed once in MMSE. When given, R is
+  // HH_val looked up by lag, as 4p17p0's MMSE_FOM builds it, instead of Hs'*Hs.
+  const bool by_lag = args.length () > 18 && ! args(18).isempty ();
+  const RowVector hhv = by_lag ? args(18).row_vector_value () : RowVector ();
 
   const octave_idx_type nrow = H.rows ();
   const octave_idx_type ncand = valid.numel ();
@@ -163,7 +169,17 @@ floating_fom (const octave_value_list& args)
       double *hs = Hs.fortran_vec ();
       for (octave_idx_type c = 0; c < n; c++)
         std::copy (hp + cols[c] * nrow, hp + (cols[c] + 1) * nrow, hs + c * nrow);
-      Matrix R = xgemm (Hs, Hs, blas_trans, blas_no_trans);
+      Matrix R;
+      if (by_lag)
+        {
+          // lag_idx = abs(keep_idx(:) - keep_idx) + 1; HH = HH_val(lag_idx)
+          R = Matrix (n, n);
+          for (octave_idx_type j = 0; j < n; j++)
+            for (octave_idx_type i = 0; i < n; i++)
+              R(i, j) = hhv (cols[i] > cols[j] ? cols[i] - cols[j] : cols[j] - cols[i]);
+        }
+      else
+        R = xgemm (Hs, Hs, blas_trans, blas_no_trans);
       for (octave_idx_type j = 0; j < n; j++)
         for (octave_idx_type i = 0; i < n; i++)
           R(i, j) = R(i, j) + RnnS(cols[i], cols[j]);

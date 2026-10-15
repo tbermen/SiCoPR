@@ -100,6 +100,12 @@ for ver, (src_rel, dst_rel) in FILES.items():
                  if m in dst]
         check("%s_compat_file_runs_the_release_floating_tap_search" % ver, not stale,
               "%s carries the pre-4p17p0 search patch: %s" % (dst_rel, stale))
+    elif ver >= '4p17p0':
+        # the 4p17p0 variant: HH by lag, and the kernel told so
+        markers += ["HH = HH_unique_values(lag_idx);", "fom_num/sigma_e",
+                    "com_octave_accel('floating_fom'", "HH_unique_values);"]
+        check("%s_search_patch_builds_HH_by_lag" % ver, "R = Hs'*Hs+RnnS(cols,cols)" not in dst,
+              "%s inlines the 4p16p0 Gram matrix" % dst_rel)
     else:
         markers += ["R = Hs'*Hs+RnnS(cols,cols)", "fom_num/sigma_e",
                     "com_octave_accel('floating_fom'"]
@@ -302,6 +308,98 @@ end
               ok and bool(res['1']['used']) and not bool(res['0']['used']),
               "kernels off/on disagree, or were not used when on (used: off=%s on=%s); see %s"
               % (res['0'] and bool(res['0']['used']), res['1'] and bool(res['1']['used']), kdir))
+
+    # ------------------------- 4p17p0: the search patch is the release's search
+    # 4p17p0's search hands MMSE_FOM HH_unique_values = H(:,1)'*H and MMSE_FOM
+    # builds HH from it by lag. The 4p17p0 variant of the speed patch (2026-10-14)
+    # inlines that. Three runs on the same seeded, MMSE-shaped system (H Toeplitz
+    # from a zero-padded pulse, HH_val formed as MMSE forms it): the RELEASE's own
+    # FOM_rxffe_floating_taps and MMSE_FOM, taken verbatim from matlab/; the patch
+    # with the kernel off; the patch with the kernel on. Every candidate's FOM and
+    # the chosen taps must be byte-identical across all three.
+    if os.path.isfile(os.path.join(OCT, 'com_octave_accel.oct')):
+        import re
+        import numpy as np
+        import scipy.io
+
+        def _bodies(path, wanted):
+            src = io.open(path, encoding='latin-1').read().split('\n')
+            st = [i for i, l in enumerate(src) if re.match(r'^function\b', l)]
+            out = {}
+            for k, i in enumerate(st):
+                m = re.search(r'=\s*([A-Za-z_]\w*)\s*\(', src[i]) or re.match(r'^function\s+([A-Za-z_]\w*)', src[i])
+                if m and m.group(1) in wanted:
+                    out[m.group(1)] = '\n'.join(src[i:st[k + 1] if k + 1 < len(st) else len(src)]) + '\n'
+            return out
+
+        def _hook(body):
+            first = body.index('\n') + 1
+            hook = '    [~,best_FOM_idx]=max(best_FOM);\n'
+            assert body.count(hook) == 1, 'the search has changed; update this test'
+            return (body[:first] + 'global accel_fom\n' + body[first:]).replace(
+                hook, '    accel_fom{end+1} = best_FOM;\n' + hook)
+
+        rel_dir = tempfile.mkdtemp(prefix='sicopr_417rel_')
+        pat_dir = tempfile.mkdtemp(prefix='sicopr_417pat_')
+        rel = _bodies(os.path.join(_ROOT, 'matlab', 'com_ieee8023_4p17p0.m'),
+                      ('FOM_rxffe_floating_taps', 'MMSE_FOM'))
+        pat = _bodies(os.path.join(_ROOT, FILES['4p17p0'][1]),
+                      ('FOM_rxffe_floating_taps', 'com_octave_accel_on'))
+        for d, bodies in ((rel_dir, rel), (pat_dir, pat)):
+            for name, body in bodies.items():
+                io.open(os.path.join(d, name + '.m'), 'w', encoding='latin-1').write(
+                    _hook(body) if name == 'FOM_rxffe_floating_taps' else body)
+        driver417 = r"""
+function drv417(out)
+  rand('state', 17); randn('state', 17);
+  global accel_fom
+  accel_fom = {};
+  param = struct('RxFFE_cmx', 6, 'RxFFE_cpx', 8, 'N_bmax', 80, 'N_bf', 4, 'N_bg', 2, ...
+                 'R_LM', 0.95, 'levels', 4);
+  Nw = 6 + 80 + 1;
+  for t = 1:3
+    h = [0.02 0.1 0.6 0.25 randn(1, 250) .* exp(-(1:250)/40) * 0.05 zeros(1, 150)];
+    H = toeplitz([h zeros(1, Nw-1)], [h(1) zeros(1, Nw-1)]);
+    HH_val = transpose(H(:,1))*H;
+    rn = 1e-4 * 0.7 .^ (0:Nw-1);
+    Rnn = toeplitz(rn, rn);
+    idx{t} = FOM_rxffe_floating_taps(param, h, H, t, Rnn, 6, 8, ones(Nw,1)*0.8, -ones(Nw,1)*0.8, ...
+                                     -0.5, 0.5, 15/27, 3, 3 + 80, HH_val);
+  end
+  save('-v7', out, 'idx', 'accel_fom');
+end
+"""
+        for d in (rel_dir, pat_dir):
+            io.open(os.path.join(d, 'drv417.m'), 'w', encoding='latin-1').write(driver417)
+        res417 = {}
+        for tag, d, mode in (('release', rel_dir, '0'), ('patch_off', pat_dir, '0'), ('patch_on', pat_dir, '1')):
+            out = os.path.join(d, 'out_%s.mat' % tag)
+            ev = ("addpath('%s'); addpath('%s'); drv417('%s');"
+                  % (OCT.replace('\\', '/'), d.replace('\\', '/'), out.replace('\\', '/')))
+            q = subprocess.run([octave, '--no-gui', '--no-window-system', '--eval', ev],
+                               capture_output=True, text=True, timeout=900, errors='replace',
+                               env=dict(os.environ, COM_OCTAVE_ACCEL=mode))
+            res417[tag] = scipy.io.loadmat(out) if os.path.isfile(out) else None
+            if res417[tag] is None:
+                print(tag, (q.stdout + q.stderr)[-800:])
+
+        def flat417(d):
+            vals = []
+            for k in ('idx', 'accel_fom'):
+                vals += [np.asarray(x, dtype=float) for x in d[k].ravel()]
+            return vals
+        ok = all(res417[t] is not None for t in res417)
+        if ok:
+            base = flat417(res417['release'])
+            n_cand = sum(x.size for x in base[3:])
+            ok = n_cand > 100 and all(
+                len(flat417(res417[t])) == len(base) and all(
+                    x.shape == y.shape and x.tobytes() == y.tobytes()
+                    for x, y in zip(flat417(res417[t]), base))
+                for t in ('patch_off', 'patch_on'))
+        check("4p17p0_search_patch_is_bit_identical_to_the_release_search",
+              ok, "4p17p0: release, patch (kernel off) and patch (kernel on) disagree on a "
+              "candidate FOM or the chosen taps; see %s and %s" % (rel_dir, pat_dir))
 
     case = os.environ.get('COM_OCTAVE_CASE', '')
     if ';' in case:

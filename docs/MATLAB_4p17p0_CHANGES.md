@@ -106,12 +106,13 @@ MATLAB and Octave; every decision the fit drives is exact.
 ## 4. Octave
 
 `octave/make_octave_compat.py` generates `octave/com_ieee8023_4p17p0_octave_compat.m`;
-every patch anchor matched unchanged. One patch is not applied: the
-`FOM_rxffe_floating_taps` speed rewrite inlines 4p16p0's `H(:,sel)'*H(:,sel)`,
-so on 4p17p0 it would compute the previous release's arithmetic. The release's
-own search runs instead, and with it the compiled search kernel stays off
-(it is reached only through that patch). One case, the shipped example: Octave
-789 s, SiCoPR 374 s.
+every patch anchor matched unchanged. The `FOM_rxffe_floating_taps` speed rewrite
+inlines 4p16p0's `H(:,sel)'*H(:,sel)`, so at first (2026-10-03) it was not applied and
+the release's own search ran, the compiled search kernel with it off: on the
+shipped example Octave 789 s against SiCoPR's 374 s. Since 2026-10-14 4p17p0 takes a
+variant that builds the Gram matrix by lag as 4p17p0 does, and the kernel has the
+same mode; bit-identical to the release's search (every candidate FOM, and four whole
+cases in every field), 1.6x to 1.8x faster like for like ([`../octave/README.md`](../octave/README.md)).
 
 ## 5. Measured effect
 
