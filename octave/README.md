@@ -8,8 +8,8 @@ to a `.mat`, then call the release file. Nothing here needs building.
 
 **To make it faster**, build the optional compiled kernels once
 (`python octave/accel/build_accel.py`). Every later run finds them and is about
-1.4 to 1.9 times faster than the same files run interpreted (measured
-2026-09-18), with the same command and the same results, bit for bit. See [Optional compiled kernels](#optional-compiled-kernels).
+1.8 to 2.0 times faster than the same files run interpreted (4p17p0, the
+shipped example, measured 2026-10-15), with the same command and the same results, bit for bit. See [Optional compiled kernels](#optional-compiled-kernels).
 
 **To understand what was changed and why**, read on: the patch set is the point
 of this directory, and every item in it is a no-op under MATLAB.
@@ -230,13 +230,18 @@ privately with the channels it needs and is not published.
 
 | | Octave against SiCoPR | measured |
 |---|---|---|
-| **interpreted, speed items in** | **2.2x to 2.4x** | 821 s / 786 s against 375 s / 335 s, the shipped example without / with crosstalk, 2026-10-01 |
-| **with the compiled kernels** | **1.2x to 1.4x** | 457 s / 454 s against the same, 2026-10-01 |
+| **4p17p0, interpreted** | **1.8x** | 645 s / 586 s against 365 s / 317 s, the shipped example without / with crosstalk, 2026-10-15 |
+| **4p17p0, with the compiled kernels** | **0.87x to 1.04x** | 316 s / 330 s against the same, 2026-10-15 |
+| 4p16p0, interpreted, speed items in | 2.2x to 2.4x | 821 s / 786 s against 375 s / 335 s, the shipped example, 2026-10-01 |
+| 4p16p0, with the compiled kernels | 1.2x to 1.4x | 457 s / 454 s against the same, 2026-10-01 |
 | earlier: before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
 | earlier: with the compiled kernels (2026-09-18) | about 1.5x | 451 s against 299 s, one 1368-case 4p16p0 case (`wo_C1_R001`) |
 
-The 2026-10-01 rows are current: one case at a time on the same machine, every
-engine giving the same COM to within 2e-14 dB. The earlier rows were taken before
+The 2026-10-15 rows are current: 4p17p0, the default, one case at a time on the
+same machine, every engine giving the same COM to within 1e-14 dB. With the
+kernels built, COM Octave now runs about as fast as SiCoPR. The 2026-10-01 rows
+are the same measurement on 4p16p0, where SiCoPR took about the same time and
+COM Octave longer. The earlier rows were taken before
 SiCoPR's September convolution changes and are kept as history.
 
 ## What is in this directory, and what left it

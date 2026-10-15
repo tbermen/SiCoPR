@@ -1014,7 +1014,7 @@ python octave/accel/build_accel.py        # once per machine
 ```
 
 From then on every run that has `octave/` on its path uses them automatically:
-same command, same configuration, same results, 1.4 to 1.9 times faster than the same files run interpreted (measured 2026-09-18). To
+same command, same configuration, same results, 1.8 to 2.0 times faster than the same files run interpreted (4p17p0, measured 2026-10-15). To
 check whether a run will use them, ask the kernel for its version:
 
 ```
@@ -1031,13 +1031,13 @@ proved by planting five last-bit defects and confirming it fails on each.
 
 ## 12.5 How fast, and how close
 
-Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). Measured 2026-10-01 on the shipped example, one case at a time (without / with crosstalk: SiCoPR 375 s / 335 s; these files interpreted 821 s / 786 s; with the compiled build 457 s / 454 s):
+Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). Measured 2026-10-15 on the shipped example under 4p17p0, one case at a time (without / with crosstalk: SiCoPR 365 s / 317 s; these files interpreted 645 s / 586 s; with the compiled build 316 s / 330 s). The 4p16p0 figures of 2026-10-01 are in brackets:
 
 | | Octave / SiCoPR |
 |---|---|
 | the stock release file under Octave | ~30x slower again (its `CDF_ev` does `find` on a growing axis) |
-| these files, interpreted | 2.2x to 2.4x |
-| these files, with the compiled build | 1.2x to 1.4x |
+| these files, interpreted | 1.8x (2.2x to 2.4x) |
+| these files, with the compiled build | 0.87x to 1.04x (1.2x to 1.4x) |
 
 On agreement, see §11: 1368 cases, COM within 5.3e-14 dB and the same sampling
 phase on every one (2026-09-26). `octave/README.md` carries the patch set

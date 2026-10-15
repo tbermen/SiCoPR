@@ -26,6 +26,16 @@ Two things this file is *not*:
   own search. Rebuild the kernel (`python octave/accel/build_accel.py`) to use it.
 - The shipped example runs 4p17p0, and its expected values were regenerated with
   both engines on it (COM unchanged to 1e-14 dB; the engines agree to 1.0e-14 dB).
+- Octave speed figures re-measured on 4p17p0 (2026-10-15): with the compiled kernels
+  COM Octave runs at 0.87x to 1.04x SiCoPR's time, 1.8x interpreted
+  (`octave/README.md`, TUTORIAL 12.5).
+- Tests: the unguarded `.copy()` sites the mutation gate reported fell from 31
+  functions to 2, both fallback stubs production never calls. New MATLAB
+  value-semantics checks (`com_functions/verification/value_semantics.py`) catch 20
+  more sites; 28 are argued equivalent in `equivalent_mutants.md`; the gate no longer
+  counts sites in `__main__` demo blocks. The verification report's `Finding:`
+  trailer check is scoped to `py_impl.py`, as `docs/VERIFICATION.md` specifies.
+  No engine result changes.
 
 ### Fixed
 
