@@ -42,20 +42,20 @@ The script is a convenience, not a layer. The same two runs, typed out:
 # SiCoPR, no crosstalk
 python -m sicopr examples/akinwale_CR_22dB_VendorX/config_com_dj_200G_CAKR_178_PKGA_06_2_2025__Case1.xlsx ^
        <channels>/Tx_PCB_4dB_OSFP_22dB_OSFP_4dB_PCB_Rx_TP0_TP5_VendorX_thru1.s4p ^
-       --matlab-version 4p16p0
+       --matlab-version 4p17p0
 
 # COM Octave, same case: convert the workbook once, then call the release file
 python tools/xlsx_to_com_mat.py examples/akinwale_CR_22dB_VendorX/config_..._Case1.xlsx -o config.mat ^
        --set RESULT_DIR=out/ --set SAVE_FIGURES=0 --set DISPLAY_WINDOW=0
 octave-cli --no-gui --no-window-system --eval ^
-  "addpath('octave'); r = com_ieee8023_4p16p0_octave_compat('config.mat', 0, 0, '<channels>/..._thru1.s4p'); save('-v7','r.mat','r')"
+  "addpath('octave'); r = com_ieee8023_4p17p0_octave_compat('config.mat', 0, 0, '<channels>/..._thru1.s4p'); save('-v7','r.mat','r')"
 ```
 
-`--matlab-version 4p16p0` is spelled out so the command means the same thing
-whatever the default is; the default moved to 4p17p0 on 2026-10-03
-([`docs/VERSIONS.md`](../docs/VERSIONS.md)). Under 4p17p0 this case gives the same
-COM to about 1e-14 dB, with the same sampling phase and equalizer: 4p17p0 changes
-this calculation only in summation order. Add the
+`--matlab-version 4p17p0` is spelled out so the command means the same thing
+whatever the default is ([`docs/VERSIONS.md`](../docs/VERSIONS.md)); 4p17p0 is the
+release the expected values were produced with. Under 4p16p0 this case gives the
+same COM to about 1e-14 dB, with the same sampling phase and equalizer: 4p17p0
+changes this calculation only in summation order. Add the
 five aggressors with `--fext` and `--next` for the crosstalk case; the file roles
 are in `CHANNEL.md`.
 

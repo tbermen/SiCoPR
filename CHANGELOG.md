@@ -24,6 +24,8 @@ Two things this file is *not*:
   (`octave/patches/FOM_rxffe_floating_taps_4p17p0.m`), and the optional compiled
   kernel has the matching mode: 1.6x to 1.8x faster, bit-identical to the release's
   own search. Rebuild the kernel (`python octave/accel/build_accel.py`) to use it.
+- The shipped example runs 4p17p0, and its expected values were regenerated with
+  both engines on it (COM unchanged to 1e-14 dB; the engines agree to 1.0e-14 dB).
 
 ### Fixed
 
