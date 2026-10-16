@@ -18,6 +18,12 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-16
+
+A security fix for the GUI, a faster COM Octave on 4p17p0, and test and tooling
+work. No engine result changes: every COM, FOM and equalizer setting is what
+1.1.1 computes.
+
 ### Changed
 
 - COM Octave 4p17p0 runs a 4p17p0 variant of the floating-tap search speed patch
