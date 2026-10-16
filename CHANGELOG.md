@@ -45,6 +45,16 @@ Two things this file is *not*:
 
 ### Fixed
 
+- The GUI now refuses requests that did not come from its own page. Binding to
+  127.0.0.1 kept out the network but not other websites open in the same browser:
+  a page on any site could have opened a whole drive (`/api/open` is a GET) and then
+  overwritten workbooks on it through a text/plain POST to `/api/save`, and a
+  DNS-rebinding page could also have read files from opened directories. Requests
+  must now name this server in `Host`, must not be marked cross-site
+  (`Sec-Fetch-Site`, `Origin`), and POSTs must be `application/json`, as the page's
+  own already are. Found through the first CodeQL code scan.
+- CI declares `permissions: contents: read`; its jobs had the repository's broader
+  default token permissions.
 - The two INFO lines about a channel's frequency range (data ending below the
   signalling rate; data starting above the recommended frequency) now print the
   Reference Code's own text, including its "GH" for "GHz". The conditions were

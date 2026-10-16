@@ -217,6 +217,57 @@ try:
     finally:
         shutil.rmtree(ws, ignore_errors=True)
 
+    # ------------------------------------------------- other websites
+    # Binding to 127.0.0.1 keeps out the network, not other websites: a page in
+    # the same browser can call this server. Before 2026-10-15 a GET to
+    # /api/open from any page opened a whole drive, and a text/plain POST to
+    # /api/save could then overwrite any workbook on it. Needs no workbook, so
+    # it runs before the no-config skip below. The headers are
+    # the ones a browser sends for such requests, and for a DNS-rebinding page.
+    def raw(path, method='GET', headers=None, data=None):
+        req = urllib.request.Request(BASE + path, data=data, headers=headers or {},
+                                     method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    victim = tempfile.mkdtemp(prefix='gui_xsite_')
+    try:
+        opened_before = list(gui_app.EXTRA_ROOTS)
+        q = '/api/open?path=' + urllib.parse.quote(victim)
+        check("a_dns_rebinding_host_is_refused",
+              raw(q, headers={'Host': 'attacker.example:%d' % PORT}) == 403,
+              "a request whose Host names another site was served")
+        check("a_cross_site_request_is_refused",
+              raw(q, headers={'Sec-Fetch-Site': 'cross-site'}) == 403,
+              "a request the browser marked cross-site was served")
+        check("a_foreign_origin_is_refused",
+              raw(q, headers={'Origin': 'http://attacker.example'}) == 403,
+              "a request from another Origin was served")
+        check("refused_requests_open_nothing",
+              gui_app.EXTRA_ROOTS == opened_before,
+              "a refused /api/open still opened a directory: %s"
+              % sorted(set(gui_app.EXTRA_ROOTS) - set(opened_before)))
+        check("a_text_plain_post_is_refused",
+              raw('/api/save', 'POST', {'Content-Type': 'text/plain'}, b'{}') == 403,
+              "a text/plain POST, which another site can send without asking, "
+              "was served")
+        check("a_form_post_is_refused",
+              raw('/api/exec/stop', 'POST',
+                  {'Content-Type': 'application/x-www-form-urlencoded'}, b'{}') == 403,
+              "a form-encoded POST was served")
+        own = {'Origin': BASE, 'Sec-Fetch-Site': 'same-origin'}
+        check("the_pages_own_requests_are_still_served",
+              raw('/api/configs', headers=own) == 200
+              and raw('/api/configs', headers={'Host': 'localhost:%d' % PORT}) == 200
+              and raw('/api/exec/stop', 'POST',
+                      dict(own, **{'Content-Type': 'application/json'}), b'{}') == 200,
+              "a same-origin request from the page itself was refused")
+    finally:
+        shutil.rmtree(victim, ignore_errors=True)
+
     # ------------------------------------------------------------- configs
     configs = get_json('/api/configs')
     check("the_configs_endpoint_answers", isinstance(configs, list),

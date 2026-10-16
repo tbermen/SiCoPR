@@ -13,6 +13,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Every job only reads the repository. Without this the token gets the
+# repository's default permissions, broader than any job here needs
+# (CodeQL actions/missing-workflow-permissions, 2026-10-15).
+permissions:
+  contents: read
+
 jobs:
   suite:
     name: Suite on a clean checkout (${{ matrix.os }})

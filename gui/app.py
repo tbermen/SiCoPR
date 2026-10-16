@@ -10,6 +10,14 @@ Binds to 127.0.0.1 only. This reads and writes files anywhere the path parameter
 points, so it must not be reachable from the network; `_safe_path` additionally
 refuses anything outside the roots the user has opened.
 
+Binding to localhost does not keep out OTHER WEBSITES: any page open in the same
+browser can send requests to 127.0.0.1. So every request is also refused unless
+its Host header names this server (a DNS-rebinding page arrives with its own
+name), the browser does not mark it as coming from another site (Sec-Fetch-Site,
+Origin), and, for a POST, its body is declared application/json (which a page
+on another site cannot send without a preflight this server never answers).
+See `Handler._refused`.
+
 Those roots are the repository, anything named by `--dir` or `SICOPR_DIRS`,
 the run directory (`--run-dir`), and any directory the user has explicitly
 chosen through `/api/open`. Browsing alone grants nothing: `/api/browse` lists
@@ -1108,7 +1116,37 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj))
 
+    def _refused(self, method):
+        """Why this request must not be served, or None.
+
+        Added 2026-10-15 after the first CodeQL scan: the path checks keep a
+        request inside the opened roots, but nothing checked WHO was asking, and
+        a page on any website can make the browser call 127.0.0.1. Without this
+        a GET to /api/open could open a whole drive and a text/plain POST to
+        /api/save could then overwrite any workbook on it.
+        """
+        port = self.server.server_address[1]
+        ours = ('127.0.0.1:%d' % port, 'localhost:%d' % port)
+        host = (self.headers.get('Host') or '').strip().lower()
+        if host not in ours:
+            return 'Host %r is not this server' % host
+        origin = self.headers.get('Origin')
+        if origin is not None and origin.strip().lower() not in tuple(
+                'http://' + h for h in ours):
+            return 'Origin %r is not this server' % origin
+        site = (self.headers.get('Sec-Fetch-Site') or '').strip().lower()
+        if site and site not in ('same-origin', 'none'):
+            return 'a %s request' % site
+        if method == 'POST':
+            ctype = (self.headers.get('Content-Type') or '').split(';')[0]
+            if ctype.strip().lower() != 'application/json':
+                return 'a POST body must be application/json'
+        return None
+
     def do_GET(self):
+        why = self._refused('GET')
+        if why:
+            return self._json({'error': 'refused: %s' % why}, 403)
         u = urlparse(self.path)
         q = parse_qs(u.query)
         try:
@@ -1262,6 +1300,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, f.read(), 'image/png')
 
     def do_POST(self):
+        why = self._refused('POST')
+        if why:
+            return self._json({'error': 'refused: %s' % why}, 403)
         u = urlparse(self.path)
         try:
             n = int(self.headers.get('Content-Length', 0))
