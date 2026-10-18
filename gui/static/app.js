@@ -21,6 +21,7 @@ let OVERLAY = null;    // a panel's values laid over the workbook (sicopr:overla
 let WANT_RUN = null;   // a run folder a panel asked the Results tabs to show
 let WANT_BUILD = null; // that run folder, when the panel also asked for its dashboard to be built
 let ASSEMBLED = null;  // the setup a panel put in the Run tab (sicopr:set-run), or null
+let PANEL_OUT = null;  // the panel run the Run tab's Output shows (sicopr:output): {job, done}, or null
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -922,7 +923,9 @@ async function runEnter() {
         + encodeURIComponent($('#nlDir').value)));
     }
     refreshNetlist();
-    pollStatus();          // pick up a run already in progress
+    // pick up a run already in progress; while the Output shows a panel's run
+    // (sicopr:output) there is none of this editor's own to pick up
+    if (!PANEL_OUT) pollStatus();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -961,6 +964,7 @@ $('#btnExec').addEventListener('click', async () => {
       body: JSON.stringify(netlistBody()),
     });
     if (r.problems) { toast(r.problems.join('; '), true); return; }
+    PANEL_OUT = null;      // the Output is this run's now
     termReset('');
     NEXT_LINE = 0;
     POLL_FAILS = 0;
@@ -972,6 +976,12 @@ $('#btnExec').addEventListener('click', async () => {
 });
 
 $('#btnKill').addEventListener('click', () => {
+  // The Output shows a panel's run that is under way (sicopr:output): Stop is
+  // the panel's to carry out, so it is asked to (sicopr:stop-request).
+  if (PANEL_OUT && !PANEL_OUT.done) {
+    emit('stop-request', { job: PANEL_OUT.job });
+    return;
+  }
   api('/api/exec/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     .then((r) => toast(r.stopped ? 'stop requested' : 'nothing was running'))
     .catch((e) => toast(e.message, true));
@@ -1373,6 +1383,10 @@ window.addEventListener('sicopr:clear-edits', (e) => {
 
 window.addEventListener('sicopr:show', (e) => {
   const d = e.detail || {};
+  // unless_editing: not while the user is in the middle of an edit in Config
+  // (a field of it has the focus, or an edit is unsaved)
+  if (d.unless_editing && VIEW === 'config' && (Object.keys(EDITS).length
+      || $('#configView').contains(document.activeElement))) return;
   WANT_RUN = d.run || null;
   WANT_BUILD = d.build && d.run ? d.run : null;
   show(d.view);
@@ -1431,6 +1445,28 @@ async function setRun(d) {
 window.addEventListener('sicopr:set-run', (e) => {
   setRun(e.detail).catch((x) => toast(x.message, true));
 });
+
+/* sicopr:output: a panel's run, shown in the Run tab's Output as a run of the
+ * Run tab is (README, "Panels"). A new job clears the Output first; its lines
+ * are appended to the same bounded terminal (follow output applies), status
+ * goes in the status line, and Stop is live until done, when Stop asks the
+ * panel (sicopr:stop-request) instead of this editor's runner. */
+function panelOutput(d) {
+  if (!d || d.job === undefined || d.job === null) return;
+  const job = String(d.job);
+  if (!PANEL_OUT || PANEL_OUT.job !== job) {
+    clearTimeout(POLL);    // the Output is the panel's now
+    termReset('');
+  }
+  PANEL_OUT = { job, done: !!d.done };
+  termAppend((d.lines || []).map(String));
+  $('#execState').textContent = String(d.status || '');
+  $('#btnKill').disabled = PANEL_OUT.done;
+  if (PANEL_OUT.done) refreshNetlist();
+  else $('#btnExec').disabled = true;
+}
+
+window.addEventListener('sicopr:output', (e) => panelOutput(e.detail));
 
 window.addEventListener('sicopr:browse', (e) => {
   const d = e.detail || {};

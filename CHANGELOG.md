@@ -177,6 +177,13 @@ stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
   button as it is. `sicopr:show` can ask Results, dynamic to build a run's
   dashboard. All additive; panel API 1. With no panel installed nothing sends
   `sicopr:set-run` and the Run tab is unchanged.
+- **Panels: a panel's run in the Run tab's Output** (`sicopr:output`): its
+  lines go to the same bounded terminal as a run of the Run tab, with its status
+  line, follow output and Stop; Stop then asks the panel to stop its run
+  (`sicopr:stop-request`). `sicopr:show` takes `unless_editing`, so a panel can
+  bring up the Run tab without pulling the user out of an edit in Config.
+  Additive; panel API 1. With no panel installed nothing sends `sicopr:output`
+  and the Output shows only the editor's own runs.
 - The request guard of 1.1.2 (`Handler._refused`) covers the panel routes:
   `tests/test_gui_server.py` checks that a cross-site, foreign-Origin,
   DNS-rebinding or text/plain request to `/panel/<name>/...` is refused before

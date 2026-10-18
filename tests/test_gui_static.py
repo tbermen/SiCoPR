@@ -578,4 +578,66 @@ check("the_assembled_command_style_needs_no_hidden_rule",
       ".cmd.assembled sets display, which would need its own [hidden] rule")
 
 
+# ---- panels: a panel's run in the Run tab's Output (sicopr:output) -------
+#
+# A panel that runs the engine its own way shows that run where a run of the
+# Run tab is shown: the Output terminal (bounded, follow output), the status
+# line and Stop. Stop then asks the panel, because the editor's runner is not
+# the one running. With no panel nothing sends the event, PANEL_OUT stays
+# null, and the Run tab is exactly what it was.
+_po = _fn_body('panelOutput')
+check("output_is_handled",
+      re.search(r"addEventListener\('sicopr:output', \(e\) => panelOutput\(e\.detail\)\)", src),
+      "the page does not hand sicopr:output to panelOutput()")
+check("output_shows_a_panel_run_in_the_terminal",
+      re.search(r"if \(!PANEL_OUT \|\| PANEL_OUT\.job !== job\) \{\s*clearTimeout\(POLL\);[^}]*"
+                r"termReset\(''\);\s*\}", _po)
+      and re.search(r"termAppend\(\(d\.lines \|\| \[\]\)\.map\(String\)\);", _po)
+      and re.search(r"\$\('#execState'\)\.textContent = String\(d\.status \|\| ''\);", _po),
+      "panelOutput() does not clear the Output for a new job, append its lines "
+      "to the bounded terminal, and show its status in the status line")
+check("output_keeps_stop_live_until_done",
+      re.search(r"\$\('#btnKill'\)\.disabled = PANEL_OUT\.done;", _po)
+      and re.search(r"if \(PANEL_OUT\.done\) refreshNetlist\(\);\s*else \$\('#btnExec'\)\.disabled = true;",
+                    _po),
+      "panelOutput() does not keep Stop live (and Run off) while the panel's "
+      "run is under way, or does not give Run back when it is done")
+_kill = re.search(r"\$\('#btnKill'\)\.addEventListener\('click', \(\) => \{(.*?)\n\}\);", src, re.S)
+_kill = _kill.group(1) if _kill else ''
+check("stop_asks_the_panel_for_its_run",
+      re.search(r"if \(PANEL_OUT && !PANEL_OUT\.done\) \{\s*emit\('stop-request', \{ job: PANEL_OUT\.job \}\);"
+                r"\s*return;\s*\}", _kill)
+      and _kill.find("emit('stop-request'") < _kill.find("api('/api/exec/stop'"),
+      "Stop does not send sicopr:stop-request while the Output shows a panel's "
+      "run, or still asks the editor's own runner first")
+check("only_output_sets_the_panel_run",
+      re.findall(r"\bPANEL_OUT\s*=[^=]", src) == ['PANEL_OUT = ', 'PANEL_OUT = ', 'PANEL_OUT = ']
+      and re.search(r"^let PANEL_OUT = null;", src, re.M)
+      and re.search(r"PANEL_OUT = \{ job, done: !!d\.done \};", _po)
+      and re.search(r"PANEL_OUT = null;\s*// the Output is this run's now\s*termReset\(''\);", _ex),
+      "PANEL_OUT is set somewhere other than its declaration, panelOutput() "
+      "and a run of the Run tab, so the Output could change hands with no "
+      "panel having asked")
+check("the_run_tab_does_not_poll_over_a_panel_run",
+      re.search(r"if \(!PANEL_OUT\) pollStatus\(\);", _fn_body('runEnter')),
+      "runEnter() polls the editor's runner while the Output shows a panel's "
+      "run, and its 'idle' would overwrite the panel's status and Stop")
+_sh = re.search(r"addEventListener\('sicopr:show', \(e\) => \{(.*?)\n\}\);", src, re.S)
+_sh = _sh.group(1) if _sh else ''
+check("show_can_leave_an_edit_in_config_alone",
+      re.search(r"if \(d\.unless_editing && VIEW === 'config' && \(Object\.keys\(EDITS\)\.length\s*"
+                r"\|\| \$\('#configView'\)\.contains\(document\.activeElement\)\)\) return;", _sh)
+      and _sh.find('unless_editing') < _sh.find('show(d.view)'),
+      "sicopr:show with unless_editing switches tab while the user is editing "
+      "in Config")
+check("the_readme_gives_output_stop_request_and_unless_editing",
+      all(w in _rows.get('output', ('', ''))[0] for w in ('job', 'lines', 'status', 'done'))
+      and 'job' in _rows.get('stop-request', ('', ''))[0]
+      and 'unless_editing' in _rows.get('show', ('', ''))[0]
+      and 'sicopr:output' in _readme.split('## Tests')[0].split('With no panel installed nothing sends')[-1],
+      "gui/README.md does not give sicopr:output, sicopr:stop-request and "
+      "unless_editing of sicopr:show, and that with no panel nothing sends "
+      "sicopr:output")
+
+
 finish()
