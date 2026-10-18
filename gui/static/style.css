@@ -362,3 +362,5 @@ button.link { background: transparent; color: var(--accent); border: 0;
 .cell.overlaid:not(.changed) input { border-color: var(--accent); }
 .blk.overlaid rect { stroke: var(--accent); stroke-width: 2;
   stroke-dasharray: 6 3; }
+/* the command a panel assembled in the Run tab (sicopr:set-run) */
+.cmd.assembled { border-left: 3px solid var(--accent); }

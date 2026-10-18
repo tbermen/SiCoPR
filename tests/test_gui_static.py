@@ -458,7 +458,7 @@ check("the_channels_event_is_sent_once_at_start",
       "boot() does not send sicopr:channels, so a panel that starts with the "
       "page does not know the selection until something changes")
 check("the_channels_event_is_sent_when_the_lists_are_filled",
-      re.search(r"emitChannels\('list'\)", _fn_body('fillChannelSelects')),
+      re.search(r"emitChannels\(want \? 'panel' : 'list'\)", _fn_body('fillChannelSelects')),
       "fillChannelSelects() changes what is selected (a directory, the filter, "
       "the first THRU by default) without sending sicopr:channels")
 _picks = re.search(
@@ -466,8 +466,9 @@ _picks = re.search(
     r"'change', \(\) => emitChannels\('user'\)\);", src)
 check("the_channels_event_is_sent_on_every_pick",
       _picks and set(re.findall(r"'(#\w+)'", _picks.group(1)))
-      == {'#nlThru', '#nlFext', '#nlNext'},
-      "a change of #nlThru, #nlFext or #nlNext does not send sicopr:channels "
+      == {'#nlThru', '#nlFext', '#nlNext', '#nlMat', '#nlEye'},
+      "a change of #nlThru, #nlFext, #nlNext or of the two option boxes "
+      "(#nlMat, #nlEye) does not send sicopr:channels "
       "(listeners found for %r)"
       % (_picks and re.findall(r"'(#\w+)'", _picks.group(1)),))
 check("an_unchanged_selection_is_not_sent_again",
@@ -488,6 +489,93 @@ check("the_readme_gives_the_channels_event_its_detail_and_causes",
       and all(('`%s`' % c) in _row.group(2) for c in ('boot', 'user', 'list')),
       "gui/README.md does not list sicopr:channels with {thru, fext, next, "
       "cause} and the three causes")
+
+
+
+# ---- panels: the Run tab assembled by a panel (sicopr:set-run, sicopr:run-request)
+#
+# A panel that drives the engine its own way can put the setup it will run in
+# the Run tab: the files, the two options, its own command and a note. The Run
+# tab's controls stay live, each change goes back in sicopr:channels (now with
+# the options), and while it is assembled Run hands the run to the panel. With
+# no panel, or one that never assembles, nothing of this is reached.
+check("the_channels_event_carries_the_two_options",
+      re.search(r"options:\s*\{\s*export_mat:\s*\$\('#nlMat'\)\.checked,\s*"
+                r"eye_under_mlse:\s*\$\('#nlEye'\)\.checked", _ec),
+      "emitChannels() does not send the Output dynamic results and "
+      "--eye-under-mlse boxes as options {export_mat, eye_under_mlse}")
+_sr = _fn_body('setRun')
+check("set_run_selects_the_files_and_sets_the_options",
+      re.search(r"\$\('#nlMat'\)\.checked = !!\(d\.options \|\| \{\}\)\.export_mat", _sr)
+      and re.search(r"\$\('#nlEye'\)\.checked = !!\(d\.options \|\| \{\}\)\.eye_under_mlse", _sr)
+      and re.search(r"fillChannelSelects\(await api\('/api/channels\?dir='[^;]*"
+                    r"\{ thru: d\.thru, fext: d\.fext \|\| \[\], next: d\.next \|\| \[\] \}\)",
+                    _sr, re.S),
+      "setRun() does not select the panel's THRU, FEXT and NEXT files and set "
+      "the two option boxes from sicopr:set-run")
+check("set_run_is_handled",
+      re.search(r"addEventListener\('sicopr:set-run', \(e\) => \{\s*setRun\(e\.detail\)", src),
+      "the page does not hand sicopr:set-run to setRun()")
+check("only_set_run_assembles_the_run_tab",
+      re.findall(r"\bASSEMBLED\s*=[^=]", src) == ['ASSEMBLED = ', 'ASSEMBLED = ']
+      and re.search(r"^let ASSEMBLED = null;", src, re.M)
+      and re.search(r"ASSEMBLED = d && typeof d\.command === 'string' \? d : null;", _sr),
+      "ASSEMBLED is set somewhere other than its declaration and setRun(), so "
+      "the Run tab could be assembled with no panel having asked")
+_rn = _fn_body('refreshNetlist')
+check("an_assembled_run_tab_shows_the_panels_command",
+      re.search(r"\$\('#nlCmd'\)\.textContent = ASSEMBLED \? ASSEMBLED\.command\s*"
+                r": \(r\.command \|\| '\(not runnable yet\)'\);", _rn),
+      "refreshNetlist() shows the editor's own command while a panel has the "
+      "Run tab assembled, or no longer shows it when none has")
+check("the_note_of_set_run_replaces_the_overlay_run_note",
+      re.search(r"ASSEMBLED \? \(ASSEMBLED\.note \|\| ''\)\s*: \(OVERLAY \? \(OVERLAY\.run_note \|\| ''\) : ''\)",
+                _fn_body('showRunNote'))
+      and 'showRunNote();' in _sr,
+      "the line under Configuration does not show the note of sicopr:set-run")
+check("set_run_changes_are_sent_with_cause_panel",
+      re.search(r"emitChannels\('panel'\)", _sr)
+      and re.search(r"emitChannels\(want \? 'panel' : 'list'\)", _fn_body('fillChannelSelects')),
+      "what sicopr:set-run selected is not sent back with cause panel, so a "
+      "panel could not tell its own change from the user's")
+_ex = re.search(r"\$\('#btnExec'\)\.addEventListener\('click', async \(\) => \{(.*?)\n\}\);",
+                src, re.S)
+_ex = _ex.group(1) if _ex else ''
+check("run_hands_an_assembled_run_tab_to_the_panel",
+      re.search(r"if \(ASSEMBLED && !emit\('run-request', \{\s*thru: \$\('#nlThru'\)\.value, "
+                r"fext: selected\(\$\('#nlFext'\)\),\s*next: selected\(\$\('#nlNext'\)\),\s*"
+                r"options: \{ export_mat: \$\('#nlMat'\)\.checked,\s*"
+                r"eye_under_mlse: \$\('#nlEye'\)\.checked \},\s*\}, true\)\) return;", _ex),
+      "Run sicopr.py does not send sicopr:run-request (cancelable, with the "
+      "files and options) first when the Run tab is assembled")
+check("run_runs_as_before_when_not_taken",
+      _ex.find("emit('run-request'") < _ex.find("api('/api/exec/start'")
+      and _ex.count('return;') >= 1
+      and re.search(r"return window\.dispatchEvent\(new CustomEvent\('sicopr:' \+ name,\s*"
+                    r"\{ detail, cancelable: !!cancelable \}\)\);", _fn_body('emit')),
+      "Run does not fall through to /api/exec/start when no panel takes the "
+      "run, or emit() does not report whether a cancelable event was taken")
+check("show_can_ask_for_the_dashboard_to_be_built",
+      re.search(r"WANT_BUILD = d\.build && d\.run \? d\.run : null;", src)
+      and re.search(r"if \(WANT_BUILD && samePath\(path, WANT_BUILD\)\) \{\s*WANT_BUILD = null;\s*"
+                    r"if \(!first && d\.rscript\)", _fn_body('dynLoad')),
+      "sicopr:show with build does not build the run's dashboard in Results, "
+      "dynamic when it has none")
+_rows = {m.group(1): (m.group(2), m.group(3)) for m in re.finditer(
+    r'^\| `sicopr:([a-z-]+)` \|([^|]*)\|([^\n]*)$', _readme, re.M)}
+check("the_readme_gives_set_run_run_request_and_the_new_fields",
+      all(w in _rows.get('set-run', ('', ''))[0] for w in
+          ('config', 'thru', 'fext', 'next', 'export_mat', 'eye_under_mlse', 'command', 'note'))
+      and all(w in _rows.get('run-request', ('', ''))[0] for w in ('thru', 'fext', 'next', 'options'))
+      and 'preventDefault()' in _rows.get('run-request', ('', ''))[1]
+      and 'options' in _rows.get('channels', ('', ''))[0] and '`panel`' in _rows.get('channels', ('', ''))[1]
+      and 'build' in _rows.get('show', ('', ''))[0],
+      "gui/README.md does not give sicopr:set-run, sicopr:run-request, the "
+      "options and the panel cause of sicopr:channels, and build of sicopr:show")
+check("the_assembled_command_style_needs_no_hidden_rule",
+      re.search(r"\.cmd\.assembled\s*\{[^}]*border-left", css)
+      and not re.search(r"\.cmd\.assembled\s*\{[^}]*display", css),
+      ".cmd.assembled sets display, which would need its own [hidden] rule")
 
 
 finish()

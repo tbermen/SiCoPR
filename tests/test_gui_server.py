@@ -395,6 +395,30 @@ try:
         check("a_raising_panel_gives_a_json_500",
               code == 500 and 'json' in ctype and b'the stand-in raised' in body,
               "a raising handle() gave %s %s %r" % (code, ctype, body[:80]))
+        # The request guard (Handler._refused) covers the panel routes too: a
+        # panel's API is JSON over POST from this page, so another site must not
+        # reach a panel's handle() any more than /api/save. The page's own
+        # requests still are served (checked above with get_json/post_json).
+        before = len(seen)
+        api = '/panel/standin/api/edit/deep'
+        jsonct = {'Content-Type': 'application/json'}
+        refused_panel = [
+            ('cross-site POST', raw(api, 'POST', dict(jsonct, **{'Sec-Fetch-Site': 'cross-site'}), b'{}')),
+            ('foreign Origin POST', raw(api, 'POST', dict(jsonct, Origin='http://attacker.example'), b'{}')),
+            ('DNS-rebinding Host POST', raw(api, 'POST', dict(jsonct, Host='attacker.example:%d' % PORT), b'{}')),
+            ('text/plain POST', raw(api, 'POST', {'Content-Type': 'text/plain'}, b'{}')),
+            ('cross-site GET', raw('/panel/standin/api/state', headers={'Sec-Fetch-Site': 'cross-site'})),
+            ('cross-site GET of panel.js',
+             raw('/panel/standin/static/panel.js', headers={'Sec-Fetch-Site': 'cross-site'}))]
+        check("the_request_guard_refuses_cross_site_requests_to_a_panel",
+              all(code == 403 for _, code in refused_panel),
+              "these reached a panel route: %r" % [x for x in refused_panel if x[1] != 403])
+        check("a_refused_panel_request_never_reaches_handle", len(seen) == before,
+              "handle() was called %d times by refused requests" % (len(seen) - before))
+        check("the_pages_own_panel_post_is_served",
+              raw(api, 'POST', dict(jsonct, Origin=BASE, **{'Sec-Fetch-Site': 'same-origin'}), b'{"a": 2}') == 200
+              and len(seen) == before + 1,
+              "a same-origin JSON POST from the page to a panel was refused")
         busy_text[0] = 'a run started from the stand-in is in progress'
         code, r = post_json('/api/exec/start', {'config': '', 'thru': ''})
         check("a_busy_panel_makes_the_run_tab_refuse",

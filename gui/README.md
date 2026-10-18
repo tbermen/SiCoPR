@@ -291,7 +291,8 @@ The page and a panel talk through `CustomEvent`s on `window`. The page sends:
 | `sicopr:view` | `{view}` | the tab changed |
 | `sicopr:run` | `{returncode, command, cwd}` | a run started from the Run tab finished (once per run) |
 | `sicopr:browsed` | `{purpose, path}` | the Browse dialog opened for a panel was used; the directory is opened as with any Browse |
-| `sicopr:channels` | `{thru, fext, next, cause}` | the channel files chosen in Run changed: `thru` is a path (empty when none), `fext` and `next` are lists of paths, as the page holds them. Sent once at start (`cause` is `boot`; the lists are empty until Run is first opened), on a pick in THRU, FEXT or NEXT (`user`), and when the lists are filled again and the selection differs (`list`: a directory, the filter, the first THRU taken by default) |
+| `sicopr:channels` | `{thru, fext, next, options, cause}` | the channel files chosen in Run, or its two options, changed: `thru` is a path (empty when none), `fext` and `next` are lists of paths, as the page holds them; `options` is `{export_mat, eye_under_mlse}`, the Output dynamic results and `--eye-under-mlse` boxes. Sent once at start (`cause` is `boot`; the lists are empty until Run is first opened), on a pick in THRU, FEXT or NEXT or a tick of either box (`user`), when the lists are filled again and the selection differs (`list`: a directory, the filter, the first THRU taken by default), and when a panel's `sicopr:set-run` changed them (`panel`) |
+| `sicopr:run-request` | `{thru, fext, next, options}` | **Run sicopr.py** was pressed while a panel has the Run tab assembled (`sicopr:set-run`): sent cancelable, with the files and options as they are then. A panel that takes the run calls `preventDefault()` and runs it itself; when no panel does, the Run tab runs as it always does |
 
 and handles:
 
@@ -300,8 +301,14 @@ and handles:
 | `sicopr:open-config` | `{path}` | selects and loads that workbook, asking first if there are unsaved edits; answers with `sicopr:config` |
 | `sicopr:overlay` | `{title, cells: {key: {value, tag, note}}, save_hint, run_note, focus}` or `null` | shows each listed key with the overlay value in place of the workbook's, the `tag` beside its name and the `note` in its info line; outlines the blocks that hold one; a key the workbook does not hold is shown in Other settings; `title` goes in the header; **Save as** is disabled with `save_hint` as its tooltip; the Run tab shows `run_note` under its configuration; `focus` (a list of keys) selects their block when they all sit in one. `null` removes it. Loading a workbook removes it too |
 | `sicopr:clear-edits` | `{keys}` | drops those keys from the unsaved edits (the panel took them) |
-| `sicopr:show` | `{view, run}` | switches tab; with `run`, selects that run folder in the Results tabs |
+| `sicopr:show` | `{view, run, build}` | switches tab; with `run`, selects that run folder in the Results tabs; with `build` as well, Results, dynamic builds the dashboard of that run's newest `.mat` export when it has none yet, as a Run-tab run with Output dynamic results ticked does |
+| `sicopr:set-run` | `{config, thru, fext, next, options: {export_mat, eye_under_mlse}, command, note}` or `null` | the panel *assembles* the Run tab: the files are selected in THRU, FEXT and NEXT (their directory is chosen in Channel directory), the two boxes are set from `options`, the command box shows `command` (the command the panel will run, not one this editor makes) and the line under Configuration shows `note` (in place of an overlay's `run_note`) and `config`. The Run tab's controls stay live; each change goes out in `sicopr:channels`, and **Run sicopr.py** sends `sicopr:run-request`. `null` gives the Run tab back: its own command, and Run as always |
 | `sicopr:browse` | `{purpose, title}` | opens the Browse dialog; **Use this directory** opens it and answers with `sicopr:browsed` |
+
+With no panel installed nothing sends `sicopr:set-run`, so the Run tab never
+holds an assembled setup and **Run sicopr.py** runs as it always has; the same
+holds for a panel that never sends it. A panel that sends it but does not
+answer `sicopr:run-request` leaves the button as it is.
 
 Keys are the editor's own: `name` for a main-area keyword, `name#tx` and
 `name#rx` for the halves of a `[TX RX]` cell.
@@ -310,8 +317,8 @@ Keys are the editor's own: `name` for a main-area keyword, `name#tx` and
 
 ```
 python tests/test_config_roundtrip.py     # the writer  (18 checks)
-python tests/test_gui_server.py           # the HTTP layer (94 checks with a workbook)
-python tests/test_gui_static.py           # page assets (30 checks)
+python tests/test_gui_server.py           # the HTTP layer (104 checks with a workbook)
+python tests/test_gui_static.py           # page assets (42 checks)
 ```
 
 The panel checks of both run with no data: a stand-in panel is loaded in

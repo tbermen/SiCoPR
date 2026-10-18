@@ -19,14 +19,19 @@ let SEL = null;        // selected block id
 let EDITS = {};        // keyword -> new value (typed, not raw text)
 let OVERLAY = null;    // a panel's values laid over the workbook (sicopr:overlay), or null
 let WANT_RUN = null;   // a run folder a panel asked the Results tabs to show
+let WANT_BUILD = null; // that run folder, when the panel also asked for its dashboard to be built
+let ASSEMBLED = null;  // the setup a panel put in the Run tab (sicopr:set-run), or null
 
 /* ---------------------------------------------------------------- helpers */
 
 /* Panels (README, "Panels") hear about the page through events on window and
- * talk back the same way. With no panel installed nobody listens, OVERLAY stays
- * null, and every path below is the one the page took before panels existed. */
-function emit(name, detail) {
-  window.dispatchEvent(new CustomEvent('sicopr:' + name, { detail }));
+ * talk back the same way. With no panel installed nobody listens, OVERLAY and
+ * ASSEMBLED stay null, and every path below is the one the page took before
+ * panels existed. Returns false when a cancelable event was taken by a panel
+ * (preventDefault). */
+function emit(name, detail, cancelable) {
+  return window.dispatchEvent(new CustomEvent('sicopr:' + name,
+    { detail, cancelable: !!cancelable }));
 }
 
 function toast(msg, bad) {
@@ -758,11 +763,12 @@ function selected(sel) {
   return Array.from(sel.selectedOptions).map((o) => o.value);
 }
 
-/* The channel files chosen for a run, for a panel (sicopr:channels): sent once
- * at start, and whenever the selection differs from the one last sent, whoever
- * changed it. cause: 'boot', 'user' (a pick in THRU, FEXT or NEXT) or 'list'
+/* The channel files chosen for a run and the two run options, for a panel
+ * (sicopr:channels): sent once at start, and whenever they differ from what was
+ * last sent, whoever changed them. cause: 'boot', 'user' (a pick in THRU, FEXT
+ * or NEXT, or a tick of Output dynamic results or --eye-under-mlse), 'list'
  * (the lists were filled again: a directory, the filter, the first THRU taken
- * by default). */
+ * by default) or 'panel' (a panel's sicopr:set-run). */
 let CHANNELS_SENT = null;
 
 function emitChannels(cause) {
@@ -770,6 +776,8 @@ function emitChannels(cause) {
     thru: $('#nlThru').value,
     fext: selected($('#nlFext')),
     next: selected($('#nlNext')),
+    options: { export_mat: $('#nlMat').checked,
+      eye_under_mlse: $('#nlEye').checked },
   };
   const now = JSON.stringify(d);
   if (cause !== 'boot' && now === CHANNELS_SENT) return;
@@ -796,7 +804,11 @@ async function refreshNetlist() {
     body: JSON.stringify(netlistBody()),
   }).catch((e) => ({ ok: false, problems: [e.message], command: '' }));
 
-  $('#nlCmd').textContent = r.command || '(not runnable yet)';
+  // While a panel has assembled the Run tab, the command shown is the one the
+  // panel runs (sicopr:set-run), and Run hands the run to it.
+  $('#nlCmd').textContent = ASSEMBLED ? ASSEMBLED.command
+    : (r.command || '(not runnable yet)');
+  $('#nlCmd').classList.toggle('assembled', !!ASSEMBLED);
   if (r.cwd) $('#nlCwd').textContent = r.cwd;
   const host = $('#nlProblems');
   host.textContent = '';
@@ -817,14 +829,19 @@ let CHANNELS = [];
  * 56 files in one directory is unusable otherwise. The filter is a checkbox
  * and not a rule: a filename is a hint, so overriding it stays possible, and
  * a file shown under a role it was not named for is labelled. */
-function fillChannelSelects(files) {
+function fillChannelSelects(files, want) {
   if (files) CHANNELS = files;
   const thru = $('#nlThru');
   const fx = $('#nlFext');
   const nx = $('#nlNext');
-  const keepThru = thru.value;
-  const keepFx = new Set(selected(fx));
-  const keepNx = new Set(selected(nx));
+  // want: the files a panel's sicopr:set-run names, selected in place of the
+  // current picks (paths compared as a panel and the server may each write them)
+  const norm = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
+  const pick = (ps) => new Set(CHANNELS.map((f) => f.path)
+    .filter((p) => ps.map(norm).includes(norm(p))));
+  const keepThru = want ? ([...pick([want.thru])][0] || '') : thru.value;
+  const keepFx = want ? pick(want.fext) : new Set(selected(fx));
+  const keepNx = want ? pick(want.next) : new Set(selected(nx));
   for (const sel of [thru, fx, nx]) sel.textContent = '';
 
   const blank = document.createElement('option');
@@ -857,11 +874,11 @@ function fillChannelSelects(files) {
       sel.appendChild(o);
     }
   }
-  if (!thru.value) {
+  if (!thru.value && !want) {
     const first = CHANNELS.find((f) => f.role === 'thru');
     if (first) thru.value = first.path;
   }
-  emitChannels('list');
+  emitChannels(want ? 'panel' : 'list');
   refreshNetlist();
 }
 
@@ -897,7 +914,8 @@ async function fillChannelDirs() {
 
 async function runEnter() {
   try {
-    $('#nlConfig').textContent = CFG ? CFG.path : '(none)';
+    $('#nlConfig').textContent = ASSEMBLED && ASSEMBLED.config ? ASSEMBLED.config
+      : (CFG ? CFG.path : '(none)');
     if (CHANNEL_DIRS === null) {
       const dirs = await fillChannelDirs();
       if (dirs.length) fillChannelSelects(await api('/api/channels?dir='
@@ -919,7 +937,7 @@ $('#nlDir').addEventListener('change', async () => {
 for (const id of ['#nlThru', '#nlFext', '#nlNext', '#nlMat', '#nlEye', '#nlVer']) {
   $(id).addEventListener('change', refreshNetlist);
 }
-for (const id of ['#nlThru', '#nlFext', '#nlNext']) {
+for (const id of ['#nlThru', '#nlFext', '#nlNext', '#nlMat', '#nlEye']) {
   $(id).addEventListener('change', () => emitChannels('user'));
 }
 $('#nlFilter').addEventListener('change', () => fillChannelSelects(null));
@@ -927,6 +945,15 @@ $('#nlFilter').addEventListener('change', () => fillChannelSelects(null));
 /* ------------------------------------------------------------ run: execute */
 
 $('#btnExec').addEventListener('click', async () => {
+  // A panel that assembled the Run tab (sicopr:set-run) runs it: the button
+  // hands it the files and options, and the panel takes it with
+  // preventDefault(). Not taken, or no panel: the run below, as always.
+  if (ASSEMBLED && !emit('run-request', {
+    thru: $('#nlThru').value, fext: selected($('#nlFext')),
+    next: selected($('#nlNext')),
+    options: { export_mat: $('#nlMat').checked,
+      eye_under_mlse: $('#nlEye').checked },
+  }, true)) return;
   try {
     const r = await api('/api/exec/start', {
       method: 'POST',
@@ -1322,9 +1349,7 @@ window.addEventListener('sicopr:overlay', (e) => {
   const d = e.detail;
   OVERLAY = d && d.cells ? d : null;
   $('#ctxConfig').textContent = OVERLAY ? (OVERLAY.title || '') : '';
-  const note = $('#nlOverlayNote');
-  note.textContent = OVERLAY ? (OVERLAY.run_note || '') : '';
-  note.hidden = !(OVERLAY && OVERLAY.run_note);
+  showRunNote();
   if (!CFG) return;
   // focus: keys the panel just changed; the view switches to their block
   // when they all sit in one
@@ -1349,7 +1374,62 @@ window.addEventListener('sicopr:clear-edits', (e) => {
 window.addEventListener('sicopr:show', (e) => {
   const d = e.detail || {};
   WANT_RUN = d.run || null;
+  WANT_BUILD = d.build && d.run ? d.run : null;
   show(d.view);
+});
+
+/* The line under the Run tab's configuration: the note of a panel's
+ * sicopr:set-run while it has the Run tab assembled, else the run_note of its
+ * sicopr:overlay. */
+function showRunNote() {
+  const text = ASSEMBLED ? (ASSEMBLED.note || '')
+    : (OVERLAY ? (OVERLAY.run_note || '') : '');
+  const note = $('#nlOverlayNote');
+  note.textContent = text;
+  note.hidden = !text;
+}
+
+const samePath = (a, b) => String(a || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  .toLowerCase() === String(b || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+
+/* sicopr:set-run: a panel puts the setup it runs in the Run tab (README,
+ * "Panels"). Its files and options are selected as if picked, the command box
+ * shows the panel's command and the note says what that is; Run then hands the
+ * run to the panel (sicopr:run-request). null gives the Run tab back. The Run
+ * tab's own controls stay live, and each change goes out in sicopr:channels. */
+async function setRun(d) {
+  ASSEMBLED = d && typeof d.command === 'string' ? d : null;
+  if (ASSEMBLED) {
+    $('#nlMat').checked = !!(d.options || {}).export_mat;
+    $('#nlEye').checked = !!(d.options || {}).eye_under_mlse;
+    if (CHANNEL_DIRS === null) await fillChannelDirs();
+    if (d.thru) {
+      const dir = String(d.thru).replace(/[\\/][^\\/]*$/, '');
+      const dsel = $('#nlDir');
+      let hit = [...dsel.options].find((o) => samePath(o.value, dir));
+      if (!hit) {
+        hit = document.createElement('option');
+        hit.value = dir;
+        hit.textContent = dir;
+        dsel.appendChild(hit);
+      }
+      dsel.value = hit.value;
+      fillChannelSelects(await api('/api/channels?dir='
+        + encodeURIComponent(hit.value)),
+      { thru: d.thru, fext: d.fext || [], next: d.next || [] });
+    } else {
+      emitChannels('panel');
+    }
+  }
+  $('#nlConfig').textContent = ASSEMBLED && ASSEMBLED.config ? ASSEMBLED.config
+    : (CFG ? CFG.path : '(none)');
+  $('#btnExec').title = ASSEMBLED ? (ASSEMBLED.note || '') : '';
+  showRunNote();
+  refreshNetlist();
+}
+
+window.addEventListener('sicopr:set-run', (e) => {
+  setRun(e.detail).catch((x) => toast(x.message, true));
 });
 
 window.addEventListener('sicopr:browse', (e) => {
@@ -1673,6 +1753,17 @@ async function dynLoad(path) {
   }
 
   const first = d.cases.find((c) => c.report);
+  // a panel's sicopr:show with build: the newest export's dashboard is built
+  // when the run has none yet, as a run of the Run tab with Output dynamic
+  // results ticked does (autoBuildDynamic)
+  if (WANT_BUILD && samePath(path, WANT_BUILD)) {
+    WANT_BUILD = null;
+    if (!first && d.rscript) {
+      const newest = d.cases.slice().sort((a, b) => b.mat_mtime - a.mat_mtime)[0];
+      await dynBuild(newest);
+      return;
+    }
+  }
   if (first) dynOpen(first);
 }
 

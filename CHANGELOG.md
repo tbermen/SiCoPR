@@ -167,6 +167,20 @@ stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
   response are as before; `--no-panels` leaves installed panels out. The
   contract is in `gui/README.md`, *Panels*; `tests/test_gui_server.py` and
   `tests/test_gui_static.py` pin both the contract and the no-panel case.
+- **Panels: the channel files chosen in Run** (`sicopr:channels`), and **a panel
+  can assemble the Run tab** (`sicopr:set-run`): it selects the files and sets
+  Output dynamic results and `--eye-under-mlse`, and the command box shows the
+  panel's own command with a note. The Run tab's controls stay live, their
+  changes (files and both options) go back in `sicopr:channels`, and while the
+  Run tab is assembled **Run sicopr.py** hands the run to the panel
+  (`sicopr:run-request`, cancelable); a panel that does not take it leaves the
+  button as it is. `sicopr:show` can ask Results, dynamic to build a run's
+  dashboard. All additive; panel API 1. With no panel installed nothing sends
+  `sicopr:set-run` and the Run tab is unchanged.
+- The request guard of 1.1.2 (`Handler._refused`) covers the panel routes:
+  `tests/test_gui_server.py` checks that a cross-site, foreign-Origin,
+  DNS-rebinding or text/plain request to `/panel/<name>/...` is refused before
+  the panel's `handle()` is reached.
 
 ## [1.1.2] - 2026-10-16
 
