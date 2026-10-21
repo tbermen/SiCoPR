@@ -16,6 +16,44 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
+## [Unreleased]
+
+### Added
+
+- **A panel slot in the config editor** (`gui/`, a supporting tool; no engine
+  change). An installed package can register a panel in the entry-point group
+  `sicopr.gui_panels`; the editor shows it on the right of the page, serves its
+  `panel.js` and `panel.css`, routes `/panel/<name>/api/...` to it with a
+  narrow view of the server (the opened directories, the run directory, whether
+  a run is live), and exchanges eleven named events with it on the page, among
+  them `sicopr:channels`, which tells a panel the THRU, FEXT and NEXT files
+  chosen in Run, at start and whenever that selection changes. With no
+  panel installed, `/api/panels` lists nothing and the page and every other
+  response are as before; `--no-panels` leaves installed panels out. The
+  contract is in `gui/README.md`, *Panels*; `tests/test_gui_server.py` and
+  `tests/test_gui_static.py` pin both the contract and the no-panel case.
+- **Panels: the channel files chosen in Run** (`sicopr:channels`), and **a panel
+  can assemble the Run tab** (`sicopr:set-run`): it selects the files and sets
+  Output dynamic results and `--eye-under-mlse`, and the command box shows the
+  panel's own command with a note. The Run tab's controls stay live, their
+  changes (files and both options) go back in `sicopr:channels`, and while the
+  Run tab is assembled **Run sicopr.py** hands the run to the panel
+  (`sicopr:run-request`, cancelable); a panel that does not take it leaves the
+  button as it is. `sicopr:show` can ask Results, dynamic to build a run's
+  dashboard. All additive; panel API 1. With no panel installed nothing sends
+  `sicopr:set-run` and the Run tab is unchanged.
+- **Panels: a panel's run in the Run tab's Output** (`sicopr:output`): its
+  lines go to the same bounded terminal as a run of the Run tab, with its status
+  line, follow output and Stop; Stop then asks the panel to stop its run
+  (`sicopr:stop-request`). `sicopr:show` takes `unless_editing`, so a panel can
+  bring up the Run tab without pulling the user out of an edit in Config.
+  Additive; panel API 1. With no panel installed nothing sends `sicopr:output`
+  and the Output shows only the editor's own runs.
+- The request guard of 1.1.2 (`Handler._refused`) covers the panel routes:
+  `tests/test_gui_server.py` checks that a cross-site, foreign-Origin,
+  DNS-rebinding or text/plain request to `/panel/<name>/...` is refused before
+  the panel's `handle()` is reached.
+
 ## [1.1.4] - 2026-10-29
 
 A security fix, and the config-reader fixes that carry it. **Upgrade if you open
@@ -152,42 +190,6 @@ stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
   noise is to be modelled. No shipped workbook reaches this. Root cause, a related
   observation about a zero pre-cursor tap, and a proposed fix for the COM
   ad hoc: [`docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
-
-### Added
-
-- **A panel slot in the config editor** (`gui/`, a supporting tool; no engine
-  change). An installed package can register a panel in the entry-point group
-  `sicopr.gui_panels`; the editor shows it on the right of the page, serves its
-  `panel.js` and `panel.css`, routes `/panel/<name>/api/...` to it with a
-  narrow view of the server (the opened directories, the run directory, whether
-  a run is live), and exchanges eleven named events with it on the page, among
-  them `sicopr:channels`, which tells a panel the THRU, FEXT and NEXT files
-  chosen in Run, at start and whenever that selection changes. With no
-  panel installed, `/api/panels` lists nothing and the page and every other
-  response are as before; `--no-panels` leaves installed panels out. The
-  contract is in `gui/README.md`, *Panels*; `tests/test_gui_server.py` and
-  `tests/test_gui_static.py` pin both the contract and the no-panel case.
-- **Panels: the channel files chosen in Run** (`sicopr:channels`), and **a panel
-  can assemble the Run tab** (`sicopr:set-run`): it selects the files and sets
-  Output dynamic results and `--eye-under-mlse`, and the command box shows the
-  panel's own command with a note. The Run tab's controls stay live, their
-  changes (files and both options) go back in `sicopr:channels`, and while the
-  Run tab is assembled **Run sicopr.py** hands the run to the panel
-  (`sicopr:run-request`, cancelable); a panel that does not take it leaves the
-  button as it is. `sicopr:show` can ask Results, dynamic to build a run's
-  dashboard. All additive; panel API 1. With no panel installed nothing sends
-  `sicopr:set-run` and the Run tab is unchanged.
-- **Panels: a panel's run in the Run tab's Output** (`sicopr:output`): its
-  lines go to the same bounded terminal as a run of the Run tab, with its status
-  line, follow output and Stop; Stop then asks the panel to stop its run
-  (`sicopr:stop-request`). `sicopr:show` takes `unless_editing`, so a panel can
-  bring up the Run tab without pulling the user out of an edit in Config.
-  Additive; panel API 1. With no panel installed nothing sends `sicopr:output`
-  and the Output shows only the editor's own runs.
-- The request guard of 1.1.2 (`Handler._refused`) covers the panel routes:
-  `tests/test_gui_server.py` checks that a cross-site, foreign-Origin,
-  DNS-rebinding or text/plain request to `/panel/<name>/...` is refused before
-  the panel's `handle()` is reached.
 
 ## [1.1.2] - 2026-10-16
 
