@@ -155,7 +155,7 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:read_s4p_files:79', 'drop_dot_copy:make_pkg:24',
     'drop_dot_copy:make_pkg:25', 'drop_dot_copy:make_full_pkg:77',
     'drop_dot_copy:make_full_pkg:78', 'drop_dot_copy:s21_pkg:56',
-    'drop_dot_copy:read_s4p_files:581', 'drop_dot_copy:read_s4p_files:714',
+    'drop_dot_copy:read_s4p_files:581', 'drop_dot_copy:read_s4p_files:716',
     'drop_dot_copy:interp_Sparam:84', 'drop_dot_copy:interp_Sparam:85',
     'drop_dot_copy:interp_Sparam:147', 'drop_dot_copy:interp_Sparam:148',
     'drop_dot_copy:interp_Sparam:247', 'drop_dot_copy:interp_Sparam:248',
@@ -167,7 +167,7 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:floatingDFE:19', 'drop_dot_copy:auto_port_order:54',
     'drop_dot_copy:auto_port_order:106', 'drop_dot_copy:comb_fct:33',
     'drop_dot_copy:comb_fct:34', 'drop_dot_copy:SNDR_ref:93',
-    'drop_dot_copy:read_ParamConfigFile:660', 'drop_dot_copy:get_TDR:257',
+    'drop_dot_copy:read_ParamConfigFile:755', 'drop_dot_copy:get_TDR:257',
     'drop_dot_copy:Bathtub_Contribution_Wrapper:41',
     'drop_dot_copy:plot_bathtub_curves:43',
 ])

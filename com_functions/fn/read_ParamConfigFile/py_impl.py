@@ -217,6 +217,98 @@ def _parse_matlab_scalar_or_range(token):
     return [float(token)]
 
 
+_BRACKET_TOKEN = re.compile(r'\s+|,|[+-]|:|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[A-Za-z]+')
+
+
+def _bracket_row(r):
+    """One row of a MATLAB bracket literal read by MATLAB's whitespace rules, or
+    None when it holds anything but numbers, +, -, colons, commas and spaces.
+
+    Inside brackets a sign with space before it and none after starts a new
+    element ([1 -2] is two); with space on both sides, or none before, it is
+    binary ([1 - 2] is -1). Colon binds looser than + and -. COM Octave:
+    [ -0.15 - 0.15 - 0.05 ] is -0.35, one element, as IEEE's 802.3ck COM 3.70
+    C2M workbook writes b_min(2..N_b); the earlier reading joined '- 0.15'
+    into '-0.15' and made it three.
+    """
+    toks, pos = [], 0
+    while pos < len(r):
+        m = _BRACKET_TOKEN.match(r, pos)
+        if not m:
+            return None
+        t = m.group(0)
+        if t.isspace():
+            kind = 'ws'
+        elif t == ',':
+            kind = 'sep'
+        elif t in '+-':
+            kind = 'op'
+        elif t == ':':
+            kind = 'colon'
+        elif t.isalpha():
+            if t.lower() not in ('inf', 'nan'):
+                return None
+            kind = 'num'
+        else:
+            kind = 'num'
+        toks.append((kind, t))
+        pos = m.end()
+
+    elems, cur = [], []
+    for i, (kind, t) in enumerate(toks):
+        if kind == 'sep':
+            if cur:
+                elems.append(cur)
+            cur = []
+        elif kind == 'ws':
+            if not cur or cur[-1][0] in ('op', 'colon') or i + 1 >= len(toks):
+                continue
+            nk = toks[i + 1][0]
+            after = toks[i + 2][0] if i + 2 < len(toks) else 'ws'
+            if nk == 'op' and after != 'ws':
+                elems.append(cur)          # [a -b]: a new element
+                cur = []
+            elif nk not in ('op', 'colon', 'sep'):
+                elems.append(cur)          # two operands side by side
+                cur = []
+        else:
+            cur.append((kind, t))
+    if cur:
+        elems.append(cur)
+
+    row = []
+    for el in elems:
+        parts, acc, binop, unary = [], None, None, 1.0
+        for kind, t in el + [('colon', ':')]:
+            if kind == 'op':
+                if acc is None or binop is not None:
+                    unary = -unary if t == '-' else unary
+                else:
+                    binop = t
+            elif kind == 'num':
+                x = unary * float(t)
+                unary = 1.0
+                if acc is None:
+                    acc = x
+                elif binop == '-':
+                    acc = acc - x
+                else:
+                    acc = acc + x
+                binop = None
+            else:                          # colon, or the end of the element
+                if acc is None or binop is not None:
+                    return None
+                parts.append(acc)
+                acc = None
+        if len(parts) == 1:
+            row.append(parts[0])
+        elif len(parts) in (2, 3):
+            row.extend(_parse_matlab_scalar_or_range(':'.join(repr(p) for p in parts)))
+        else:
+            return None
+    return row
+
+
 def _parse_matlab_matrix(s):
     """Parse MATLAB matrix literal '[a b c; d e f]' or range '[a:b:c]' → numpy array."""
     import re as _re
@@ -230,16 +322,18 @@ def _parse_matlab_matrix(s):
         return np.array([])
     # Normalise spaced colon ranges: '-0.2 : 0.02 : 0' → '-0.2:0.02:0'
     s = _re.sub(r'\s*:\s*', ':', s)
-    # Normalise unary minus separated from digit: '- 0.2' → '-0.2'
-    s = _re.sub(r'-\s+(?=[\d.])', '-', s)
     row_strs = [r.strip() for r in s.split(';') if r.strip()]
     rows = []
     for r in row_strs:
-        vals = r.split()
-        row = []
-        for v in vals:
-            if v and v != ':':
-                row.extend(_parse_matlab_scalar_or_range(v))
+        row = _bracket_row(r)
+        if row is None:
+            # Not numbers, + and - alone (a product, a name, parentheses):
+            # the earlier reading, which joins '- 0.2' into '-0.2'.
+            r = _re.sub(r'-\s+(?=[\d.])', '-', r)
+            row = []
+            for v in r.split():
+                if v and v != ':':
+                    row.extend(_parse_matlab_scalar_or_range(v))
         rows.append(row)
     if len(rows) == 1:
         return np.array(rows[0])
@@ -392,7 +486,8 @@ def _read_pkg_params(block):
         zeros4 = np.zeros((ncases, 2))
         for attr in ['z_p_fext_cases', 'z_p_next_cases', 'z_p_tx_cases', 'z_p_rx_cases']:
             setattr(pkg, attr, np.hstack([getattr(pkg, attr), zeros4]))
-        pkg.pkg_Z_c = np.vstack([pkg.pkg_Z_c, np.full((2, pkg.pkg_Z_c.shape[1]), 100.0)])
+        # MATLAB ML 11608: [pkg_Z_c' ; [100 100 ; 100 100]]', (2,4) as above.
+        pkg.pkg_Z_c = np.vstack([pkg.pkg_Z_c.T, [[100.0, 100.0], [100.0, 100.0]]]).T
 
     return pkg
 
@@ -762,7 +857,11 @@ def read_ParamConfigFile(paramFile, OP):
         for attr in ['z_p_fext_cases', 'z_p_next_cases', 'z_p_tx_cases', 'z_p_rx_cases']:
             setattr(param, attr + 'x', np.hstack([getattr(param, attr), np.zeros((ncases, 2))]))
             setattr(param, attr, getattr(param, attr + 'x'))
-        param.pkg_Z_c = np.vstack([param.pkg_Z_c, np.full((2, param.pkg_Z_c.shape[1]), 100.0)])
+        # MATLAB: pkg_Z_c = [pkg_Z_c' ; [100 100 ; 100 100]]' -- transpose,
+        # stack, transpose back: [Tx row ; Rx row] stays (2,4).  Stacking on
+        # the untransposed array gave (4,2), and make_full_pkg's pkg_Z_c(1,:)
+        # then had 2 entries for 4 blocks (COM 3.70 C2M, TDR_W_TXPKG = 1).
+        param.pkg_Z_c = np.vstack([param.pkg_Z_c.T, [[100.0, 100.0], [100.0, 100.0]]]).T
 
     param.PKG_Tx_FFE_preset = _xls_param(parameter, 'PKG_Tx_FFE_preset', True, 0)
 

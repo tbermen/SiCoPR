@@ -161,3 +161,27 @@ def test_octave_empty_sampled_pulse_falls_through_to_the_delta_pdf():
     assert NS2.p2ptosigma_clip == pytest.approx(6.6930912983368707, rel=1e-13)
     assert cin.Min == -55 and len(cin.y) == 111
     np.testing.assert_allclose(cin.y[50:61], _CIN_Y_50_60, rtol=1e-12)
+
+
+def test_octave_no_rx_ffe_stops_as_the_reference_does_with_a_named_error():
+    """Quantization (N_qb ~= 0) with the Rx FFE off is an error in the reference.
+
+    COM Octave 4p15p0, 4p16p0 and 4p17p0, this function with the fixture above,
+    ffe_pre_tap_len = 0 and a fom_result that has no RxFFE field (optimize_fom
+    sets result.RxFFE only `if OP.RxFFE`, and OP.RxFFE is false when both
+    ffe_pre_tap_len and ffe_post_tap_len are 0):
+        error: structure has no member 'RxFFE'
+    The whole case stops the same way (docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
+    The port stops too, but with an error that names the cause, not a bare
+    AttributeError.
+    """
+    chdata = [SimpleNamespace(
+        pulse_sampled_w_tx_ffe_ctle=np.array([0.42, -0.05, 0.031, 0.022,
+                                              -0.013, 0.004]))]
+    param = _oracle_param()
+    param.N_qb = 6
+    param.ffe_pre_tap_len = 0
+    with pytest.raises(ValueError, match=r'N_qb.*Rx FFE'):
+        adjust_Rx_noise_for_quantization(
+            _oracle_pdf(), SimpleNamespace(), chdata, SimpleNamespace(FOM=9.9),
+            param, None)

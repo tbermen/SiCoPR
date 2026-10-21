@@ -602,7 +602,9 @@ def _read_p4_s4params_inline(infile, ports, param, OP):
         sch = sch[:iend]; freq = freq[:iend]
         limited = 1
     else:
-        param.flim = float(freq[-1])
+        # MATLAB's rangelimit sets param.flim in read_p4_s4params' own copy of
+        # param (passed by value, not returned); the caller keeps its flim.
+        flim = float(freq[-1])
         limited = 0
 
     nf = len(freq)
@@ -646,7 +648,7 @@ def _read_p4_s4params_inline(infile, ports, param, OP):
     SCD[:, 0, 0] = D[:, 0, 1]; SCD[:, 1, 1] = D[:, 2, 3]
     SCD[:, 0, 1] = D[:, 0, 3]; SCD[:, 1, 0] = D[:, 2, 1]
 
-    Sch = SimpleNamespace(freq=freq, m=sch, flim=getattr(param, 'flim', freq[-1]), limited=limited)
+    Sch = SimpleNamespace(freq=freq, m=sch, flim=flim, limited=limited)
     return Sch, SDD, SDC, SCC, SCD, port_order
 
 
@@ -728,7 +730,7 @@ def _read_p2_s2params_inline(infile, ports, param, OP):
         iend = int(idx_lim[0]) + 1
         sch = sch[:iend]; freq = freq[:iend]; limited = 1
     else:
-        param.flim = float(freq[-1]); limited = 0
+        flim = float(freq[-1]); limited = 0   # local, as in read_p4_s4params above
     nf = len(freq)
     T = np.array([[1.0, 1.0], [1.0, -1.0]])
     D = np.zeros((nf, 2, 2), dtype=complex)
@@ -739,7 +741,7 @@ def _read_p2_s2params_inline(infile, ports, param, OP):
     SDC = np.zeros((nf, 1, 1), dtype=complex); SDC[:, 0, 0] = D[:, 1, 0]
     SCC = np.zeros((nf, 1, 1), dtype=complex); SCC[:, 0, 0] = D[:, 0, 0]
     SCD = np.zeros((nf, 1, 1), dtype=complex); SCD[:, 0, 0] = D[:, 0, 1]
-    Sch = SimpleNamespace(freq=freq, m=sch, flim=getattr(param, 'flim', freq[-1]), limited=limited)
+    Sch = SimpleNamespace(freq=freq, m=sch, flim=flim, limited=limited)
     return Sch, SDD, SDC, SCC, SCD
 
 

@@ -414,7 +414,10 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 Left_EW, Right_EW, eye_contour, EH_T_C2M, EH_B_C2M = _COM_eye_width_fn(
                     chdata, param.delta_y, fom_result, param, OP, Noise_Struct, 0)
                 _checkpoint('09_COM_eye_width', package_testcase_i, Left_EW=Left_EW, Right_EW=Right_EW, eye_contour=eye_contour)
-                EW_UI = float(np.floor(np.sum(Left_EW) + np.sum(Right_EW))) / float(param.samples_for_C2M)
+                # MATLAB: EW_UI=floor((Left_EW+Right_EW))/param.samples_for_C2M,
+                # elementwise: one eye width per eye, not the sum of all of them.
+                EW_UI = np.floor(np.asarray(Left_EW, dtype=float)
+                                 + np.asarray(Right_EW, dtype=float)) / float(param.samples_for_C2M)
             elif (EYE_PLOT_UNDER_MLSE
                   and not getattr(OP, 'RX_CALIBRATION', False)
                   and getattr(OP, 'EW', 0) == 1

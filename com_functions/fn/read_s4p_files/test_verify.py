@@ -669,3 +669,37 @@ def test_value_semantics_real_package(tmp_path, inc_pkg, rx_cal, ideal):
         warnings.simplefilter('ignore')
         chdata, _, _, _ = read_s4p_files(param, OP, [_make_chdata(p)])
     assert_no_shared_memory(chdata=chdata)
+
+
+# ============================================================
+# COM Octave (Octave 11.3.0, 2026-10-21): read_s4p_files on a 1/5/10 GHz
+# .s2p with param.flim = 100e9 returns param.flim = 100000000000. rangelimit
+# sets flim to the file's last frequency, but in read_p2_s2params' and
+# read_p4_s4params' own copy of param: neither returns it (ML 11276, 11408).
+# The inlined readers here wrote it onto the caller's param, so a run whose
+# workbook leaves flim at its 1000 GHz default reported flim_GHz as the
+# THRU's last frequency, and every later file was cut at it. The canonical
+# read_p4_s4params already had this fixed; the copies here had not.
+# ============================================================
+
+@pytest.mark.parametrize('ext', ['.s2p', '.s4p'])
+def test_octave_reading_a_file_leaves_the_callers_flim(tmp_path, ext):
+    freqs = np.array([1.0, 5.0, 10.0])
+    p = str(tmp_path / ('ch' + ext))
+    if ext == '.s4p':
+        _write_s4p(p, freqs, _s4p_identity(freqs))
+    else:
+        with open(p, 'w') as f:
+            f.write('# GHz S RI R 100.0\n')
+            for fg in freqs:
+                f.write('%s 0.1 0.0 0.0 0.0 0.0 0.0 0.1 0.0\n' % fg)
+    param = _make_param(tmp_path)
+    param.flim = 100e9
+    param.FLAG.S2P = ext == '.s2p'
+    ch = _make_chdata(p)
+    ch.ext = ext
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        _c, _s, _p, param_out = read_s4p_files(param, _make_OP(), [ch])
+    assert param_out.flim == 100e9
+    assert param.flim == 100e9

@@ -220,8 +220,10 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         for j in pdf_range:
             shift = float(A_s_vec[j]) * float(Levels[n])
             pdf_n[j].x = pdf_n[j].x + shift
-            dx = float(pdf_n[j].BinSize)
-            pdf_n[j].Min = int(pdf_n[j].x[0] / (dx + 1e-300))
+            # MATLAB: Min = x(1)/BinSize, left fractional; conv_fct_MeanNotZero
+            # rounds Min1+Min2 half away from zero. Truncating here first put
+            # the contour one bin out wherever the fractions summed past a half.
+            pdf_n[j].Min = pdf_n[j].x[0] / pdf_n[j].BinSize
         pdf_full.append(pdf_n)
 
     # ---- Build noise + ISI combined PDFs ----
@@ -273,7 +275,9 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         EH_top = float(eye_contour_list[n][half_UI, 0])
         EH_bot = float(eye_contour_list[n][half_UI, 1])
         vref = EH_top / 2.0 + EH_bot / 2.0
-        lew, rew = few_fn(eye_contour_list[n], half_UI, samp_UI, vref)
+        # find_eye_width takes MATLAB's 1-based half_UI (it slices
+        # half_UI-1::-1 for half_UI:-1:1); half_UI here is 0-based.
+        lew, rew = few_fn(eye_contour_list[n], half_UI + 1, samp_UI, vref)
         Left_EW[n] = lew
         Right_EW[n] = rew
 

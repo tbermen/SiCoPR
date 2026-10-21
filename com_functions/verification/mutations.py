@@ -308,6 +308,70 @@ CATALOGUE = [
        'no number multiplies.',
        'finding F04, 2026-10-03; read_ParamConfigFile '
        'test_mat_config_loads_like_the_same_grid_as_csv'),
+
+    # MATLAB [A' ; B]' stacks under the TRANSPOSE and transposes back. The
+    # config reader stacked under A itself, so a (2,2) package_Z_c became (4,2)
+    # where the reference gives (2,4), and make_full_pkg ran out of Zpkg on the
+    # 802.3ck C2M workbook (finding F15).
+    Op('stack_drop_double_transpose',
+       r'np\.vstack\(\[([\w.]+)\.T, (.+)\]\)\.T',
+       r'np.vstack([\1, \2])',
+       "MATLAB [A' ; B]' is a column append done as a row stack between two "
+       "transposes; stacking on A untransposed gives the transposed shape.",
+       'finding F15, 2026-10-20; read_ParamConfigFile '
+       'test_octave_two_segment_package_Z_c_is_tx_rx_by_four'),
+
+    # COM_eye_width handed its 0-based half_UI to find_eye_width, which takes
+    # MATLAB's 1-based one: every eye width one sample out (finding F17).
+    Op('callee_index_base_dropped',
+       r'few_fn\(eye_contour_list\[n\], half_UI \+ 1,',
+       r'few_fn(eye_contour_list[n], half_UI,',
+       'An index passed to a port of a MATLAB function that takes it 1-based, '
+       'without the +1, shifts every position that function reads.',
+       'finding F17, 2026-10-21; COM_eye_width '
+       'test_octave_eye_width_and_contour'),
+
+    # pdf.Min = x(1)/BinSize stays fractional in MATLAB and is rounded half
+    # away from zero only when two PDFs are combined; int() truncated it first
+    # and put the C2M eye contour a bin out (finding F17).
+    Op('pdf_min_truncated',
+       r'\.Min = ([\w\[\]]+\.x\[0\] / [\w\[\]]+\.BinSize)',
+       r'.Min = int(\1)',
+       'A PDF Min truncated to an integer before conv_fct_MeanNotZero rounds '
+       'Min1+Min2: the result lands one bin off whenever the fractions sum past '
+       'a half.',
+       'finding F17, 2026-10-21; COM_eye_width '
+       'test_octave_eye_width_and_contour'),
+
+    # EW_UI=floor((Left_EW+Right_EW))/samples_for_C2M is one width per eye;
+    # the port summed the eyes into one scalar (finding F17).
+    Op('elementwise_to_sum',
+       r'np\.floor\(np\.asarray\(Left_EW, dtype=float\)\s*\+ np\.asarray\(Right_EW, dtype=float\)\)',
+       r'np.floor(np.sum(Left_EW) + np.sum(Right_EW))',
+       'A MATLAB elementwise vector expression reduced to a scalar sum.',
+       'finding F17, 2026-10-21; com_ieee8023_ test_ew_ui_is_one_width_per_eye'),
+
+    # rangelimit sets param.flim in the reader's own copy of param; the
+    # inlined readers wrote it onto the caller's (finding F16). Same class as
+    # FIX_SUMMARY #8 and #9: MATLAB passes structs by value.
+    Op('param_written_back',
+       r'(?<![\w.])flim = float\(freq\[-1\]\)',
+       r'param.flim = float(freq[-1])',
+       'A value MATLAB assigns into a by-value struct inside a callee, written '
+       'onto the caller\'s object.',
+       'finding F16, 2026-10-21; read_s4p_files '
+       'test_octave_reading_a_file_leaves_the_callers_flim'),
+
+    # [ -0.15 - 0.15 - 0.05 ] is one element in MATLAB; the config reader
+    # joined every '- 0.15' into '-0.15' and read three (finding F18).
+    Op('bracket_sign_joined',
+       r'row = _bracket_row\(r\)',
+       r'row = None',
+       'A MATLAB bracket literal split on whitespace with every sign joined to '
+       'the number after it: [a - b] read as two elements where MATLAB '
+       'subtracts.',
+       'finding F18, 2026-10-21; read_ParamConfigFile '
+       'test_octave_bracket_sign_spacing'),
 ]
 
 

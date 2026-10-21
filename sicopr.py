@@ -661,7 +661,10 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 Left_EW, Right_EW, eye_contour, EH_T_C2M, EH_B_C2M = _COM_eye_width_fn(
                     chdata, param.delta_y, fom_result, param, OP, Noise_Struct, 0)
                 _com_ieee8023___checkpoint('09_COM_eye_width', package_testcase_i, Left_EW=Left_EW, Right_EW=Right_EW, eye_contour=eye_contour)
-                EW_UI = float(np.floor(np.sum(Left_EW) + np.sum(Right_EW))) / float(param.samples_for_C2M)
+                # MATLAB: EW_UI=floor((Left_EW+Right_EW))/param.samples_for_C2M,
+                # elementwise: one eye width per eye, not the sum of all of them.
+                EW_UI = np.floor(np.asarray(Left_EW, dtype=float)
+                                 + np.asarray(Right_EW, dtype=float)) / float(param.samples_for_C2M)
             elif (EYE_PLOT_UNDER_MLSE
                   and not getattr(OP, 'RX_CALIBRATION', False)
                   and getattr(OP, 'EW', 0) == 1
@@ -1930,8 +1933,10 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         for j in pdf_range:
             shift = float(A_s_vec[j]) * float(Levels[n])
             pdf_n[j].x = pdf_n[j].x + shift
-            dx = float(pdf_n[j].BinSize)
-            pdf_n[j].Min = int(pdf_n[j].x[0] / (dx + 1e-300))
+            # MATLAB: Min = x(1)/BinSize, left fractional; conv_fct_MeanNotZero
+            # rounds Min1+Min2 half away from zero. Truncating here first put
+            # the contour one bin out wherever the fractions summed past a half.
+            pdf_n[j].Min = pdf_n[j].x[0] / pdf_n[j].BinSize
         pdf_full.append(pdf_n)
 
     # ---- Build noise + ISI combined PDFs ----
@@ -1983,7 +1988,9 @@ def COM_eye_width(chdata, delta_y, fom_result, param, OP, Struct_Noise, pdf_rang
         EH_top = float(eye_contour_list[n][half_UI, 0])
         EH_bot = float(eye_contour_list[n][half_UI, 1])
         vref = EH_top / 2.0 + EH_bot / 2.0
-        lew, rew = few_fn(eye_contour_list[n], half_UI, samp_UI, vref)
+        # find_eye_width takes MATLAB's 1-based half_UI (it slices
+        # half_UI-1::-1 for half_UI:-1:1); half_UI here is 0-based.
+        lew, rew = few_fn(eye_contour_list[n], half_UI + 1, samp_UI, vref)
         Left_EW[n] = lew
         Right_EW[n] = rew
 
@@ -8574,6 +8581,17 @@ def adjust_Rx_noise_for_quantization(combined_interference_and_noise_pdf, NS, ch
     quantization_noise_pdf.y = np.zeros_like(quantization_noise_pdf.x, dtype=float)
     quantization_noise_pdf.y[ind_center] = 1.0
 
+    # The reference reads fom_result.RxFFE unconditionally, and optimize_fom
+    # sets it only when the Rx FFE is on, so N_qb ~= 0 with no Rx FFE stops
+    # there with "structure has no member 'RxFFE'" (COM Octave, 4p15p0-4p17p0).
+    # Stop at the same point, with an error that says why.
+    if not hasattr(fom_result, 'RxFFE'):
+        raise ValueError(
+            'N_qb = %s (ADC quantization) needs an Rx FFE: the COM reference '
+            'reads fom_result.RxFFE here and stops with "structure has no member '
+            '\'RxFFE\'" when ffe_pre_tap_len and ffe_post_tap_len are both 0. '
+            'Set N_qb = 0, or give the Rx FFE at least one tap. See '
+            'docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md' % (param.N_qb,))
     rxffe = np.asarray(fom_result.RxFFE).ravel()
     h_rxffe = rxffe[rxffe != 0]
     cursor_tap = int(param.ffe_pre_tap_len) + 1  # r4p15p0: 1-based cursor tap position
@@ -17121,6 +17139,98 @@ def _read_ParamConfigFile__parse_matlab_scalar_or_range(token):
     return [float(token)]
 
 
+_BRACKET_TOKEN = re.compile(r'\s+|,|[+-]|:|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[A-Za-z]+')
+
+
+def _read_ParamConfigFile__bracket_row(r):
+    """One row of a MATLAB bracket literal read by MATLAB's whitespace rules, or
+    None when it holds anything but numbers, +, -, colons, commas and spaces.
+
+    Inside brackets a sign with space before it and none after starts a new
+    element ([1 -2] is two); with space on both sides, or none before, it is
+    binary ([1 - 2] is -1). Colon binds looser than + and -. COM Octave:
+    [ -0.15 - 0.15 - 0.05 ] is -0.35, one element, as IEEE's 802.3ck COM 3.70
+    C2M workbook writes b_min(2..N_b); the earlier reading joined '- 0.15'
+    into '-0.15' and made it three.
+    """
+    toks, pos = [], 0
+    while pos < len(r):
+        m = _BRACKET_TOKEN.match(r, pos)
+        if not m:
+            return None
+        t = m.group(0)
+        if t.isspace():
+            kind = 'ws'
+        elif t == ',':
+            kind = 'sep'
+        elif t in '+-':
+            kind = 'op'
+        elif t == ':':
+            kind = 'colon'
+        elif t.isalpha():
+            if t.lower() not in ('inf', 'nan'):
+                return None
+            kind = 'num'
+        else:
+            kind = 'num'
+        toks.append((kind, t))
+        pos = m.end()
+
+    elems, cur = [], []
+    for i, (kind, t) in enumerate(toks):
+        if kind == 'sep':
+            if cur:
+                elems.append(cur)
+            cur = []
+        elif kind == 'ws':
+            if not cur or cur[-1][0] in ('op', 'colon') or i + 1 >= len(toks):
+                continue
+            nk = toks[i + 1][0]
+            after = toks[i + 2][0] if i + 2 < len(toks) else 'ws'
+            if nk == 'op' and after != 'ws':
+                elems.append(cur)          # [a -b]: a new element
+                cur = []
+            elif nk not in ('op', 'colon', 'sep'):
+                elems.append(cur)          # two operands side by side
+                cur = []
+        else:
+            cur.append((kind, t))
+    if cur:
+        elems.append(cur)
+
+    row = []
+    for el in elems:
+        parts, acc, binop, unary = [], None, None, 1.0
+        for kind, t in el + [('colon', ':')]:
+            if kind == 'op':
+                if acc is None or binop is not None:
+                    unary = -unary if t == '-' else unary
+                else:
+                    binop = t
+            elif kind == 'num':
+                x = unary * float(t)
+                unary = 1.0
+                if acc is None:
+                    acc = x
+                elif binop == '-':
+                    acc = acc - x
+                else:
+                    acc = acc + x
+                binop = None
+            else:                          # colon, or the end of the element
+                if acc is None or binop is not None:
+                    return None
+                parts.append(acc)
+                acc = None
+        if len(parts) == 1:
+            row.append(parts[0])
+        elif len(parts) in (2, 3):
+            row.extend(_read_ParamConfigFile__parse_matlab_scalar_or_range(':'.join(repr(p) for p in parts)))
+        else:
+            return None
+    return row
+
+
 def _read_ParamConfigFile__parse_matlab_matrix(s):
     """Parse MATLAB matrix literal '[a b c; d e f]' or range '[a:b:c]' → numpy array."""
     import re as _re
@@ -17134,16 +17244,18 @@ def _read_ParamConfigFile__parse_matlab_matrix(s):
         return np.array([])
     # Normalise spaced colon ranges: '-0.2 : 0.02 : 0' → '-0.2:0.02:0'
     s = _re.sub(r'\s*:\s*', ':', s)
-    # Normalise unary minus separated from digit: '- 0.2' → '-0.2'
-    s = _re.sub(r'-\s+(?=[\d.])', '-', s)
     row_strs = [r.strip() for r in s.split(';') if r.strip()]
     rows = []
     for r in row_strs:
-        vals = r.split()
-        row = []
-        for v in vals:
-            if v and v != ':':
-                row.extend(_read_ParamConfigFile__parse_matlab_scalar_or_range(v))
+        row = _read_ParamConfigFile__bracket_row(r)
+        if row is None:
+            # Not numbers, + and - alone (a product, a name, parentheses):
+            # the earlier reading, which joins '- 0.2' into '-0.2'.
+            r = _re.sub(r'-\s+(?=[\d.])', '-', r)
+            row = []
+            for v in r.split():
+                if v and v != ':':
+                    row.extend(_read_ParamConfigFile__parse_matlab_scalar_or_range(v))
         rows.append(row)
     if len(rows) == 1:
         return np.array(rows[0])
@@ -17296,7 +17408,8 @@ def _read_ParamConfigFile__read_pkg_params(block):
         zeros4 = np.zeros((ncases, 2))
         for attr in ['z_p_fext_cases', 'z_p_next_cases', 'z_p_tx_cases', 'z_p_rx_cases']:
             setattr(pkg, attr, np.hstack([getattr(pkg, attr), zeros4]))
-        pkg.pkg_Z_c = np.vstack([pkg.pkg_Z_c, np.full((2, pkg.pkg_Z_c.shape[1]), 100.0)])
+        # MATLAB ML 11608: [pkg_Z_c' ; [100 100 ; 100 100]]', (2,4) as above.
+        pkg.pkg_Z_c = np.vstack([pkg.pkg_Z_c.T, [[100.0, 100.0], [100.0, 100.0]]]).T
 
     return pkg
 
@@ -17666,7 +17779,11 @@ def read_ParamConfigFile(paramFile, OP):
         for attr in ['z_p_fext_cases', 'z_p_next_cases', 'z_p_tx_cases', 'z_p_rx_cases']:
             setattr(param, attr + 'x', np.hstack([getattr(param, attr), np.zeros((ncases, 2))]))
             setattr(param, attr, getattr(param, attr + 'x'))
-        param.pkg_Z_c = np.vstack([param.pkg_Z_c, np.full((2, param.pkg_Z_c.shape[1]), 100.0)])
+        # MATLAB: pkg_Z_c = [pkg_Z_c' ; [100 100 ; 100 100]]' -- transpose,
+        # stack, transpose back: [Tx row ; Rx row] stays (2,4).  Stacking on
+        # the untransposed array gave (4,2), and make_full_pkg's pkg_Z_c(1,:)
+        # then had 2 entries for 4 blocks (COM 3.70 C2M, TDR_W_TXPKG = 1).
+        param.pkg_Z_c = np.vstack([param.pkg_Z_c.T, [[100.0, 100.0], [100.0, 100.0]]]).T
 
     param.PKG_Tx_FFE_preset = _read_ParamConfigFile__xls_param(parameter, 'PKG_Tx_FFE_preset', True, 0)
 
@@ -18906,7 +19023,9 @@ def _read_s4p_files__read_p4_s4params_inline(infile, ports, param, OP):
         sch = sch[:iend]; freq = freq[:iend]
         limited = 1
     else:
-        param.flim = float(freq[-1])
+        # MATLAB's rangelimit sets param.flim in read_p4_s4params' own copy of
+        # param (passed by value, not returned); the caller keeps its flim.
+        flim = float(freq[-1])
         limited = 0
 
     nf = len(freq)
@@ -18950,7 +19069,7 @@ def _read_s4p_files__read_p4_s4params_inline(infile, ports, param, OP):
     SCD[:, 0, 0] = D[:, 0, 1]; SCD[:, 1, 1] = D[:, 2, 3]
     SCD[:, 0, 1] = D[:, 0, 3]; SCD[:, 1, 0] = D[:, 2, 1]
 
-    Sch = SimpleNamespace(freq=freq, m=sch, flim=getattr(param, 'flim', freq[-1]), limited=limited)
+    Sch = SimpleNamespace(freq=freq, m=sch, flim=flim, limited=limited)
     return Sch, SDD, SDC, SCC, SCD, port_order
 
 
@@ -19032,7 +19151,7 @@ def _read_s4p_files__read_p2_s2params_inline(infile, ports, param, OP):
         iend = int(idx_lim[0]) + 1
         sch = sch[:iend]; freq = freq[:iend]; limited = 1
     else:
-        param.flim = float(freq[-1]); limited = 0
+        flim = float(freq[-1]); limited = 0   # local, as in read_p4_s4params above
     nf = len(freq)
     T = np.array([[1.0, 1.0], [1.0, -1.0]])
     D = np.zeros((nf, 2, 2), dtype=complex)
@@ -19043,7 +19162,7 @@ def _read_s4p_files__read_p2_s2params_inline(infile, ports, param, OP):
     SDC = np.zeros((nf, 1, 1), dtype=complex); SDC[:, 0, 0] = D[:, 1, 0]
     SCC = np.zeros((nf, 1, 1), dtype=complex); SCC[:, 0, 0] = D[:, 0, 0]
     SCD = np.zeros((nf, 1, 1), dtype=complex); SCD[:, 0, 0] = D[:, 0, 1]
-    Sch = SimpleNamespace(freq=freq, m=sch, flim=getattr(param, 'flim', freq[-1]), limited=limited)
+    Sch = SimpleNamespace(freq=freq, m=sch, flim=flim, limited=limited)
     return Sch, SDD, SDC, SCC, SCD
 
 

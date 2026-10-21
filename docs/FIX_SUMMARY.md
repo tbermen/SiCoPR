@@ -684,6 +684,39 @@ within 1e-12 per element, on all 28 checkpoint cases.
 | 50 | `ad50389` | gather each candidate's Gram block from `G = Ht @ Ht.T`, #46's saving in verified form | every strict field bit-identical |
 | 51 | `df78b9c` | sparse kernels convolved in Octave's own order | 28 cases 1213 → 736 s (with #50); worst 4.8e-15 relative; Octave agreement no worse on any field |
 
+## 2026-10-21 — the 802.3ck C2M workbook (rows 52–57)
+
+Found by driving SiCoPR 1.1.2 from SiCoPR-Assist. IEEE's 802.3ck COM 3.70 C2M
+workbook (`TDR_W_TXPKG = 1`, a two-segment package) stopped SiCoPR with
+`make_full_pkg: Zpkg(3): out of bound 2` on 4p15p0, 4p16p0 and 4p17p0, where
+COM Octave runs it. #52 is that crash. With it fixed, the case ran but its
+second package case disagreed with COM Octave by 2.0e-4 dB on FOM and chose a
+different CTLE and Tx FFE. The Octave checkpoint harness, pointed at goldens made
+for the two competing equalizer settings, put every remaining difference in
+#53–#56. #57 is the same workbook's `b_min(2..N_b)` cell. The 802.3dj workbooks
+the correlation corpora use have four-segment packages, run MLSE (which gates
+`COM_eye_width` off) and spell their brackets plainly, so none of these reached
+them.
+
+| # | date | defect | class | found by | effect | commit |
+|---|---|---|---|---|---|---|
+| 52 | 2026-10-21 | a two-segment `package_Z_c` filled out to four as `vstack(Z, 100s)`; ML 10947 is `[Z' ; 100s]'`, so (4,2) where the reference has (2,4); twice, for the main config and a `.START` block | **transpose** | Assist run, then COM Octave | `make_full_pkg` crashed on `TDR_W_TXPKG = 1`; elsewhere the inlined package builders read past the end as Zc = 0 on zero-length segments, an exact identity, so nothing that ran moved | (this commit) |
+| 53 | 2026-10-21 | the two readers inlined in `read_s4p_files` wrote `rangelimit`'s `param.flim` onto the caller; MATLAB sets it in the reader's by-value copy | **by-reference** | checkpoint harness | `flim_GHz` reported the THRU's last frequency (67) where the reference reports its 1000 GHz default, and later files were cut there; the canonical `read_p4_s4params` had been fixed, the copies had not | (this commit) |
+| 54 | 2026-10-21 | `COM_eye_width` passed its 0-based `half_UI` to `find_eye_width`, which takes MATLAB's 1-based one | **1- vs 0-based** | checkpoint harness, then oracle | every `Left_EW` one sample short and `Right_EW` one long | (this commit) |
+| 55 | 2026-10-21 | `COM_eye_width` truncated each shifted PDF's `Min` with `int()`; MATLAB leaves `x(1)/BinSize` fractional and `conv_fct_MeanNotZero` rounds the sum half away from zero | **rounding** | checkpoint harness, then oracle | eye contour a bin (1e-5 V) out at ~290 of 600 points; on C2M (`T_O ~= 0`) that sets `A_ni`, so COM and the FOM the search ranks by: **2.0e-4 dB and a different CTLE and Tx FFE** on the reproducing case | (this commit) |
+| 56 | 2026-10-21 | `EW_UI = floor(sum(Left)+sum(Right))/samp`; ML 621 is elementwise, one width per eye | translation | checkpoint harness | `EW_UI_est` a scalar 0.67 where the reference reports `[0.21 0.23 0.21]` | (this commit) |
+| 57 | 2026-10-21 | bracket literals split on whitespace with every `'- x'` joined to `'-x'`; MATLAB reads `[a - b]` as a subtraction and only `[a -b]` as two elements | **builtin semantics** | the workbook's own `b_min(2..N_b)` | `[ -0.15 - 0.15 - 0.05 ]` read as three limits where the reference reads -0.35 and expands it; not binding on the reproducing case | (this commit) |
+
+On the reproducing case (the 3.70 C2M workbook, a synthetic THRU of 13.1 dB at
+Nyquist, both package cases), SiCoPR against COM Octave after #52–#57: COM and
+FOM within 5.3e-14 dB, `itick`, CTLE, `g_DC_HP`, Tx FFE, ERL, `EW_UI` and `flim`
+identical, on 4p15p0, 4p16p0 and 4p17p0. Each fix has a COM Octave-pinned test
+that fails without it, and a mutation operator.
+
+Also from that session, not a port defect: `N_qb ~= 0` with the Rx FFE off stops
+the Reference Code itself. SiCoPR stops at the same point with a named error;
+see [`UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
+
 ---
 
 ## Test ROI — what the added guards have actually caught

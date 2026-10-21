@@ -1886,6 +1886,15 @@
    ]
   },
   {
+   "copy": "_read_ParamConfigFile__bracket_row",
+   "helper": "bracket_row",
+   "inlined_into": "read_ParamConfigFile",
+   "inlined_into_matlab_lines": [
+    9601,
+    10258
+   ]
+  },
+  {
    "copy": "_read_ParamConfigFile__eval_matlab_value",
    "helper": "eval_matlab_value",
    "inlined_into": "read_ParamConfigFile",

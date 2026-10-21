@@ -542,3 +542,28 @@ def test_pkg_zc_is_a_copy_of_pkg_z_c():
     assert seen['Pkg_Zc'] is not None, 'Pkg_Zc is set before the channels are read (ML 377)'
     np.testing.assert_array_equal(seen['Pkg_Zc'], param.pkg_Z_c)
     assert np.shape(seen['Pkg_Zc']) == (2, 4)
+
+
+# ---------------------------------------------------------------------------
+# ML 621: EW_UI=floor((Left_EW+Right_EW))/param.samples_for_C2M, one value per
+# eye. The port summed every eye into one scalar. COM Octave, with the
+# Left_EW/Right_EW COM_eye_width returns in its own oracle test and
+# samples_for_C2M = 16:  floor(L+R)/16 = [0.125 0.25 0.125]  (port: 0.4375).
+# ---------------------------------------------------------------------------
+
+def test_ew_ui_is_one_width_per_eye():
+    param = _make_param()
+    OP = _make_op()
+    OP.EW = 1
+    stubs = _make_stubs()
+    left = np.array([1.3760268857356235, 2.2966226138032302, 1.3760268857356235])
+    right = np.array([1.4266151685393256, 2.0566762728146024, 1.4266151685393265])
+    stubs['_COM_eye_width_fn'] = lambda *a, **k: (left, right, np.zeros((16, 6)), [], [])
+    seen = {}
+
+    def fill(output_args, sigma_bn, Noise_Struct, COM_SNR_Struct, param_, chdata, fom, OP_):
+        seen['EW_UI'] = COM_SNR_Struct.EW_UI
+        return output_args
+    stubs['_Output_Arg_Fill_fn'] = fill
+    com_ieee8023_(param, OP, _make_chdata(), **stubs)
+    assert np.asarray(seen['EW_UI']).tolist() == [0.125, 0.25, 0.125]

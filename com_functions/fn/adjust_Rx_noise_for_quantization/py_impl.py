@@ -118,6 +118,17 @@ def adjust_Rx_noise_for_quantization(combined_interference_and_noise_pdf, NS, ch
     quantization_noise_pdf.y = np.zeros_like(quantization_noise_pdf.x, dtype=float)
     quantization_noise_pdf.y[ind_center] = 1.0
 
+    # The reference reads fom_result.RxFFE unconditionally, and optimize_fom
+    # sets it only when the Rx FFE is on, so N_qb ~= 0 with no Rx FFE stops
+    # there with "structure has no member 'RxFFE'" (COM Octave, 4p15p0-4p17p0).
+    # Stop at the same point, with an error that says why.
+    if not hasattr(fom_result, 'RxFFE'):
+        raise ValueError(
+            'N_qb = %s (ADC quantization) needs an Rx FFE: the COM reference '
+            'reads fom_result.RxFFE here and stops with "structure has no member '
+            '\'RxFFE\'" when ffe_pre_tap_len and ffe_post_tap_len are both 0. '
+            'Set N_qb = 0, or give the Rx FFE at least one tap. See '
+            'docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md' % (param.N_qb,))
     rxffe = np.asarray(fom_result.RxFFE).ravel()
     h_rxffe = rxffe[rxffe != 0]
     cursor_tap = int(param.ffe_pre_tap_len) + 1  # r4p15p0: 1-based cursor tap position

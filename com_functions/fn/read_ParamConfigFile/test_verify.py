@@ -723,3 +723,93 @@ def test_octave_colon_ranges(text, want):
         return
     assert got.shape == want.shape
     assert got.tolist() == want.tolist()        # bit for bit
+
+
+# ============================================================
+# COM Octave (Octave 11.3.0, 2026-10-20): a two-segment package (mele=2).
+# read_ParamConfigFile run verbatim from
+# octave/com_ieee8023_4p17p0_octave_compat.m via tools/octave_oracle.py, with
+# xls_parameter, read_package_parameters, xls_parameter_txffe and csvread4com,
+# on MINIMAL_CSV plus the rows below.
+#
+# ML 10947 (and 11608 for a .START block) fills a 2-segment package_Z_c out
+# to four segments with  pkg_Z_c = [pkg_Z_c' ; [100 100 ; 100 100]]'  --
+# transpose, stack, transpose back -- so it stays [Tx row ; Rx row], (2,4).
+# The port stacked on the untransposed array and got (4,2); make_full_pkg's
+# pkg_Z_c(1,:) then had two entries for four blocks, and the 802.3ck COM 3.70
+# C2M workbook (TDR_W_TXPKG = 1) stopped with "make_full_pkg: Zpkg(3): out of
+# bound 2" where COM Octave runs the case.
+# ============================================================
+_FLEX2_TOP = '''\
+z_p (TX),[15 30; 1.8 1.8]
+z_p (NEXT),[0 0; 0 0]
+z_p (FEXT),[15 30; 1.8 1.8]
+z_p (RX),[0 0; 0 0]
+package_Z_c,[87.5 88 ; 92.5 93]
+'''
+
+_FLEX2_BLOCK = '''\
+C_p,[0.1 0.2]
+R_d,[50 55]
+A_v,0.4
+A_fe,0.4
+A_ne,0.4
+z_p (TX),[12 31; 1.5 1.6]
+z_p (NEXT),[0 0; 0 0]
+z_p (FEXT),[12 31; 1.5 1.6]
+z_p (RX),[0 0; 0 0]
+package_Z_c,[%s]
+'''
+
+_FLEX2_NAMED = ('PKG_NAME,TXP RXP\n.START,TXP\n' + _FLEX2_BLOCK % '81 82 ; 83 84'
+                + '.END,TXP\n.START,RXP\n' + _FLEX2_BLOCK % '85 86 ; 87 88' + '.END,RXP\n')
+
+FLEX2_PINS = {
+    # COM Octave: param.pkg_Z_c and param.z_p_tx_cases, both (2,4)
+    'top': ([[87.5, 92.5, 100.0, 100.0], [88.0, 93.0, 100.0, 100.0]],
+            [[15.0, 1.8, 0.0, 0.0], [30.0, 1.8, 0.0, 0.0]]),
+    'named': ([[81.0, 83.0, 100.0, 100.0], [86.0, 88.0, 100.0, 100.0]],
+              [[12.0, 1.5, 0.0, 0.0], [31.0, 1.6000000000000001, 0.0, 0.0]]),
+}
+
+
+# COM Octave (Octave 11.3.0, 2026-10-21): bracket literals whose meaning turns
+# on the spaces around a sign. Inside brackets [a -b] is two elements and
+# [a - b], [a-b], [a- b] are one; colon binds looser than + and -. IEEE's
+# 802.3ck COM 3.70 C2M workbook writes b_min(2..N_b) as [ -0.15 - 0.15 - 0.05 ],
+# which the reference reads as -0.35 and then scalar-expands over b_min(2:N_b);
+# the port joined '- 0.15' into '-0.15' and read [-0.15 -0.15 -0.05].
+BRACKET_PINS = [
+    ('[ -0.15 - 0.15 - 0.05 ]', [-0.34999999999999998]),
+    ('[1 -2]', [1.0, -2.0]),
+    ('[1 - 2]', [-1.0]),
+    ('[1 -2 - 3]', [1.0, -5.0]),
+    ('[1- 2]', [-1.0]),
+    ('[1 +2]', [1.0, 2.0]),
+    ('[ - 0.2 0.1]', [-0.20000000000000001, 0.10000000000000001]),
+    ('[0.1 -0.2:0.1:0]', [0.10000000000000001, -0.20000000000000001,
+                          -0.10000000000000001, 0.0]),
+    ('[1e-3 -1e-3]', [0.001, -0.001]),
+    ('[2 - 1:3]', [1.0, 2.0, 3.0]),
+    ('[1 , -2]', [1.0, -2.0]),
+    ('[3 -1 ; 2 - 1 5]', [[3.0, -1.0], [1.0, 5.0]]),
+]
+
+
+@pytest.mark.parametrize('text,want', BRACKET_PINS, ids=[t for t, _ in BRACKET_PINS])
+def test_octave_bracket_sign_spacing(text, want):
+    got = np.asarray(_parse_matlab_matrix(text), dtype=float)
+    assert got.tolist() == want                  # bit for bit
+
+
+@pytest.mark.parametrize('case', sorted(FLEX2_PINS))
+def test_octave_two_segment_package_Z_c_is_tx_rx_by_four(tmp_path, case):
+    text = MINIMAL_CSV + _FLEX2_TOP + (_FLEX2_NAMED if case == 'named' else '')
+    p = tmp_path / 'cfg.csv'
+    p.write_text(text)
+    param, _ = read_ParamConfigFile(str(p), make_op())
+    want_zc, want_tx = FLEX2_PINS[case]
+    got = np.asarray(param.pkg_Z_c, dtype=float)
+    assert got.shape == (2, 4)
+    assert got.tolist() == want_zc
+    assert np.asarray(param.z_p_tx_cases, dtype=float).tolist() == want_tx

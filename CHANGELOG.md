@@ -18,6 +18,38 @@ Two things this file is *not*:
 
 ## [Unreleased]
 
+### Fixed
+
+- A configuration with a two-segment package (`package_Z_c` given as
+  `[Tx Tx ; Rx Rx]`, as in IEEE's 802.3ck COM 3.70 C2M and MTF workbooks) and
+  `TDR_W_TXPKG = 1` stopped with `make_full_pkg: Zpkg(3): out of bound 2`. The
+  reader filled the package impedance out to four segments in the transposed
+  shape; it now builds it as the Reference Code does. The reported `pkg_Z_c`
+  now has the reference's shape.
+- Running that workbook then exposed four defects on the C2M path, now fixed:
+  the eye contour was one PDF bin out and each eye width one sample out
+  (`COM_eye_width`), which on a C2M configuration moves COM and the FOM the
+  equalizer search ranks by, by 2e-4 dB and a different CTLE and Tx FFE on the
+  case that found it; `EW_UI_est` summed the eyes into one number where the
+  reference reports one per eye; and `flim_GHz` reported the THRU's last
+  frequency instead of the configured or default limit. **C2M results can
+  change.** The 802.3dj KR and CR configurations the correlation corpora use do
+  not reach any of these.
+- A bracket value such as `[ -0.15 - 0.15 - 0.05 ]` (the 3.70 C2M workbook's
+  `b_min(2..N_b)`) is read as MATLAB reads it, one subtraction, not three
+  numbers.
+- The 3.70 C2M workbook now matches COM Octave to 5.3e-14 dB on 4p15p0, 4p16p0
+  and 4p17p0, with the same sampling phase and equalizer settings. See
+  `docs/FIX_SUMMARY.md`, rows 52-57.
+
+### Changed
+
+- `N_qb ~= 0` with the Rx FFE off (`ffe_pre_tap_len = ffe_post_tap_len = 0`)
+  still stops, because the Reference Code stops there too, but with an error
+  that names the cause and the workaround (`N_qb = 0`) instead of a bare
+  `AttributeError`. The reference defect, and a proposed fix for the ad hoc, are
+  in `docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`.
+
 ## [1.1.2] - 2026-10-16
 
 A security fix for the GUI, a faster COM Octave on 4p17p0, and test and tooling

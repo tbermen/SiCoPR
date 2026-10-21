@@ -65,10 +65,11 @@ KNOWN = {
     # the reference under Octave showed the caller still reads WO_TXFFE = 1 on
     # return from every branch, so the function now copies OP first. Its guard
     # is asserted below.
-    ('read_s4p_files', '_read_p2_s2params_inline', 'param'):
-        'ML read_p2_s2params returns no param; flim set identically by the caller',
-    ('read_s4p_files', '_read_p4_s4params_inline', 'param'):
-        'ML read_p4_s4params returns no param; flim set identically by the caller',
+    # read_s4p_files' two inlined readers (_read_p2_s2params_inline,
+    # _read_p4_s4params_inline) were FIXED on 2026-10-21. They were listed here
+    # as "flim set identically by the caller", which the reference does not do:
+    # COM Octave keeps the caller's param.flim, and the port reported the
+    # THRU's last frequency as flim_GHz (FIX_SUMMARY #53).
 }
 
 COPY_MARKERS = ('SimpleNamespace(**vars(', 'copy.copy(', 'deepcopy(', '.copy()')

@@ -357,3 +357,89 @@ def test_fallbacks_are_the_canonical_functions():
         canon = getattr(importlib.import_module('com_functions.fn.%s.py_impl' % name), name)
         assert getattr(m, '_' + name) is canon, name
     assert not hasattr(m, '_conv1d') and not hasattr(m, '_CONV_FFT_MIN')
+
+
+# ============================================================
+# COM Octave (Octave 11.3.0, 2026-10-21): the whole function.
+# COM_eye_width run verbatim from octave/com_ieee8023_4p17p0_octave_compat.m
+# via tools/octave_oracle.py with get_center_of_UI, get_pdf_full,
+# normal_dist, conv_fct, conv_fct_MeanNotZero, pdf_to_cdf,
+# cdf_to_ber_contour, find_eye_width, vref_intersect,
+# combine_pdf_same_voltage_axis, dfe_clipper, d_cpdf and Init_PDF_Fast
+# (each byte-identical to matlab/com_ieee8023_4p17p0.m), and the RELEASE's
+# get_pdf_from_sampled_signal (the compat one is a speed variant).
+# Inputs: the get_pdf_full fixture's synthetic THRU (M = 8, MATLAB t_s = 41),
+# delta_y = 1e-4, levels 4, ndfe 2, sigma_N 0.004, sigma_TX 0.002, ber_q 5,
+# delta noise and crosstalk PDFs, Histogram_Window_Weight 'gaussian'.
+#
+# Two port defects, found on the 802.3ck C2M workbook (T_O ~= 0), where they
+# set A_ni and so COM and the FOM the search ranks by:
+#   * find_eye_width takes MATLAB's 1-based half_UI; the port passed its
+#     0-based one, so every Left_EW came out one sample short and every
+#     Right_EW one sample long;
+#   * pdf.Min = x(1)/BinSize is fractional in MATLAB and conv_fct_MeanNotZero
+#     rounds Min1+Min2 half away from zero; the port truncated Min with int()
+#     first, which put 17 of these 48 contour values, and out_VB, a bin out.
+# Residual: out_VB 0.26640000000000003 here against 0.2664 (3e-17), the
+# window sum's order.
+# ============================================================
+_EW_M, _EW_TS1 = 8, 41
+
+
+def _ew_pulse():
+    t = np.arange(_EW_M * 12, dtype=float)
+    p = 0.55 * np.exp(-((t - (_EW_TS1 - 1)) / 3.5) ** 2)
+    p += 0.15 * np.exp(-((t - (_EW_TS1 - 1 + _EW_M)) / 5.0) ** 2)
+    p += 0.05 * np.exp(-((t - (_EW_TS1 - 1 + 2 * _EW_M)) / 6.0) ** 2)
+    p += 0.04 * np.exp(-((t - (_EW_TS1 - 1 - _EW_M)) / 5.0) ** 2)
+    return p
+
+
+def _ew_run(T_O):
+    d = SimpleNamespace(x=np.array([0.0]), y=np.array([1.0]), BinSize=1e-4, Min=0)
+    ch = [SimpleNamespace(eq_pulse_response=_ew_pulse(), type='THRU')]
+    p = SimpleNamespace(samples_per_ui=8, samples_for_C2M=8, levels=4, ndfe=2,
+                        bmax=np.array([0.85, 0.85]), bmin=np.array([-0.85, -0.85]),
+                        use_bmax=np.ones(2), use_bmin=np.ones(2), R_LM=1, dfe_delta=0,
+                        Floating_DFE=0, N_bmax=2, T_O=T_O, specBER=1e-4, sigma_RJ=0.01,
+                        sigma_X=1.2, A_DD=0.02, QL=2.5)
+    op = SimpleNamespace(force_pdf_bin_size=0, Histogram_Window_Weight='gaussian')
+    ns = SimpleNamespace(sigma_N=0.004, sigma_TX=0.002, ber_q=5, ne_noise_pdf=d,
+                         cci_pdf=d)
+    return COM_eye_width(ch, 1e-4, SimpleNamespace(t_s=_EW_TS1 - 1), p, op, ns, False)
+
+
+_OCT_LEFT_EW = [1.3760268857356235, 2.2966226138032302, 1.3760268857356235]
+_OCT_RIGHT_EW = [1.4266151685393256, 2.0566762728146024, 1.4266151685393265]
+_OCT_EC_COL0 = [-0.26379999999999998, -0.23430000000000001, -0.25240000000000001,
+                -0.26440000000000002, -0.25520000000000004, -0.26910000000000001,
+                -0.28290000000000004, -0.31140000000000001]
+_OCT_EC_COL1 = [0.036499999999999977, -0.1386, -0.29290000000000005,
+                -0.42680000000000007, -0.49770000000000003, -0.43720000000000003,
+                -0.29479999999999995, -0.11499999999999999]
+_OCT_EC_COLS2_5 = [  # row by row
+    -0.1502, 0.1502, -0.036499999999999991, 0.26379999999999998,
+    -0.047900000000000012, 0.047899999999999998, 0.1386, 0.23429999999999998,
+    0.020199999999999996, -0.020199999999999996, 0.29289999999999999, 0.25240000000000001,
+    0.081200000000000008, -0.081199999999999994, 0.42680000000000001, 0.26440000000000002,
+    0.1212, -0.1212, 0.49769999999999998, 0.25520000000000004,
+    0.084100000000000008, -0.084099999999999953, 0.43719999999999998, 0.26910000000000006,
+    0.0059000000000000025, -0.0059000000000000163, 0.29480000000000001, 0.28290000000000004,
+    -0.098200000000000023, 0.09820000000000001, 0.115, 0.31140000000000001]
+
+
+@pytest.mark.parametrize('T_O', [0, 300])
+def test_octave_eye_width_and_contour(T_O):
+    L, R, ec, vt, vb = _ew_run(T_O)
+    assert np.asarray(L).tolist() == _OCT_LEFT_EW
+    assert np.asarray(R).tolist() == _OCT_RIGHT_EW
+    ec = np.asarray(ec, dtype=float)
+    assert ec.shape == (8, 6)
+    assert ec[:, 0].tolist() == _OCT_EC_COL0
+    assert ec[:, 1].tolist() == _OCT_EC_COL1
+    assert ec[:, 2:6].ravel().tolist() == _OCT_EC_COLS2_5
+    if T_O == 0:
+        assert np.size(vt) == 0 and np.size(vb) == 0
+    else:
+        assert vt == 0.31320000000000003
+        assert abs(vb - 0.26640000000000003) <= 1e-16
