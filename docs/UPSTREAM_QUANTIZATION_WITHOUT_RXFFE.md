@@ -4,8 +4,8 @@
 defect in the COM Reference Code, reproduced by executing it under GNU Octave
 11.3 on 4p15p0, 4p16p0 and 4p17p0. SiCoPR reproduces it, as
 [`VERIFICATION.md`](VERIFICATION.md) requires, and since this note stops with an
-error that names the cause instead of a bare `AttributeError`. Offered to the
-COM ad hoc with a proposed fix.
+error that names the cause instead of a bare `AttributeError`. To be raised with
+the COM ad hoc, with a proposed fix (not yet raised as of 2026-10-21).
 
 ## Summary
 

@@ -94,7 +94,7 @@ stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
   `N_qb = 0` when the Rx FFE is off (with no Rx FFE the reference adds no
   quantization noise to COM either way), or keep one Rx FFE tap if quantization
   noise is to be modelled. No shipped workbook reaches this. Root cause, a related
-  observation about a zero pre-cursor tap, and a proposed fix offered to the COM
+  observation about a zero pre-cursor tap, and a proposed fix for the COM
   ad hoc: [`docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
 
 ## [1.1.2] - 2026-10-16
