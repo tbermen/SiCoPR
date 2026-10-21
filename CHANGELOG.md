@@ -16,39 +16,86 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
-## [Unreleased]
+## [1.1.3] - 2026-10-21
+
+Six port defects, found because IEEE's 802.3ck COM 3.70 C2M workbook stopped
+SiCoPR 1.1.2 with an error where the Reference Code runs it, and a clearer error
+for a configuration that stops the Reference Code itself. **C2M results can
+change.** The reference corpus results do not: the 208 MATLAB stage-oracle cases
+and the 28 COM Octave checkpoint cases pass unchanged.
+
+### Who is affected
+
+- **C2M configurations** (`PMD_type` or `PHY` C2M) with MLSE off: COM, FOM, the
+  chosen CTLE and Tx FFE, and the reported eye widths can change. On the case that
+  found it, the FOM moved by 2e-4 dB and the search chose a different CTLE and
+  Tx FFE.
+- **Any configuration that computes the eye width** (`EW = 1`) with MLSE off: the
+  reported `EW_UI_est` and eye widths change, as below.
+- **A two-segment package** (`package_Z_c` given as `[Tx Tx ; Rx Rx]`, as in the
+  802.3ck COM 3.70 C2M and MTF workbooks) with `TDR_W_TXPKG = 1`: it now runs
+  where it stopped with an error.
+- **A workbook with spaced minus signs inside brackets**, such as
+  `[ -0.15 - 0.15 - 0.05 ]`: the value is now read as MATLAB reads it.
+- **The reported `flim_GHz`**, when the workbook's `flim` lies above the THRU's last
+  frequency (the default is 1000 GHz).
+- **Not affected:** the 802.3dj KR and CR configurations the correlation corpora
+  use. They run MLSE (so no eye width is computed), set `flim` to 67 GHz, use
+  four-segment packages and plain brackets, so none of these defects reach them.
 
 ### Fixed
 
-- A configuration with a two-segment package (`package_Z_c` given as
-  `[Tx Tx ; Rx Rx]`, as in IEEE's 802.3ck COM 3.70 C2M and MTF workbooks) and
-  `TDR_W_TXPKG = 1` stopped with `make_full_pkg: Zpkg(3): out of bound 2`. The
-  reader filled the package impedance out to four segments in the transposed
-  shape; it now builds it as the Reference Code does. The reported `pkg_Z_c`
-  now has the reference's shape.
-- Running that workbook then exposed four defects on the C2M path, now fixed:
-  the eye contour was one PDF bin out and each eye width one sample out
-  (`COM_eye_width`), which on a C2M configuration moves COM and the FOM the
-  equalizer search ranks by, by 2e-4 dB and a different CTLE and Tx FFE on the
-  case that found it; `EW_UI_est` summed the eyes into one number where the
-  reference reports one per eye; and `flim_GHz` reported the THRU's last
-  frequency instead of the configured or default limit. **C2M results can
-  change.** The 802.3dj KR and CR configurations the correlation corpora use do
-  not reach any of these.
-- A bracket value such as `[ -0.15 - 0.15 - 0.05 ]` (the 3.70 C2M workbook's
-  `b_min(2..N_b)`) is read as MATLAB reads it, one subtraction, not three
-  numbers.
-- The 3.70 C2M workbook now matches COM Octave to 5.3e-14 dB on 4p15p0, 4p16p0
-  and 4p17p0, with the same sampling phase and equalizer settings. See
-  `docs/FIX_SUMMARY.md`, rows 52-57.
+What was found (symptom, cause) and the resolution, one per defect. Detail and
+evidence: `docs/FIX_SUMMARY.md`, rows 52-57.
+
+- **Two-segment package crash.** `TDR_W_TXPKG = 1` with a two-segment package
+  stopped with `make_full_pkg: Zpkg(3): out of bound 2`, because the reader filled
+  the package impedance out to four segments in the transposed shape (4x2 where
+  the reference has 2x4). It now builds the reference's shape, and the reported
+  `pkg_Z_c` has that shape too.
+- **Frequency limit leaked to the caller.** `flim_GHz` reported the THRU's last
+  frequency (67 GHz on the reproducing case) instead of the reference's 1000 GHz
+  default, and files read after the THRU were cut at that frequency, because two
+  file readers copied into `read_s4p_files` wrote their frequency limit back to the
+  shared parameters where MATLAB changes only a local copy. They now leave the
+  caller's value alone, as the main readers already did.
+- **Eye widths one sample out.** Every left eye width was one sample short and
+  every right one sample long, because `COM_eye_width` passed a 0-based centre
+  index to a function that expects MATLAB's 1-based one. It now passes the 1-based
+  index.
+- **Eye contour one PDF bin out.** The eye contour was one bin (1e-5 V) out at
+  about half its points, because `COM_eye_width` truncated each noise PDF's offset
+  to an integer where MATLAB keeps it fractional and rounds the sum. On C2M the
+  contour sets the noise amplitude, so this moved the FOM the equalizer search
+  ranks by, and COM with it: 2e-4 dB of FOM and a different CTLE and Tx FFE on
+  the reproducing case. The offset is now kept fractional, as in the reference.
+- **One eye width instead of one per eye.** `EW_UI_est` added all the eyes'
+  widths into one number (0.67) where the reference reports one per eye
+  (`[0.21 0.23 0.21]`). It now reports one per eye.
+- **Spaced minus signs in brackets.** `[ -0.15 - 0.15 - 0.05 ]` (the 3.70 C2M
+  workbook's `b_min(2..N_b)`) was read as three numbers, because the reader joined
+  every `- x` to `-x`; MATLAB reads `a - b` as a subtraction (here -0.35) and only
+  `a -b` as two numbers. The reader now follows MATLAB.
+
+Evidence: after these fixes the 3.70 C2M workbook matches COM Octave on 4p15p0,
+4p16p0 and 4p17p0, with COM and FOM within 5.3e-14 dB and the sampling phase,
+CTLE, `g_DC_HP`, Tx FFE, ERL, `EW_UI` and `flim` identical. Each fix has a test
+pinned to COM Octave values that fails with the defect restored. The 208 MATLAB
+stage-oracle cases and the 28 COM Octave checkpoint cases still pass unchanged.
 
 ### Changed
 
-- `N_qb ~= 0` with the Rx FFE off (`ffe_pre_tap_len = ffe_post_tap_len = 0`)
-  still stops, because the Reference Code stops there too, but with an error
-  that names the cause and the workaround (`N_qb = 0`) instead of a bare
-  `AttributeError`. The reference defect, and a proposed fix for the ad hoc, are
-  in `docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`.
+- **A defect in the Reference Code: ADC quantization with the Rx FFE off.** With
+  `N_qb ~= 0` and the Rx FFE off (`ffe_pre_tap_len = ffe_post_tap_len = 0`), the
+  Reference Code (4p14p0 to 4p17p0) runs the equalizer search and then stops with
+  `structure has no member 'RxFFE'`. SiCoPR stops at the same point, as it must
+  to match the reference, but now with a `ValueError` that names the cause and
+  the workaround instead of a bare `AttributeError`. **Workaround:** set
+  `N_qb = 0` when the Rx FFE is off (with no Rx FFE the reference adds no
+  quantization noise to COM either way), or keep one Rx FFE tap if quantization
+  noise is to be modelled. No shipped workbook reaches this. Root cause, a related
+  observation about a zero pre-cursor tap, and a proposed fix offered to the COM
+  ad hoc: [`docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
 
 ## [1.1.2] - 2026-10-16
 

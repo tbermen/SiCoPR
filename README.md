@@ -261,6 +261,9 @@ two languages differ in a way a reading would miss (`std`, `round`, `interp1`,
 - **Time-domain input (`TDMODE`)** is not fully wired; supply S-parameters.
 - **`FFE_OPT_METHOD = 'WIENER-HOPF'`** is intentionally non-functional: its helper is
   undefined in the MATLAB reference itself. Use `'MMSE'`.
+- **`N_qb ~= 0` with the Rx FFE off** stops the run, as it stops the MATLAB reference
+  itself; SiCoPR names the cause. Set `N_qb = 0` when the Rx FFE is off
+  ([`docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md)).
 - **`FAST_NOISE_CONV`** is a speed approximation; the default exact path is recommended
   for reported results.
 - **GUI file pickers** from the MATLAB tool are not ported; pass files on the command line.

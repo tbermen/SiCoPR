@@ -923,6 +923,8 @@ The engine was optimised in August 2026 to roughly 4.5-5x its previous speed, ga
 
 - **GUI file pickers** Not ported. File lists are always passed on the command line.
 
+- **N_qb with the Rx FFE off** N_qb ~= 0 with ffe_pre_tap_len = ffe_post_tap_len = 0 stops the run, as it stops the MATLAB reference itself; SiCoPR stops at the same point with an error naming the cause. Set N_qb = 0 when the Rx FFE is off (docs/UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
+
 - **Adaptive-search constants** The adaptive method carries about ten hand-tuned values — shrink factors, distance weights, the L2/L1 ratio, the CTLE window — whose provenance is not documented in the source.
 
 # 12 The Reference Code under GNU Octave

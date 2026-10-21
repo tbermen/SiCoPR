@@ -145,7 +145,9 @@ fix was deliberately rejected.
 | 46 | 2026-09-24 | MMSE Gram-matrix hoist undone: `H(:,sel)'*H(:,sel)` per candidate, as ML 2609-2612 | **summation order** | owner direction | every checkpoint field on woXtalk T1–T4_R01 bit-identical; baseline is now the reference's form | `a007fc8` |
 
 Rows 47–51, the 2026-09-24 speed-ups, changed no reference behaviour and are
-tabled in their dated section rather than here.
+tabled in their dated section rather than here. Rows 52–57, the 2026-10-21 fixes
+for the 802.3ck C2M workbook (released in 1.1.3), are also tabled in their dated
+section below; they can change C2M results.
 
 #17 is a settings deduction rather than a translation defect, and is written up in
 [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) — including what it does
@@ -698,14 +700,21 @@ the correlation corpora use have four-segment packages, run MLSE (which gates
 `COM_eye_width` off) and spell their brackets plainly, so none of these reached
 them.
 
+Released in SiCoPR 1.1.3. Who it affects: C2M configurations with MLSE off
+(COM, FOM, equalizer choice and eye widths can change), any configuration that
+computes the eye width with MLSE off (eye widths), two-segment packages with
+`TDR_W_TXPKG = 1` (now run), workbooks with spaced minus signs inside brackets,
+and the reported `flim_GHz`. In the table, `ML n` is line n of
+`matlab/com_ieee8023_4p17p0.m`.
+
 | # | date | defect | class | found by | effect | commit |
 |---|---|---|---|---|---|---|
-| 52 | 2026-10-21 | a two-segment `package_Z_c` filled out to four as `vstack(Z, 100s)`; ML 10947 is `[Z' ; 100s]'`, so (4,2) where the reference has (2,4); twice, for the main config and a `.START` block | **transpose** | Assist run, then COM Octave | `make_full_pkg` crashed on `TDR_W_TXPKG = 1`; elsewhere the inlined package builders read past the end as Zc = 0 on zero-length segments, an exact identity, so nothing that ran moved | (this commit) |
-| 53 | 2026-10-21 | the two readers inlined in `read_s4p_files` wrote `rangelimit`'s `param.flim` onto the caller; MATLAB sets it in the reader's by-value copy | **by-reference** | checkpoint harness | `flim_GHz` reported the THRU's last frequency (67) where the reference reports its 1000 GHz default, and later files were cut there; the canonical `read_p4_s4params` had been fixed, the copies had not | (this commit) |
-| 54 | 2026-10-21 | `COM_eye_width` passed its 0-based `half_UI` to `find_eye_width`, which takes MATLAB's 1-based one | **1- vs 0-based** | checkpoint harness, then oracle | every `Left_EW` one sample short and `Right_EW` one long | (this commit) |
-| 55 | 2026-10-21 | `COM_eye_width` truncated each shifted PDF's `Min` with `int()`; MATLAB leaves `x(1)/BinSize` fractional and `conv_fct_MeanNotZero` rounds the sum half away from zero | **rounding** | checkpoint harness, then oracle | eye contour a bin (1e-5 V) out at ~290 of 600 points; on C2M (`T_O ~= 0`) that sets `A_ni`, so COM and the FOM the search ranks by: **2.0e-4 dB and a different CTLE and Tx FFE** on the reproducing case | (this commit) |
-| 56 | 2026-10-21 | `EW_UI = floor(sum(Left)+sum(Right))/samp`; ML 621 is elementwise, one width per eye | translation | checkpoint harness | `EW_UI_est` a scalar 0.67 where the reference reports `[0.21 0.23 0.21]` | (this commit) |
-| 57 | 2026-10-21 | bracket literals split on whitespace with every `'- x'` joined to `'-x'`; MATLAB reads `[a - b]` as a subtraction and only `[a -b]` as two elements | **builtin semantics** | the workbook's own `b_min(2..N_b)` | `[ -0.15 - 0.15 - 0.05 ]` read as three limits where the reference reads -0.35 and expands it; not binding on the reproducing case | (this commit) |
+| 52 | 2026-10-21 | a two-segment `package_Z_c` filled out to four as `vstack(Z, 100s)`; ML 10947 is `[Z' ; 100s]'`, so (4,2) where the reference has (2,4); twice, for the main config and a `.START` block | **transpose** | SiCoPR-Assist run, then COM Octave | `make_full_pkg` crashed on `TDR_W_TXPKG = 1`; elsewhere the inlined package builders read past the end as Zc = 0 on zero-length segments, an exact identity, so nothing that ran moved | `2f58051` |
+| 53 | 2026-10-21 | the two readers inlined in `read_s4p_files` wrote `rangelimit`'s `param.flim` onto the caller; MATLAB sets it in the reader's by-value copy | **by-reference** | checkpoint harness | `flim_GHz` reported the THRU's last frequency (67) where the reference reports its 1000 GHz default, and later files were cut there; the canonical `read_p4_s4params` had been fixed, the copies had not | `2f58051` |
+| 54 | 2026-10-21 | `COM_eye_width` passed its 0-based `half_UI` to `find_eye_width`, which takes MATLAB's 1-based one | **1- vs 0-based** | checkpoint harness, then oracle | every `Left_EW` one sample short and `Right_EW` one long | `2f58051` |
+| 55 | 2026-10-21 | `COM_eye_width` truncated each shifted PDF's `Min` with `int()`; MATLAB leaves `x(1)/BinSize` fractional and `conv_fct_MeanNotZero` rounds the sum half away from zero | **rounding** | checkpoint harness, then oracle | eye contour a bin (1e-5 V) out at ~290 of 600 points; on C2M (`T_O ~= 0`) that sets `A_ni`, so COM and the FOM the search ranks by: **2.0e-4 dB and a different CTLE and Tx FFE** on the reproducing case | `2f58051` |
+| 56 | 2026-10-21 | `EW_UI = floor(sum(Left)+sum(Right))/samp`; ML 621 is elementwise, one width per eye | translation | checkpoint harness | `EW_UI_est` a scalar 0.67 where the reference reports `[0.21 0.23 0.21]` | `2f58051` |
+| 57 | 2026-10-21 | bracket literals split on whitespace with every `'- x'` joined to `'-x'`; MATLAB reads `[a - b]` as a subtraction and only `[a -b]` as two elements | **builtin semantics** | the workbook's own `b_min(2..N_b)` | `[ -0.15 - 0.15 - 0.05 ]` read as three limits where the reference reads -0.35 and expands it; not binding on the reproducing case | `2f58051` |
 
 On the reproducing case (the 3.70 C2M workbook, a synthetic THRU of 13.1 dB at
 Nyquist, both package cases), SiCoPR against COM Octave after #52–#57: COM and
