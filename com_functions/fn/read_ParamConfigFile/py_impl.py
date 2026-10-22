@@ -25,9 +25,10 @@ import csv
 import datetime
 import math
 import os
-import re
 import numpy as np
 from types import SimpleNamespace
+from com_functions.fn.xls_parameter.py_impl import xls_eval as _xls_eval
+from com_functions.fn.xls_parameter.py_impl import MatlabValueError as _MatlabValueError
 
 # Named for this module alone: assembly puts every module in one namespace, and
 # xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
@@ -188,173 +189,24 @@ def _isempty(x):
         return False
 
 
-def _parse_matlab_scalar_or_range(token):
-    """Parse a single token that may be a scalar or a MATLAB range start:step:end.
-
-    MATLAB's colon: start + k*step, counted with a tolerant floor, the last
-    element set to the limit only when that sum overshoots it. A range that does
-    not land on its limit stops short of it. COM Octave: '[0:0.3:1]' is
-    0, 0.3, 0.6, 0.8999999999999999 (finding F06: linspace over a rounded count
-    gave 0, 0.333, 0.667, 1); '[0:0.1:0.3]' ends at exactly 0.3.
-    """
-    token = token.rstrip(';').strip()
-    if ':' in token:
-        parts = token.split(':')
-        if len(parts) == 2:
-            start, stop = float(parts[0]), float(parts[1])
-            step = 1.0
-        elif len(parts) == 3:
-            start, step, stop = float(parts[0]), float(parts[1]), float(parts[2])
-        else:
-            return [float(token)]
-        n = int(math.floor((stop - start) / step + 3.0 * np.finfo(float).eps)) + 1
-        if n <= 0:
-            return []
-        x = start + np.arange(n) * step
-        if (step > 0 and x[-1] > stop) or (step < 0 and x[-1] < stop):
-            x[-1] = stop                                # colon end clamp
-        return list(x)
-    return [float(token)]
-
-
-_BRACKET_TOKEN = re.compile(r'\s+|,|[+-]|:|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[A-Za-z]+')
-
-
-def _bracket_row(r):
-    """One row of a MATLAB bracket literal read by MATLAB's whitespace rules, or
-    None when it holds anything but numbers, +, -, colons, commas and spaces.
-
-    Inside brackets a sign with space before it and none after starts a new
-    element ([1 -2] is two); with space on both sides, or none before, it is
-    binary ([1 - 2] is -1). Colon binds looser than + and -. COM Octave:
-    [ -0.15 - 0.15 - 0.05 ] is -0.35, one element, as IEEE's 802.3ck COM 3.70
-    C2M workbook writes b_min(2..N_b); the earlier reading joined '- 0.15'
-    into '-0.15' and made it three.
-    """
-    toks, pos = [], 0
-    while pos < len(r):
-        m = _BRACKET_TOKEN.match(r, pos)
-        if not m:
-            return None
-        t = m.group(0)
-        if t.isspace():
-            kind = 'ws'
-        elif t == ',':
-            kind = 'sep'
-        elif t in '+-':
-            kind = 'op'
-        elif t == ':':
-            kind = 'colon'
-        elif t.isalpha():
-            if t.lower() not in ('inf', 'nan'):
-                return None
-            kind = 'num'
-        else:
-            kind = 'num'
-        toks.append((kind, t))
-        pos = m.end()
-
-    elems, cur = [], []
-    for i, (kind, t) in enumerate(toks):
-        if kind == 'sep':
-            if cur:
-                elems.append(cur)
-            cur = []
-        elif kind == 'ws':
-            if not cur or cur[-1][0] in ('op', 'colon') or i + 1 >= len(toks):
-                continue
-            nk = toks[i + 1][0]
-            after = toks[i + 2][0] if i + 2 < len(toks) else 'ws'
-            if nk == 'op' and after != 'ws':
-                elems.append(cur)          # [a -b]: a new element
-                cur = []
-            elif nk not in ('op', 'colon', 'sep'):
-                elems.append(cur)          # two operands side by side
-                cur = []
-        else:
-            cur.append((kind, t))
-    if cur:
-        elems.append(cur)
-
-    row = []
-    for el in elems:
-        parts, acc, binop, unary = [], None, None, 1.0
-        for kind, t in el + [('colon', ':')]:
-            if kind == 'op':
-                if acc is None or binop is not None:
-                    unary = -unary if t == '-' else unary
-                else:
-                    binop = t
-            elif kind == 'num':
-                x = unary * float(t)
-                unary = 1.0
-                if acc is None:
-                    acc = x
-                elif binop == '-':
-                    acc = acc - x
-                else:
-                    acc = acc + x
-                binop = None
-            else:                          # colon, or the end of the element
-                if acc is None or binop is not None:
-                    return None
-                parts.append(acc)
-                acc = None
-        if len(parts) == 1:
-            row.append(parts[0])
-        elif len(parts) in (2, 3):
-            row.extend(_parse_matlab_scalar_or_range(':'.join(repr(p) for p in parts)))
-        else:
-            return None
-    return row
-
-
 def _parse_matlab_matrix(s):
-    """Parse MATLAB matrix literal '[a b c; d e f]' or range '[a:b:c]' → numpy array."""
-    import re as _re
+    """A matrix-valued cell's text as an array: 1-D for one row, 2-D for more,
+    np.array([]) when empty. Text without brackets is read as a bracket body,
+    as before. MATLAB's semantics, through xls_eval (findings F06, F18, F19)."""
     s = s.strip()
-    if s.startswith('['):
-        s = s[1:]
-    if s.endswith(']'):
-        s = s[:-1]
-    s = s.strip()
-    if not s:
-        return np.array([])
-    # Normalise spaced colon ranges: '-0.2 : 0.02 : 0' → '-0.2:0.02:0'
-    s = _re.sub(r'\s*:\s*', ':', s)
-    row_strs = [r.strip() for r in s.split(';') if r.strip()]
-    rows = []
-    for r in row_strs:
-        row = _bracket_row(r)
-        if row is None:
-            # Not numbers, + and - alone (a product, a name, parentheses):
-            # the earlier reading, which joins '- 0.2' into '-0.2'.
-            r = _re.sub(r'-\s+(?=[\d.])', '-', r)
-            row = []
-            for v in r.split():
-                if v and v != ':':
-                    row.extend(_parse_matlab_scalar_or_range(v))
-        rows.append(row)
-    if len(rows) == 1:
-        return np.array(rows[0])
-    return np.array(rows)
+    if not s.startswith('['):
+        s = '[' + s + ']'
+    return _xls_eval(s, as_matrix=True)
 
 
 def _eval_matlab_value(v, eval_if_string):
-    """Evaluate a spreadsheet value, handling MATLAB matrix strings."""
+    """MATLAB's eval() of a value cell (ML 12452): xls_eval, never Python's eval."""
     if not isinstance(v, str) or not eval_if_string:
         return v
     v_str = v.strip()
     if v_str.startswith('['):
         return _parse_matlab_matrix(v_str)
-    try:
-        return float(v_str)
-    except ValueError:
-        pass
-    try:
-        return eval(v_str)  # noqa: S307
-    except Exception:
-        return v_str
+    return _xls_eval(v_str)
 
 
 def _xls_param(parameter, param_name, eval_if_string=False, default_value=_NO_DEFAULT):
@@ -379,7 +231,11 @@ def _xls_param(parameter, param_name, eval_if_string=False, default_value=_NO_DE
     # but '' guaranteed a TypeError on the first arithmetic, which is neither
     # reference's answer.
     p = parameter[r][c + 1] if c + 1 < len(parameter[r]) else float('nan')
-    v = _eval_matlab_value(p, eval_if_string)
+    try:
+        v = _eval_matlab_value(p, eval_if_string)
+    except _MatlabValueError as e:
+        raise _MatlabValueError('config keyword "%s": cannot read %r as MATLAB: %s'
+                                % (param_name, p, e)) from None
     if name_lower in _COUNT_KEYWORDS:
         v = _as_count(v, param_name)
     return v
@@ -427,7 +283,11 @@ def _xls_param_txffe(parameter, param_name):
     r, c = matches[0]
     p = parameter[r][c + 1] if c + 1 < len(parameter[r]) else 0
     if isinstance(p, str):
-        p = _eval_matlab_value(p, True)
+        try:
+            p = _eval_matlab_value(p, True)
+        except _MatlabValueError as e:
+            raise _MatlabValueError('config keyword "%s": cannot read %r as MATLAB: %s'
+                                    % (param_name, p, e)) from None
     return p, 1
 
 
@@ -758,18 +618,21 @@ def read_ParamConfigFile(paramFile, OP):
         param.bmin = np.full(int(param.ndfe), float(bmin1))
 
     if param.ndfe >= 2:
-        bmax2 = _xls_param(parameter, 'b_max(2..N_b)', True, 0.2)
-        bmax2_arr = np.atleast_1d(np.asarray(bmax2, dtype=float)).ravel()
-        if len(bmax2_arr) == 1:
-            param.bmax[1:] = float(bmax2_arr[0])
-        else:
-            param.bmax[1:len(bmax2_arr) + 1] = bmax2_arr[:len(param.bmax) - 1]
-        bmin2 = _xls_param(parameter, 'b_min(2..N_b)', True, -float(bmax2_arr[0]))
-        bmin2_arr = np.atleast_1d(np.asarray(bmin2, dtype=float)).ravel()
-        if len(bmin2_arr) == 1:
-            param.bmin[1:] = float(bmin2_arr[0])
-        else:
-            param.bmin[1:len(bmin2_arr) + 1] = bmin2_arr[:len(param.bmin) - 1]
+        # ML 10859-10860: param.bmax(2:param.ndfe) = <cell>, a scalar spread
+        # or exactly N_b-1 values, else MATLAB stops ("=: nonconformant
+        # arguments"); b_min(2..N_b) defaults to -bmax(2:ndfe), element by
+        # element. The port cut a long vector short, left a short one's tail
+        # at b_max(1), and defaulted b_min to -b_max(2) throughout (finding F19).
+        def _dfe_limits(key, default):
+            arr = np.atleast_1d(np.asarray(_xls_param(parameter, key, True, default),
+                                           dtype=float)).ravel()
+            if arr.size not in (1, int(param.ndfe) - 1):
+                raise ValueError('config keyword "%s" has %d values; with N_b = %d it takes '
+                                 '1 or %d (MATLAB: =: nonconformant arguments)'
+                                 % (key, arr.size, int(param.ndfe), int(param.ndfe) - 1))
+            return arr
+        param.bmax[1:] = _dfe_limits('b_max(2..N_b)', 0.2)
+        param.bmin[1:] = _dfe_limits('b_min(2..N_b)', -1 * param.bmax[1:])
 
     # ---- CTLE qual ----
     gqual_raw = _xls_param(parameter, 'G_Qual', True, [])

@@ -1886,15 +1886,6 @@
    ]
   },
   {
-   "copy": "_read_ParamConfigFile__bracket_row",
-   "helper": "bracket_row",
-   "inlined_into": "read_ParamConfigFile",
-   "inlined_into_matlab_lines": [
-    9601,
-    10258
-   ]
-  },
-  {
    "copy": "_read_ParamConfigFile__eval_matlab_value",
    "helper": "eval_matlab_value",
    "inlined_into": "read_ParamConfigFile",
@@ -1969,15 +1960,6 @@
   {
    "copy": "_read_ParamConfigFile__parse_matlab_matrix",
    "helper": "parse_matlab_matrix",
-   "inlined_into": "read_ParamConfigFile",
-   "inlined_into_matlab_lines": [
-    9601,
-    10258
-   ]
-  },
-  {
-   "copy": "_read_ParamConfigFile__parse_matlab_scalar_or_range",
-   "helper": "parse_matlab_scalar_or_range",
    "inlined_into": "read_ParamConfigFile",
    "inlined_into_matlab_lines": [
     9601,
@@ -2272,30 +2254,66 @@
    ]
   },
   {
-   "copy": "_xls_parameter_txffe__colon",
-   "helper": "colon",
-   "inlined_into": "xls_parameter_txffe",
+   "copy": "_xls_parameter__xe_binary",
+   "helper": "xe_binary",
+   "inlined_into": "xls_parameter",
    "inlined_into_matlab_lines": [
-    11494,
-    11515
+    11408,
+    11493
    ]
   },
   {
-   "copy": "_xls_parameter_txffe__matlab_eval",
-   "helper": "matlab_eval",
-   "inlined_into": "xls_parameter_txffe",
+   "copy": "_xls_parameter__xe_colon",
+   "helper": "xe_colon",
+   "inlined_into": "xls_parameter",
    "inlined_into_matlab_lines": [
-    11494,
-    11515
+    11408,
+    11493
    ]
   },
   {
-   "copy": "_xls_parameter_txffe__matlab_matrix",
-   "helper": "matlab_matrix",
-   "inlined_into": "xls_parameter_txffe",
+   "copy": "_xls_parameter__xe_filled",
+   "helper": "xe_filled",
+   "inlined_into": "xls_parameter",
    "inlined_into_matlab_lines": [
-    11494,
-    11515
+    11408,
+    11493
+   ]
+  },
+  {
+   "copy": "_xls_parameter__xe_horzcat",
+   "helper": "xe_horzcat",
+   "inlined_into": "xls_parameter",
+   "inlined_into_matlab_lines": [
+    11408,
+    11493
+   ]
+  },
+  {
+   "copy": "_xls_parameter__xe_size",
+   "helper": "xe_size",
+   "inlined_into": "xls_parameter",
+   "inlined_into_matlab_lines": [
+    11408,
+    11493
+   ]
+  },
+  {
+   "copy": "_xls_parameter__xe_tokens",
+   "helper": "xe_tokens",
+   "inlined_into": "xls_parameter",
+   "inlined_into_matlab_lines": [
+    11408,
+    11493
+   ]
+  },
+  {
+   "copy": "_xls_parameter__xe_vertcat",
+   "helper": "xe_vertcat",
+   "inlined_into": "xls_parameter",
+   "inlined_into_matlab_lines": [
+    11408,
+    11493
    ]
   }
  ]

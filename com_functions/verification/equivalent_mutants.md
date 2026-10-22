@@ -119,6 +119,6 @@ what a test happens to cover.
 | `drop_dot_copy` | `auto_port_order:106` | `Floc` is only rebound by slicing and read; nothing writes it and it is not returned |
 | `drop_dot_copy` | `comb_fct:33`, `comb_fct:34` | `p1_y` and `p2_y` are never written in place (the padding writes a new array), and the output `p.y = p1_y + p2_y` allocates |
 | `drop_dot_copy` | `SNDR_ref:93` | `PR_noFFE` is never written, `FFE` writes nothing, and nothing derived from it by slicing is returned: `results` holds fresh arrays and floats |
-| `drop_dot_copy` | `read_ParamConfigFile:755` | The branch runs only when `param.bmax` is empty, so no element write through either name can be observed |
+| `drop_dot_copy` | `read_ParamConfigFile:615` | The branch runs only when `param.bmax` is empty, so no element write through either name can be observed |
 | `drop_dot_copy` | `get_TDR:257` | `PTDR.pulse_orig` is never read after it is set, and `PTDR.pulse` is only rebound (`PTDR.pulse = PTDR.pulse * fctrx` allocates) |
 | `drop_dot_copy` | `Bathtub_Contribution_Wrapper:41`, `plot_bathtub_curves:43` | `cursors_r.y`'s copy. `cursors` is not read after `cursors_r` is made and `cursors_l.y` was copied before, so the in-place zeroing through the shared array reaches nothing that is read again. `cursors_l.y`'s copy is NOT redundant and is caught |

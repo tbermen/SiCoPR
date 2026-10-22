@@ -726,6 +726,35 @@ Also from that session, not a port defect: `N_qb ~= 0` with the Rx FFE off stops
 the Reference Code itself. SiCoPR stops at the same point with a named error;
 see [`UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md).
 
+## 2026-10-21 — vector expressions in a value cell (rows 58–60)
+
+Found by SiCoPR-Assist (Phase V2-10): a run CSV whose `b_max(2..N_b)` reads
+`[0.3 0.2*ones(1,4) 0.1*ones(1,6)]`, as 802.3ck writes it, stopped SiCoPR 1.1.3
+with `could not convert string to float: '0.2*ones(1,4)'`. The Reference Code
+reads every value cell it evaluates with `p=eval(p)` (ML 12452, and ML 12536 for
+the Tx FFE cells), from a `.xlsx`, a `.csv` (`xlsread`, ML 10623) or a `.mat`
+(ML 10621) alike, so any MATLAB expression is a value. COM Octave, through the
+reference `xls_parameter`: `0.15*ones(1,3)` is 1x3, the 802.3ck vector 1x11,
+`[0.05 -0.03*ones(1,10)]` 1x11, `1e-5*[1 2]` 1x2, `zeros(1,3)` 1x3;
+`ones(1,2.5)`, an unknown name and a syntax error stop it. With #58 fixed the
+same run exposed #59 and #60 in the assignment of those vectors. In the table,
+`ML n` is line n of `matlab/com_ieee8023_4p17p0.m`.
+
+| # | date | defect | class | found by | effect | commit |
+|---|---|---|---|---|---|---|
+| 58 | 2026-10-21 | value cells read as numbers and brackets of numbers only; a product or a function call (`0.2*ones(1,4)`) was refused inside brackets with a raw `ValueError`, and outside them handed to Python's `eval`, which returned MATLAB text unevaluated and ran any Python text it was given. Now `xls_eval` (in `xls_parameter`), one evaluator for the MATLAB subset configs use, shared by the engine's reader and the canonical `xls_parameter` and `xls_parameter_txffe`; text outside it is a `MatlabValueError` naming the keyword | **builtin semantics** | SiCoPR-Assist run, then COM Octave | a config with a vector expression stopped; of the 241 configs on the development machine the reader read before, 220 read bit-identically (every `param` and `OP` field) and 21 now stop, below | (this commit) |
+| 59 | 2026-10-21 | `b_min(2..N_b)` defaulted to `-b_max(2)` for every tap; ML 10860 defaults it to `-1*param.bmax(2:param.ndfe)`, element by element | translation | the same run | only when `b_max(2..N_b)` is a vector and `b_min(2..N_b)` absent: the negative limits all came from the second tap | (this commit) |
+| 60 | 2026-10-21 | `b_max(2..N_b)` / `b_min(2..N_b)` of the wrong length cut short or left partly at `b_max(1)`; ML 10859 `param.bmax(2:param.ndfe) = v` stops unless `v` is a scalar or has `N_b - 1` elements | translation | the same run | now a `ValueError` naming the keyword, where COM Octave stops with `=: nonconformant arguments` | (this commit) |
+
+**Behaviour change: an Excel error cell.** A cell holding `#REF!` or `#N/A` in
+a keyword the reference evaluates: COM Octave stops on such a cell, and SiCoPR
+now does too, with the named error. SiCoPR used to carry the text on, harmlessly
+when the keyword went unused. What MATLAB's `xlsread` hands `eval` for an Excel
+error cell is unverified here (no MATLAB on the development machine). Those are the 21 configs above: working copies of
+IEEE's 802.3dj CR `selectable` template, whose `z_bp (TX)` cell is
+`=Lists!F34`, cached as `#REF!`. None is in the repository or the correlation
+corpora.
+
 ---
 
 ## Test ROI — what the added guards have actually caught

@@ -208,3 +208,28 @@ def test_octave_colon_ranges(text, want):
         return
     assert got.shape == want.shape
     assert got.tolist() == want.tolist()        # bit for bit
+
+
+# ============================================================
+# COM Octave (Octave 11.3.0, 2026-10-21): MATLAB vector expressions in a Tx
+# FFE cell. xls_parameter_txffe run verbatim from
+# octave/com_ieee8023_4p17p0_octave_compat.m via tools/octave_oracle.py on the
+# sheet {'K', text}; ML 12536 is p=eval(p). The port's own evaluator refused a
+# product inside brackets and handed anything else to Python's eval, which
+# raised NameError on ones (finding F19).
+# ============================================================
+TXFFE_VECTOR_PINS = [
+    ('0.15*ones(1,3)', [0.15, 0.15, 0.15]),
+    ('[0.3 0.2*ones(1,4) 0.1*ones(1,6)]',
+     [0.3, 0.2, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]),
+    ('[-0.2:0.02:0]*0.5',
+     [-0.1, -0.09000000000000001, -0.08, -0.07, -0.060000000000000005, -0.05,
+      -0.04000000000000001, -0.03, -0.020000000000000004, -0.010000000000000009, 0.0]),
+]
+
+
+@pytest.mark.parametrize('text,want', TXFFE_VECTOR_PINS, ids=[t for t, _ in TXFFE_VECTOR_PINS])
+def test_octave_vector_expression_in_a_txffe_cell(text, want):
+    p, found = xls_parameter_txffe([['K', text]], 'K')
+    assert found == 1
+    assert np.asarray(p, dtype=float).tolist() == want          # bit for bit

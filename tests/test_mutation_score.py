@@ -167,7 +167,7 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:floatingDFE:19', 'drop_dot_copy:auto_port_order:54',
     'drop_dot_copy:auto_port_order:106', 'drop_dot_copy:comb_fct:33',
     'drop_dot_copy:comb_fct:34', 'drop_dot_copy:SNDR_ref:93',
-    'drop_dot_copy:read_ParamConfigFile:755', 'drop_dot_copy:get_TDR:257',
+    'drop_dot_copy:read_ParamConfigFile:615', 'drop_dot_copy:get_TDR:257',
     'drop_dot_copy:Bathtub_Contribution_Wrapper:41',
     'drop_dot_copy:plot_bathtub_curves:43',
 ])

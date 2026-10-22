@@ -364,14 +364,50 @@ CATALOGUE = [
 
     # [ -0.15 - 0.15 - 0.05 ] is one element in MATLAB; the config reader
     # joined every '- 0.15' into '-0.15' and read three (finding F18).
+    # Since F19 the rule lives in xls_parameter's xls_eval: a sign after a
+    # space starts an element only when no space follows it.
     Op('bracket_sign_joined',
-       r'row = _bracket_row\(r\)',
-       r'row = None',
+       r'starts = nxt not in _XE_SPACE',
+       r'starts = True',
        'A MATLAB bracket literal split on whitespace with every sign joined to '
        'the number after it: [a - b] read as two elements where MATLAB '
        'subtracts.',
        'finding F18, 2026-10-21; read_ParamConfigFile '
-       'test_octave_bracket_sign_spacing'),
+       'test_octave_bracket_sign_spacing, xls_parameter '
+       'test_octave_colon_and_bracket_pins'),
+
+    # A value cell is MATLAB's eval(p) (ML 12452); the port read brackets of
+    # plain numbers only, so [0.3 0.2*ones(1,4) 0.1*ones(1,6)] was refused
+    # where the reference evaluates it (finding F19).
+    Op('value_cell_function_refused',
+       r'if t not in _XE_FUNCTIONS:',
+       r'if True:',
+       'A MATLAB function call in a config value cell (ones, zeros) refused, '
+       'where the reference evals the cell.',
+       'finding F19, 2026-10-21; xls_parameter '
+       'test_octave_vector_expression_in_a_value_cell'),
+
+    # b_min(2..N_b) defaults to -bmax(2:ndfe), a vector; the port took
+    # -b_max(2) for every tap, the same only while the limits are all equal
+    # (finding F19).
+    Op('vector_default_to_first_element',
+       r'-1 \* param\.bmax\[1:\]',
+       r'-float(param.bmax[1])',
+       'A MATLAB default that is a vector expression collapsed to its first '
+       'element.',
+       'finding F19, 2026-10-21; read_ParamConfigFile '
+       'test_octave_dfe_limits_as_vector_expressions'),
+
+    # param.bmax(2:ndfe) = v stops MATLAB unless v is a scalar or has ndfe-1
+    # elements; the port cut a long vector short and left a short one's tail
+    # at b_max(1) (finding F19).
+    Op('nonconformant_assignment_accepted',
+       r'if arr\.size not in \(1, int\(param\.ndfe\) - 1\):',
+       r'if False:',
+       'A MATLAB indexed assignment of the wrong length accepted where the '
+       'reference stops with "=: nonconformant arguments".',
+       'finding F19, 2026-10-21; read_ParamConfigFile '
+       'test_octave_dfe_limits_of_the_wrong_length_are_refused'),
 ]
 
 

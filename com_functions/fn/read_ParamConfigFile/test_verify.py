@@ -813,3 +813,65 @@ def test_octave_two_segment_package_Z_c_is_tx_rx_by_four(tmp_path, case):
     assert got.shape == (2, 4)
     assert got.tolist() == want_zc
     assert np.asarray(param.z_p_tx_cases, dtype=float).tolist() == want_tx
+
+
+# ============================================================
+# COM Octave (Octave 11.3.0, 2026-10-21): DFE limits written as MATLAB vector
+# expressions, N_b = 12. read_ParamConfigFile run verbatim from
+# octave/com_ieee8023_4p17p0_octave_compat.m via tools/octave_oracle.py, with
+# xls_parameter, read_package_parameters, xls_parameter_txffe and
+# missingParameter, on MINIMAL_CSV (N_b 4 -> 12) plus the rows below, given
+# as the .mat cell array xlsread would return (the CSV shim csvread4com splits
+# on every comma, and these cells hold commas). ML 12452 evals each cell;
+# ML 10859-10860 assign it to bmax(2:ndfe) and bmin(2:ndfe), defaulting
+# b_min(2..N_b) to -bmax(2:ndfe) element by element. Before finding F19 the
+# port refused the first and third outright, and gave every b_min(2..N_b)
+# -0.3 in the second.
+# ============================================================
+DFE_VECTOR_ROWS = {
+    'both': [('b_max(2..N_b)', '[0.3 0.2*ones(1,4) 0.1*ones(1,6)]'),
+             ('b_min(2..N_b)', '[0.05 -0.03*ones(1,10)]')],
+    'bmin_default': [('b_max(2..N_b)', '[0.3 0.2*ones(1,4) 0.1*ones(1,6)]')],
+    'scalar_expr': [('b_max(2..N_b)', '0.15*ones(1,1)'),
+                    ('b_min(2..N_b)', '-0.03*ones(1,11)')],
+}
+DFE_VECTOR_PINS = {
+    'both': ([0.7, 0.3, 0.2, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+             [-0.7, 0.05, -0.03, -0.03, -0.03, -0.03, -0.03, -0.03, -0.03, -0.03, -0.03, -0.03]),
+    'bmin_default': ([0.7, 0.3, 0.2, 0.2, 0.2, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+                     [-0.7, -0.3, -0.2, -0.2, -0.2, -0.2, -0.1, -0.1, -0.1, -0.1, -0.1, -0.1]),
+    'scalar_expr': ([0.7] + [0.15] * 11, [-0.7] + [-0.03] * 11),
+}
+# Same run: COM Octave stops with "=: nonconformant arguments (op1 is 11x1,
+# op2 is 1x3)" and "(... op2 is 1x12)".
+DFE_VECTOR_ERRORS = {'too_short': '0.15*ones(1,3)', 'too_long': '0.15*ones(1,12)'}
+
+
+def _dfe_csv(tmp_path, rows):
+    text = MINIMAL_CSV.replace('N_b,4', 'N_b,12')
+    text += ''.join('%s,"%s"\n' % (k, v) for k, v in rows)
+    p = tmp_path / 'cfg.csv'
+    p.write_text(text)
+    return str(p)
+
+
+@pytest.mark.parametrize('case', sorted(DFE_VECTOR_PINS))
+def test_octave_dfe_limits_as_vector_expressions(tmp_path, case):
+    param, _ = read_ParamConfigFile(_dfe_csv(tmp_path, DFE_VECTOR_ROWS[case]), make_op())
+    want_max, want_min = DFE_VECTOR_PINS[case]
+    assert np.asarray(param.bmax, dtype=float).tolist() == want_max      # bit for bit
+    assert np.asarray(param.bmin, dtype=float).tolist() == want_min
+
+
+@pytest.mark.parametrize('case', sorted(DFE_VECTOR_ERRORS))
+def test_octave_dfe_limits_of_the_wrong_length_are_refused(tmp_path, case):
+    cfg = _dfe_csv(tmp_path, [('b_max(2..N_b)', DFE_VECTOR_ERRORS[case])])
+    with pytest.raises(ValueError, match=r'b_max\(2\.\.N_b\)'):
+        read_ParamConfigFile(cfg, make_op())
+
+
+def test_unreadable_value_cell_names_its_keyword(tmp_path):
+    """COM Octave stops on 'foo' undefined; the port names the keyword."""
+    cfg = _dfe_csv(tmp_path, [('b_max(2..N_b)', '[0.3 foo(1,4)]')])
+    with pytest.raises(ValueError, match=r'config keyword "b_max\(2\.\.N_b\)".*foo'):
+        read_ParamConfigFile(cfg, make_op())

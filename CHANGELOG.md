@@ -16,6 +16,44 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
+## [Unreleased]
+
+### Fixed
+
+Evidence: `docs/FIX_SUMMARY.md`, rows 58-60.
+
+- **MATLAB vector expressions in a value cell.** A cell such as
+  `[0.3 0.2*ones(1,4) 0.1*ones(1,6)]` (802.3ck's `b_max(2..N_b)`) stopped SiCoPR
+  with `could not convert string to float`, because the config reader read only
+  numbers and brackets of numbers, where the Reference Code `eval`s the cell. It
+  now reads the MATLAB that configs use (numbers, `Inf`, `NaN`, `+ - * / .* ./`,
+  parentheses, colon ranges, brackets, `ones` and `zeros`) with MATLAB's
+  semantics, in `.xlsx`, `.csv` and `.mat` configs alike, and gives the values
+  COM Octave gives. Anything else stops with an error that names the keyword, as
+  the Reference Code stops on it; Python's `eval` is no longer used on config
+  text.
+- **`b_min(2..N_b)` default.** With a vector `b_max(2..N_b)` and no
+  `b_min(2..N_b)`, every negative limit was `-b_max(2)`; the reference uses
+  `-b_max` tap by tap, and so does SiCoPR now.
+- **DFE limits of the wrong length.** A `b_max(2..N_b)` or `b_min(2..N_b)` vector
+  that is not `N_b - 1` long was cut short or partly ignored; the Reference Code
+  stops on it, and SiCoPR now stops with an error naming the keyword.
+
+### Who is affected
+
+- Configs that write a value as a MATLAB expression: they now run, with the
+  reference's values.
+- **Behaviour change: an Excel error cell.** A config with `#REF!` or `#N/A` in a
+  keyword the Reference Code evaluates: COM Octave stops on such a cell, and
+  SiCoPR now does too, with an error naming the keyword, where it used to carry
+  the text on. What MATLAB's `xlsread` returns for an Excel error cell is
+  unverified here. IEEE's 802.3dj CR `selectable` template has one in
+  `z_bp (TX)` (`=Lists!F34`, saved as `#REF!`).
+- **Not affected:** configs written with plain numbers and brackets, which
+  includes every shipped and corpus workbook: the reader returns the same values
+  bit for bit, and the 28 COM Octave checkpoint cases and the 208 MATLAB
+  stage-oracle cases pass unchanged.
+
 ## [1.1.3] - 2026-10-21
 
 Six port defects, found because IEEE's 802.3ck COM 3.70 C2M workbook stopped
