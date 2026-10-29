@@ -16,7 +16,25 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
-## [Unreleased]
+## [1.1.4] - 2026-10-29
+
+A security fix, and the config-reader fixes that carry it. **Upgrade if you open
+configuration workbooks or run CSVs that someone else wrote.** COM results do not
+change for configs written with plain numbers and brackets: the 208 MATLAB
+stage-oracle cases and the 28 COM Octave checkpoint cases pass unchanged.
+
+### Security
+
+- **Config cell text could run as Python (1.1.3 and earlier).** For the keywords
+  the Reference Code evaluates (for example `kappa1`, the Tx FFE `c(n)` cells,
+  and package-block parameters), SiCoPR handed the cell's text to Python's
+  unrestricted `eval`. A crafted `.xlsx` workbook or `.csv` run CSV therefore ran
+  arbitrary Python as soon as it was loaded, before any COM computation, with the
+  permissions of the user running SiCoPR. 1.1.4 reads those cells with its own
+  evaluator for the MATLAB subset configs use (below) and refuses anything else
+  with an error naming the keyword; Python's `eval` is no longer applied to
+  config text. If you open configs from other people, upgrade. No CVE has been
+  requested or is claimed.
 
 ### Fixed
 

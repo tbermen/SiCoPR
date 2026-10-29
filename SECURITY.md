@@ -50,4 +50,9 @@ is a single-maintainer project. Reports are read and acted on.
 ## Supported versions
 
 `master` is the release; there are no maintained release branches. Fixes land on
-`master`.
+`master`, and only the latest release is supported.
+
+| version | supported |
+|---|---|
+| 1.1.4 | yes |
+| 1.1.3 and earlier | no: a crafted configuration workbook or run CSV can run Python code when loaded (fixed in 1.1.4; see `CHANGELOG.md`) |

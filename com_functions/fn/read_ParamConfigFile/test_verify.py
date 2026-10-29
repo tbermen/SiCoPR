@@ -875,3 +875,33 @@ def test_unreadable_value_cell_names_its_keyword(tmp_path):
     cfg = _dfe_csv(tmp_path, [('b_max(2..N_b)', '[0.3 foo(1,4)]')])
     with pytest.raises(ValueError, match=r'config keyword "b_max\(2\.\.N_b\)".*foo'):
         read_ParamConfigFile(cfg, make_op())
+
+
+# ============================================================
+# Security regression (1.1.4). SiCoPR 1.1.3 and earlier read an evaluated
+# keyword's text cell (kappa1 is xls_parameter(..., 'kappa1', true, 1)) with
+# Python's eval, so a crafted workbook or run CSV ran Python when it was
+# loaded. Since F19 (#58) the cell goes through xls_eval, which knows only the
+# MATLAB subset configs use: this cell must be refused with MatlabValueError
+# naming the keyword, and os.getcwd must never be called. Checked on the
+# canonical py_impl and on the assembled sicopr.py, which is what ships.
+# Shown to fail on v1.1.3's sicopr.py (no error; getcwd ran) on 2026-10-29.
+# ============================================================
+@pytest.mark.parametrize('where', ['py_impl', 'assembled'])
+def test_config_cell_is_never_executed_as_python(tmp_path, monkeypatch, where):
+    if where == 'py_impl':
+        reader = read_ParamConfigFile
+        from com_functions.fn.xls_parameter.py_impl import MatlabValueError as refused
+    else:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        import sicopr
+        reader, refused = sicopr.read_ParamConfigFile, sicopr.MatlabValueError
+    calls = []
+    real_getcwd = os.getcwd
+    monkeypatch.setattr(os, 'getcwd', lambda: calls.append(1) or real_getcwd())
+    cfg = _write_csv(tmp_path, FULL_CSV.replace(
+        'kappa1,1\n', "kappa1,__import__('os').getcwd()\n"))
+    with pytest.raises(refused, match=r'config keyword "kappa1"'):
+        reader(cfg, make_op())
+    assert calls == [], 'config cell text was executed as Python'

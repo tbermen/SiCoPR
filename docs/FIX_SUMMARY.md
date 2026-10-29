@@ -147,7 +147,9 @@ fix was deliberately rejected.
 Rows 47–51, the 2026-09-24 speed-ups, changed no reference behaviour and are
 tabled in their dated section rather than here. Rows 52–57, the 2026-10-21 fixes
 for the 802.3ck C2M workbook (released in 1.1.3), are also tabled in their dated
-section below; they can change C2M results.
+section below; they can change C2M results. Rows 58–60, the 2026-10-21 config
+reader fixes (released in 1.1.4), are tabled in their dated section too; row
+58 is also a security fix.
 
 #17 is a settings deduction rather than a translation defect, and is written up in
 [`MIN_RADIUS_ASSUMPTION.md`](MIN_RADIUS_ASSUMPTION.md) — including what it does
@@ -740,11 +742,19 @@ reference `xls_parameter`: `0.15*ones(1,3)` is 1x3, the 802.3ck vector 1x11,
 same run exposed #59 and #60 in the assignment of those vectors. In the table,
 `ML n` is line n of `matlab/com_ieee8023_4p17p0.m`.
 
+Released in SiCoPR 1.1.4. Who it affects: configs that write a value as a
+MATLAB expression (they now run, with the reference's values), configs with an
+Excel error cell in an evaluated keyword (they now stop, below), and anyone who
+opens a config from someone else: before #58, text in an evaluated cell (such
+as `kappa1`, a Tx FFE `c(n)`, or a package-block parameter) was run as Python
+when the workbook or CSV was loaded. Configs written with plain numbers and
+brackets read bit-identically.
+
 | # | date | defect | class | found by | effect | commit |
 |---|---|---|---|---|---|---|
-| 58 | 2026-10-21 | value cells read as numbers and brackets of numbers only; a product or a function call (`0.2*ones(1,4)`) was refused inside brackets with a raw `ValueError`, and outside them handed to Python's `eval`, which returned MATLAB text unevaluated and ran any Python text it was given. Now `xls_eval` (in `xls_parameter`), one evaluator for the MATLAB subset configs use, shared by the engine's reader and the canonical `xls_parameter` and `xls_parameter_txffe`; text outside it is a `MatlabValueError` naming the keyword | **builtin semantics** | SiCoPR-Assist run, then COM Octave | a config with a vector expression stopped; of the 241 configs on the development machine the reader read before, 220 read bit-identically (every `param` and `OP` field) and 21 now stop, below | (this commit) |
-| 59 | 2026-10-21 | `b_min(2..N_b)` defaulted to `-b_max(2)` for every tap; ML 10860 defaults it to `-1*param.bmax(2:param.ndfe)`, element by element | translation | the same run | only when `b_max(2..N_b)` is a vector and `b_min(2..N_b)` absent: the negative limits all came from the second tap | (this commit) |
-| 60 | 2026-10-21 | `b_max(2..N_b)` / `b_min(2..N_b)` of the wrong length cut short or left partly at `b_max(1)`; ML 10859 `param.bmax(2:param.ndfe) = v` stops unless `v` is a scalar or has `N_b - 1` elements | translation | the same run | now a `ValueError` naming the keyword, where COM Octave stops with `=: nonconformant arguments` | (this commit) |
+| 58 | 2026-10-21 | value cells read as numbers and brackets of numbers only; a product or a function call (`0.2*ones(1,4)`) was refused inside brackets with a raw `ValueError`, and outside them handed to Python's `eval`, which returned MATLAB text unevaluated and ran any Python text it was given. Now `xls_eval` (in `xls_parameter`), one evaluator for the MATLAB subset configs use, shared by the engine's reader and the canonical `xls_parameter` and `xls_parameter_txffe`; text outside it is a `MatlabValueError` naming the keyword | **builtin semantics** | SiCoPR-Assist run, then COM Octave | a config with a vector expression stopped; of the 241 configs on the development machine the reader read before, 220 read bit-identically (every `param` and `OP` field) and 21 now stop, below | `e1651c4` |
+| 59 | 2026-10-21 | `b_min(2..N_b)` defaulted to `-b_max(2)` for every tap; ML 10860 defaults it to `-1*param.bmax(2:param.ndfe)`, element by element | translation | the same run | only when `b_max(2..N_b)` is a vector and `b_min(2..N_b)` absent: the negative limits all came from the second tap | `e1651c4` |
+| 60 | 2026-10-21 | `b_max(2..N_b)` / `b_min(2..N_b)` of the wrong length cut short or left partly at `b_max(1)`; ML 10859 `param.bmax(2:param.ndfe) = v` stops unless `v` is a scalar or has `N_b - 1` elements | translation | the same run | now a `ValueError` naming the keyword, where COM Octave stops with `=: nonconformant arguments` | `e1651c4` |
 
 **Behaviour change: an Excel error cell.** A cell holding `#REF!` or `#N/A` in
 a keyword the reference evaluates: COM Octave stops on such a cell, and SiCoPR
