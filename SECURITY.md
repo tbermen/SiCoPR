@@ -54,5 +54,6 @@ is a single-maintainer project. Reports are read and acted on.
 
 | version | supported |
 |---|---|
-| 1.1.4 | yes |
+| 1.2.0 | yes |
+| 1.1.4 | no: superseded by 1.2.0, which also hardens the `gui/` editor (see `CHANGELOG.md`) |
 | 1.1.3 and earlier | no: a crafted configuration workbook or run CSV can run Python code when loaded (fixed in 1.1.4; see `CHANGELOG.md`) |

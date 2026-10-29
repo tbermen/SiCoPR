@@ -16,43 +16,69 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-29
+
+GUI panels, and three hardenings of the GUI. Everything here is in `gui/`, the
+config editor, a supporting tool: **the engine is unchanged**, and COM, FOM and
+sampling-phase results are the same as 1.1.4's (the 208 MATLAB stage-oracle cases
+pass unchanged).
 
 ### Added
 
-- **A panel slot in the config editor** (`gui/`, a supporting tool; no engine
-  change). An installed package can register a panel in the entry-point group
-  `sicopr.gui_panels`; the editor shows it on the right of the page, serves its
-  `panel.js` and `panel.css`, routes `/panel/<name>/api/...` to it with a
-  narrow view of the server (the opened directories, the run directory, whether
-  a run is live), and exchanges eleven named events with it on the page, among
-  them `sicopr:channels`, which tells a panel the THRU, FEXT and NEXT files
-  chosen in Run, at start and whenever that selection changes. With no
-  panel installed, `/api/panels` lists nothing and the page and every other
-  response are as before; `--no-panels` leaves installed panels out. The
-  contract is in `gui/README.md`, *Panels*; `tests/test_gui_server.py` and
-  `tests/test_gui_static.py` pin both the contract and the no-panel case.
-- **Panels: the channel files chosen in Run** (`sicopr:channels`), and **a panel
-  can assemble the Run tab** (`sicopr:set-run`): it selects the files and sets
-  Output dynamic results and `--eye-under-mlse`, and the command box shows the
-  panel's own command with a note. The Run tab's controls stay live, their
-  changes (files and both options) go back in `sicopr:channels`, and while the
-  Run tab is assembled **Run sicopr.py** hands the run to the panel
-  (`sicopr:run-request`, cancelable); a panel that does not take it leaves the
-  button as it is. `sicopr:show` can ask Results, dynamic to build a run's
-  dashboard. All additive; panel API 1. With no panel installed nothing sends
-  `sicopr:set-run` and the Run tab is unchanged.
-- **Panels: a panel's run in the Run tab's Output** (`sicopr:output`): its
-  lines go to the same bounded terminal as a run of the Run tab, with its status
-  line, follow output and Stop; Stop then asks the panel to stop its run
-  (`sicopr:stop-request`). `sicopr:show` takes `unless_editing`, so a panel can
-  bring up the Run tab without pulling the user out of an edit in Config.
-  Additive; panel API 1. With no panel installed nothing sends `sicopr:output`
-  and the Output shows only the editor's own runs.
-- The request guard of 1.1.2 (`Handler._refused`) covers the panel routes:
-  `tests/test_gui_server.py` checks that a cross-site, foreign-Origin,
-  DNS-rebinding or text/plain request to `/panel/<name>/...` is refused before
-  the panel's `handle()` is reached.
+- **GUI panels.** A panel is a side panel that another installed Python package
+  adds to the config editor (`python gui/app.py`). It shows on the right of the
+  page and works alongside the five tabs: it can load a workbook in Config, see
+  edits, assemble the Run tab (channel files and options), take over its
+  **Run sicopr.py**, put its own run's output in the Run tab's Output, and open
+  a dashboard in Results, dynamic.
+  - **For users:** install [SiCoPR-Assist](https://github.com/tbermen/SiCoPR-Assist)
+    beside SiCoPR to get its panel; start the editor as usual and the panel is
+    there. With no panel installed the editor is exactly as before, and
+    `--no-panels` leaves installed panels out.
+  - **For package authors:** register an object in the Python entry-point group
+    `sicopr.gui_panels`. The editor serves its `panel.js` and `panel.css`, routes
+    `/panel/<name>/api/...` to its `handle()` with a narrow view of the server
+    (the opened directories, the run directory, whether a run is live), and lists
+    it at `/api/panels` (panel API 1). Page and panel talk through named DOM
+    events: `sicopr:config`, `sicopr:edit`, `sicopr:view`, `sicopr:run`,
+    `sicopr:channels` and `sicopr:browsed` tell the panel what the page did;
+    `sicopr:open-config`, `sicopr:overlay`, `sicopr:clear-edits`, `sicopr:browse`,
+    `sicopr:set-run`, `sicopr:output` and `sicopr:show` let it act on the page;
+    `sicopr:run-request` and `sicopr:stop-request` hand **Run sicopr.py** and
+    **Stop** to the panel that assembled the run. The contract is in
+    [`gui/README.md`](gui/README.md), *Panels*.
+  - **The request guard** of 1.1.2 (`Handler._refused`) covers the panel routes:
+    a cross-site, foreign-Origin, DNS-rebinding or text/plain request to
+    `/panel/<name>/...` is refused before the panel's `handle()` is reached.
+  - `tests/test_gui_server.py` and `tests/test_gui_static.py` pin the contract
+    and the no-panel case.
+
+### Security
+
+From a security review of the GUI on 2026-10-29. Each has a check in
+`tests/test_gui_server.py` that fails without it.
+
+- **Rscript is never taken from the current folder.** On Windows, Python's
+  `shutil.which` looks in the current folder before `PATH`, so an `Rscript.exe`
+  placed in the folder the editor was started from would run, with your rights,
+  at the first dashboard build. The editor now looks under `%ProgramFiles%\R`
+  first on Windows, then on `PATH`, skipping the current folder.
+- **Dashboards are sandboxed.** A `*_report.html` is served with
+  `Content-Security-Policy: sandbox allow-scripts`, so a dashboard from a run
+  directory someone else wrote cannot call the editor's API (open directories,
+  save workbooks, start runs) from its scripts. The plots still draw.
+- **Every response** carries `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: frame-ancestors 'self'`, so no other site can frame
+  the editor.
+
+### Changed
+
+- The request guard lets one kind of cross-site request through: a dashboard's
+  own `lib/` script or stylesheet (a GET under `/rpt/` that is not a page, loaded
+  as a script or style), which the browser marks cross-site because the sandboxed
+  page has no origin. Without it the dashboards would load no Plotly.
+- On Windows, an R install under `%ProgramFiles%\R` is now preferred over an
+  `Rscript` found on `PATH`.
 
 ## [1.1.4] - 2026-10-29
 
