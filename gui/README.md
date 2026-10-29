@@ -186,6 +186,16 @@ not libraries. The viewer is therefore served from a path-mapped route
 assets are served with correct MIME types. Serving only the `.html` gives a page
 with all of its text and none of its graphs.
 
+**A dashboard is served sandboxed** (since 1.2.0). A run directory may have come
+from someone else, so its `*_report.html` gets `Content-Security-Policy: sandbox
+allow-scripts`: its scripts still draw the plots, but in an opaque origin, so
+they cannot call this server's API as the page can. The browser marks such a
+page's `lib/` loads cross-site, and the request guard lets through only those:
+a GET under `/rpt/` that is not a page, loaded as a script or stylesheet. Every
+response carries `X-Content-Type-Options: nosniff` and `frame-ancestors 'self'`.
+Rscript is looked for under `%ProgramFiles%\R` first on Windows, then on
+`PATH`, and never in the current folder.
+
 **Only `case_NN` directories are cases.** Results · static once treated every
 subdirectory of a run as one, which turned the dashboard's `lib/` folder into a
 phantom case reporting "no results.csv" and "no figures" — both false of the

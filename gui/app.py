@@ -775,18 +775,34 @@ def list_channels(rel_dir):
 
 
 def _rscript():
-    """Path to Rscript, or None."""
-    import shutil
-    for name in ('Rscript', 'Rscript.exe'):
-        p = shutil.which(name)
-        if p:
-            return p
-    # a default Windows install is not always on PATH
-    for pat in (r'C:\Program Files\R\R-*\bin\Rscript.exe',
-                r'C:\Program Files\R\R-*\bin\x64\Rscript.exe'):
-        hits = sorted(glob.glob(pat))
-        if hits:
-            return hits[-1]
+    """Path to Rscript, or None.
+
+    Never the current folder. On Windows `shutil.which` looks in the current
+    folder before PATH, so an `Rscript.exe` dropped into the folder the GUI was
+    started from would run with the user's rights at the first dashboard build
+    (security review 2026-10-29). So: on Windows the R install under
+    %ProgramFiles%\\R first, then PATH's absolute entries other than the
+    current folder, checked by hand rather than by `shutil.which`.
+    """
+    if os.name == 'nt':
+        pf = os.environ.get('ProgramFiles') or r'C:\Program Files'
+        for sub in (('bin', 'Rscript.exe'), ('bin', 'x64', 'Rscript.exe')):
+            hits = sorted(glob.glob(os.path.join(pf, 'R', 'R-*', *sub)))
+            if hits:
+                return hits[-1]
+        names = ('Rscript.exe', 'Rscript')
+    else:
+        names = ('Rscript',)
+    here = os.path.normcase(os.path.abspath(os.getcwd()))
+    for d in os.environ.get('PATH', '').split(os.pathsep):
+        d = d.strip().strip('"')
+        if not d or not os.path.isabs(d) \
+                or os.path.normcase(os.path.abspath(d)) == here:
+            continue
+        for name in names:
+            p = os.path.join(d, name)
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return p
     return None
 
 
@@ -1210,12 +1226,22 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):        # quieter console
         pass
 
-    def _send(self, code, body, ctype='application/json'):
+    # On every response (security review 2026-10-29): no type sniffing, and
+    # no framing by another site's page.
+    _CSP = "frame-ancestors 'self'"
+    # A dashboard is HTML from a run directory, which may have come from
+    # someone else. Sandboxed, its scripts still draw the plots but run in an
+    # opaque origin, so they cannot call this server's API as the page can.
+    _CSP_REPORT = "sandbox allow-scripts; frame-ancestors 'self'"
+
+    def _send(self, code, body, ctype='application/json', csp=_CSP):
         if not isinstance(body, bytes):
             body = body.encode('utf-8')
         self.send_response(code)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Content-Security-Policy', csp)
         self.end_headers()
         self.wfile.write(body)
 
@@ -1241,13 +1267,30 @@ class Handler(BaseHTTPRequestHandler):
                 'http://' + h for h in ours):
             return 'Origin %r is not this server' % origin
         site = (self.headers.get('Sec-Fetch-Site') or '').strip().lower()
-        if site and site not in ('same-origin', 'none'):
+        if site and site not in ('same-origin', 'none') \
+                and not self._sandboxed_report_asset(method):
             return 'a %s request' % site
         if method == 'POST':
             ctype = (self.headers.get('Content-Type') or '').split(';')[0]
             if ctype.strip().lower() != 'application/json':
                 return 'a POST body must be application/json'
         return None
+
+    def _sandboxed_report_asset(self, method):
+        """A dashboard's own script or stylesheet, asked for by the dashboard.
+
+        A dashboard is served sandboxed (_CSP_REPORT), so its origin is opaque
+        and the browser marks its loads of lib/*.js and lib/*.css cross-site;
+        refusing them leaves the page with no Plotly and no plots. Only that is
+        let through: a GET under /rpt/ that is not a page, loaded as a script or
+        a stylesheet, which runs or styles it in the page that asked and lets
+        nothing read it. What /rpt/ serves at all stays as narrow as _report.
+        """
+        path = urlparse(self.path).path
+        dest = (self.headers.get('Sec-Fetch-Dest') or '').strip().lower()
+        return (method == 'GET' and path.startswith('/rpt/')
+                and not path.lower().endswith(('.html', '.htm'))
+                and dest in ('script', 'style'))
 
     def do_GET(self):
         why = self._refused('GET')
@@ -1418,7 +1461,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if full.lower().endswith('_report.html'):
             with open(full, 'rb') as f:
-                return self._send(200, f.read(), 'text/html; charset=utf-8')
+                return self._send(200, f.read(), 'text/html; charset=utf-8',
+                                  csp=self._CSP_REPORT)
 
         ctype = self._ASSET_TYPES.get(os.path.splitext(full)[1].lower())
         if not ctype:

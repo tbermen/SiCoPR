@@ -268,6 +268,125 @@ try:
     finally:
         shutil.rmtree(victim, ignore_errors=True)
 
+    # ------------------------------------------- security review 2026-10-29
+    # Three hardenings, each needing no data. Every response says nosniff and
+    # may be framed only by this server's own page. A dashboard is HTML from a
+    # run directory, which may be someone else's, so it is served sandboxed: its
+    # scripts draw the plots in an opaque origin and cannot call the API as the
+    # page can. And Rscript is never taken from the current folder.
+    def heads(path, headers=None):
+        req = urllib.request.Request(BASE + path, headers=headers or {})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status, r.headers
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers
+
+    bare = []
+    for path, hdr in (('/', None), ('/static/app.js', None), ('/api/configs', None),
+                      ('/no/such/route', None),
+                      ('/api/configs', {'Sec-Fetch-Site': 'cross-site'})):
+        code, h = heads(path, hdr)
+        if (h.get('X-Content-Type-Options') != 'nosniff'
+                or "frame-ancestors 'self'" not in (h.get('Content-Security-Policy') or '')):
+            bare.append((path, code, h.get('X-Content-Type-Options'),
+                         h.get('Content-Security-Policy')))
+    check("every_response_is_nosniff_and_framed_only_by_this_server", not bare,
+          "these responses lack X-Content-Type-Options: nosniff or "
+          "Content-Security-Policy: frame-ancestors 'self': %r" % bare)
+
+    rdir = tempfile.mkdtemp(prefix='gui_rpt_')
+    try:
+        os.makedirs(os.path.join(rdir, 'lib'))
+        with open(os.path.join(rdir, 'x_report.html'), 'w') as f:
+            f.write('<!doctype html><script src="lib/ok.js"></script>'
+                    '<link rel="stylesheet" href="lib/ok.css">\n')
+        with open(os.path.join(rdir, 'lib', 'ok.js'), 'w') as f:
+            f.write("document.title = 'ok';\n")
+        with open(os.path.join(rdir, 'lib', 'ok.css'), 'w') as f:
+            f.write('body { color: black; }\n')
+        get_json('/api/open?path=' + urllib.parse.quote(rdir))
+        rbase = '/rpt/' + '/'.join(urllib.parse.quote(p)
+                                   for p in rdir.replace('\\', '/').split('/'))
+        code, h = heads(rbase + '/x_report.html')
+        csp = [d.strip() for d in (h.get('Content-Security-Policy') or '').split(';')]
+        check("a_dashboard_is_served_sandboxed_with_scripts_only",
+              code == 200 and 'sandbox allow-scripts' in csp
+              and 'allow-same-origin' not in (h.get('Content-Security-Policy') or ''),
+              "GET of a *_report.html gave %s with CSP %r; without 'sandbox "
+              "allow-scripts' its script runs in this server's origin and can "
+              "call /api/open and /api/save as the page does"
+              % (code, h.get('Content-Security-Policy')))
+        # How a sandboxed page's requests arrive (Chrome, 2026-10-29): its
+        # lib/ loads are marked cross-site, its fetch() carries Origin: null.
+        xs = {'Sec-Fetch-Site': 'cross-site'}
+        loads = [(a, dest, heads(rbase + a, dict(xs, **{'Sec-Fetch-Dest': dest}))[0])
+                 for a, dest in (('/lib/ok.js', 'script'), ('/lib/ok.css', 'style'))]
+        check("a_sandboxed_dashboard_still_loads_its_scripts_and_styles",
+              all(c == 200 for _, _, c in loads),
+              "the dashboard's own lib/ loads were refused, so Plotly never "
+              "loads and the plots are blank: %r" % loads)
+        still = [(p, d, heads(rbase + p, dict(xs, **{'Sec-Fetch-Dest': d}))[0])
+                 for p, d in (('/x_report.html', 'document'),
+                              ('/x_report.html', 'script'),
+                              ('/lib/ok.js', 'empty'))]
+        still.append(('/api/configs', 'Origin null',
+                      heads('/api/configs', {'Origin': 'null',
+                                             'Sec-Fetch-Site': 'cross-site',
+                                             'Sec-Fetch-Dest': 'empty'})[0]))
+        check("only_a_dashboards_script_and_style_loads_pass_cross_site",
+              all(c == 403 for _, _, c in still),
+              "these cross-site requests were served: %r"
+              % [x for x in still if x[2] != 403])
+    finally:
+        shutil.rmtree(rdir, ignore_errors=True)
+
+    rs_tmp = tempfile.mkdtemp(prefix='gui_rscript_')
+    old_cwd, old_env = os.getcwd(), dict(os.environ)
+    try:
+        here = os.path.join(rs_tmp, 'cwd')
+        empty = os.path.join(rs_tmp, 'empty')
+        pf = os.path.join(rs_tmp, 'pf')
+        for d in (here, empty, pf):
+            os.makedirs(d)
+
+        def plant(d):
+            for n in ('Rscript', 'Rscript.exe'):
+                p = os.path.join(d, n)
+                with open(p, 'w') as f:
+                    f.write('#!/bin/sh\n')
+                os.chmod(p, 0o755)
+        plant(here)
+        os.chdir(here)
+        os.environ['PATH'] = os.pathsep.join([empty, '.', '', here])
+        os.environ['ProgramFiles'] = pf
+        got = gui_app._rscript()
+        check("rscript_is_never_taken_from_the_current_folder",
+              got is None,
+              "with Rscript only in the current folder (and on PATH as '.', '' "
+              "and the folder itself), _rscript() returned %r; a file dropped "
+              "there would run at the first dashboard build" % got)
+        if os.name == 'nt':
+            r_bin = os.path.join(pf, 'R', 'R-9.9.9', 'bin')
+            os.makedirs(r_bin)
+            plant(r_bin)
+            plant(empty)
+            want = os.path.join(r_bin, 'Rscript.exe')
+        else:
+            plant(empty)
+            want = os.path.join(empty, 'Rscript')
+        got = gui_app._rscript()
+        check("rscript_is_found_in_the_r_install_or_on_path",
+              got is not None
+              and os.path.normcase(got) == os.path.normcase(want),
+              "_rscript() returned %r, expected %r (Windows: the install under "
+              "%%ProgramFiles%%\\R first; elsewhere: PATH)" % (got, want))
+    finally:
+        os.chdir(old_cwd)
+        os.environ.clear()
+        os.environ.update(old_env)
+        shutil.rmtree(rs_tmp, ignore_errors=True)
+
     # -------------------------------------------------------------- panels
     #
     # Panels (README, "Panels") are optional. Importing gui.app loads none;
