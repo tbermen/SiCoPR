@@ -18,7 +18,12 @@ the configuration keyword index, the study layer, the R reports and a COM primer
 
 ## Install
 
-Python 3.10 or newer. From a clone:
+Python 3.10 or newer.
+
+`pip install sicopr` installs the engine alone, enough to compute COM:
+`python -m sicopr config.xlsx thru.s4p`. The GUI, the worked example, the tests,
+the Octave route and [SiCoPR-Assist](https://github.com/tbermen/SiCoPR-Assist)
+need a checkout. From a clone:
 
 ```powershell
 git clone https://github.com/tbermen/SiCoPR

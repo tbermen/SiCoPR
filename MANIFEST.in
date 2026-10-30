@@ -1,0 +1,27 @@
+# The sdist carries the source tree a checkout has; the wheel carries only the
+# engine modules (see pyproject.toml). Excluded below is what .gitignore holds
+# back: caches, run output and per-machine build products.
+
+include *.md *.cff *.json *.txt LICENSE NOTICE assemble_sicopr.py
+graft com_functions
+graft gui
+graft tools
+graft tests
+graft docs
+graft examples
+graft matlab
+graft octave
+graft R
+graft benchmark
+graft dev
+
+prune results
+prune release_audit
+prune build
+prune dist
+global-exclude __pycache__ *.py[cod] *.egg-info
+global-exclude .~lock.*# ~$* *.tmp .Rhistory .RData
+global-exclude *.oct *.o
+exclude tests/results.csv
+exclude com_functions/verification/.mutation_cache.json
+exclude com_functions/verification/_last_run.json

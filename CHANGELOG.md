@@ -16,6 +16,30 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
+## [1.2.1] - 2026-10-29
+
+Packaging only. **The engine is unchanged**, and so is every file a checkout
+runs: COM, FOM and sampling-phase results are the same as 1.2.0's.
+
+### Changed
+
+- **The wheel installs the engine and nothing else**: the modules `sicopr`,
+  `com_mat_export` and `com_plots`. A 1.2.0 wheel also installed `gui` and
+  `com_functions` as top-level packages in site-packages, where names that
+  generic can collide with other software's; the engine imports neither.
+  `pip install sicopr` then `python -m sicopr config.xlsx thru.s4p` runs COM.
+- **The sdist carries the source tree a checkout has** (`MANIFEST.in`):
+  `com_functions/`, `gui/`, `tests/`, `tools/`, `docs/`, `examples/`,
+  `matlab/`, `octave/`, `R/`, `benchmark/` and the top-level files. The GUI, the
+  worked example, the tests, the Octave route and
+  [SiCoPR-Assist](https://github.com/tbermen/SiCoPR-Assist) still need a
+  checkout (or the unpacked sdist), as before.
+- Package metadata: the licence is the SPDX expression `BSD-3-Clause` with
+  `LICENSE` and `NOTICE` as licence files, and the project links add Issues and
+  Changelog. The build needs setuptools 77 or newer.
+- README, *Install*: says what `pip install sicopr` gives and what needs a
+  checkout.
+
 ## [1.2.0] - 2026-10-29
 
 GUI panels, and three hardenings of the GUI. Everything here is in `gui/`, the
