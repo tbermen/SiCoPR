@@ -17,7 +17,8 @@ those three.
 |---|---|---|
 | [`TUTORIAL.md`](TUTORIAL.md) | the whole tool: install, run, architecture, every feature, configuration, outputs, the study layer, the R reports, the reference code under Octave, and a keyword index | current (v2.0, 2026-09-20) |
 | [`tutorial/`](tutorial/) | the figures it uses | |
-| [`VERSIONS.md`](VERSIONS.md) | which MATLAB release is emulated by default, how to select another, which corpus is which version, and what 4p16p0 and 4p17p0 changed | current |
+| [`VERSIONS.md`](VERSIONS.md) | which MATLAB release is emulated by default, how to select another, which corpus is which version, and what 4p16p0, 4p17p0 and 4p18p0 changed | current |
+| [`MATLAB_4p18p0_CHANGES.md`](MATLAB_4p18p0_CHANGES.md) | the upstream diff from 4p17p0 to 4p18p0 (the itick local search in full-sweep, Fast_1 clip, Defer_Floating_RxFFE, the best-EQ re-run), what the port does about each, the reference behaviour reproduced as it stands, and the whole-case checks | current |
 | [`MATLAB_4p17p0_CHANGES.md`](MATLAB_4p17p0_CHANGES.md) | the upstream diff from 4p16p0 to 4p17p0, what the port does about each change, and the reference behaviour reproduced as it stands | current |
 
 ## How accurate is this port, and why should I believe it

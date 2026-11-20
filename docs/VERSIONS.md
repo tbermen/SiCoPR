@@ -1,6 +1,6 @@
 # MATLAB versions
 
-SiCoPR emulates three releases of the IEEE 802.3 COM Reference Code. This page says
+SiCoPR emulates four releases of the IEEE 802.3 COM Reference Code. This page says
 which is the default, how to choose, which evidence belongs to which, and what
 differs between them.
 
@@ -8,7 +8,8 @@ differs between them.
 
 | release | how to select | source it follows |
 |---|---|---|
-| **`4p17p0`** (default) | nothing, or `--matlab-version 4p17p0` | `matlab/com_ieee8023_4p17p0.m`, the current IEEE release (4.17.0, 2026-09-23) |
+| `4p18p0` | `--matlab-version 4p18p0` | `matlab/com_ieee8023_4p18p0.m`, the current IEEE release (4.18.0, 2026-11-17); supported since 2026-11-19, not yet the default |
+| **`4p17p0`** (default) | nothing, or `--matlab-version 4p17p0` | `matlab/com_ieee8023_4p17p0.m` (4.17.0, 2026-09-23) |
 | `4p16p0` | `--matlab-version 4p16p0` | `matlab/com_ieee8023_4p16p0.m` |
 | `4p15p0` | `--matlab-version 4p15p0` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`: 4p15p0 with the adaptive local search backported, the build the 208-case reference results were produced with |
 
@@ -37,6 +38,7 @@ emulated.
 |---|---|---|---|
 | 208 cases, 26 IEEE 802.3dj CR/KR channels × 4 package configurations × with/without crosstalk | **4p15p0** | MATLAB reference results | last re-run 2026-09-23: itick and every equalizer selection identical on 208 / 208, COM within 4.6e-14 dB |
 | 208 cases, the same corpus | **4p17p0** | COM Octave | 2026-10-04: COM within 5.2e-14 dB (median 8.9e-15), FOM 6.0e-12 dB, itick, CTLE gain, Tx FFE and ERL identical on 208 / 208 ([`../benchmark/208_case_4p17p0/`](../benchmark/208_case_4p17p0/README.md)); against the same corpus's 4p15p0 COM Octave results, COM within 5.0e-14 dB and itick identical on all 208 |
+| 208 cases, the same corpus | **4p18p0** | COM Octave | 2026-11-19: COM within 5.2e-14 dB (median 8.9e-15), FOM 6.0e-12 dB, itick, CTLE gain, Tx FFE and ERL identical on 208 / 208 ([`../benchmark/208_case_4p18p0/`](../benchmark/208_case_4p18p0/README.md)); against 4p17p0 (COM Octave both sides), 203 cases identical and 5 move to a different itick, COM up by 0.15 to 0.35 dB, no pass/fail change |
 | 1368 cases, 171 distinct channels | **4p16p0** | COM Octave (the Reference Code run under Octave, [`../octave/README.md`](../octave/README.md)) | 2026-09-26: COM within 5.3e-14 dB, itick, Tx FFE and CTLE gain identical on all 1368 |
 
 Reproducing the 208-case result therefore takes `--matlab-version 4p15p0`. Detail is in
@@ -45,6 +47,21 @@ Reproducing the 208-case result therefore takes `--matlab-version 4p15p0`. Detai
 The 208-case corpus has also been run in 4p16p0 mode: 210 of 213 output columns are
 identical on all 208 cases, and no COM, FOM, VEO, VEC, itick or ERL value moves. That
 measurement predates the September 2026 oracle fixes and has not been re-run since.
+
+## What 4p18p0 changes
+
+4p18p0 is the first release since the port began that changes the equalizer search
+for ordinary workbooks: 153 function bodies unchanged, 6 changed, 2 added, 1 removed.
+Full detail, with the reference behaviour reproduced as it stands:
+[`MATLAB_4p18p0_CHANGES.md`](MATLAB_4p18p0_CHANGES.md).
+
+| change | measured effect |
+|---|---|
+| the itick local search now runs in `full-sweep` (it ran only in `middle`); `middle` now behaves as `full-sweep` | applies to every workbook with `Local Search > 0`, which includes all 208 corpus workbooks and the shipped example; on the corpus, 5 of 208 cases end at a different itick, COM up by 0.15 to 0.35 dB (the 4p18p0 corpus row above) |
+| `box` itick search reachable, with a new `Itick Box Size` keyword | off unless `TS_SRCH_MODE = box` |
+| `Clip Method = Fast_1`: a fast top-K Gaussian-mixture clip solver (`fast_clip_topK`) | off unless a workbook asks for it |
+| `Clip Method = Fast` with MMSE Rx FFE and quantisation: one more search at the best EQ, with `Slow` | **changes results** for such workbooks (shipped example: COM 3.466 dB, itick -7, against 3.507 dB, itick -6) |
+| `Defer_Floating_RxFFE`: search without the floating Rx FFE taps, then add them at the best EQ | off by default |
 
 ## What 4p17p0 changes
 

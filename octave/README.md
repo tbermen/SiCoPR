@@ -21,6 +21,7 @@ of this directory, and every item in it is a no-op under MATLAB.
 | `com_ieee8023_4p15p0_octave_compat.m` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m` | `make_octave_compat.py` |
 | `com_ieee8023_4p16p0_octave_compat.m` | `matlab/com_ieee8023_4p16p0.m` | `make_octave_compat.py` |
 | `com_ieee8023_4p17p0_octave_compat.m` | `matlab/com_ieee8023_4p17p0.m` | `make_octave_compat.py` |
+| `com_ieee8023_4p18p0_octave_compat.m` | `matlab/com_ieee8023_4p18p0.m` | `make_octave_compat.py` |
 
 They are **generated** from `matlab/` by a small, named patch set, and committed so a
 reader needs no build step, the same arrangement as `sicopr.py`. (The optional
@@ -33,11 +34,13 @@ generator produces, or if Octave cannot parse it.
 The 4p15p0 file exists so that Octave can be compared exactly with the MATLAB
 reference results. Those were produced with **4p15p0 plus the adaptive local
 search**, the build in `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`,
-which is also the build SiCoPR emulates (`VERSION.json`, `primary_reference`).
+which is also the build SiCoPR emulates under `--matlab-version 4p15p0` (`VERSION.json`,
+`primary_reference`).
 So that is the 4p15p0 source here, not the bare release, whose legacy local
 search would agree with neither. The 4p16p0 file is the release that adopted the
-adaptive search into the mainline, and the 4p17p0 file is the current release.
-All three take the same patch set, with one difference: **4p17p0 takes its own
+adaptive search into the mainline, 4p17p0 is the default SiCoPR emulates, and 4p18p0
+(2026-11-17) is the current release. All four take the same patch set, with one
+difference: **4p17p0 and 4p18p0 take their own
 variant of the `FOM_rxffe_floating_taps` speed patch**
 (`patches/FOM_rxffe_floating_taps_4p17p0.m`, `PATCH_VARIANT` in the generator). The
 4p16p0 patch inlines `MMSE_FOM`'s Gram matrix as 4p16p0 forms it,
@@ -48,6 +51,8 @@ every candidate FOM and the chosen taps byte-identical to the release's own sear
 every result field. Like for like, back to back: 1.59x on a case without
 crosstalk (57 s to 36 s), 1.80x on one with crosstalk and the Tx FFE swept (532 s to
 296 s). From 2026-10-03 to 2026-10-14 4p17p0 ran the release's own, slower search.
+4p18p0 changed neither `FOM_rxffe_floating_taps` nor `MMSE_FOM` (the test checks
+the bodies are byte-identical to 4p17p0's), so it takes the same variant.
 
 ```
 python octave/make_octave_compat.py            # regenerate both

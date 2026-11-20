@@ -10,7 +10,7 @@ Reference Code itself running under GNU Octave.
 | | |
 |---|---|
 | version | 2.0, 20 September 2026 |
-| emulates | `com_ieee8023_4p17p0.m` by default, `4p16p0` and `4p15p0` behind a version switch |
+| emulates | `com_ieee8023_4p17p0.m` by default, `4p18p0`, `4p16p0` and `4p15p0` behind a version switch |
 | the engine | `python -m sicopr` |
 | to run something now | [`examples/`](../examples/) — one download, one command |
 
@@ -139,7 +139,7 @@ This document describes a Python implementation of the IEEE 802.3 COM (Channel O
 
 ## 1.1 What this is
 
-The engine is a **function-for-function translation** of the COM Reference Code. It emulates `com_ieee8023_4p17p0.m` by default, and `com_ieee8023_4p16p0.m` or `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
+The engine is a **function-for-function translation** of the COM Reference Code. It emulates `com_ieee8023_4p17p0.m` by default, and `com_ieee8023_4p18p0.m`, `com_ieee8023_4p16p0.m` or `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
 
 The translation is close enough that the Python source can be navigated by MATLAB line number: 338 lines in the engine carry an explicit MATLAB line reference back to the source function they translate.
 
@@ -373,7 +373,7 @@ The first two are imported by the engine, which is why they live beside `sicopr.
 | Path | Contents |
 |---|---|
 | sicopr.py | **the engine**, assembled and runnable. Do not edit by hand |
-| com_functions/fn/<name>/py_impl.py | per-function source (the editable code), 157 functions |
+| com_functions/fn/<name>/py_impl.py | per-function source (the editable code), 163 functions |
 | com_functions/fn/<name>/test_verify.py | per-function unit tests |
 | assemble_sicopr.py | concatenates the py_impl.py files into sicopr.py |
 | com_plots.py, com_mat_export.py | figure generation and .mat export, imported by sicopr.py |
@@ -868,7 +868,7 @@ python -m pytest com_functions/fn -q
 
 Every major feature is implemented and unit-tested against the MATLAB source: TX-FFE, CTLE, DFE, RX-FFE (MMSE), floating DFE and floating RX-FFE taps, MLSE, crosstalk (FEXT/NEXT and ICN), common-mode modal masks, receiver calibration, frequency-domain processing, ERL/TDR, and TD-ILN/RILN. The unit suite is green at 2025 tests, and the worked example in `examples/` runs end to end, including Rx FFE (MMSE), MLSE and crosstalk.
 
-A structured conversion audit classified all 157 MATLAB functions (146 equivalent, 11 divergent; docs/AUDIT_FINDINGS.md). That audit was a reading, and it was not sufficient: the largest defect in the port — the process_sxp reference leak — was not in its ledger, and executing the reference on 2026-09-22 found real divergences in 27 functions its ledger had marked EQUIVALENT. It is superseded by function-level verification against the executed reference: all 146 translated functions as of 2026-09-23. The contract is docs/VERIFICATION.md, and `python com_functions/verification/report.py` answers "are there any opens?".
+A structured conversion audit classified all 157 MATLAB functions (146 equivalent, 11 divergent; docs/AUDIT_FINDINGS.md). That audit was a reading, and it was not sufficient: the largest defect in the port — the process_sxp reference leak — was not in its ledger, and executing the reference on 2026-09-22 found real divergences in 27 functions its ledger had marked EQUIVALENT. It is superseded by function-level verification against the executed reference: all 146 translated functions as of 2026-09-23, and every value-bearing function since (150 of 150 for 4p17p0, 151 of 151 for 4p18p0, 2026-11-19). The contract is docs/VERIFICATION.md, and `python com_functions/verification/report.py` answers "are there any opens?".
 
 Correlation against the MATLAB reference is the primary numeric evidence: 208 cases from com_ieee8023_4p15p0, across four channel families, with and without crosstalk. Run on the configurations exactly as supplied, FOM is bit-exact on 198 of 208, COM on 199, the sampling tick on 200, with max |ΔCOM| 0.185 dB. Run with each crosstalk condition on the settings its own reference was produced with (see §11.2), FOM, COM and the sampling tick were ALL bit-exact on 208 of 208 at the 2026-08-31 re-run, with max |ΔCOM| = 3.3e-14 dB — double-precision noise rather than agreement to a tolerance — and no pass/fail disagreements. The last full re-run, 2026-09-23 on engine 8e0479c, has the sampling tick and every EQ selection identical on 208 of 208 and COM within 4.6e-14 dB. Eighteen fixes were found by this exercise (docs/FIX_SUMMARY.md), none of which the unit suite could see. The largest single class is MATLAB-by-value versus Python-by-reference (five of the eighteen); the last one closed was a banker's-rounding tie that dropped a single ISI sample. Detail in MATLAB_Correlation_Review.md.
 
@@ -897,7 +897,7 @@ divides by N-1. Fixed in d5bff6c, with a test that uses COM Octave as the oracle
 the 208-case corpus could not have shown it, because every one of its channels
 starts at DC.
 
-**MATLAB version support** The engine emulates com_ieee8023_4p17p0, the current IEEE release (4.17.0), by default (since 2026-10-03; 4p16p0 from 2026-09-27); the 208-case corpus run against COM Octave under 4p17p0 is the evidence for it (benchmark/208_case_4p17p0/), and the 1368-case corpus is 4p16p0's. 4p17p0's own delta from 4p16p0 is in MATLAB_4p17p0_CHANGES.md: the MMSE Gram matrix built by lag, which moves results by summation order only, and an apparent-channel-bandwidth report that is off by default. The 208 reference workbooks are 4p15p0 output, so reproducing that parity result takes --matlab-version 4p15p0 (or sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config). 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
+**MATLAB version support** The engine emulates com_ieee8023_4p17p0 (4.17.0) by default (since 2026-10-03; 4p16p0 from 2026-09-27); 4p18p0, the current IEEE release (4.18.0, 2026-11-17), is supported from 2026-11-19 and changes the equalizer search for ordinary workbooks (MATLAB_4p18p0_CHANGES.md); the 208-case corpus run against COM Octave under 4p17p0 is the evidence for it (benchmark/208_case_4p17p0/), and the 1368-case corpus is 4p16p0's. 4p17p0's own delta from 4p16p0 is in MATLAB_4p17p0_CHANGES.md: the MMSE Gram matrix built by lag, which moves results by summation order only, and an apparent-channel-bandwidth report that is off by default. The 208 reference workbooks are 4p15p0 output, so reproducing that parity result takes --matlab-version 4p15p0 (or sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config). 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
 
 **Measured 4p16p0 impact** The same 208 cases have been run in both modes. 210 of 213 output columns are identical on every case, and no COM, FOM, VEO, VEC, itick or ERL value moves. Two columns change: peak_uneq_pulse_mV and steady_state_voltage_mV are now multiplied by the channel amplitude A, which 4p15p0 applied to the impulse response but not to the pulse response built from it — the new values are the corrected ones. Two further changes the corpus could not reach were measured separately on a config with a 1584-point Tx FFE grid: the Clip Method default moving from Fast to Slow shifts COM by about +0.007 dB and FOM by +0.22 dB, but only for configs that omit the keyword; and the adaptive search minimum radius moving from 1 to 2 gives a bit-identical answer while evaluating 4.3x the candidates. Detail in docs/MATLAB_4p16p0_CHANGES.md and docs/MATLAB_4p16p0_IMPACT.md.
 

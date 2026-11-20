@@ -16,6 +16,34 @@ Two things this file is *not*:
   the engine emulates is in [`VERSION.json`](VERSION.json), and changing it is a
   change to what the engine *is*, not a routine entry here.
 
+## [Unreleased]
+
+### Added
+
+- **COM Reference Code 4p18p0** (release 4.18.0, 2026-11-17) is supported with
+  `--matlab-version 4p18p0`. The default stays 4p17p0, so results without the
+  switch do not change. Under 4p18p0 they can: the itick local search now runs
+  in `full-sweep` mode, so every workbook with `Local Search > 0` searches fewer
+  sampling phases, and `Clip Method = Fast` with MMSE Rx FFE and quantisation
+  re-runs the search at the best equalizer with `Slow`. New in 4p18p0 and
+  ported: `Clip Method = Fast_1`, `Defer_Floating_RxFFE`, `TS_SRCH_MODE = box`
+  with `Itick Box Size`. Everything 4p18p0 changed is checked against COM Octave
+  running 4p18p0, function by function and on whole cases.
+  [`docs/MATLAB_4p18p0_CHANGES.md`](docs/MATLAB_4p18p0_CHANGES.md) has the
+  detail, the measured effect and the reference behaviour reproduced as it stands.
+- `octave/com_ieee8023_4p18p0_octave_compat.m`, the 4p18p0 release made to run
+  under GNU Octave.
+- `benchmark/208_case_4p18p0/`: the 208-case benchmark under 4p18p0, with its
+  COM Octave results. SiCoPR agrees with COM Octave to within 5.2e-14 dB, and
+  itick, CTLE gain and Tx FFE are identical on all 208 cases. Against 4p17p0,
+  5 of the 208 cases end at a different itick and COM rises by 0.15 to 0.35 dB.
+
+### Changed
+
+- Documentation brought up to date: run times are the 4p17p0 measurements,
+  function counts current, the maintainer notes list CodeQL and the release
+  steps, and the issue template names the right default release.
+
 ## [1.2.1] - 2026-10-29
 
 Packaging only. **The engine is unchanged**, and so is every file a checkout
