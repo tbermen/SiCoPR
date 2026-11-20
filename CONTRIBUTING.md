@@ -191,10 +191,9 @@ The scripts record two outcomes. `check()` is behaviour that must match MATLAB;
 persists and **fails the run if it starts passing**, so a divergence that gets
 fixed cannot leave a stale entry behind in the ledger.
 
-State on 2026-09-30: **over 2,000** per-function tests across 157 functions (2,031;
-count them with `python -m pytest com_functions/fn --collect-only -q`), and **44
-audit scripts**; the 41 that print a tally total **628 checks** with 20 accepted
-divergences. Whether any function-level verification is open is answered by
+State on 2026-11-19: **over 2,200** per-function tests across 163 functions (2,244;
+count them with `python -m pytest com_functions/fn --collect-only -q`), and **49
+audit scripts**, which total **761 checks** with 5 accepted divergences. Whether any function-level verification is open is answered by
 `python com_functions/verification/report.py`, per
 [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
 

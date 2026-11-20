@@ -90,7 +90,8 @@ changes.
 documentation is versioned with the code), Projects off, discussions off unless
 the ad hoc asks for a place to talk that is not the reflector. A ruleset on
 `master` blocks force-pushes and deletion. Secret scanning with push protection,
-Dependabot alerts and private vulnerability reporting are on. Nobody else has write access. Granting it is a decision
+Dependabot alerts, private vulnerability reporting and CodeQL code scanning
+(default setup; alerts are visible to the owner only) are on. Nobody else has write access. Granting it is a decision
 about the commitment, not a reward for a good report.
 
 ## 5. Releasing
@@ -110,7 +111,12 @@ For each release, update these together:
   `date-released`;
 - `VERSION.json` if the emulated Reference Code release changed.
 
+Then push the tag, wait for CI to pass on Windows and Linux, publish a GitHub
+Release from the tag, and upload to PyPI (the wheel holds `sicopr`,
+`com_mat_export` and `com_plots` only). Trusted publishing from a GitHub
+workflow is planned for the next release in place of a manual upload.
+
 Prefer a tag over a commit SHA in anything written down: SHAs change if history
 is rewritten, and this repository's history has been rewritten once already, to
-purge data. While the repository is private a tag can still be re-cut; once
-public, a published tag should not move.
+purge data. The repository is public (since 2026-10-01), so a published tag must
+not move.

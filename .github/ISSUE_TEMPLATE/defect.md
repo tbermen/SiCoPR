@@ -11,7 +11,7 @@ labels: defect
 **The case**
 
 - SiCoPR version or commit (`git rev-parse --short HEAD`):
-- Release emulated (`--matlab-version`, default 4p16p0):
+- Release emulated (`--matlab-version`, default 4p17p0):
 - Configuration workbook: <!-- a public workbook's name, or attach yours if you may -->
 - Channel files and where they come from: <!-- e.g. an IEEE 802.3dj public contribution and its URL; please do not attach files you may not share -->
 - Command line:

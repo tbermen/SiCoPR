@@ -50,7 +50,7 @@ is a single-maintainer project. Reports are read and acted on.
 ## Supported versions
 
 `master` is the release; there are no maintained release branches. Fixes land on
-`master`, and only the latest release is supported.
+`master`, and only the latest release is supported (1.2.0 too, which is the same code).
 
 | version | supported |
 |---|---|

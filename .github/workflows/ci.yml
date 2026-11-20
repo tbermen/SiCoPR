@@ -235,7 +235,7 @@ jobs:
           done < <(git rev-list --no-merges "$base..$head")
           if [ "$missing" -ne 0 ]; then
             echo "Add one with 'git commit -s', or 'git rebase --signoff $base' for a series."
-            echo "See CONTRIBUTING.md -> Licensing -> Sign your commits off (DCO)."
+            echo "Pull requests are not accepted; see docs/MAINTAINING.md."
             exit 1
           fi
           echo "all commits signed off"
