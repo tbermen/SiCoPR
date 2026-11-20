@@ -189,3 +189,15 @@ def test_best_is_mutated_in_place_unlike_matlab():
     got = OptFom_Set_Best_Itick(SimpleNamespace(FOM=0.5, itick=2), b)
     assert got is b
     assert b.itick_FOM == 0.5
+
+
+def test_4p18p0_only_the_cluster_best_is_tracked():
+    """4p18p0 (L4161-4169) dropped the +/- itick tracking. COM Octave, the
+    4p18p0 compat file: from BEST = struct('itick_FOM',-inf,'itick_in_cluster',
+    [],'cluster',[]) and (itick, FOM) = (-3,1.5) (4,2.0) (0,2.0) (-1,2.5)
+    (2,0.5) (5,-1): itick_FOM 2.5, itick_in_cluster -1, no other field added.
+    Generator: runs/4p18p0_oracles/gen_itick_oracle.py (local)."""
+    b = SimpleNamespace(itick_FOM=-math.inf, itick_in_cluster=[], cluster=[])
+    for it, f in [(-3, 1.5), (4, 2.0), (0, 2.0), (-1, 2.5), (2, 0.5), (5, -1.0)]:
+        b = OptFom_Set_Best_Itick(SimpleNamespace(itick=it, FOM=f), b, matlab_version='4p18p0')
+    assert vars(b) == {'itick_FOM': 2.5, 'itick_in_cluster': -1, 'cluster': []}

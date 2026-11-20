@@ -133,6 +133,7 @@ port may use the obvious numpy equivalent directly.
 | `log10` | same | |
 | `NaN` | same | |
 | `ones` | same | |
+| `struct` | same | 4p18p0 L9914, `struct()` only: an empty struct handed to OptFom_Setup_Sampler_Sweep, which adds its own fields. No numeric content |
 | `poly` | same | |
 | `polyfit` | same | |
 | `polyval` | same | |
@@ -196,6 +197,10 @@ output, so a difference cannot change a COM value.
 | `fclose` | no-numeric-result | |
 | `fgetl` | no-numeric-result | |
 | `figure` | no-numeric-result | |
+| `arrayfun` | no-numeric-result | 4p18p0, only in `fast_clip_topK`'s `if DEBUG` block (DEBUG is hard-wired false): tail values for a plot |
+| `linspace` | no-numeric-result | 4p18p0, only in `fast_clip_topK`'s `if DEBUG` blocks, plot axes |
+| `xline` | no-numeric-result | 4p18p0, plotting only (`fast_clip_topK` DEBUG, get_PSDs `if 0` blocks) |
+| `yline` | no-numeric-result | 4p18p0, plotting only (as `xline`; one more in a comment) |
 | `fileparts` | no-numeric-result | |
 | `findobj` | no-numeric-result | |
 | `fopen` | no-numeric-result | |

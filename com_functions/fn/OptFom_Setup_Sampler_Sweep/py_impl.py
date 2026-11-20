@@ -2,18 +2,26 @@ import math
 import numpy as np
 
 
-def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
+def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP, matlab_version='4p15p0'):
     """Initialize BEST itick tracking and compute loop_range for sampler sweep (MATLAB lines 3804-3842).
 
     Returns (loop_range, BEST, middle_search, box_search, cluster, box_mid).
     loop_range contains 0-based indices into full_sample_range (or iteration counters for box_search).
+
+    4p18p0 (L4170-4203) dropped middle_search from the outputs; it is returned
+    here as 0 so every release has one call shape. It also dropped the
+    positive/negative itick bookkeeping, made 'middle' behave as 'full-sweep',
+    and made 'box' a mode (before 4p18p0 'box' is an error, so the box branch
+    could not be reached).
     """
     full_sample_range = np.asarray(full_sample_range)
+    v418 = str(matlab_version) >= '4p18p0'
 
-    BEST.positive_itick_FOM = -math.inf
-    BEST.negative_itick_FOM = -math.inf
-    BEST.positive_itick_in_loop = []
-    BEST.negative_itick_in_loop = []
+    if not v418:
+        BEST.positive_itick_FOM = -math.inf
+        BEST.negative_itick_FOM = -math.inf
+        BEST.positive_itick_in_loop = []
+        BEST.negative_itick_in_loop = []
     BEST.itick_FOM = -math.inf
     BEST.itick_in_cluster = []
     BEST.cluster = []
@@ -26,7 +34,8 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
     # A symmetric sample range ties every +/-k pair, and the orders genuinely
     # differ (... -2, 2, 3, -3 ... vs ... -2, 2, -3, 3 ...). Under
     # TS_SRCH_MODE='middle' this order drives OptFom_Itick_LocalSearch's pruning.
-    si = np.argsort(np.abs(full_sample_range), kind='stable')  # ML 3827
+    if not v418:
+        si = np.argsort(np.abs(full_sample_range), kind='stable')  # ML 3827
 
     mode = str(OP.TS_SRCH_MODE).strip().lower()
     if mode == 'full-sweep':
@@ -34,7 +43,10 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
         middle_search = 0
     elif mode == 'middle':
         box_search = 0
-        middle_search = 1
+        middle_search = 0 if v418 else 1
+    elif mode == 'box' and v418:
+        box_search = 1
+        middle_search = 0
     else:
         raise ValueError(f'Unsupported TS_SRCH_MODE: {OP.TS_SRCH_MODE!r}')
 

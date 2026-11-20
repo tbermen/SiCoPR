@@ -1087,6 +1087,15 @@
    ]
   },
   {
+   "copy": "_fast_clip_topK__sort_abs_descend",
+   "helper": "sort_abs_descend",
+   "inlined_into": "fast_clip_topK",
+   "inlined_into_matlab_lines": [
+    6249,
+    6656
+   ]
+  },
+  {
    "copy": "_find_eye_width__vref_intersect",
    "helper": "vref_intersect",
    "inlined_into": "find_eye_width",
@@ -1379,6 +1388,15 @@
    "canonical_matlab_lines": [
     7473,
     7519
+   ]
+  },
+  {
+   "copy": "_get_PSDs__mround",
+   "helper": "mround",
+   "inlined_into": "get_PSDs",
+   "inlined_into_matlab_lines": [
+    6380,
+    6654
    ]
   },
   {

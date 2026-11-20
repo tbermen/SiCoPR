@@ -25,6 +25,7 @@ from com_functions.fn.normal_dist.py_impl import normal_dist as _normal_dist
 from com_functions.fn.Init_PDF_Fast.py_impl import Init_PDF_Fast as _Init_PDF_Fast
 from com_functions.fn.conv_fct.py_impl import conv_fct as _conv_fct
 from com_functions.fn.d_cpdf.py_impl import d_cpdf as _d_cpdf
+from com_functions.fn.fast_clip_topK.py_impl import fast_clip_topK as _fast_clip_topK
 
 from scipy.signal import lfilter, fftconvolve
 from types import SimpleNamespace
@@ -57,6 +58,15 @@ from types import SimpleNamespace
 # being behaviourally equivalent does not make it redundant.
 _PDF_CACHE = _collections.OrderedDict()
 _PDF_CACHE_MAX = 64
+
+
+def _mround(x):
+    """MATLAB round(): half away from zero (Python's round() is banker's)."""
+    x = float(x)
+    t = int(x)
+    if abs(x - t) == 0.5:
+        return t + (1 if x > 0 else -1)
+    return int(round(x))
 
 
 def _detach(pdf):
@@ -440,6 +450,21 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
                 sig_noise_cdf = np.cumsum(sig_noise_pdf.y)
                 ctle_signal_sigma = float(np.sqrt(np.sum(sig_noise_pdf.x**2 * sig_noise_pdf.y)))
                 adc_clip = float(-_CDF_inv_ev(param.P_qc, sig_noise_pdf, sig_noise_cdf))
+                result.ctle_signal_sigma = ctle_signal_sigma
+            elif (str(getattr(param, 'matlab_version', '4p15p0')) >= '4p18p0'
+                  and str(param.clip_method).lower() == 'fast_1'):
+                # 4p18p0 L8022-8044: the fast top-K Gaussian-mixture solver,
+                # K_eff = round(log(4096)/log(levels)) exact cursors.
+                K_eff = _mround(np.log(4096) / np.log(param.levels))
+                sigma_noise = np.sqrt(          # as the 'Slow' branch forms it
+                    getattr(result, 'S_in_rms', 0)**2 +
+                    getattr(result, 'S_rn_rms', 0)**2 +
+                    getattr(result, 'S_xn_rms', 0)**2 +
+                    getattr(result, 'S_tn_rms', 0)**2 +
+                    getattr(result, 'S_rj_rms', 0)**2
+                )
+                adc_clip, ctle_signal_sigma = _fast_clip_topK(
+                    sampled_pr, L, sigma_X2, sigma_noise, param.P_qc, OP, K_eff)
                 result.ctle_signal_sigma = ctle_signal_sigma
             else:
                 adc_clip = float(np.sum(np.abs(sampled_pr)))

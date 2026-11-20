@@ -401,6 +401,15 @@ end
               ok, "4p17p0: release, patch (kernel off) and patch (kernel on) disagree on a "
               "candidate FOM or the chosen taps; see %s and %s" % (rel_dir, pat_dir))
 
+        # 4p18p0 takes the same variant. The proof above carries over only while
+        # 4p18p0's search and MMSE_FOM are the 4p17p0 bodies byte for byte.
+        rel418 = _bodies(os.path.join(_ROOT, 'matlab', 'com_ieee8023_4p18p0.m'),
+                         ('FOM_rxffe_floating_taps', 'MMSE_FOM'))
+        check("4p18p0_search_and_MMSE_FOM_are_the_4p17p0_bodies",
+              rel418 == rel and len(rel) == 2,
+              "4p18p0 changed FOM_rxffe_floating_taps or MMSE_FOM; the 4p17p0 variant "
+              "of the search patch must be re-proven before 4p18p0 takes it")
+
     case = os.environ.get('COM_OCTAVE_CASE', '')
     if ';' in case:
         cfg, thru = case.split(';', 1)

@@ -991,7 +991,7 @@ def build_netlist(body):
     if body.get('eye_under_mlse'):
         argv.append('--eye-under-mlse')
     mv = body.get('matlab_version')
-    if mv in ('4p15p0', '4p16p0', '4p17p0'):
+    if mv in ('4p15p0', '4p16p0', '4p17p0', '4p18p0'):
         argv += ['--matlab-version', mv]
     return argv, []
 

@@ -905,3 +905,49 @@ def test_config_cell_is_never_executed_as_python(tmp_path, monkeypatch, where):
     with pytest.raises(refused, match=r'config keyword "kappa1"'):
         reader(cfg, make_op())
     assert calls == [], 'config cell text was executed as Python'
+
+
+# ---------------------------------------------------------------------------
+# 4p18p0 keywords (L11334, L11589-11600, L11764 of com_ieee8023_4p18p0.m):
+# Defer_Floating_RxFFE and Itick Box Size. COM Octave, the 4p18p0 compat file's
+# own read_ParamConfigFile on FULL_CSV (N_bg 2) plus Rx FFE taps 6/8, run
+# 2026-11-19 (generator runs/4p18p0_oracles/gen_read_param_oracle.py, local):
+#   deferred:   Floating_RXFFE 0, N_bg 0, restore_N_bg 2, Defer 1, box size 7
+#   not asked:  Floating_RXFFE 1, N_bg 2, restore_N_bg [], Defer 0, box size 5
+#   DFE groups (no Rx FFE), Defer asked: Floating_DFE 1, N_bg 2,
+#               restore_N_bg [], Defer zeroed to 0
+# ---------------------------------------------------------------------------
+_FLOAT_RXFFE_CSV = FULL_CSV + 'ffe_pre_tap_len,6\nffe_post_tap_len,8\n'
+
+
+def _read418(tmp_path, text, ver='4p18p0'):
+    return read_ParamConfigFile(_write_csv(tmp_path, text + 'COM Version,%s\n' % ver), make_op())
+
+
+def test_4p18p0_defers_floating_rxffe_taps(tmp_path):
+    param, OP = _read418(tmp_path, _FLOAT_RXFFE_CSV + 'Defer_Floating_RxFFE,1\nItick Box Size,7\n')
+    assert (param.Floating_RXFFE, param.Floating_DFE) == (False, False)
+    assert param.N_bg == 0 and param.restore_N_bg == 2
+    assert param.Defer_Floating_RxFFE == 1 and OP.itick_box_size == 7
+
+
+def test_4p18p0_without_defer_keeps_floating_taps(tmp_path):
+    param, OP = _read418(tmp_path, _FLOAT_RXFFE_CSV)
+    assert param.Floating_RXFFE is True and param.N_bg == 2
+    assert np.size(param.restore_N_bg) == 0
+    assert param.Defer_Floating_RxFFE == 0 and OP.itick_box_size == 5
+
+
+def test_4p18p0_defer_is_zeroed_without_floating_rxffe(tmp_path):
+    param, _ = _read418(tmp_path, FULL_CSV + 'Defer_Floating_RxFFE,1\n')
+    assert param.Floating_DFE is True and param.N_bg == 2
+    assert np.size(param.restore_N_bg) == 0 and param.Defer_Floating_RxFFE == 0
+
+
+@pytest.mark.parametrize('ver', ['4p17p0', '4p16p0', '4p15p0'])
+def test_4p18p0_keywords_are_not_read_by_earlier_releases(tmp_path, ver):
+    param, OP = _read418(tmp_path, _FLOAT_RXFFE_CSV + 'Defer_Floating_RxFFE,1\nItick Box Size,7\n', ver)
+    assert param.Floating_RXFFE is True and param.N_bg == 2
+    for name in ('Defer_Floating_RxFFE', 'restore_N_bg'):
+        assert not hasattr(param, name), (ver, name)
+    assert not hasattr(OP, 'itick_box_size')    # optimize_fom sets 5 there

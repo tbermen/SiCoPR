@@ -8,6 +8,7 @@ All callee functions are injected for testability.
 
 import numpy as np
 from types import SimpleNamespace
+from com_functions.fn.optimize_fom_BestEQ.py_impl import optimize_fom_BestEQ as _optimize_fom_BestEQ
 
 # Opt-in diagnostic, off by default (same convention as SWEEP_LOG_CSV /
 # ALS_LOG_CSV): compute the eye contour and timing bathtub for PLOTTING even
@@ -308,6 +309,27 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 break
 
             param.sigma_ns = sigma_bn
+
+            # 4p18p0 L509-529: settings that re-run optimize_fom at the best EQ.
+            # They change the CALLER's param, so they persist into later
+            # package cases and calibration passes, as in the reference.
+            _v418 = str(getattr(param, 'matlab_version', '4p15p0')) >= '4p18p0'
+            Run_single_optimize = 0
+            restore_floating_rxffe = False
+            set_clip_method_slow = False
+            restore_debug_mode = False
+            if _v418:
+                if getattr(param, 'Defer_Floating_RxFFE', 0):
+                    Run_single_optimize = 1
+                    restore_floating_rxffe = True
+                if (OP.RxFFE and OP.FFE_OPT_METHOD == 'MMSE' and param.N_qb != 0
+                        and str(param.clip_method).lower() == 'fast'):
+                    Run_single_optimize = 1
+                    set_clip_method_slow = True
+                if Run_single_optimize and getattr(OP, 'DEBUG', 0):
+                    OP.DEBUG = 0
+                    restore_debug_mode = True
+
             OP.COMPUTE_COM = False  # MATLAB L483: false during optimize_fom (get_PSDs uses it)
             # MATLAB passes param BY VALUE to optimize_fom, so its Floating_DFE mutation
             # param.ndfe=N_bmax (L8445) is local. In Python param is shared by reference, so
@@ -319,6 +341,18 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             param.ndfe = _ndfe_save
             if fom_result.eq_failed:
                 return results
+
+            # 4p18p0 L534-556
+            if restore_floating_rxffe:
+                param.Floating_RXFFE = True
+                param.N_bg = param.restore_N_bg
+            if set_clip_method_slow:
+                param.clip_method = 'Slow'
+            if restore_debug_mode:
+                OP.DEBUG = 1
+            if Run_single_optimize:
+                fom_result = _optimize_fom_BestEQ(fom_result, OP, param, chdata, sigma_bn, do_C2M,
+                                                  _optimize_fom_fn=_optimize_fom_fn)
 
             OP.COMPUTE_COM = True  # MATLAB L505: true after optimization
             A_s = abs(float(fom_result.A_s))

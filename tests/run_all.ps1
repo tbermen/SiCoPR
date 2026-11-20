@@ -29,7 +29,7 @@ try {
     Run-Step "Pre-flight audit"        "python dev/audit_stage0.py"
     Run-Step "Assemble sicopr.py"         "python assemble_sicopr.py"
     Run-Step "Interface checks"        "python dev/check_interfaces.py"
-    Run-Step "Unit tests (157 functions)" "python -m pytest com_functions/fn -q --tb=short"
+    Run-Step "Unit tests (163 functions)" "python -m pytest com_functions/fn -q --tb=short"
 
     # tests/ holds two kinds of file. The four below are pytest modules; the
     # rest are standalone audit scripts that must be run directly -- pointing

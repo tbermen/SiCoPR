@@ -119,3 +119,49 @@ def test_unknown_mode_is_rejected():
     quietly fall through to a default order."""
     with pytest.raises(ValueError, match='TS_SRCH_MODE'):
         _sweep('box')
+
+
+# ---------------------------------------------------------------------------
+# 4p18p0 (L4170-4203). COM Octave, the 4p18p0 compat file, on _SWEEP_RANGE
+# (-16..15) with BEST = struct('positive_itick_FOM',3): 'middle' is now the
+# full-sweep order, 'box' is a mode, the +/- itick fields are no longer set,
+# and an unknown mode still errors. Generator: runs/4p18p0_oracles/
+# gen_itick_oracle.py (local).
+# ---------------------------------------------------------------------------
+
+_OCT418_BOX = {  # box size: (1-based loop_range length, cluster, box_mid)
+    5: (10, [-14, -9, -4, 1, 6, 11], 2),
+    4: (11, [-14, -10, -6, -2, 2, 6, 10, 14], 2),
+    7: (11, [-13, -6, 1, 8, 15], 3),
+}
+_OCT418_BEST_FIELDS = ['cluster', 'itick_FOM', 'itick_in_cluster', 'positive_itick_FOM']
+
+
+def _sweep418(mode, box=5):
+    OP = SimpleNamespace(TS_SRCH_MODE=mode, itick_box_size=box)
+    return OptFom_Setup_Sampler_Sweep(_SWEEP_RANGE, SimpleNamespace(positive_itick_FOM=3), OP,
+                                      matlab_version='4p18p0')
+
+
+def test_4p18p0_middle_is_full_sweep():
+    for mode in ('full-sweep', 'middle'):
+        lr, B, middle, box, cluster, box_mid = _sweep418(mode)
+        assert list(np.asarray(lr)) == list(range(_SWEEP_RANGE.size)), mode
+        assert (int(middle), int(box)) == (0, 0), mode
+        assert sorted(vars(B)) == _OCT418_BEST_FIELDS, mode   # no +/- itick fields
+        assert B.positive_itick_FOM == 3                      # left alone
+
+
+def test_4p18p0_box_mode_matches_com_octave():
+    for size, (n, cl, mid) in _OCT418_BOX.items():
+        mode = 'Box' if size == 7 else 'box'     # lower() in the switch
+        lr, B, middle, box, cluster, box_mid = _sweep418(mode, size)
+        assert list(np.asarray(lr)) == list(range(1, n + 1)), size
+        assert int(box) == 1 and int(middle) == 0
+        assert list(np.asarray(cluster)) == cl and box_mid == mid, size
+        assert sorted(vars(B)) == _OCT418_BEST_FIELDS
+
+
+def test_4p18p0_unknown_mode_still_errors():
+    with pytest.raises(ValueError, match='TS_SRCH_MODE'):
+        _sweep418('nope')

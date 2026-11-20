@@ -138,6 +138,8 @@ VERSIONS = {
                'octave/com_ieee8023_4p16p0_octave_compat.m'),
     '4p17p0': ('matlab/com_ieee8023_4p17p0.m',
                'octave/com_ieee8023_4p17p0_octave_compat.m'),
+    '4p18p0': ('matlab/com_ieee8023_4p18p0.m',
+               'octave/com_ieee8023_4p18p0_octave_compat.m'),
 }
 
 REPLACED = ['CDF_ev', 'COM_CommandLine_Parse', 'read_Nport_touchstone',
@@ -154,8 +156,11 @@ NOT_REPLACED = {}
 # lag from H(:,1)'*H (passed in as HH_unique_values), not formed as
 # H(:,sel)'*H(:,sel). The variant (2026-10-14) does what 4p17p0 does; the compiled
 # kernel takes HH_unique_values as its last argument. Between 2026-10-03 and
-# 2026-10-14 4p17p0 ran the release's own search instead.
-PATCH_VARIANT = {'4p17p0': {'FOM_rxffe_floating_taps': 'FOM_rxffe_floating_taps_4p17p0'}}
+# 2026-10-14 4p17p0 ran the release's own search instead. 4p18p0 changed neither
+# FOM_rxffe_floating_taps nor MMSE_FOM (docs/MATLAB_4p18p0_CHANGES.md), so it
+# takes the same variant.
+PATCH_VARIANT = {'4p17p0': {'FOM_rxffe_floating_taps': 'FOM_rxffe_floating_taps_4p17p0'},
+                 '4p18p0': {'FOM_rxffe_floating_taps': 'FOM_rxffe_floating_taps_4p17p0'}}
 ADDED = ['csvread4com', 'com_octave_accel_on', 'erfcinv',
          'mldivide_matlab', 'com_checkpoint']
 

@@ -1,7 +1,7 @@
 """
 sicopr.py — the SiCoPR engine
 IEEE 802.3 Channel Operating Margin (COM), ported from the MATLAB reference
-Emulates com_ieee8023_4p17p0 by default; 4p15p0 and 4p16p0 and 4p17p0 supported via --matlab-version
+Emulates com_ieee8023_4p17p0 by default; 4p15p0 and 4p16p0 and 4p17p0 and 4p18p0 supported via --matlab-version
 (or sicopr.COM_MATLAB_VERSION, or a "COM Version" keyword in the config).
 
 This file is machine-assembled from individually verified function translations
@@ -555,6 +555,27 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
                 break
 
             param.sigma_ns = sigma_bn
+
+            # 4p18p0 L509-529: settings that re-run optimize_fom at the best EQ.
+            # They change the CALLER's param, so they persist into later
+            # package cases and calibration passes, as in the reference.
+            _v418 = str(getattr(param, 'matlab_version', '4p15p0')) >= '4p18p0'
+            Run_single_optimize = 0
+            restore_floating_rxffe = False
+            set_clip_method_slow = False
+            restore_debug_mode = False
+            if _v418:
+                if getattr(param, 'Defer_Floating_RxFFE', 0):
+                    Run_single_optimize = 1
+                    restore_floating_rxffe = True
+                if (OP.RxFFE and OP.FFE_OPT_METHOD == 'MMSE' and param.N_qb != 0
+                        and str(param.clip_method).lower() == 'fast'):
+                    Run_single_optimize = 1
+                    set_clip_method_slow = True
+                if Run_single_optimize and getattr(OP, 'DEBUG', 0):
+                    OP.DEBUG = 0
+                    restore_debug_mode = True
+
             OP.COMPUTE_COM = False  # MATLAB L483: false during optimize_fom (get_PSDs uses it)
             # MATLAB passes param BY VALUE to optimize_fom, so its Floating_DFE mutation
             # param.ndfe=N_bmax (L8445) is local. In Python param is shared by reference, so
@@ -566,6 +587,18 @@ def com_ieee8023_(param, OP, chdata, SDDp2p=None,
             param.ndfe = _ndfe_save
             if fom_result.eq_failed:
                 return results
+
+            # 4p18p0 L534-556
+            if restore_floating_rxffe:
+                param.Floating_RXFFE = True
+                param.N_bg = param.restore_N_bg
+            if set_clip_method_slow:
+                param.clip_method = 'Slow'
+            if restore_debug_mode:
+                OP.DEBUG = 1
+            if Run_single_optimize:
+                fom_result = _optimize_fom_BestEQ(fom_result, OP, param, chdata, sigma_bn, do_C2M,
+                                                  _optimize_fom_fn=_optimize_fom_fn)
 
             OP.COMPUTE_COM = True  # MATLAB L505: true after optimization
             A_s = abs(float(fom_result.A_s))
@@ -6155,37 +6188,50 @@ def OptFom_Plot_Best_Results(BEST, t, f, chdata, param, OP):
 
 # --- OptFom_Set_Best_Itick (MATLAB lines 3785–3803) ---
 
-def OptFom_Set_Best_Itick(THIS, BEST):
-    """Update BEST struct FOM tracking for positive/negative itick (MATLAB lines 3785-3803)."""
+def OptFom_Set_Best_Itick(THIS, BEST, matlab_version='4p15p0'):
+    """Update BEST struct FOM tracking for positive/negative itick (MATLAB lines 3785-3803).
+
+    4p18p0 (L4161-4169) keeps only the best-in-cluster update; the
+    positive/negative itick tracking fed the removed OptFom_Itick_LocalSearch.
+    """
     FOM = THIS.FOM
     itick = THIS.itick
     if FOM > BEST.itick_FOM:
         BEST.itick_FOM = FOM
         BEST.itick_in_cluster = itick
-    if itick >= 0 and FOM > BEST.positive_itick_FOM:
-        BEST.positive_itick_FOM = FOM
-        BEST.positive_itick_in_loop = itick
-    if itick <= 0 and FOM > BEST.negative_itick_FOM:
-        BEST.negative_itick_FOM = FOM
-        BEST.negative_itick_in_loop = itick
+    if str(matlab_version) < '4p18p0':
+        if itick >= 0 and FOM > BEST.positive_itick_FOM:
+            BEST.positive_itick_FOM = FOM
+            BEST.positive_itick_in_loop = itick
+        if itick <= 0 and FOM > BEST.negative_itick_FOM:
+            BEST.negative_itick_FOM = FOM
+            BEST.negative_itick_in_loop = itick
     return BEST
 
 
 
 # --- OptFom_Setup_Sampler_Sweep (MATLAB lines 3804–3842) ---
 
-def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
+def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP, matlab_version='4p15p0'):
     """Initialize BEST itick tracking and compute loop_range for sampler sweep (MATLAB lines 3804-3842).
 
     Returns (loop_range, BEST, middle_search, box_search, cluster, box_mid).
     loop_range contains 0-based indices into full_sample_range (or iteration counters for box_search).
+
+    4p18p0 (L4170-4203) dropped middle_search from the outputs; it is returned
+    here as 0 so every release has one call shape. It also dropped the
+    positive/negative itick bookkeeping, made 'middle' behave as 'full-sweep',
+    and made 'box' a mode (before 4p18p0 'box' is an error, so the box branch
+    could not be reached).
     """
     full_sample_range = np.asarray(full_sample_range)
+    v418 = str(matlab_version) >= '4p18p0'
 
-    BEST.positive_itick_FOM = -math.inf
-    BEST.negative_itick_FOM = -math.inf
-    BEST.positive_itick_in_loop = []
-    BEST.negative_itick_in_loop = []
+    if not v418:
+        BEST.positive_itick_FOM = -math.inf
+        BEST.negative_itick_FOM = -math.inf
+        BEST.positive_itick_in_loop = []
+        BEST.negative_itick_in_loop = []
     BEST.itick_FOM = -math.inf
     BEST.itick_in_cluster = []
     BEST.cluster = []
@@ -6198,7 +6244,8 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
     # A symmetric sample range ties every +/-k pair, and the orders genuinely
     # differ (... -2, 2, 3, -3 ... vs ... -2, 2, -3, 3 ...). Under
     # TS_SRCH_MODE='middle' this order drives OptFom_Itick_LocalSearch's pruning.
-    si = np.argsort(np.abs(full_sample_range), kind='stable')  # ML 3827
+    if not v418:
+        si = np.argsort(np.abs(full_sample_range), kind='stable')  # ML 3827
 
     mode = str(OP.TS_SRCH_MODE).strip().lower()
     if mode == 'full-sweep':
@@ -6206,7 +6253,10 @@ def OptFom_Setup_Sampler_Sweep(full_sample_range, BEST, OP):
         middle_search = 0
     elif mode == 'middle':
         box_search = 0
-        middle_search = 1
+        middle_search = 0 if v418 else 1
+    elif mode == 'box' and v418:
+        box_search = 1
+        middle_search = 0
     else:
         raise ValueError(f'Unsupported TS_SRCH_MODE: {OP.TS_SRCH_MODE!r}')
 
@@ -11135,6 +11185,102 @@ def force(V, param, OP, ix=None, C=None, return_V=1, chdata=None, txffe=None, No
 
 
 
+# --- fast_clip_topK (MATLAB lines 6249–6656) ---
+
+# ============================================================
+# MATLAB->Python translation of fast_clip_topK
+# MATLAB lines: 6249-6656 (com_ieee8023_4p18p0.m; new in 4p18p0)
+# ============================================================
+# ADC clipping level t with P(X > t) = P_qc, where X is the sampled pulse
+# response times PAM symbols plus Gaussian noise. The K strongest cursors are
+# enumerated exactly (L^K states); the rest, with the noise, are one Gaussian.
+# t is found by bisection on the Gaussian-mixture tail, to a width of
+# OP.BinSize. Called from get_PSDs when Clip Method = 'Fast_1' (4p18p0).
+#
+# Reproduced from the reference as it stands:
+#   - The PAM levels come from `1:L/2`. For odd L the colon range stops below
+#     L/2 (PAM3 gives the two levels [-1 1]/2) while there are still L
+#     probabilities, so after the first cursor the state values and weights
+#     differ in length and the first tail evaluation errors. COM Octave, L=3,
+#     K=8: "product: nonconformant arguments (op1 is 1x6561, op2 is 1x256)".
+#     Python raises the same error at the same point (upstream defect).
+#   - ctle_signal_sigma uses sigma_X2*sum(h_top.^2), not the variance of the
+#     enumerated states; the reference's own comment carries the latter, unused.
+#   - DEBUG is hard-wired false; its prints and figures are not translated.
+# ============================================================
+
+
+
+
+def _fast_clip_topK__sort_abs_descend(h):
+    """MATLAB [~,i] = sort(abs(h),'descend'): stable among ties, NaN first."""
+    a = np.abs(h)
+    nan = np.isnan(a)
+    rest = np.flatnonzero(~nan)
+    return np.concatenate([np.flatnonzero(nan), rest[np.argsort(-a[rest], kind='stable')]])
+
+
+def fast_clip_topK(sampled_pulse_response, L, sigma_X2, sigma_noise, P_qc, OP, K):
+    """Return (adc_clip, ctle_signal_sigma). MATLAB fast_clip_topK, 4p18p0."""
+    h = np.asarray(sampled_pulse_response, dtype=float).ravel(order='F')
+    N = h.size
+
+    # m = L/2; odd_levels = 2*(1:m)-1 -- the colon range stops at floor(m)
+    m = L / 2
+    odd_levels = 2 * np.arange(1, math.floor(m) + 1, dtype=float) - 1
+    a_levels = np.concatenate([-odd_levels[::-1], odd_levels]) / (L - 1)
+    p_levels = np.ones(int(L)) / L
+
+    idx_sorted = _fast_clip_topK__sort_abs_descend(h)
+    K_eff = min(K, N)
+    idx_top = idx_sorted[:K_eff]
+    idx_rest = idx_sorted[K_eff:]
+    h_top = h[idx_top]
+    h_rest = h[idx_rest]
+
+    sigma_Srest2 = sigma_X2 * np.sum(h_rest ** 2)
+    sigma_rest = np.sqrt(sigma_Srest2 + sigma_noise ** 2)
+
+    # Exact PMF of S_top. sums(:) + hk*a_levels(:).' is states x levels, and
+    # (:) flattens it column-major.
+    sums = np.array([0.0])
+    wts = np.array([1.0])
+    for hk in h_top:
+        sums = np.add.outer(sums, hk * a_levels).ravel(order='F')
+        wts = np.multiply.outer(wts, p_levels).ravel(order='F')
+
+    var_S_top = sigma_X2 * np.sum(h_top ** 2)
+    ctle_signal_sigma = float(np.sqrt(var_S_top + sigma_rest ** 2))
+
+    inv_sqrt2 = 1 / np.sqrt(2)
+    inv_sigma_rest = 1 / sigma_rest
+    scaled_sums = sums * inv_sigma_rest
+
+    def tail_mix(t):
+        if wts.size != scaled_sums.size:
+            raise ValueError('fast_clip_topK: product: nonconformant arguments (op1 is 1x%d, '
+                             'op2 is 1x%d), as in the reference: an odd PAM order (levels=%r) '
+                             'gives fewer levels than symbol probabilities'
+                             % (wts.size, scaled_sums.size, L))
+        return np.sum(wts * (0.5 * erfc((t * inv_sigma_rest - scaled_sums) * inv_sqrt2)))
+
+    Smax = np.sum(np.abs(h))
+    t_lo = 0.0
+    t_hi = Smax + 10 * sigma_rest
+
+    tol = OP.BinSize
+    while (t_hi - t_lo) > tol:
+        t_mid = 0.5 * (t_lo + t_hi)
+        if tail_mix(t_mid) > P_qc:
+            t_lo = t_mid
+        else:
+            t_hi = t_mid
+
+    adc_clip = float(t_hi)
+    return adc_clip, ctle_signal_sigma
+
+
+
 # --- get_ILN (MATLAB lines 6254–6269) ---
 
 def get_ILN(sdd21, faxis_f2, return_alpha=False):
@@ -11523,6 +11669,15 @@ _PDF_CACHE = _collections.OrderedDict()
 _PDF_CACHE_MAX = 64
 
 
+def _get_PSDs__mround(x):
+    """MATLAB round(): half away from zero (Python's round() is banker's)."""
+    x = float(x)
+    t = int(x)
+    if abs(x - t) == 0.5:
+        return t + (1 if x > 0 else -1)
+    return int(round(x))
+
+
 def _get_PSDs__detach(pdf):
     """Hand out a PDF that shares nothing mutable with the cached entry.
 
@@ -11901,6 +12056,21 @@ def get_PSDs(result, h, cursor_i, txffe, G_DC, G_DC2, param, chdata, OP,
                 sig_noise_cdf = np.cumsum(sig_noise_pdf.y)
                 ctle_signal_sigma = float(np.sqrt(np.sum(sig_noise_pdf.x**2 * sig_noise_pdf.y)))
                 adc_clip = float(-_CDF_inv_ev(param.P_qc, sig_noise_pdf, sig_noise_cdf))
+                result.ctle_signal_sigma = ctle_signal_sigma
+            elif (str(getattr(param, 'matlab_version', '4p15p0')) >= '4p18p0'
+                  and str(param.clip_method).lower() == 'fast_1'):
+                # 4p18p0 L8022-8044: the fast top-K Gaussian-mixture solver,
+                # K_eff = round(log(4096)/log(levels)) exact cursors.
+                K_eff = _get_PSDs__mround(np.log(4096) / np.log(param.levels))
+                sigma_noise = np.sqrt(          # as the 'Slow' branch forms it
+                    getattr(result, 'S_in_rms', 0)**2 +
+                    getattr(result, 'S_rn_rms', 0)**2 +
+                    getattr(result, 'S_xn_rms', 0)**2 +
+                    getattr(result, 'S_tn_rms', 0)**2 +
+                    getattr(result, 'S_rj_rms', 0)**2
+                )
+                adc_clip, ctle_signal_sigma = _fast_clip_topK(
+                    sampled_pr, L, sigma_X2, sigma_noise, param.P_qc, OP, K_eff)
                 result.ctle_signal_sigma = ctle_signal_sigma
             else:
                 adc_clip = float(np.sum(np.abs(sampled_pr)))
@@ -15359,6 +15529,7 @@ MATLAB lines 8417–8793.
 
 
 
+
 def _optimize_fom__mround(x):
     """MATLAB round(): half away from zero, where Python's round() is banker's.
 
@@ -15457,6 +15628,27 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
     param.ts_sample_adj_range = tsar
     full_sample_range = np.arange(int(tsar[0]), int(tsar[1]) + 1)
 
+    _ver = str(getattr(param, 'matlab_version', '4p15p0'))
+    v418 = _ver >= '4p18p0'
+    # OP as the itick sweep sees it. 4p18p0 L9909-9911 sets OP.TS_SRCH_MODE to
+    # 'full-sweep' when box search meets a local search; MATLAB's OP is a copy,
+    # so the change must not reach the caller's OP.
+    OP_sweep = OP
+    if v418:
+        if (getattr(param, 'LOCAL_SEARCH', 0) > 0
+                and str(OP.TS_SRCH_MODE).strip().lower() == 'box'):
+            OP_sweep = copy.copy(OP)
+            OP_sweep.TS_SRCH_MODE = 'full-sweep'
+        # 4p18p0 L9913-9915 calls OptFom_Setup_Sampler_Sweep here only to count
+        # itick runs for the progress display, which this port does not mirror.
+        # L9917-9925: box search pads the range to a multiple of the box size.
+        if str(OP_sweep.TS_SRCH_MODE).strip().lower() == 'box':
+            L_samp = len(full_sample_range)
+            required_num_points = math.ceil(L_samp / OP.itick_box_size) * OP.itick_box_size
+            if L_samp < required_num_points:
+                extra_points = np.arange(1, required_num_points - L_samp + 1) + full_sample_range[-1]
+                full_sample_range = np.concatenate([full_sample_range, extra_points])
+
     param.ndfe_passed = int(param.ndfe)
     if getattr(param, 'Floating_DFE', False):
         param.ndfe = int(param.N_bmax)
@@ -15466,7 +15658,8 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
     else:
         OP.RxFFE_with_MMSE = 0
 
-    OP.itick_box_size = 5
+    if not v418:
+        OP.itick_box_size = 5  # 4p18p0 reads it from 'Itick Box Size' instead
 
     Gffe_values = np.asarray(param.cursor_gain).ravel()
     if not getattr(OP, 'RxFFE', False):
@@ -15646,13 +15839,18 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             SETTINGS.min_number_of_UI_in_response = triple_transit_time
 
                         # ── ITICK loop ─────────────────────────────────────
-                        loop_range_it, BEST, middle_search, box_search, cluster, box_mid = \
-                            _OptFom_Setup_Sampler_Sweep_fn(full_sample_range, BEST, OP)
+                        if v418:
+                            loop_range_it, BEST, middle_search, box_search, cluster, box_mid = \
+                                _OptFom_Setup_Sampler_Sweep_fn(full_sample_range, BEST, OP_sweep,
+                                                               matlab_version=_ver)
+                        else:
+                            loop_range_it, BEST, middle_search, box_search, cluster, box_mid = \
+                                _OptFom_Setup_Sampler_Sweep_fn(full_sample_range, BEST, OP)
 
                         for itickn in loop_range_it:
                             if box_search:
                                 THIS.itick, BEST, skip_it = _OptFom_Itick_BoxSearch_fn(
-                                    itickn, cluster, BEST, box_mid, OP.itick_box_size)
+                                    itickn, cluster, BEST, box_mid, OP_sweep.itick_box_size)
                                 if skip_it:
                                     continue
                             else:
@@ -15661,7 +15859,18 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             THIS.cursor_i = int(raw_cursor_i) + int(THIS.itick)
                             sbr = sbr_from_txffe.copy()
 
-                            if getattr(param, 'LOCAL_SEARCH', 0) > 0:
+                            if v418:
+                                # 4p18p0 L10147-10153: after the first CTLE / g_DC_HP /
+                                # TxFFE setting, only iticks within LOCAL_SEARCH of the
+                                # best so far are tried (any mode but box). TK is
+                                # 1-based in the reference.
+                                if (not np.isinf(BEST.FOM)
+                                        and getattr(param, 'LOCAL_SEARCH', 0) > 0
+                                        and not box_search
+                                        and max(THIS.g_LP_index, THIS.ctle_index, TK + 1) > 1):
+                                    if abs(THIS.itick - BEST.itick) > param.LOCAL_SEARCH:
+                                        continue
+                            elif getattr(param, 'LOCAL_SEARCH', 0) > 0:
                                 skip_it = _OptFom_Itick_LocalSearch_fn(
                                     THIS.itick, middle_search, BEST, param.LOCAL_SEARCH)
                                 if skip_it:
@@ -15754,7 +15963,10 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                                 cand_fom = max(cand_fom, float(THIS.FOM))
 
                             # Update best settings
-                            BEST = _OptFom_Set_Best_Itick_fn(THIS, BEST)
+                            if v418:
+                                BEST = _OptFom_Set_Best_Itick_fn(THIS, BEST, matlab_version=_ver)
+                            else:
+                                BEST = _OptFom_Set_Best_Itick_fn(THIS, BEST)
                             if THIS.FOM > BEST.FOM:
                                 BEST = _OptFom_Update_Best_Setttings_fn(BEST, THIS, sbr, chdata, param, OP)
                                 print(f'      ** new best FOM = {BEST.FOM:.3f} dB '
@@ -16955,8 +17167,9 @@ def read_PR_files(param, OP, chdata):
 # xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
 _NO_DEFAULT = object()
 
-# Which MATLAB release to emulate. '4p17p0', the current IEEE release, is the
-# default (VERSION.json, the owner's call, 2026-10-03). The 208-case MATLAB
+# Which MATLAB release to emulate. '4p17p0' is the default (VERSION.json, the
+# owner's call, 2026-10-03); 4p18p0 (2026-11-17) is supported but not yet the
+# default. The 208-case MATLAB
 # reference results are 4p15p0 output, so anything reproducing them must ask
 # for '4p15p0' explicitly (docs/VERSIONS.md says what differs between releases).
 # A config's 'COM Version' keyword, if present, wins over this default.
@@ -17169,7 +17382,7 @@ def _read_ParamConfigFile__xls_param(parameter, param_name, eval_if_string=False
 _COUNT_KEYWORDS = {'m', 'l', 'n_b', 'n_v', 'n_bx', 'n_bg', 'n_bf', 'n_bmax', 'n_f',
                    'ffe_pre_tap_len', 'ffe_post_tap_len', 'samples_for_c2m',
                    'num_ui_rxff_noise', 'n_qb', 'n', 'n_tail_start', 'ts_anchor',
-                   'local search'}
+                   'local search', 'itick box size'}
 
 
 def _read_ParamConfigFile__as_count(v, name):
@@ -17408,6 +17621,12 @@ def read_ParamConfigFile(paramFile, OP):
 
     OP.RxFFE = bool(param.RxFFE_cmx != 0 or param.RxFFE_cpx != 0)
 
+    # 4p18p0 L11334, read at the reference's position. The version is not read
+    # (or checked) until below, so it is looked up here without side effects.
+    if str(_read_ParamConfigFile__xls_param(parameter, 'COM Version', False,
+                      COM_MATLAB_VERSION)).strip() >= '4p18p0':
+        param.Defer_Floating_RxFFE = _read_ParamConfigFile__xls_param(parameter, 'Defer_Floating_RxFFE', True, 0)
+
     param.num_ui_RXFF_noise = _read_ParamConfigFile__xls_param(parameter, 'num_ui_RXFF_noise', True, 2048)
     param.flim = _read_ParamConfigFile__xls_param(parameter, 'flim', True, 1000e9)
     if param.flim < 1000:
@@ -17492,13 +17711,14 @@ def read_ParamConfigFile(paramFile, OP):
     # the first such consumer, immediately below.
     param.matlab_version = str(_read_ParamConfigFile__xls_param(parameter, 'COM Version', False,
                                           COM_MATLAB_VERSION)).strip()
-    if param.matlab_version not in ('4p15p0', '4p16p0', '4p17p0'):
-        raise ValueError("unknown COM Version %r (expected '4p15p0', '4p16p0' "
-                         "or '4p17p0')" % param.matlab_version)
+    if param.matlab_version not in ('4p15p0', '4p16p0', '4p17p0', '4p18p0'):
+        raise ValueError("unknown COM Version %r (expected '4p15p0', '4p16p0', "
+                         "'4p17p0' or '4p18p0')" % param.matlab_version)
     # Release names share one fixed shape, so string order is release order;
     # a 4p16p0 change carries into 4p17p0.
     _v416 = param.matlab_version >= '4p16p0'
     _v417 = param.matlab_version >= '4p17p0'
+    _v418 = param.matlab_version >= '4p18p0'
 
     # 4p16p0 L10262 flipped this default from 'Fast' to 'Slow'. Configs that
     # name the keyword are unaffected either way; configs that omit it change
@@ -17723,6 +17943,19 @@ def read_ParamConfigFile(paramFile, OP):
         if param.N_bg > 0:
             param.Floating_RXFFE = True
 
+    # 4p18p0 L11589-11600: Defer_Floating_RxFFE sweeps without the floating Rx
+    # FFE taps; com_ieee8023_ restores them (N_bg from restore_N_bg) and re-runs
+    # optimize_fom at the best EQ. Without floating taps the keyword is zeroed.
+    if _v418:
+        param.restore_N_bg = np.array([])
+        if param.Floating_RXFFE:
+            if param.Defer_Floating_RxFFE:
+                param.Floating_RXFFE = False
+                param.restore_N_bg = param.N_bg
+                param.N_bg = 0
+        else:
+            param.Defer_Floating_RxFFE = 0
+
     # ---- Skew parameters ----
     param.Txpskew = _read_ParamConfigFile__xls_param(parameter, 'Txpskew', True, 0)
     param.Txnskew = _read_ParamConfigFile__xls_param(parameter, 'Txnskew', True, 0)
@@ -17877,6 +18110,9 @@ def read_ParamConfigFile(paramFile, OP):
     OP.Do_White_Noise = _read_ParamConfigFile__xls_param(parameter, 'Do_White_Noise', False, 0)
     OP.FFE_OPT_METHOD = _read_ParamConfigFile__xls_param(parameter, 'FFE_OPT_METHOD', False, 'MMSE')
     OP.TS_SRCH_MODE = _read_ParamConfigFile__xls_param(parameter, 'TS_SRCH_MODE', False, 'full-sweep')
+    # 4p18p0 L11764. Earlier releases fix it at 5 inside optimize_fom.
+    if _v418:
+        OP.itick_box_size = _read_ParamConfigFile__xls_param(parameter, 'Itick Box Size', False, 5)
 
     # ---- TDMODE disables FD operations ----
     if OP.TDMODE:
@@ -18025,6 +18261,62 @@ def read_p2_s2params(infile, plot_ini_s_params, plot_dif_s_params, ports, OP, pa
     data.limited = limited
 
     return data, SDD, SDC, SCC, SCD
+
+
+
+# --- optimize_fom_BestEQ (MATLAB lines 10311–10356) ---
+
+# ============================================================
+# MATLAB->Python translation of optimize_fom_BestEQ
+# MATLAB lines: 10311-10356 (com_ieee8023_4p18p0.m; new in 4p18p0)
+# ============================================================
+# Re-runs optimize_fom with every sweep variable fixed at the best value of an
+# earlier full sweep (Gffe, CTLE gain, g_DC_HP, itick, each Tx FFE tap), then
+# puts back the fields that are indices into the full sweep. com_ieee8023_
+# calls it for Defer_Floating_RxFFE and for Clip Method = Fast (4p18p0).
+#
+# MATLAB passes param by value, so the narrowed sweep lives in a copy; here
+# param is deep-copied for the same reason. The caller's param keeps its grids,
+# which Apply_EQ and the output then index with the restored indices.
+#
+# Reproduced from the reference as it stands:
+#   - With ctle_gdc_values narrowed to one entry, optimize_fom reads the CTLE
+#     poles as CTLE_fz(1), CTLE_fp1(1), CTLE_fp2(1): the FIRST entry's poles,
+#     not the winner's. Harmless when the poles are one value for every gain.
+#   - The re-run's eq_failed is not checked.
+# ============================================================
+
+
+
+
+def optimize_fom_BestEQ(fom_result, OP, param, chdata, sigma_bn, do_C2M,
+                        _optimize_fom_fn=None):
+    fom_result_original = fom_result
+
+    param = copy.deepcopy(param)
+    param.cursor_gain = fom_result.best_current_ffegain
+    # x(k) is 1x1 in MATLAB: keep a one-element array (len() is taken downstream)
+    param.ctle_gdc_values = np.atleast_1d(
+        np.asarray(param.ctle_gdc_values).ravel()[int(fom_result.ctle) - 1])
+    param.g_DC_HP_values = np.atleast_1d(
+        np.asarray(param.g_DC_HP_values).ravel()[int(fom_result.best_G_high_pass) - 1])
+    param.ts_sample_adj_range = [fom_result.itick, fom_result.itick]
+
+    best_txffe = np.asarray(fom_result.txffe).ravel()
+    cur = int(fom_result.cur)                      # 1-based, as in the reference
+    for k in range(1, cur):                        # num_pre = cur-1
+        setattr(param, 'tx_ffe_cm%d_values' % k, best_txffe[cur - k - 1])
+    for k in range(1, len(best_txffe) - cur + 1):  # num_post = length - cur
+        setattr(param, 'tx_ffe_cp%d_values' % k, best_txffe[cur + k - 1])
+
+    fom_result = _optimize_fom_fn(OP, param, chdata, sigma_bn, do_C2M)
+
+    # indices into the original sweep
+    fom_result.ctle = fom_result_original.ctle
+    fom_result.best_G_high_pass = fom_result_original.best_G_high_pass
+    fom_result.cur = fom_result_original.cur
+    fom_result.txffe = fom_result_original.txffe
+    return fom_result
 
 
 
@@ -21431,6 +21723,7 @@ def zzz_list_of_changes():
 
 
 # --- cross-module import aliases (resolved after all functions) ---
+_optimize_fom_BestEQ = optimize_fom_BestEQ
 _FFE = FFE
 _TD_CTLE = TD_CTLE
 _conv_fct = conv_fct
@@ -21527,6 +21820,7 @@ _normal_dist = normal_dist
 _Init_PDF_Fast = Init_PDF_Fast
 _conv_fct = conv_fct
 _d_cpdf = d_cpdf
+_fast_clip_topK = fast_clip_topK
 _S_RN = S_RN
 _S_IN = S_IN
 _H_interp = H_interp
@@ -21595,7 +21889,7 @@ if __name__ == '__main__':
     parser.add_argument('--next', nargs='*', default=[])
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
-    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0', '4p17p0'],
+    parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0', '4p17p0', '4p18p0'],
                         help='which MATLAB release to emulate. Default 4p17p0, the '
                              'current IEEE release. 4p15p0 is the version the 208-case '
                              'MATLAB reference results were produced with -- see '

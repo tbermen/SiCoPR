@@ -1,7 +1,7 @@
 """octave_compare.py -- the same COM case through GNU Octave and SiCoPR, compared.
 
     python tools/octave_compare.py CONFIG.xlsx THRU.s4p [--fext F.s4p ...] [--next N.s4p ...]
-                                   [--version 4p15p0|4p16p0] [--out DIR]
+                                   [--version 4p15p0|4p16p0|4p17p0|4p18p0] [--out DIR]
     python tools/octave_compare.py --cases cases.json [--version V] [--out DIR] [--jobs N]
 
 Two implementations of the same reference are worth more than one when they
@@ -53,7 +53,7 @@ sys.path.insert(0, _HERE)
 from xlsx_to_com_mat import convert, find_octave  # noqa: E402
 
 OCTAVE_DIR = os.path.join(_ROOT, 'octave')
-VERSIONS = ('4p15p0', '4p16p0', '4p17p0')
+VERSIONS = ('4p15p0', '4p16p0', '4p17p0', '4p18p0')
 
 SCALARS = ['COM_dB', 'FOM', 'itick', 'ERL', 'VEC_dB', 'VEO_mV', 'ICN_mV',
            'DER_thresh', 'DER_MLSE', 'DER_DFE', 'CTLE_DC_gain_dB',

@@ -3,6 +3,9 @@ optimize_fom: EQ search loop — finds best CTLE/TXFFE/DFE/RxFFE settings for FO
 MATLAB lines 8417–8793.
 """
 
+import copy
+import math
+
 import numpy as np
 from types import SimpleNamespace
 
@@ -106,6 +109,27 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
     param.ts_sample_adj_range = tsar
     full_sample_range = np.arange(int(tsar[0]), int(tsar[1]) + 1)
 
+    _ver = str(getattr(param, 'matlab_version', '4p15p0'))
+    v418 = _ver >= '4p18p0'
+    # OP as the itick sweep sees it. 4p18p0 L9909-9911 sets OP.TS_SRCH_MODE to
+    # 'full-sweep' when box search meets a local search; MATLAB's OP is a copy,
+    # so the change must not reach the caller's OP.
+    OP_sweep = OP
+    if v418:
+        if (getattr(param, 'LOCAL_SEARCH', 0) > 0
+                and str(OP.TS_SRCH_MODE).strip().lower() == 'box'):
+            OP_sweep = copy.copy(OP)
+            OP_sweep.TS_SRCH_MODE = 'full-sweep'
+        # 4p18p0 L9913-9915 calls OptFom_Setup_Sampler_Sweep here only to count
+        # itick runs for the progress display, which this port does not mirror.
+        # L9917-9925: box search pads the range to a multiple of the box size.
+        if str(OP_sweep.TS_SRCH_MODE).strip().lower() == 'box':
+            L_samp = len(full_sample_range)
+            required_num_points = math.ceil(L_samp / OP.itick_box_size) * OP.itick_box_size
+            if L_samp < required_num_points:
+                extra_points = np.arange(1, required_num_points - L_samp + 1) + full_sample_range[-1]
+                full_sample_range = np.concatenate([full_sample_range, extra_points])
+
     param.ndfe_passed = int(param.ndfe)
     if getattr(param, 'Floating_DFE', False):
         param.ndfe = int(param.N_bmax)
@@ -115,7 +139,8 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
     else:
         OP.RxFFE_with_MMSE = 0
 
-    OP.itick_box_size = 5
+    if not v418:
+        OP.itick_box_size = 5  # 4p18p0 reads it from 'Itick Box Size' instead
 
     Gffe_values = np.asarray(param.cursor_gain).ravel()
     if not getattr(OP, 'RxFFE', False):
@@ -295,13 +320,18 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             SETTINGS.min_number_of_UI_in_response = triple_transit_time
 
                         # ── ITICK loop ─────────────────────────────────────
-                        loop_range_it, BEST, middle_search, box_search, cluster, box_mid = \
-                            _OptFom_Setup_Sampler_Sweep_fn(full_sample_range, BEST, OP)
+                        if v418:
+                            loop_range_it, BEST, middle_search, box_search, cluster, box_mid = \
+                                _OptFom_Setup_Sampler_Sweep_fn(full_sample_range, BEST, OP_sweep,
+                                                               matlab_version=_ver)
+                        else:
+                            loop_range_it, BEST, middle_search, box_search, cluster, box_mid = \
+                                _OptFom_Setup_Sampler_Sweep_fn(full_sample_range, BEST, OP)
 
                         for itickn in loop_range_it:
                             if box_search:
                                 THIS.itick, BEST, skip_it = _OptFom_Itick_BoxSearch_fn(
-                                    itickn, cluster, BEST, box_mid, OP.itick_box_size)
+                                    itickn, cluster, BEST, box_mid, OP_sweep.itick_box_size)
                                 if skip_it:
                                     continue
                             else:
@@ -310,7 +340,18 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                             THIS.cursor_i = int(raw_cursor_i) + int(THIS.itick)
                             sbr = sbr_from_txffe.copy()
 
-                            if getattr(param, 'LOCAL_SEARCH', 0) > 0:
+                            if v418:
+                                # 4p18p0 L10147-10153: after the first CTLE / g_DC_HP /
+                                # TxFFE setting, only iticks within LOCAL_SEARCH of the
+                                # best so far are tried (any mode but box). TK is
+                                # 1-based in the reference.
+                                if (not np.isinf(BEST.FOM)
+                                        and getattr(param, 'LOCAL_SEARCH', 0) > 0
+                                        and not box_search
+                                        and max(THIS.g_LP_index, THIS.ctle_index, TK + 1) > 1):
+                                    if abs(THIS.itick - BEST.itick) > param.LOCAL_SEARCH:
+                                        continue
+                            elif getattr(param, 'LOCAL_SEARCH', 0) > 0:
                                 skip_it = _OptFom_Itick_LocalSearch_fn(
                                     THIS.itick, middle_search, BEST, param.LOCAL_SEARCH)
                                 if skip_it:
@@ -403,7 +444,10 @@ def optimize_fom(OP, param, chdata, sigma_bn, do_C2M,
                                 cand_fom = max(cand_fom, float(THIS.FOM))
 
                             # Update best settings
-                            BEST = _OptFom_Set_Best_Itick_fn(THIS, BEST)
+                            if v418:
+                                BEST = _OptFom_Set_Best_Itick_fn(THIS, BEST, matlab_version=_ver)
+                            else:
+                                BEST = _OptFom_Set_Best_Itick_fn(THIS, BEST)
                             if THIS.FOM > BEST.FOM:
                                 BEST = _OptFom_Update_Best_Setttings_fn(BEST, THIS, sbr, chdata, param, OP)
                                 print(f'      ** new best FOM = {BEST.FOM:.3f} dB '

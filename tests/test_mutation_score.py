@@ -130,7 +130,7 @@ KNOWN_SURVIVORS = frozenset([
 # KNOWN_SURVIVORS as a real gap. See verification/equivalent_mutants.md.
 EQUIVALENT = frozenset([
     'drop_dot_copy:MMSE:260',       # :392, :390, :399, :406; moved when the MMSE_FOM copy became an import
-    'drop_dot_copy:get_PSDs:473',   # :436, :472, :479; moved by the iphase and hk fixes and the stub imports
+    'drop_dot_copy:get_PSDs:498',   # :436, :472, :479, :473; moved by the iphase and hk fixes, the stub imports, 4p18p0 Fast_1
     'drop_dot_copy:get_pdf_full:165',
     # The `H_ph_corr = H_ph.copy()` family. In every case the source is a local
     # that its own branch has already finished reading, so the in-place write
@@ -167,7 +167,7 @@ EQUIVALENT = frozenset([
     'drop_dot_copy:floatingDFE:19', 'drop_dot_copy:auto_port_order:54',
     'drop_dot_copy:auto_port_order:106', 'drop_dot_copy:comb_fct:33',
     'drop_dot_copy:comb_fct:34', 'drop_dot_copy:SNDR_ref:93',
-    'drop_dot_copy:read_ParamConfigFile:615', 'drop_dot_copy:get_TDR:257',
+    'drop_dot_copy:read_ParamConfigFile:623', 'drop_dot_copy:get_TDR:257',
     'drop_dot_copy:Bathtub_Contribution_Wrapper:41',
     'drop_dot_copy:plot_bathtub_curves:43',
 ])

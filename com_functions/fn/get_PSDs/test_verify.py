@@ -744,3 +744,44 @@ def test_fallbacks_are_the_canonical_functions():
     for name in ('S_RN', 'S_IN', 'H_interp'):
         canon = getattr(importlib.import_module('com_functions.fn.%s.py_impl' % name), name)
         assert getattr(m, '_' + name) is canon, name
+
+
+# ---------------------------------------------------------------------------
+# COM Octave (get_PSDs, 4p18p0): Clip Method = 'Fast_1', the fast top-K solver
+# (fast_clip_topK, K_eff = round(log(4096)/log(levels)) = 6), in the 'Slow'
+# oracle's setting above. Generator: runs/4p18p0_oracles/gen_get_psds_fast1.py
+# (local). Before 4p18p0 'Fast_1' is no method of its own and falls to the
+# sum(abs(...)) branch, so it gives the 'Fast' value.
+# ---------------------------------------------------------------------------
+_K_ADC_CLIP = 2.2275932568446892
+_K_CTLE_SIGMA = 0.8336778820649479
+_K_S_QN_RMS = 0.020414310579115507
+
+
+def _fast1(ver, clip='Fast_1'):
+    res = _base_result()
+    res.S_rn_rms = 0.004
+    res.S_in_rms = 0.002
+    op = _oracle_op()
+    op.BinSize = 1e-3
+    op.FAST_NOISE_CONV = 0
+    return _run(result=res, op=op, param=_oracle_param(N_qb=6, clip_method=clip, P_qc=1e-4,
+                                                       matlab_version=ver))
+
+
+def test_oracle_quantisation_fast1_clip_4p18p0():
+    r = _fast1('4p18p0')
+    assert r.adc_clip == _K_ADC_CLIP
+    assert r.ctle_signal_sigma == _K_CTLE_SIGMA
+    _same(r.S_qn_rms, _K_S_QN_RMS, 'S_qn_rms')
+
+
+def test_fast1_is_case_blind_like_strcmpi():
+    r = _fast1('4p18p0', clip='fast_1')
+    assert r.adc_clip == _K_ADC_CLIP
+
+
+def test_fast1_is_sum_abs_before_4p18p0():
+    r = _fast1('4p17p0')
+    _same(r.adc_clip, _F_ADC_CLIP, 'adc_clip')
+    assert not hasattr(r, 'ctle_signal_sigma')

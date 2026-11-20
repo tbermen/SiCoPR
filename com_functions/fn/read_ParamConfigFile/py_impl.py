@@ -34,8 +34,9 @@ from com_functions.fn.xls_parameter.py_impl import MatlabValueError as _MatlabVa
 # xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
 _NO_DEFAULT = object()
 
-# Which MATLAB release to emulate. '4p17p0', the current IEEE release, is the
-# default (VERSION.json, the owner's call, 2026-10-03). The 208-case MATLAB
+# Which MATLAB release to emulate. '4p17p0' is the default (VERSION.json, the
+# owner's call, 2026-10-03); 4p18p0 (2026-11-17) is supported but not yet the
+# default. The 208-case MATLAB
 # reference results are 4p15p0 output, so anything reproducing them must ask
 # for '4p15p0' explicitly (docs/VERSIONS.md says what differs between releases).
 # A config's 'COM Version' keyword, if present, wins over this default.
@@ -248,7 +249,7 @@ def _xls_param(parameter, param_name, eval_if_string=False, default_value=_NO_DE
 _COUNT_KEYWORDS = {'m', 'l', 'n_b', 'n_v', 'n_bx', 'n_bg', 'n_bf', 'n_bmax', 'n_f',
                    'ffe_pre_tap_len', 'ffe_post_tap_len', 'samples_for_c2m',
                    'num_ui_rxff_noise', 'n_qb', 'n', 'n_tail_start', 'ts_anchor',
-                   'local search'}
+                   'local search', 'itick box size'}
 
 
 def _as_count(v, name):
@@ -487,6 +488,12 @@ def read_ParamConfigFile(paramFile, OP):
 
     OP.RxFFE = bool(param.RxFFE_cmx != 0 or param.RxFFE_cpx != 0)
 
+    # 4p18p0 L11334, read at the reference's position. The version is not read
+    # (or checked) until below, so it is looked up here without side effects.
+    if str(_xls_param(parameter, 'COM Version', False,
+                      COM_MATLAB_VERSION)).strip() >= '4p18p0':
+        param.Defer_Floating_RxFFE = _xls_param(parameter, 'Defer_Floating_RxFFE', True, 0)
+
     param.num_ui_RXFF_noise = _xls_param(parameter, 'num_ui_RXFF_noise', True, 2048)
     param.flim = _xls_param(parameter, 'flim', True, 1000e9)
     if param.flim < 1000:
@@ -571,13 +578,14 @@ def read_ParamConfigFile(paramFile, OP):
     # the first such consumer, immediately below.
     param.matlab_version = str(_xls_param(parameter, 'COM Version', False,
                                           COM_MATLAB_VERSION)).strip()
-    if param.matlab_version not in ('4p15p0', '4p16p0', '4p17p0'):
-        raise ValueError("unknown COM Version %r (expected '4p15p0', '4p16p0' "
-                         "or '4p17p0')" % param.matlab_version)
+    if param.matlab_version not in ('4p15p0', '4p16p0', '4p17p0', '4p18p0'):
+        raise ValueError("unknown COM Version %r (expected '4p15p0', '4p16p0', "
+                         "'4p17p0' or '4p18p0')" % param.matlab_version)
     # Release names share one fixed shape, so string order is release order;
     # a 4p16p0 change carries into 4p17p0.
     _v416 = param.matlab_version >= '4p16p0'
     _v417 = param.matlab_version >= '4p17p0'
+    _v418 = param.matlab_version >= '4p18p0'
 
     # 4p16p0 L10262 flipped this default from 'Fast' to 'Slow'. Configs that
     # name the keyword are unaffected either way; configs that omit it change
@@ -802,6 +810,19 @@ def read_ParamConfigFile(paramFile, OP):
         if param.N_bg > 0:
             param.Floating_RXFFE = True
 
+    # 4p18p0 L11589-11600: Defer_Floating_RxFFE sweeps without the floating Rx
+    # FFE taps; com_ieee8023_ restores them (N_bg from restore_N_bg) and re-runs
+    # optimize_fom at the best EQ. Without floating taps the keyword is zeroed.
+    if _v418:
+        param.restore_N_bg = np.array([])
+        if param.Floating_RXFFE:
+            if param.Defer_Floating_RxFFE:
+                param.Floating_RXFFE = False
+                param.restore_N_bg = param.N_bg
+                param.N_bg = 0
+        else:
+            param.Defer_Floating_RxFFE = 0
+
     # ---- Skew parameters ----
     param.Txpskew = _xls_param(parameter, 'Txpskew', True, 0)
     param.Txnskew = _xls_param(parameter, 'Txnskew', True, 0)
@@ -956,6 +977,9 @@ def read_ParamConfigFile(paramFile, OP):
     OP.Do_White_Noise = _xls_param(parameter, 'Do_White_Noise', False, 0)
     OP.FFE_OPT_METHOD = _xls_param(parameter, 'FFE_OPT_METHOD', False, 'MMSE')
     OP.TS_SRCH_MODE = _xls_param(parameter, 'TS_SRCH_MODE', False, 'full-sweep')
+    # 4p18p0 L11764. Earlier releases fix it at 5 inside optimize_fom.
+    if _v418:
+        OP.itick_box_size = _xls_param(parameter, 'Itick Box Size', False, 5)
 
     # ---- TDMODE disables FD operations ----
     if OP.TDMODE:

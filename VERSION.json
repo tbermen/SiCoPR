@@ -13,7 +13,8 @@
   "supported_matlab_versions": [
     "4p15p0",
     "4p16p0",
-    "4p17p0"
+    "4p17p0",
+    "4p18p0"
   ],
   "primary_reference": {
     "file": "matlab/com_ieee8023_4p15p0_adaptive_local_search.m",
@@ -44,6 +45,12 @@
       "lines": 12765,
       "functions": 161,
       "note": "MMSE_FOM forms HH from H(:,1)'*H by lag; apparent channel bandwidth (ACBW) added, off by default; see docs/MATLAB_4p17p0_CHANGES.md"
+    },
+    "4p18p0": {
+      "file": "matlab/com_ieee8023_4p18p0.m",
+      "lines": 13340,
+      "functions": 162,
+      "note": "itick local search active in full-sweep; box itick search; Clip Method Fast_1 (fast_clip_topK); Defer_Floating_RxFFE; EQ re-run at the best setting (optimize_fom_BestEQ); see docs/MATLAB_4p18p0_CHANGES.md"
     }
   },
   "license": {

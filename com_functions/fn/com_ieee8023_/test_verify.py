@@ -567,3 +567,76 @@ def test_ew_ui_is_one_width_per_eye():
     stubs['_Output_Arg_Fill_fn'] = fill
     com_ieee8023_(param, OP, _make_chdata(), **stubs)
     assert np.asarray(seen['EW_UI']).tolist() == [0.125, 0.25, 0.125]
+
+
+# ============================================================
+# 4p18p0 L509-556: optimize_fom is run again at the best EQ
+# (optimize_fom_BestEQ) when Defer_Floating_RxFFE is set, or when
+# Clip Method is 'fast' with MMSE Rx FFE and quantisation noise. The changes
+# land on the CALLER's param and persist, as in the reference. COM Octave
+# whole cases (the shipped example with Clip Method = Fast, with
+# Defer_Floating_RxFFE = 1, and with both) agree with SiCoPR on COM within
+# 1e-14 dB with the same EQ: docs/MATLAB_4p18p0_CHANGES.md.
+# ============================================================
+
+def _run_418(version='4p18p0', clip='fast', defer=0, N_qb=6, debug=False):
+    seen = []
+    param = _mmse_param()
+    param.matlab_version = version
+    param.N_qb = N_qb
+    param.clip_method = clip
+    param.cursor_gain = np.array([0.5, 1.0])
+    param.ts_sample_adj_range = np.array([-8.0, 8.0])
+    param.tx_ffe_cm1_values = np.array([0.0, 0.05])
+    if defer:
+        param.Defer_Floating_RxFFE = 1
+        param.Floating_RXFFE = False
+        param.restore_N_bg = 2
+        param.N_bg = 0
+    else:
+        param.Defer_Floating_RxFFE = 0
+        param.Floating_RXFFE = True
+        param.N_bg = 2
+    OP = _make_op()
+    OP.FFE_OPT_METHOD = 'MMSE'
+    OP.RxFFE = True
+    OP.DEBUG = debug
+    stubs, fom = _mmse_stubs([])
+    fom.itick, fom.cur, fom.txffe = -3, 2, np.array([0.05, 0.95])
+
+    def optimize_fom(OP_, p, ch, sig, do_C2M):
+        seen.append(SimpleNamespace(clip=p.clip_method, floating=p.Floating_RXFFE, N_bg=p.N_bg,
+                                    DEBUG=OP_.DEBUG, ts=list(np.ravel(p.ts_sample_adj_range)),
+                                    gdc=list(np.ravel(p.ctle_gdc_values))))
+        return fom
+
+    stubs['_optimize_fom_fn'] = optimize_fom
+    com_ieee8023_(param, OP, _make_chdata(), **stubs)
+    return seen, param, OP
+
+
+def test_4p18p0_clip_fast_reruns_at_best_eq_with_slow():
+    seen, param, _ = _run_418(clip='fast')
+    assert [s.clip for s in seen] == ['fast', 'Slow']
+    assert seen[1].ts == [-3.0, -3.0] and seen[1].gdc == [-8.0]   # ctle=2, 1-based
+    assert param.clip_method == 'Slow'                  # persists in the caller
+    assert list(param.ctle_gdc_values) == [-5.0, -8.0, -11.0, -14.0]
+
+
+def test_4p18p0_defer_restores_floating_taps_for_the_rerun():
+    seen, param, _ = _run_418(clip='Slow', defer=1)
+    assert [(s.floating, s.N_bg) for s in seen] == [(False, 0), (True, 2)]
+    assert param.Floating_RXFFE is True and param.N_bg == 2
+
+
+def test_4p18p0_debug_is_off_for_the_sweep_and_back_for_the_rerun():
+    seen, _, OP = _run_418(clip='fast', debug=True)
+    assert [bool(s.DEBUG) for s in seen] == [False, True]
+    assert OP.DEBUG == 1
+
+
+@pytest.mark.parametrize('version,clip,N_qb', [('4p17p0', 'fast', 6), ('4p18p0', 'Fast_1', 6),
+                                               ('4p18p0', 'Slow', 6), ('4p18p0', 'fast', 0)])
+def test_no_rerun_otherwise(version, clip, N_qb):
+    seen, param, _ = _run_418(version=version, clip=clip, N_qb=N_qb)
+    assert len(seen) == 1 and param.clip_method == clip

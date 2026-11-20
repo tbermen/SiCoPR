@@ -23,7 +23,8 @@
         "COM_eye_width",
         "get_PSDs",
         "Output_Arg_Fill",
-        "MLSE_U1_c_178A"
+        "MLSE_U1_c_178A",
+        "optimize_fom_BestEQ"
       ],
       "notes": "main entry point"
     },
@@ -1157,7 +1158,8 @@
       "depends_on": [
         "S_RN",
         "S_IN",
-        "H_interp"
+        "H_interp",
+        "fast_clip_topK"
       ],
       "notes": "Computes all noise PSDs: S_rn, S_xn, S_tn, S_jn, S_qn, S_n; COMPUTE_COM and WO_TXFFE paths"
     },
@@ -2030,6 +2032,32 @@
         "get_CICP_fit_residual"
       ],
       "notes": "new in 4p17p0; matlab_lines are com_ieee8023_4p17p0.m lines"
+    },
+    {
+      "name": "fast_clip_topK",
+      "matlab_lines": [
+        6249,
+        6656
+      ],
+      "lines": 408,
+      "tier": "medium",
+      "status": "verified",
+      "depends_on": [],
+      "notes": "new in 4p18p0; matlab_lines are com_ieee8023_4p18p0.m lines"
+    },
+    {
+      "name": "optimize_fom_BestEQ",
+      "matlab_lines": [
+        10311,
+        10356
+      ],
+      "lines": 46,
+      "tier": "small",
+      "status": "verified",
+      "depends_on": [
+        "optimize_fom"
+      ],
+      "notes": "new in 4p18p0; matlab_lines are com_ieee8023_4p18p0.m lines"
     }
   ]
 }
