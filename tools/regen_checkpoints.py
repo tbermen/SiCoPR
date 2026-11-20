@@ -1,7 +1,7 @@
 """regen_checkpoints.py -- the Octave checkpoint goldens, one directory per case.
 
     python tools/regen_checkpoints.py --cases CASES.json [--cases MORE.json]
-                                      [--version 4p15p0|4p16p0] [--out DIR]
+                                      [--version 4p15p0|4p16p0|4p17p0|4p18p0] [--out DIR]
                                       [--jobs 3] [--only ID,ID]
 
 Runs the reference, through its Octave-capable release file, with

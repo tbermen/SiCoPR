@@ -35,7 +35,7 @@ their own licence notices intact, are in [`../../matlab/`](../../matlab).
 
 ## Correspondence to the upstream
 
-[`../registry.json`](../registry.json) records, for all 157 functions, the
+[`../registry.json`](../registry.json) records, for all 163 functions, the
 upstream line range each was translated from:
 
 ```json

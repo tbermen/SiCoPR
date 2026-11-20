@@ -50,11 +50,11 @@ is a single-maintainer project. Reports are read and acted on.
 ## Supported versions
 
 `master` is the release; there are no maintained release branches. Fixes land on
-`master`, and only the latest release is supported (1.2.0 too, which is the same code).
+`master`, and only the latest release is supported.
 
 | version | supported |
 |---|---|
-| 1.2.1 | yes |
-| 1.2.0 | yes: the same code as 1.2.1, which changes only packaging |
+| 1.3.0 | yes |
+| 1.2.1 and 1.2.0 | no: superseded by 1.3.0. Their engine is the same apart from 4p18p0 support, so a fix is not backported; to keep 1.2.x results, run 1.3.0 with `--matlab-version 4p17p0` |
 | 1.1.4 | no: superseded by 1.2.0, which also hardens the `gui/` editor (see `CHANGELOG.md`) |
 | 1.1.3 and earlier | no: a crafted configuration workbook or run CSV can run Python code when loaded (fixed in 1.1.4; see `CHANGELOG.md`) |

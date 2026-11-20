@@ -18,7 +18,8 @@ Upstream's own history between `4.16.0` and `4.17.0` is six commits: the
 `MMSE_FOM` HH speed-up (Adam Gregory), the apparent-bandwidth functions (Rich
 Mellitz), and the `msgbox` in `MLSE_U1_c_178A` commented out.
 
-4p17p0 is the default emulated release from 2026-10-03 ([`VERSIONS.md`](VERSIONS.md)).
+4p17p0 was the default emulated release from 2026-10-03 to 2026-11-19, when 4p18p0
+replaced it ([`VERSIONS.md`](VERSIONS.md)).
 
 ---
 

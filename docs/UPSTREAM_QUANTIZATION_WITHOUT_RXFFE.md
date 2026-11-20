@@ -2,7 +2,7 @@
 
 **Found 2026-10-20**, driving SiCoPR 1.1.2 from SiCoPR-Assist. **Status:** a
 defect in the COM Reference Code, reproduced by executing it under GNU Octave
-11.3 on 4p15p0, 4p16p0 and 4p17p0. SiCoPR reproduces it, as
+11.3 on 4p15p0, 4p16p0, 4p17p0 and 4p18p0 (4p18p0 added 2026-11-19). SiCoPR reproduces it, as
 [`VERIFICATION.md`](VERIFICATION.md) requires, and since this note stops with an
 error that names the cause instead of a bare `AttributeError`. To be raised with
 the COM ad hoc, with a proposed fix (not yet raised as of 2026-10-21).
@@ -58,13 +58,16 @@ python -m sicopr cfg.csv thru.s4p --matlab-version 4p17p0
 ```
 
 Both engines complete the same equalizer search (FOM 9.9 dB, CTLE DC gain
--8 dB in both) and then stop in the same function. Run on all three releases:
+-8 dB in both) and then stop in the same function. Run on all four releases (4p18p0
+on 2026-11-19 with the same keyword changes on the shipped example's THRU, which
+reaches the same point):
 
 | release | COM Octave | SiCoPR before this note | SiCoPR now |
 |---|---|---|---|
 | 4p15p0 | `structure has no member 'RxFFE'`, compat L5498 | `AttributeError: ... no attribute 'RxFFE'` | `ValueError: N_qb = 6 (ADC quantization) needs an Rx FFE: ...` |
 | 4p16p0 | the same, compat L5516 | the same | the same |
 | 4p17p0 | the same, compat L5590 | the same | the same |
+| 4p18p0 | the same, compat L5611 | (released with the named error) | the same |
 
 The function on its own, under Octave on all three releases with a `fom_result`
 that has no `RxFFE` field, gives the same error; that is the case pinned in
@@ -74,12 +77,12 @@ that has no `RxFFE` field, gives the same error; that is the case pinned in
 
 Line numbers are the original IEEE files in `matlab/`.
 
-| | 4p15p0 | 4p15p0 + adaptive search | 4p16p0 | 4p17p0 |
-|---|---|---|---|---|
-| `OP.RxFFE` true only if `ffe_pre_tap_len` or `ffe_post_tap_len` is nonzero (`read_ParamConfigFile`) | 9897 | 10211 | 10244 | 10771 |
-| `result.RxFFE = BEST.RxFFE` only `if OP.RxFFE` (`OptFom_Create_Output`) | 3455 | 3709 | 3730 | 3793 |
-| `if param.N_qb ~=0` calls `adjust_Rx_noise_for_quantization` (`Create_Noise_PDF`) | 1679 | 1679 | 1699 | 1699 |
-| `h_rxffe = fom_result.RxFFE(find(fom_result.RxFFE ~= 0));` | 4893 | 5147 | 5165 | 5228 |
+| | 4p15p0 | 4p15p0 + adaptive search | 4p16p0 | 4p17p0 | 4p18p0 |
+|---|---|---|---|---|---|
+| `OP.RxFFE` true only if `ffe_pre_tap_len` or `ffe_post_tap_len` is nonzero (`read_ParamConfigFile`) | 9897 | 10211 | 10244 | 10771 | 11330 |
+| `result.RxFFE = BEST.RxFFE` only `if OP.RxFFE` (`OptFom_Create_Output`) | 3455 | 3709 | 3730 | 3793 | 3841 |
+| `if param.N_qb ~=0` calls `adjust_Rx_noise_for_quantization` (`Create_Noise_PDF`) | 1679 | 1679 | 1699 | 1699 | 1747 |
+| `h_rxffe = fom_result.RxFFE(find(fom_result.RxFFE ~= 0));` | 4893 | 5147 | 5165 | 5228 | 5249 |
 
 The quantization step convolves the uniform ADC-noise PDF, scaled by each Rx
 FFE tap other than the cursor, into the noise PDF (Equation 93A-37 territory;

@@ -9,9 +9,8 @@ Questions and defect reports: [GitHub issues](https://github.com/tbermen/SiCoPR/
 SiCoPR is a Python port of the IEEE 802.3 **COM** (Channel Operating Margin) Reference
 Code. It reads the same Excel configuration workbook and Touchstone `.s4p` files as the
 MATLAB tool and computes COM, VEO/VEC and the supporting equalization and noise analysis,
-without MATLAB. It emulates **`com_ieee8023_4p17p0`** (release 4.17.0) by default, and
-`4p18p0` (release 4.18.0, the current one, not yet the default), `4p16p0` or `4p15p0` with
-`--matlab-version`. Licence: BSD-3-Clause, the same as the Reference Code
+without MATLAB. It emulates **`com_ieee8023_4p18p0`** (release 4.18.0, the current one) by default, and
+`4p17p0`, `4p16p0` or `4p15p0` with `--matlab-version`. Licence: BSD-3-Clause, the same as the Reference Code
 ([`LICENSE`](LICENSE), provenance in [`NOTICE`](NOTICE)).
 
 The full guide is [`docs/TUTORIAL.md`](docs/TUTORIAL.md): architecture, every feature,
@@ -69,7 +68,7 @@ python examples/run_example.py --channels <where you unpacked the zip> --engine 
 The script checks each channel file against the SHA-256 listed in
 [`CHANNEL.md`](examples/akinwale_CR_22dB_VendorX/CHANNEL.md), runs the case without and
 with crosstalk, and compares COM, FOM, itick, ERL, VEC, VEO and ICN against the shipped
-values. Each SiCoPR run takes about six minutes on one core. Success prints
+values. Each SiCoPR run takes about a minute on one core. Success prints
 `all pinned values reproduced`; without crosstalk the case gives COM = 3.5070 dB, with
 its five aggressors 2.8959 dB. Leave out `--engine sicopr` to also run the Reference Code
 under GNU Octave, if `octave-cli` is on PATH.
@@ -88,7 +87,7 @@ each take any number of files.
 |---|---|
 | `--fext F ...` | far-end crosstalk aggressor files |
 | `--next N ...` | near-end crosstalk aggressor files |
-| `--matlab-version {4p15p0,4p16p0,4p17p0,4p18p0}` | which reference release to emulate; default `4p17p0` ([`docs/VERSIONS.md`](docs/VERSIONS.md)) |
+| `--matlab-version {4p15p0,4p16p0,4p17p0,4p18p0}` | which reference release to emulate; default `4p18p0` ([`docs/VERSIONS.md`](docs/VERSIONS.md)) |
 | `--export-mat` | also write a per-case engineering `.mat` snapshot for the R dashboard (TUTORIAL §7.4). Changes no result |
 | `--eye-under-mlse` | compute the eye contour and timing bathtub for plotting even when MLSE is on. Diagnostic only; no reported value changes |
 | `--exit-on-fail` | exit with status 3 if any package case fails its COM threshold (for CI); without it a completed run exits 0, pass or fail |
@@ -138,7 +137,7 @@ leading underscore marks it as not yet a frozen API.
 ```python
 import sicopr
 
-sicopr.COM_MATLAB_VERSION = '4p17p0'            # as --matlab-version; optional
+sicopr.COM_MATLAB_VERSION = '4p18p0'            # as --matlab-version; optional
 res = sicopr._run_com('config.xlsx', 1, 1,       # number of FEXT, number of NEXT
                       ['thru.s4p', 'fext1.s4p', 'next1.s4p'], export_mat=False)
 cases = res if isinstance(res, list) else [res]  # one entry per package case
@@ -159,7 +158,7 @@ exits **3** if any package case misses its COM threshold (2 stays the usage-erro
 
 **Runtime.** One case takes from under a minute to about ten minutes on one core,
 depending mostly on crosstalk and the size of the equaliser search: the shipped example
-took 365 s without crosstalk and 317 s with it (4p17p0, measured 2026-10-15; `run_example.py`
+took 55 s without crosstalk and 73 s with it (4p18p0, measured 2026-11-19; `run_example.py`
 prints the time of every run, so it is also the way to time your own machine). No
 runtime comparison with MATLAB is offered, because the timings that exist were taken on
 different machines; the comparison with the Reference Code under Octave is in the next
@@ -195,10 +194,10 @@ is a COM primer.
 small patch set that makes them run under GNU Octave and is a no-op under MATLAB. With
 Octave installed you can run the Reference Code itself on any case and compare it with
 SiCoPR field by field (`tools/octave_compare.py`), without a MATLAB licence. Speed on
-4p17p0, measured 2026-10-15 on the shipped example, same machine, one case at a time, one
-BLAS thread (Octave 11.3, Windows): Octave took **1.8 times** SiCoPR's run time
-interpreted (645 s and 586 s against 365 s and 317 s, without and with crosstalk), and
-**0.87 to 1.04 times** with the optional compiled kernels built (316 s and 330 s). All
+4p18p0, measured 2026-11-19 on the shipped example, same machine, one case at a time, one
+BLAS thread (Octave 11.3, Windows): Octave took **1.8 to 1.9 times** SiCoPR's run time
+interpreted (102 s and 142 s against 55 s and 73 s, without and with crosstalk), and
+**1.3 to 1.5 times** with the optional compiled kernels built (70 s and 111 s). All
 three gave the same COM to within 1e-14 dB. See [`octave/README.md`](octave/README.md).
 
 **Why a Python port, when Octave already runs the Reference Code for free?** The two do
@@ -211,8 +210,8 @@ own. The Octave route rests on work by members of the COM community, credited in
 
 ## How do I know it's right?
 
-- **Function level.** All 150 value-bearing functions of the default release (151 under
-  4p18p0; 163 translated in all) are checked
+- **Function level.** All 151 value-bearing functions of the default release (163
+  translated in all) are checked
   against the *executed* Reference Code (COM Octave), not against a reading of it.
   [`docs/VERIFICATION.md`](docs/VERIFICATION.md) is the contract, and
   `python com_functions/verification/report.py` answers "are there any opens?".
@@ -223,11 +222,11 @@ own. The Octave route rests on work by members of the COM community, credited in
   `com_ieee8023_4p15p0_adaptive_local_search.m`, the build the reference results came from.
 - **Against COM Octave, 4p16p0.** 1368 cases (171 distinct channels), **2026-09-26**:
   COM within **5.3e-14 dB**, and itick, Tx FFE and CTLE gain identical on all 1368.
-- **Against COM Octave, 4p17p0**, the default. The same 208 cases, **2026-10-04**: COM
+- **Against COM Octave, 4p17p0.** The same 208 cases, **2026-10-04**: COM
   within **5.2e-14 dB**, FOM 6.0e-12 dB, and itick, CTLE gain, Tx FFE and ERL identical on
   all 208. The COM Octave results ship in
   [`benchmark/208_case_4p17p0/`](benchmark/208_case_4p17p0/README.md).
-- **Against COM Octave, 4p18p0**, supported but not the default. The same 208 cases,
+- **Against COM Octave, 4p18p0**, the default. The same 208 cases,
   **2026-11-19**: COM within **5.2e-14 dB**, and itick, CTLE gain, Tx FFE and ERL
   identical on all 208
   ([`benchmark/208_case_4p18p0/`](benchmark/208_case_4p18p0/README.md)).
@@ -294,8 +293,8 @@ normative, the IEEE 802.3 COM Reference Code is the authority; SiCoPR reproduces
 does not replace it.**
 
 - **SiCoPR follows official releases.** The default is the latest official Reference
-  Code release once it has been taken in; 4p18p0 (2026-11-17) is supported and not yet
-  the default. An older build stays selectable only while published correlation
+  Code release once it has been taken in: 4p18p0 (2026-11-17), the default since
+  2026-11-19 (1.3.0). An older build stays selectable only while published correlation
   evidence depends on it. Today that is the 4p15p0 build with the adaptive local
   search, which produced the 208-case reference results. Drafts and development
   branches are not followed.

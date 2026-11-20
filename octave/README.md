@@ -8,13 +8,13 @@ to a `.mat`, then call the release file. Nothing here needs building.
 
 **To make it faster**, build the optional compiled kernels once
 (`python octave/accel/build_accel.py`). Every later run finds them and is about
-1.8 to 2.0 times faster than the same files run interpreted (4p17p0, the
-shipped example, measured 2026-10-15), with the same command and the same results, bit for bit. See [Optional compiled kernels](#optional-compiled-kernels).
+1.3 to 1.5 times faster than the same files run interpreted (4p18p0, the
+shipped example, measured 2026-11-19; 1.8 to 2.0 times on 4p17p0), with the same command and the same results, bit for bit. See [Optional compiled kernels](#optional-compiled-kernels).
 
 **To understand what was changed and why**, read on: the patch set is the point
 of this directory, and every item in it is a no-op under MATLAB.
 
-## The three files
+## The four files
 
 | file | derived from | how |
 |---|---|---|
@@ -38,8 +38,8 @@ which is also the build SiCoPR emulates under `--matlab-version 4p15p0` (`VERSIO
 `primary_reference`).
 So that is the 4p15p0 source here, not the bare release, whose legacy local
 search would agree with neither. The 4p16p0 file is the release that adopted the
-adaptive search into the mainline, 4p17p0 is the default SiCoPR emulates, and 4p18p0
-(2026-11-17) is the current release. All four take the same patch set, with one
+adaptive search into the mainline, 4p17p0 was the default SiCoPR emulated until
+2026-11-19, and 4p18p0 (2026-11-17) is the current release and the default. All four take the same patch set, with one
 difference: **4p17p0 and 4p18p0 take their own
 variant of the `FOM_rxffe_floating_taps` speed patch**
 (`patches/FOM_rxffe_floating_taps_4p17p0.m`, `PATCH_VARIANT` in the generator). The
@@ -55,7 +55,7 @@ crosstalk (57 s to 36 s), 1.80x on one with crosstalk and the Tx FFE swept (532 
 the bodies are byte-identical to 4p17p0's), so it takes the same variant.
 
 ```
-python octave/make_octave_compat.py            # regenerate both
+python octave/make_octave_compat.py            # regenerate all four
 python octave/make_octave_compat.py --check    # what the test runs
 ```
 
@@ -235,18 +235,23 @@ privately with the channels it needs and is not published.
 
 | | Octave against SiCoPR | measured |
 |---|---|---|
-| **4p17p0, interpreted** | **1.8x** | 645 s / 586 s against 365 s / 317 s, the shipped example without / with crosstalk, 2026-10-15 |
-| **4p17p0, with the compiled kernels** | **0.87x to 1.04x** | 316 s / 330 s against the same, 2026-10-15 |
+| **4p18p0, interpreted** | **1.8x to 1.9x** | 102 s / 142 s against 55 s / 73 s, the shipped example without / with crosstalk, 2026-11-19 |
+| **4p18p0, with the compiled kernels** | **1.3x to 1.5x** | 70 s / 111 s against the same, 2026-11-19 |
+| 4p17p0, interpreted | 1.8x | 645 s / 586 s against 365 s / 317 s, the shipped example, 2026-10-15 |
+| 4p17p0, with the compiled kernels | 0.87x to 1.04x | 316 s / 330 s against the same, 2026-10-15 |
 | 4p16p0, interpreted, speed items in | 2.2x to 2.4x | 821 s / 786 s against 375 s / 335 s, the shipped example, 2026-10-01 |
 | 4p16p0, with the compiled kernels | 1.2x to 1.4x | 457 s / 454 s against the same, 2026-10-01 |
 | earlier: before the speed items (2026-09-10) | about 3.3x | 147 s against 44 s, 208-corpus case |
 | earlier: with the compiled kernels (2026-09-18) | about 1.5x | 451 s against 299 s, one 1368-case 4p16p0 case (`wo_C1_R001`) |
 
-The 2026-10-15 rows are current: 4p17p0, the default, one case at a time on the
-same machine, every engine giving the same COM to within 1e-14 dB. With the
-kernels built, COM Octave now runs about as fast as SiCoPR. The 2026-10-01 rows
-are the same measurement on 4p16p0, where SiCoPR took about the same time and
-COM Octave longer. The earlier rows were taken before
+The 2026-11-19 rows are current: 4p18p0, the default, one case at a time on the
+same machine, every engine giving the same COM to within 1e-14 dB. 4p18p0's itick
+local search makes every engine three to seven times faster on this case than
+4p17p0, and it cuts most deeply into the equaliser search the compiled kernels
+accelerate, so the kernels gain less (1.3 to 1.5 times, against 1.8 to 2.0 on
+4p17p0). The 2026-10-15 rows are the same measurement on 4p17p0, where with the
+kernels built COM Octave ran about as fast as SiCoPR, and the 2026-10-01 rows on
+4p16p0. The earlier rows were taken before
 SiCoPR's September convolution changes and are kept as history.
 
 ## What is in this directory, and what left it

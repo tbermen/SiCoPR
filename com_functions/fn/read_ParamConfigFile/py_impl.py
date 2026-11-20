@@ -34,13 +34,12 @@ from com_functions.fn.xls_parameter.py_impl import MatlabValueError as _MatlabVa
 # xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
 _NO_DEFAULT = object()
 
-# Which MATLAB release to emulate. '4p17p0' is the default (VERSION.json, the
-# owner's call, 2026-10-03); 4p18p0 (2026-11-17) is supported but not yet the
-# default. The 208-case MATLAB
+# Which MATLAB release to emulate. '4p18p0' is the default (VERSION.json, the
+# owner's call, 2026-11-19; 4p17p0 was from 2026-10-03). The 208-case MATLAB
 # reference results are 4p15p0 output, so anything reproducing them must ask
 # for '4p15p0' explicitly (docs/VERSIONS.md says what differs between releases).
 # A config's 'COM Version' keyword, if present, wins over this default.
-COM_MATLAB_VERSION = '4p17p0'
+COM_MATLAB_VERSION = '4p18p0'
 
 
 # ---------------------------------------------------------------------------

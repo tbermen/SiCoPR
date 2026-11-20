@@ -9,8 +9,8 @@ Reference Code itself running under GNU Octave.
 
 | | |
 |---|---|
-| version | 2.0, 20 September 2026 |
-| emulates | `com_ieee8023_4p17p0.m` by default, `4p18p0`, `4p16p0` and `4p15p0` behind a version switch |
+| version | 2.1, 19 November 2026 (SiCoPR 1.3.0) |
+| emulates | `com_ieee8023_4p18p0.m` by default, `4p17p0`, `4p16p0` and `4p15p0` behind a version switch |
 | the engine | `python -m sicopr` |
 | to run something now | [`examples/`](../examples/) — one download, one command |
 
@@ -139,7 +139,7 @@ This document describes a Python implementation of the IEEE 802.3 COM (Channel O
 
 ## 1.1 What this is
 
-The engine is a **function-for-function translation** of the COM Reference Code. It emulates `com_ieee8023_4p17p0.m` by default, and `com_ieee8023_4p18p0.m`, `com_ieee8023_4p16p0.m` or `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
+The engine is a **function-for-function translation** of the COM Reference Code. It emulates `com_ieee8023_4p18p0.m` by default, and `com_ieee8023_4p17p0.m`, `com_ieee8023_4p16p0.m` or `com_ieee8023_4p15p0.m` with the adaptive local search via `--matlab-version` ([VERSIONS.md](VERSIONS.md)). It is not a reimplementation, a simplification, or an approximation. It takes the same inputs — the same `.xlsx` configuration spreadsheet and the same `.s4p` Touchstone files — and produces the same outputs.
 
 The translation is close enough that the Python source can be navigated by MATLAB line number: 338 lines in the engine carry an explicit MATLAB line reference back to the source function they translate.
 
@@ -153,7 +153,7 @@ Five things exist here that have no MATLAB counterpart. The first and fourth are
 
 - **A study and reporting layer.** Tools that compare equalizer-search methods across channels, recompute true COM for near-optimal candidates, and render interactive HTML reports.
 
-- **The Reference Code itself, running.** `octave/` carries the COM 4p15p0, 4p16p0 and 4p17p0 release files made to run under GNU Octave, generated from `matlab/` by a named patch set. Two implementations of the same reference, in one repository, means any case can be computed twice and compared — without a MATLAB licence. Chapter 12.
+- **The Reference Code itself, running.** `octave/` carries the COM 4p15p0, 4p16p0, 4p17p0 and 4p18p0 release files made to run under GNU Octave, generated from `matlab/` by a named patch set. Two implementations of the same reference, in one repository, means any case can be computed twice and compared — without a MATLAB licence. Chapter 12.
 
 - **A configuration editor.** A local web application (python gui/app.py) that shows a configuration as a channel schematic, edits it, picks the input channels, runs the engine with its output streamed live, and displays the results — including the interactive R dashboard. It writes workbooks without disturbing their formulas or package blocks. See gui/README.md.
 
@@ -237,12 +237,12 @@ python examples/run_example.py --channels <where you unpacked it>
 
 That runs the case with and without crosstalk, through SiCoPR and — if
 `octave-cli` is on PATH — through the Reference Code under Octave as well, and
-prints anything that differs from what ships. About six minutes per SiCoPR run
+prints anything that differs from what ships. About a minute per SiCoPR run
 on one core. The rest of this chapter is the general form of the same command.
 
 ```
 python -m sicopr <config.xlsx> <thru.s4p> [--fext f1.s4p ...] [--next n1.s4p ...] [--export-mat]
-                 [--matlab-version {4p15p0,4p16p0,4p17p0}] [--eye-under-mlse]
+                 [--matlab-version {4p15p0,4p16p0,4p17p0,4p18p0}] [--eye-under-mlse]
 ```
 
 The THRU (victim) channel is required. Crosstalk aggressors are optional: use --fext for FEXT and --next for NEXT, each accepting multiple files. Add --export-mat to also write an engineering snapshot for R analysis (Section 7.4). --eye-under-mlse computes the eye contour and timing bathtub for plotting even when MLSE is on: MATLAB gates the eye on MLSE == 0, but MLSE is applied afterwards, so the pre-MLSE eye is well defined. It is diagnostic only; no reported value changes.
@@ -382,8 +382,8 @@ The first two are imported by the engine, which is why they live beside `sicopr.
 | tools/ | study layer (sweep, probe, corpus, diagnostics), the Octave bridge (octave_compare.py, xlsx_to_com_mat.py) and the version differ. The MATLAB-comparison harness is not here; it is kept with the data it needs |
 | gui/ | the configuration editor: a local web app for building configs, running the engine and viewing results |
 | R/ | the R extensions: per-case interactive HTML dashboard, correlation and study reports |
-| matlab/ | MATLAB reference sources (4p14p0, 4p15p0, 4p16p0, 4p17p0, adaptive-local-search branch) |
-| octave/ | the 4p15p0, 4p16p0 and 4p17p0 releases made to run under GNU Octave, generated from matlab/ by make_octave_compat.py with the patch set in patches/, plus optional compiled kernels in accel/ |
+| matlab/ | MATLAB reference sources (4p14p0, 4p15p0, 4p16p0, 4p17p0, 4p18p0, adaptive-local-search branch) |
+| octave/ | the 4p15p0, 4p16p0, 4p17p0 and 4p18p0 releases made to run under GNU Octave, generated from matlab/ by make_octave_compat.py with the patch set in patches/, plus optional compiled kernels in accel/ |
 | docs/ | this tutorial, the verification contract, version notes, and the evidence and history behind the numbers; docs/README.md says which is which |
 | dev/ | audit and interface-check scripts |
 | tests/ | cross-check scripts, run by tests/run_all.ps1 rather than bare pytest |
@@ -848,7 +848,7 @@ python -m pytest com_functions/fn -q
 
 | Suite | How to run | Notes |
 |---|---|---|
-| com_functions/fn | python -m pytest com_functions/fn -q | the main suite; over 2,000 tests across 157 functions |
+| com_functions/fn | python -m pytest com_functions/fn -q | the main suite; over 2,200 tests across 163 functions |
 | tests/ | python tests/<name>.py | Mixed: test_smoke.py, test_checkpoints.py, test_end_to_end.py and test_export_columns.py ARE pytest modules; every other file is a standalone script. Do not point pytest at the directory — the scripts call sys.exit() at import, so collection aborts, pytest reports "no tests ran" AND STILL EXITS 0. Nothing runs and nothing complains. |
 | everything | powershell -ExecutionPolicy Bypass -File tests/run_all.ps1 | The full harness, and what to run before committing: pre-flight audit, assembly, interface checks, unit tests, then every cross-check script. Dispatches both kinds of file above correctly. Current totals (2026-09-26): 2025 per-function tests, and 44 audit scripts; the 41 that print a tally total 628 checks with 20 accepted divergences. |
 
@@ -897,7 +897,7 @@ divides by N-1. Fixed in d5bff6c, with a test that uses COM Octave as the oracle
 the 208-case corpus could not have shown it, because every one of its channels
 starts at DC.
 
-**MATLAB version support** The engine emulates com_ieee8023_4p17p0 (4.17.0) by default (since 2026-10-03; 4p16p0 from 2026-09-27); 4p18p0, the current IEEE release (4.18.0, 2026-11-17), is supported from 2026-11-19 and changes the equalizer search for ordinary workbooks (MATLAB_4p18p0_CHANGES.md); the 208-case corpus run against COM Octave under 4p17p0 is the evidence for it (benchmark/208_case_4p17p0/), and the 1368-case corpus is 4p16p0's. 4p17p0's own delta from 4p16p0 is in MATLAB_4p17p0_CHANGES.md: the MMSE Gram matrix built by lag, which moves results by summation order only, and an apparent-channel-bandwidth report that is off by default. The 208 reference workbooks are 4p15p0 output, so reproducing that parity result takes --matlab-version 4p15p0 (or sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config). 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
+**MATLAB version support** The engine emulates com_ieee8023_4p18p0 (4.18.0, 2026-11-17, the current IEEE release) by default (since 2026-11-19; 4p17p0 from 2026-10-03, 4p16p0 from 2026-09-27). 4p18p0 changes the equalizer search for ordinary workbooks: the itick local search now runs in full-sweep, and on the 208-case corpus 5 cases end at a different sampling phase with COM 0.15 to 0.35 dB higher than under 4p17p0 (MATLAB_4p18p0_CHANGES.md). The 208-case corpus run against COM Octave under 4p18p0 is the evidence for it (benchmark/208_case_4p18p0/), that under 4p17p0 for 4p17p0 (benchmark/208_case_4p17p0/), and the 1368-case corpus is 4p16p0's. 4p17p0's own delta from 4p16p0 is in MATLAB_4p17p0_CHANGES.md: the MMSE Gram matrix built by lag, which moves results by summation order only, and an apparent-channel-bandwidth report that is off by default. The 208 reference workbooks are 4p15p0 output, so reproducing that parity result takes --matlab-version 4p15p0 (or sicopr.COM_MATLAB_VERSION, or a COM Version keyword in the config). 4p16p0 is a small delta — 146 of 152 function bodies unchanged, 6 changed, 3 added, none removed — and the three additions are the adaptive local search, now adopted into the released mainline rather than living in a branch.
 
 **Measured 4p16p0 impact** The same 208 cases have been run in both modes. 210 of 213 output columns are identical on every case, and no COM, FOM, VEO, VEC, itick or ERL value moves. Two columns change: peak_uneq_pulse_mV and steady_state_voltage_mV are now multiplied by the channel amplitude A, which 4p15p0 applied to the impulse response but not to the pulse response built from it — the new values are the corrected ones. Two further changes the corpus could not reach were measured separately on a config with a 1584-point Tx FFE grid: the Clip Method default moving from Fast to Slow shifts COM by about +0.007 dB and FOM by +0.22 dB, but only for configs that omit the keyword; and the adaptive search minimum radius moving from 1 to 2 gives a bit-identical answer while evaluating 4.3x the candidates. Detail in docs/MATLAB_4p16p0_CHANGES.md and docs/MATLAB_4p16p0_IMPACT.md.
 
@@ -941,11 +941,12 @@ licence**, on their own channel, in one command.
 |---|---|
 | `com_ieee8023_4p15p0_octave_compat.m` | 4.15 plus the adaptive local search — the build the MATLAB reference results came from |
 | `com_ieee8023_4p16p0_octave_compat.m` | 4.16 as released |
-| `com_ieee8023_4p17p0_octave_compat.m` | 4.17 as released (without the floating-tap search speed patch, which predates 4.17's MMSE change) |
-| `patches/` | the changes, as source; the two files above are generated from `matlab/` by applying them |
+| `com_ieee8023_4p17p0_octave_compat.m` | 4.17 as released (with its own variant of the floating-tap search speed patch, since 2026-10-14) |
+| `com_ieee8023_4p18p0_octave_compat.m` | 4.18 as released (the same floating-tap variant: 4.18 left that search unchanged) |
+| `patches/` | the changes, as source; the four files above are generated from `matlab/` by applying them |
 | `accel/` | optional compiled kernels (§12.4) |
 
-The two `.m` files are **generated, not edited**: `octave/make_octave_compat.py`
+The four `.m` files are **generated, not edited**: `octave/make_octave_compat.py`
 reads the official release file and applies a small named patch set, and the
 header of each generated file records the release it came from, that file's
 SHA-256, and every change applied. `tests/test_octave_compat.py` fails if a
@@ -1016,7 +1017,7 @@ python octave/accel/build_accel.py        # once per machine
 ```
 
 From then on every run that has `octave/` on its path uses them automatically:
-same command, same configuration, same results, 1.8 to 2.0 times faster than the same files run interpreted (4p17p0, measured 2026-10-15). To
+same command, same configuration, same results, 1.3 to 1.5 times faster than the same files run interpreted (4p18p0, measured 2026-11-19; 1.8 to 2.0 times on 4p17p0, whose search did more of the work the kernels speed up). To
 check whether a run will use them, ask the kernel for its version:
 
 ```
@@ -1033,13 +1034,13 @@ proved by planting five last-bit defects and confirming it fails on each.
 
 ## 12.5 How fast, and how close
 
-Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). Measured 2026-10-15 on the shipped example under 4p17p0, one case at a time (without / with crosstalk: SiCoPR 365 s / 317 s; these files interpreted 645 s / 586 s; with the compiled build 316 s / 330 s). The 4p16p0 figures of 2026-10-01 are in brackets:
+Per case, one BLAS thread each, against this port on the same machine (Octave 11.3, Windows). Measured 2026-11-19 on the shipped example under 4p18p0, one case at a time (without / with crosstalk: SiCoPR 55 s / 73 s; these files interpreted 102 s / 142 s; with the compiled build 70 s / 111 s). The 4p17p0 figures of 2026-10-15 are in brackets:
 
 | | Octave / SiCoPR |
 |---|---|
 | the stock release file under Octave | ~30x slower again (its `CDF_ev` does `find` on a growing axis) |
-| these files, interpreted | 1.8x (2.2x to 2.4x) |
-| these files, with the compiled build | 0.87x to 1.04x (1.2x to 1.4x) |
+| these files, interpreted | 1.8x to 1.9x (1.8x) |
+| these files, with the compiled build | 1.3x to 1.5x (0.87x to 1.04x) |
 
 On agreement, see §11: 1368 cases, COM within 5.3e-14 dB and the same sampling
 phase on every one (2026-09-26). `octave/README.md` carries the patch set
@@ -1457,7 +1458,7 @@ python -m sicopr <config.xlsx> <thru.s4p> --fext f1.s4p f2.s4p --next n1.s4p
 # with the engineering .mat snapshot for R analysis
 python -m sicopr <config.xlsx> <thru.s4p> --export-mat
 
-# emulate MATLAB 4p15p0 instead of the 4p17p0 default
+# emulate MATLAB 4p15p0 instead of the 4p18p0 default
 python -m sicopr <config.xlsx> <thru.s4p> --matlab-version 4p15p0
 
 # eye contour + timing bathtub even with MLSE on (plotting only)

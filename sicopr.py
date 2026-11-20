@@ -1,7 +1,7 @@
 """
 sicopr.py — the SiCoPR engine
 IEEE 802.3 Channel Operating Margin (COM), ported from the MATLAB reference
-Emulates com_ieee8023_4p17p0 by default; 4p15p0 and 4p16p0 and 4p17p0 and 4p18p0 supported via --matlab-version
+Emulates com_ieee8023_4p18p0 by default; 4p15p0 and 4p16p0 and 4p17p0 and 4p18p0 supported via --matlab-version
 (or sicopr.COM_MATLAB_VERSION, or a "COM Version" keyword in the config).
 
 This file is machine-assembled from individually verified function translations
@@ -8633,7 +8633,7 @@ def adjust_Rx_noise_for_quantization(combined_interference_and_noise_pdf, NS, ch
 
     # The reference reads fom_result.RxFFE unconditionally, and optimize_fom
     # sets it only when the Rx FFE is on, so N_qb ~= 0 with no Rx FFE stops
-    # there with "structure has no member 'RxFFE'" (COM Octave, 4p15p0-4p17p0).
+    # there with "structure has no member 'RxFFE'" (COM Octave, 4p15p0-4p18p0).
     # Stop at the same point, with an error that says why.
     if not hasattr(fom_result, 'RxFFE'):
         raise ValueError(
@@ -17167,13 +17167,12 @@ def read_PR_files(param, OP, chdata):
 # xls_parameter's own `_SENTINEL` used to rebind the shared name (finding F05).
 _NO_DEFAULT = object()
 
-# Which MATLAB release to emulate. '4p17p0' is the default (VERSION.json, the
-# owner's call, 2026-10-03); 4p18p0 (2026-11-17) is supported but not yet the
-# default. The 208-case MATLAB
+# Which MATLAB release to emulate. '4p18p0' is the default (VERSION.json, the
+# owner's call, 2026-11-19; 4p17p0 was from 2026-10-03). The 208-case MATLAB
 # reference results are 4p15p0 output, so anything reproducing them must ask
 # for '4p15p0' explicitly (docs/VERSIONS.md says what differs between releases).
 # A config's 'COM Version' keyword, if present, wins over this default.
-COM_MATLAB_VERSION = '4p17p0'
+COM_MATLAB_VERSION = '4p18p0'
 
 
 # ---------------------------------------------------------------------------
@@ -21890,7 +21889,7 @@ if __name__ == '__main__':
     parser.add_argument('--export-mat', action='store_true',
                         help='also write a per-case engineering .mat snapshot for R analysis')
     parser.add_argument('--matlab-version', choices=['4p15p0', '4p16p0', '4p17p0', '4p18p0'],
-                        help='which MATLAB release to emulate. Default 4p17p0, the '
+                        help='which MATLAB release to emulate. Default 4p18p0, the '
                              'current IEEE release. 4p15p0 is the version the 208-case '
                              'MATLAB reference results were produced with -- see '
                              'docs/VERSIONS.md')

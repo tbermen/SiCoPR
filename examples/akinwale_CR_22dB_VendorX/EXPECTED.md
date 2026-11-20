@@ -1,8 +1,8 @@
 # What this example should produce
 
-Generated on the configuration workbook in this directory, one of the 1368 cases in the correlation benchmark. Two engines, two conditions, both on the 4p17p0 release.
+Generated on the configuration workbook in this directory, one of the 1368 cases in the correlation benchmark. Two engines, two conditions, both on the 4p18p0 release.
 
-**Provenance of the COM Octave results.** The Reference Code release file `matlab/com_ieee8023_4p17p0.m`, made to run under GNU Octave 11.3.0 as `octave/com_ieee8023_4p17p0_octave_compat.m` by `octave/make_octave_compat.py` (SiCoPR revision `bf44414`, compiled kernels on), run 2026-10-14. They are COM Octave results, not MATLAB reference results. Under 4p16p0 the same case was also measured against the MATLAB reference results: COM within 7.1e-15 dB without crosstalk and 8.9e-16 dB with it, the same sampling phase. 4p17p0 changes this calculation only in summation order, and both engines moved by less than 1e-14 dB.
+**Provenance of the COM Octave results.** The Reference Code release file `matlab/com_ieee8023_4p18p0.m`, made to run under GNU Octave 11.3.0 as `octave/com_ieee8023_4p18p0_octave_compat.m` by `octave/make_octave_compat.py` (SiCoPR 1.3.0, compiled kernels on), run 2026-11-19. They are COM Octave results, not MATLAB reference results. Every value in the table is the same as under 4p17p0 (2026-10-14): 4p18p0's itick local search reaches the same sampling phase and equalizer on this case. Under 4p16p0 the same case was also measured against the MATLAB reference results: COM within 7.1e-15 dB without crosstalk and 8.9e-16 dB with it, the same sampling phase.
 
 | quantity | SiCoPR, no crosstalk | COM Octave, no crosstalk | SiCoPR, with crosstalk | COM Octave, with crosstalk |
 |---|---|---|---|---|
@@ -21,6 +21,6 @@ The two engines share no code: SiCoPR is a Python port, COM Octave is the refere
 
 **What the numbers say about the channel.** Without crosstalk it makes 3.51 dB, 0.51 dB above the 3 dB threshold. Add the 5 aggressors and it drops to 2.90 dB, which does not meet it. Same channel, same configuration: the aggressors cost 0.61 dB, and turn a pass into a fail. That is the example working as an example — a comfortable pass would teach less.
 
-**Roughly how long.** On one modern desktop core (measured 2026-10-14), SiCoPR took 354 s without crosstalk and 318 s with it; COM Octave with its compiled kernels built took 305 s and 333 s. Without the kernels COM Octave takes longer; `octave/README.md` has its timings.
+**Roughly how long.** On one modern desktop core (measured 2026-11-19, one case at a time), SiCoPR took 55 s without crosstalk and 73 s with it; COM Octave with its compiled kernels built took 70 s and 111 s. Without the kernels COM Octave takes longer; `octave/README.md` has its timings.
 
 Every column both engines report is in the `expected_*.csv` files beside this one.

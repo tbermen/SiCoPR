@@ -8,8 +8,8 @@ differs between them.
 
 | release | how to select | source it follows |
 |---|---|---|
-| `4p18p0` | `--matlab-version 4p18p0` | `matlab/com_ieee8023_4p18p0.m`, the current IEEE release (4.18.0, 2026-11-17); supported since 2026-11-19, not yet the default |
-| **`4p17p0`** (default) | nothing, or `--matlab-version 4p17p0` | `matlab/com_ieee8023_4p17p0.m` (4.17.0, 2026-09-23) |
+| **`4p18p0`** (default) | nothing, or `--matlab-version 4p18p0` | `matlab/com_ieee8023_4p18p0.m`, the current IEEE release (4.18.0, 2026-11-17); the default since 2026-11-19 (SiCoPR 1.3.0) |
+| `4p17p0` | `--matlab-version 4p17p0` | `matlab/com_ieee8023_4p17p0.m` (4.17.0, 2026-09-23); the default from 2026-10-03 to 2026-11-19 |
 | `4p16p0` | `--matlab-version 4p16p0` | `matlab/com_ieee8023_4p16p0.m` |
 | `4p15p0` | `--matlab-version 4p15p0` | `matlab/com_ieee8023_4p15p0_adaptive_local_search.m`: 4p15p0 with the adaptive local search backported, the build the 208-case reference results were produced with |
 

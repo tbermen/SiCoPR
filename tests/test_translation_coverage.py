@@ -74,7 +74,7 @@ check('composite_baseline_is_current',
 # many there are, nor which orientation they come back in -- and MATLAB
 # distinguishes a row from a column where a 1-D numpy array does not. Ratcheted
 # rather than gated outright, because the leaf gap has to close first.
-BASELINE_SHAPE_CHECKED = 125
+BASELINE_SHAPE_CHECKED = 126   # 125 until 2026-11-19: 4p18p0, the default, adds fast_clip_topK
 n_shape = sum(1 for r in bearing if r['shape_checks'])
 no_shape = sorted(r['function'] for r in bearing if not r['shape_checks'])
 
@@ -96,7 +96,8 @@ check('shape_baseline_is_current',
 # 2026-09-23: optimize_fom closed the last composite, by running the reference
 # through a matching stub set and pinning the CALL TRACE rather than a number.
 # 2026-09-23: LFSR, the last one, tested directly inside its host PRBS13Q.
-BASELINE_ORACLE_BACKED = 150   # 146 until 2026-10-03: 4p17p0's four ACBW functions
+BASELINE_ORACLE_BACKED = 151   # 146 until 2026-10-03: 4p17p0's four ACBW functions;
+                               # 150 until 2026-11-19: 4p18p0's fast_clip_topK
 n_oracle = sum(1 for r in bearing if r['grade'] == 'oracle')
 
 check('oracle_coverage_does_not_fall',

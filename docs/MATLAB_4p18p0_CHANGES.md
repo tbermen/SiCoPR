@@ -21,9 +21,9 @@ itick local search (`Itick_BoxSearch`), a fast top-K Gaussian-mixture ADC clip
 solver (`adc_clip_fast_1`), and a fix for Clip Method = Fast with deferred
 floating Rx FFE (`OptimizeFOM_OneRun`).
 
-**4p18p0 is supported, not the default.** `--matlab-version 4p18p0` (or a
-`COM Version` keyword) selects it; the default stays 4p17p0 until the owner
-moves it ([`VERSIONS.md`](VERSIONS.md)).
+**4p18p0 is the default emulated release from 2026-11-19** (SiCoPR 1.3.0;
+[`VERSIONS.md`](VERSIONS.md)). `--matlab-version 4p17p0` (or a `COM Version`
+keyword) still selects the previous release.
 
 **Results can change.** Unlike 4p17p0, this release changes the equalizer
 search for ordinary workbooks: see section 1.

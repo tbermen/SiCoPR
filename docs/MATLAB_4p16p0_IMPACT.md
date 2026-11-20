@@ -160,7 +160,7 @@ All six changes are now measured. Summary of what adopting 4p16p0 does:
 Nothing here blocks adoption. Two reported columns become correct, and the
 `Clip Method` shift is toward the more exact computation.
 
-**Update 2026-09-27: 4p16p0 is now the default** (since 2026-10-03 the default is 4p17p0). The reason this section gave
+**Update 2026-09-27: 4p16p0 is now the default** (4p17p0 from 2026-10-03, 4p18p0 from 2026-11-19). The reason this section gave
 for keeping 4p15p0 -- no matching reference data -- no longer holds: the
 1368-case 4p16p0 corpus now has MATLAB 4p16p0 results, and SiCoPR agrees with
 them on COM to 5.3e-14 dB. The 208-case correlation is still 4p15p0 evidence and

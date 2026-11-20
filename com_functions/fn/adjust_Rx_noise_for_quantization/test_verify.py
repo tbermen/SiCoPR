@@ -166,7 +166,7 @@ def test_octave_empty_sampled_pulse_falls_through_to_the_delta_pdf():
 def test_octave_no_rx_ffe_stops_as_the_reference_does_with_a_named_error():
     """Quantization (N_qb ~= 0) with the Rx FFE off is an error in the reference.
 
-    COM Octave 4p15p0, 4p16p0 and 4p17p0, this function with the fixture above,
+    COM Octave 4p15p0, 4p16p0, 4p17p0 and 4p18p0, this function with the fixture above,
     ffe_pre_tap_len = 0 and a fom_result that has no RxFFE field (optimize_fom
     sets result.RxFFE only `if OP.RxFFE`, and OP.RxFFE is false when both
     ffe_pre_tap_len and ffe_post_tap_len are 0):

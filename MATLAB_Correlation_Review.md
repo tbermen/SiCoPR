@@ -384,9 +384,11 @@ it is left alone, but it is pure overhead in batch correlation runs.
 
 ## 5c. MATLAB 4p16p0
 
-4p16p0 was published on 2026-08-18 and is supported behind a version switch; **4p15p0
-remains the default**, since the reference workbooks this correlation rests on are 4p15p0
-output.
+4p16p0 was published on 2026-08-18 and is supported behind a version switch. When this
+section was written 4p15p0 was the default, since the reference workbooks this
+correlation rests on are 4p15p0 output. The default has since moved: 4p16p0 on
+2026-09-27, 4p17p0 on 2026-10-03, 4p18p0 on 2026-11-19 (§5d). Reproducing the results in this
+document still takes `--matlab-version 4p15p0`.
 
 The delta is small: **146 of 152 function bodies unchanged, 6 changed, 3 added, 0 removed**.
 The three additions are `OptFom_Adaptive_Local_Search`, `compute_hard_cap` and
@@ -415,6 +417,23 @@ turn on it.
 
 Detail: `docs/MATLAB_4p16p0_CHANGES.md` (what changed) and `docs/MATLAB_4p16p0_IMPACT.md`
 (measured effect).
+
+---
+
+## 5d. Later releases: 4p17p0 and 4p18p0
+
+No MATLAB results exist for the releases after 4p16p0, so they are checked against COM
+Octave: the same Reference Code release run under GNU Octave
+([`octave/README.md`](octave/README.md)). The same 208 cases were run under each:
+
+| release | run | SiCoPR against COM Octave | against the previous release (COM Octave both sides) |
+|---|---|---|---|
+| 4p17p0 (default 2026-10-03 to 2026-11-19) | 2026-10-04 | COM within 5.2e-14 dB; itick, CTLE gain, Tx FFE and ERL identical on 208 / 208 | the same answer to arithmetic noise (COM within 5.0e-14 dB, itick identical) |
+| 4p18p0 (default since 2026-11-19) | 2026-11-19 | COM within 5.2e-14 dB; itick, CTLE gain, Tx FFE and ERL identical on 208 / 208 | 203 cases identical; 5 end at a different itick, COM 0.15 to 0.35 dB higher, no pass/fail change |
+
+The COM Octave results ship in [`benchmark/`](benchmark/), and what each release changed
+is in [`docs/MATLAB_4p17p0_CHANGES.md`](docs/MATLAB_4p17p0_CHANGES.md) and
+[`docs/MATLAB_4p18p0_CHANGES.md`](docs/MATLAB_4p18p0_CHANGES.md).
 
 ---
 

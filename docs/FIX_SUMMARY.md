@@ -37,13 +37,15 @@ knowing what landed.
 
 ## Current correlation status
 
-**As of 2026-09-26.** Aggregate statistics only; per-case reference values are
+**As of 2026-11-19.** Aggregate statistics only; per-case reference values are
 not carried in this repository.
 
 | corpus | engine | result |
 |---|---|---|
 | 208 MATLAB reference cases (4p15p0), last full re-run **2026-09-23** | `8e0479c` | `itick` and every EQ selection identical to MATLAB on **208 / 208**; COM within **4.6e-14 dB**; FOM within **3.4e-11 dB** |
 | 1368-case 4p16p0 corpus, against COM Octave, run **2026-09-26** | `df78b9c` | COM within **5.3e-14 dB** on all **1368**; `itick`, Tx FFE and CTLE gain identical; FOM within **6e-12 dB** |
+| the 208 cases on 4p17p0, against COM Octave, run **2026-10-04** | `180ac52` | COM within **5.2e-14 dB**; `itick`, CTLE gain, Tx FFE and ERL identical on **208 / 208**; FOM within **6.0e-12 dB** |
+| the 208 cases on 4p18p0 (the default since 1.3.0), against COM Octave, run **2026-11-19** | `fc30ae2` | COM within **5.2e-14 dB**; `itick`, CTLE gain, Tx FFE and ERL identical on **208 / 208**; FOM within **6.0e-12 dB** |
 
 `DER_DFE` and `DER_MLSE` can differ by up to **~4.5%** between *any* two engines
 — Octave against MATLAB included — because the reference reads the CDF exactly

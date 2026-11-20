@@ -120,7 +120,7 @@ def adjust_Rx_noise_for_quantization(combined_interference_and_noise_pdf, NS, ch
 
     # The reference reads fom_result.RxFFE unconditionally, and optimize_fom
     # sets it only when the Rx FFE is on, so N_qb ~= 0 with no Rx FFE stops
-    # there with "structure has no member 'RxFFE'" (COM Octave, 4p15p0-4p17p0).
+    # there with "structure has no member 'RxFFE'" (COM Octave, 4p15p0-4p18p0).
     # Stop at the same point, with an error that says why.
     if not hasattr(fom_result, 'RxFFE'):
         raise ValueError(

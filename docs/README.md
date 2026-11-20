@@ -1,6 +1,6 @@
 # docs/
 
-Seventeen documents here, plus the correlation review at the repository root, none
+Eighteen documents here, plus the correlation review at the repository root, none
 of them required reading to run COM. This index says
 what each one answers and whether it is current, so you can open the one you
 want and ignore the rest.
@@ -15,7 +15,7 @@ those three.
 
 | document | what it answers | state |
 |---|---|---|
-| [`TUTORIAL.md`](TUTORIAL.md) | the whole tool: install, run, architecture, every feature, configuration, outputs, the study layer, the R reports, the reference code under Octave, and a keyword index | current (v2.0, 2026-09-20) |
+| [`TUTORIAL.md`](TUTORIAL.md) | the whole tool: install, run, architecture, every feature, configuration, outputs, the study layer, the R reports, the reference code under Octave, and a keyword index | current (v2.1, 2026-11-19) |
 | [`tutorial/`](tutorial/) | the figures it uses | |
 | [`VERSIONS.md`](VERSIONS.md) | which MATLAB release is emulated by default, how to select another, which corpus is which version, and what 4p16p0, 4p17p0 and 4p18p0 changed | current |
 | [`MATLAB_4p18p0_CHANGES.md`](MATLAB_4p18p0_CHANGES.md) | the upstream diff from 4p17p0 to 4p18p0 (the itick local search in full-sweep, Fast_1 clip, Defer_Floating_RxFFE, the best-EQ re-run), what the port does about each, the reference behaviour reproduced as it stands, and the whole-case checks | current |
@@ -50,7 +50,7 @@ behaves, and offered to the COM ad hoc with a proposed fix.
 
 | document | the defect |
 |---|---|
-| [`UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md) | `N_qb ~= 0` with the Rx FFE off stops the run (`structure has no member 'RxFFE'`), 4p14p0 to 4p17p0; and a zero pre-cursor tap shifts which tap the quantization step skips |
+| [`UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md`](UPSTREAM_QUANTIZATION_WITHOUT_RXFFE.md) | `N_qb ~= 0` with the Rx FFE off stops the run (`structure has no member 'RxFFE'`), 4p14p0 to 4p18p0; and a zero pre-cursor tap shifts which tap the quantization step skips |
 
 ## Dated snapshots
 
